@@ -15,15 +15,18 @@ name = "schemacraft_core"
 async-trait = { workspace = true }
 bb8 = { workspace = true }
 chrono = { workspace = true }
+resvg = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+svg2pdf = { workspace = true }
 thiserror = { workspace = true }
 tiberius = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 ts-rs = { workspace = true }
+usvg = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 keyring = { workspace = true }

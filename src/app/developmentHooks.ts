@@ -1,6 +1,7 @@
 import * as canvasActions from "@/features/canvas/canvasActions";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { useConnectionStore } from "@/features/connection/connectionStore";
+import { useExportStore } from "@/features/export/exportStore";
 import { usePaletteStore } from "@/features/palette/paletteStore";
 import { usePreferencesStore } from "@/features/preferences/preferencesStore";
 import { useProjectStore } from "@/features/project/projectStore";
@@ -15,6 +16,7 @@ export interface DevelopmentHooks {
   canvasUi: typeof useCanvasUiStore;
   canvasActions: typeof canvasActions;
   palette: typeof usePaletteStore;
+  exportStore: typeof useExportStore;
   /** The React Flow instance once the canvas initialised, for scripted checks. */
   flow: unknown;
 }
@@ -43,6 +45,7 @@ export function installDevelopmentHooks(): void {
     canvasUi: useCanvasUiStore,
     canvasActions,
     palette: usePaletteStore,
+    exportStore: useExportStore,
   };
 }
 

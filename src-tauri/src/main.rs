@@ -36,6 +36,7 @@ fn main() -> ExitCode {
 fn run_application() -> tauri::Result<()> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let package_info = app.package_info();
             tracing::info!(
@@ -66,6 +67,8 @@ fn run_application() -> tauri::Result<()> {
             commands::credentials::has_stored_password,
             commands::credentials::remember_password,
             commands::credentials::forget_password,
+            commands::export::export_diagram,
+            commands::export::cancel_export,
         ])
         .run(tauri::generate_context!())
 }

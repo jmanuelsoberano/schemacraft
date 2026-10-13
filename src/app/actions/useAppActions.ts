@@ -30,6 +30,7 @@ import {
 } from "@/features/canvas/canvasActions";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { useConnectionStore } from "@/features/connection/connectionStore";
+import { useExportStore } from "@/features/export/exportStore";
 import { useProjectStore } from "@/features/project/projectStore";
 import { usePaletteStore } from "@/features/palette/paletteStore";
 import { useSettingsStore } from "@/shared/settings/settingsStore";
@@ -41,12 +42,10 @@ export interface AppActions {
   list: readonly AppAction[];
 }
 
-/** Placeholder for actions whose feature ships in a later milestone. */
-const notAvailableYet = (): void => undefined;
-
 export function useAppActions(): AppActions {
   const toggleSidebar = useSettingsStore((state) => state.toggleSidebar);
   const openConnectionDialog = useConnectionStore((state) => state.openDialog);
+  const openExportDialog = useExportStore((state) => state.open);
   const refreshFromDatabase = useConnectionStore((state) => state.refresh);
   const hasProject = useProjectStore((state) => state.project !== null);
   const guardUnsavedChanges = useProjectStore((state) => state.guardUnsavedChanges);
@@ -231,8 +230,8 @@ export function useAppActions(): AppActions {
         labelKey: "action.export",
         icon: Download,
         shortcut: { mod: true, key: "e" },
-        isAvailable: false,
-        run: notAvailableYet,
+        isAvailable: hasProject,
+        run: openExportDialog,
       },
       "view.toggleSidebar": {
         id: "view.toggleSidebar",
@@ -256,6 +255,7 @@ export function useAppActions(): AppActions {
   }, [
     toggleSidebar,
     openConnectionDialog,
+    openExportDialog,
     refreshFromDatabase,
     hasProject,
     guardUnsavedChanges,

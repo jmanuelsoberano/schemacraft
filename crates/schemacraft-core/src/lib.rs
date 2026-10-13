@@ -9,11 +9,13 @@
 //! * [`diff`]: comparison of two schema snapshots, driving "refresh from database".
 //! * [`preferences`]: connection history and recent projects, stored per user.
 //! * [`credentials`]: remembered passwords, kept by the operating system credential store.
+//! * [`export`]: SVG, HTML, PNG and PDF files from a rendered diagram, with bundled fonts.
 //!
 //! A module is added to the crate only once it carries real behaviour.
 
 pub mod credentials;
 pub mod diff;
+pub mod export;
 pub mod inspectors;
 pub mod model;
 pub mod preferences;

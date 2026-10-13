@@ -1,6 +1,7 @@
 //! Error payload shared by every IPC command.
 
 use schemacraft_core::credentials::{CredentialError, CredentialErrorKind};
+use schemacraft_core::export::{ExportError, ExportErrorKind};
 use schemacraft_core::inspectors::{InspectorError, InspectorErrorKind};
 use schemacraft_core::preferences::{PreferencesError, PreferencesErrorKind};
 use schemacraft_core::project::{ProjectError, ProjectErrorKind};
@@ -31,6 +32,8 @@ pub enum CommandErrorKind {
     Preferences(PreferencesErrorKind),
     /// The credential store failed; the value says why.
     Credential(CredentialErrorKind),
+    /// An export could not be produced; the value says why.
+    Export(ExportErrorKind),
     /// The job id does not belong to a running operation.
     UnknownJob,
     /// A command was called with an argument it cannot act on.
@@ -51,6 +54,15 @@ impl CommandError {
         Self {
             kind: CommandErrorKind::InvalidArgument,
             message: message.to_string(),
+        }
+    }
+}
+
+impl From<ExportError> for CommandError {
+    fn from(error: ExportError) -> Self {
+        Self {
+            kind: CommandErrorKind::Export(error.kind()),
+            message: error.to_string(),
         }
     }
 }

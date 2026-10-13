@@ -7,14 +7,16 @@ the same diagram, and renders fast, interactive diagrams with high-fidelity sing
 
 ## Status
 
-Milestones 1 to 4 of 6 are complete: Rust workspace, domain model, Tauri host, application
+Milestones 1 to 5 of 6 are complete: Rust workspace, domain model, Tauri host, application
 shell with design system, bilingual UI (English and Spanish), light and dark themes, tooling and
 CI; the SQL Server inspector with SQL Server and Windows Authentication, the connection dialog
 with actionable errors and progress, and the entities panel listing the loaded schema; then
 `.scraft` project files with open, save and recent projects, refresh from database with a
 reviewed diff that keeps diagram positions, and a history of recent connections; then the
 canvas: entity cards with three detail levels, crow's foot relationships, layered, organic and
-radial layouts, isolation of a table with its neighbours, undo and redo, and a command palette.
+radial layouts, isolation of a table with its neighbours, undo and redo, and a command palette;
+and the exports: SVG with selectable text, a self-contained interactive HTML viewer,
+single-page PDF and PNG at 1x, 2x and 4x, all drawn by one renderer with bundled fonts.
 
 | Milestone | Scope                                                       |
 | --------- | ----------------------------------------------------------- |
@@ -22,7 +24,7 @@ radial layouts, isolation of a table with its neighbours, undo and redo, and a c
 | 2 ✅      | SQL Server inspector, connection dialog, entities panel     |
 | 3 ✅      | `.scraft` project files and schema diff ("refresh from DB") |
 | 4 ✅      | Canvas: table nodes, relationships, layouts, detail levels  |
-| 5         | Export: SVG, standalone interactive HTML, single-page PDF   |
+| 5 ✅      | Export: SVG, standalone interactive HTML, single-page PDF   |
 | 6         | Portable `schemacraft.exe` validation and packaging         |
 
 ## Stack
@@ -79,6 +81,7 @@ The portable binary is written to `target/release/schemacraft.exe` and the insta
 | `npm run contracts:check`                               | Fail if the generated TypeScript types are out of date     |
 | `cargo test --workspace`                                | Run Rust tests (also regenerates the TypeScript contracts) |
 | `cargo clippy --workspace --all-targets -- -D warnings` | Lint Rust with the project's strict rules                  |
+| `node scripts/prepare-fonts.mjs`                        | Regenerate the TTF fonts bundled by the export renderer    |
 
 ## Integration tests against SQL Server
 
@@ -129,11 +132,12 @@ forget it, or remove the entry from the Credential Manager.
 ## Project structure
 
 ```
-crates/schemacraft-core/   domain model, inspectors, project files, diff engine (no Tauri)
+crates/schemacraft-core/   domain model, inspectors, project files, diff engine, export (no Tauri)
 src-tauri/                 Tauri host: IPC commands, configuration, icons
 src/app/                   application shell, actions, brand, global styles
-src/features/              connection, project, preferences and schema features
+src/features/              connection, project, canvas, export and other features
 src/shared/                contracts, i18n, ipc, settings, ui primitives
+src/viewer/                standalone viewer embedded in exported HTML files
 assets/brand/              source artwork for the application icon
 docs/                      PRD, architecture decisions, UX principles
 ```

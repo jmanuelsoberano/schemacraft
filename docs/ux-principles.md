@@ -101,8 +101,11 @@ the connection dialog, prefilled from the saved connection, so only the password
 ### Exporting
 
 A single dialog chooses the format (SVG, standalone HTML, single-page PDF, PNG at 1x/2x/4x), the
-detail level and the theme of the export, with a size preview. The output opens or reveals in the
-file manager when done.
+detail level and the theme, and shows the size in pixels or millimetres with an estimated weight
+before anything is written. It exports what is visible on the canvas. A PNG scale beyond the
+renderer's limit is refused with the reason, progress names the stage and can be cancelled, and a
+finished export offers to show the file in its folder. The HTML file opens in any browser with
+pan, zoom, the three views, search and a detail panel per table.
 
 ## Visual language
 
