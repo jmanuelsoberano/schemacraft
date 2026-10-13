@@ -1,10 +1,4 @@
-import {
-  BaseEdge,
-  EdgeLabelRenderer,
-  Position,
-  getSmoothStepPath,
-  useInternalNode,
-} from "@xyflow/react";
+import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, useInternalNode } from "@xyflow/react";
 import type { EdgeProps } from "@xyflow/react";
 import { memo } from "react";
 
@@ -13,69 +7,10 @@ import { classNames } from "@/shared/ui/classNames";
 import styles from "./RelationEdge.module.css";
 import { MARKER_MANY, MARKER_MANY_OPTIONAL, MARKER_ONE } from "./RelationMarkers";
 import { useCanvasUiStore } from "./canvasUiStore";
+import { relationAnchors, selfLoopPath } from "./edgeGeometry";
+import type { NodeBox } from "./edgeGeometry";
 import { NODE_WIDTH, attachmentY, nodeHeight } from "./geometry";
 import type { RelationEdge as RelationEdgeType } from "./graph";
-
-/** Minimum horizontal room for a straight-through connection between two nodes. */
-const SIDE_GAP = 24;
-/** How far a self-reference loops out of the node. */
-const LOOP_REACH = 44;
-
-interface Anchor {
-  x: number;
-  y: number;
-  position: Position;
-}
-
-interface NodeBox {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-/** Attachment points on both nodes, chosen so the edge leaves by the nearest sides. */
-function anchors(
-  source: NodeBox,
-  sourceOffsetY: number,
-  target: NodeBox,
-  targetOffsetY: number,
-): [Anchor, Anchor] {
-  if (source.x + source.width + SIDE_GAP <= target.x) {
-    return [
-      { x: source.x + source.width, y: source.y + sourceOffsetY, position: Position.Right },
-      { x: target.x, y: target.y + targetOffsetY, position: Position.Left },
-    ];
-  }
-  if (target.x + target.width + SIDE_GAP <= source.x) {
-    return [
-      { x: source.x, y: source.y + sourceOffsetY, position: Position.Left },
-      { x: target.x + target.width, y: target.y + targetOffsetY, position: Position.Right },
-    ];
-  }
-  // Overlapping columns: connect through the nearer sides anyway, bending around the gap.
-  const sourceCenter = source.x + source.width / 2;
-  const targetCenter = target.x + target.width / 2;
-  if (sourceCenter <= targetCenter) {
-    return [
-      { x: source.x + source.width, y: source.y + sourceOffsetY, position: Position.Right },
-      { x: target.x + target.width, y: target.y + targetOffsetY, position: Position.Right },
-    ];
-  }
-  return [
-    { x: source.x, y: source.y + sourceOffsetY, position: Position.Left },
-    { x: target.x, y: target.y + targetOffsetY, position: Position.Left },
-  ];
-}
-
-function selfLoopPath(box: NodeBox, fromY: number, toY: number): [string, number, number] {
-  const x = box.x + box.width;
-  const top = box.y + Math.min(fromY, toY);
-  const bottom = box.y + Math.max(fromY, toY);
-  const reach = x + LOOP_REACH;
-  const path = `M ${x},${top} C ${reach},${top} ${reach},${bottom} ${x},${bottom}`;
-  return [path, reach - 4, (top + bottom) / 2];
-}
 
 function RelationEdgeComponent({
   id,
@@ -116,7 +51,7 @@ function RelationEdgeComponent({
   if (source === target) {
     [path, labelX, labelY] = selfLoopPath(sourceBox, sourceOffsetY, targetOffsetY);
   } else {
-    const [from, to] = anchors(sourceBox, sourceOffsetY, targetBox, targetOffsetY);
+    const [from, to] = relationAnchors(sourceBox, sourceOffsetY, targetBox, targetOffsetY);
     [path, labelX, labelY] = getSmoothStepPath({
       sourceX: from.x,
       sourceY: from.y,

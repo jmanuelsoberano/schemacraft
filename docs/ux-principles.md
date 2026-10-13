@@ -82,10 +82,14 @@ with the cause and the next step; a recent project whose file disappeared leaves
 
 ### Working on the canvas
 
-The entities panel lists tables with instant search, visibility toggles and counters. The canvas
-offers three detail levels (compact, keys, full), automatic layouts, free dragging, multi-select,
-neighbourhood isolation from the context menu, a minimap and semantic zoom. Every change is
-undoable.
+The entities panel lists tables and views with instant search, column counters, a visibility
+toggle and "center in view" per entity, and the same context menu as the canvas. The canvas
+offers three detail levels (compact, keys, full), automatic layouts (layered top-down or
+left-to-right, organic, radial around a table), free dragging, multi-select with Shift, isolation
+of a table with its neighbours one or two levels deep, hide, show all, collapse and expand, a
+minimap and semantic zoom (cards turn compact below 40 %). Relationships use crow's foot
+notation, attach at the key column and reveal their name and columns on hover. Every change is
+undoable (Ctrl+Z, Ctrl+Y), and the command palette (Ctrl+K) reaches every action by name.
 
 ### Refreshing from the database
 
