@@ -3,4 +3,4 @@
 /**
  * Coarse classification of an [`InspectorError`], shared with the frontend to pick a remedy.
  */
-export type InspectorErrorKind = "invalidSettings" | "unreachable" | "timeout" | "authenticationFailed" | "untrustedCertificate" | "databaseUnavailable" | "connectionRefused" | "queryFailed" | "unexpectedCatalogData" | "cancelled" | "unsupportedOnPlatform";
+export type InspectorErrorKind = "invalidSettings" | "unreachable" | "timeout" | "authenticationFailed" | "untrustedCertificate" | "databaseUnavailable" | "connectionRefused" | "queryFailed" | "unexpectedCatalogData" | "cancelled" | "unsupportedOnPlatform" | "storedPasswordMissing" | "credentialStoreFailed";

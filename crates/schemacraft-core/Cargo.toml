@@ -25,6 +25,9 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 ts-rs = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+keyring = { workspace = true }
+
 [dev-dependencies]
 tempfile = { workspace = true }
 

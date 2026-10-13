@@ -1,5 +1,6 @@
 //! Error payload shared by every IPC command.
 
+use schemacraft_core::credentials::{CredentialError, CredentialErrorKind};
 use schemacraft_core::inspectors::{InspectorError, InspectorErrorKind};
 use schemacraft_core::preferences::{PreferencesError, PreferencesErrorKind};
 use schemacraft_core::project::{ProjectError, ProjectErrorKind};
@@ -28,8 +29,12 @@ pub enum CommandErrorKind {
     Project(ProjectErrorKind),
     /// The preferences file could not be read or written; the value says why.
     Preferences(PreferencesErrorKind),
+    /// The credential store failed; the value says why.
+    Credential(CredentialErrorKind),
     /// The job id does not belong to a running operation.
     UnknownJob,
+    /// A command was called with an argument it cannot act on.
+    InvalidArgument,
 }
 
 impl CommandError {
@@ -38,6 +43,23 @@ impl CommandError {
         Self {
             kind: CommandErrorKind::UnknownJob,
             message: format!("no running operation has the id {job_id:?}"),
+        }
+    }
+
+    /// Error for an argument a command cannot act on.
+    pub fn invalid_argument(message: &str) -> Self {
+        Self {
+            kind: CommandErrorKind::InvalidArgument,
+            message: message.to_string(),
+        }
+    }
+}
+
+impl From<CredentialError> for CommandError {
+    fn from(error: CredentialError) -> Self {
+        Self {
+            kind: CommandErrorKind::Credential(error.kind()),
+            message: error.to_string(),
         }
     }
 }

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
+use schemacraft_core::credentials::{CredentialStore, SystemCredentialStore};
 use schemacraft_core::preferences::{Preferences, PreferencesError};
 use tokio_util::sync::CancellationToken;
 
@@ -99,6 +100,8 @@ pub struct AppState {
     pub inspection_jobs: InspectionJobs,
     /// Connection history and recent projects.
     pub preferences: PreferencesStore,
+    /// Remembered passwords, kept by the operating system.
+    pub credentials: Box<dyn CredentialStore>,
 }
 
 impl AppState {
@@ -107,6 +110,7 @@ impl AppState {
         Self {
             inspection_jobs: InspectionJobs::default(),
             preferences: PreferencesStore::load(preferences_path),
+            credentials: Box::new(SystemCredentialStore),
         }
     }
 }

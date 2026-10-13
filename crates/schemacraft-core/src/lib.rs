@@ -8,9 +8,11 @@
 //! * [`project`]: persistence of `.scraft` project files, including the diagram state.
 //! * [`diff`]: comparison of two schema snapshots, driving "refresh from database".
 //! * [`preferences`]: connection history and recent projects, stored per user.
+//! * [`credentials`]: remembered passwords, kept by the operating system credential store.
 //!
 //! A module is added to the crate only once it carries real behaviour.
 
+pub mod credentials;
 pub mod diff;
 pub mod inspectors;
 pub mod model;

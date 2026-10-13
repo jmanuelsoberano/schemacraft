@@ -1,4 +1,9 @@
-import type { ConnectionSettings, EncryptionMode, InspectionOptions } from "@/shared/contracts";
+import type {
+  ConnectionSettings,
+  EncryptionMode,
+  InspectionOptions,
+  PasswordSource,
+} from "@/shared/contracts";
 
 import { parseServerAddress } from "./serverAddress";
 
@@ -10,6 +15,10 @@ export interface ConnectionDraft {
   authenticationMode: AuthenticationMode;
   username: string;
   password: string;
+  /** Keep the typed password in the operating system credential store after connecting. */
+  rememberPassword: boolean;
+  /** A password is remembered for this server and login; an empty field means "use it". */
+  passwordIsStored: boolean;
   database: string | null;
   /** Empty means every schema. */
   schemas: string[];
@@ -25,6 +34,8 @@ export const emptyConnectionDraft: ConnectionDraft = {
   authenticationMode: "integrated",
   username: "",
   password: "",
+  rememberPassword: false,
+  passwordIsStored: false,
   database: null,
   schemas: [],
   includeViews: true,
@@ -62,7 +73,7 @@ export function draftToSettings(
     authentication:
       draft.authenticationMode === "integrated"
         ? { mode: "integrated" }
-        : { mode: "sqlLogin", username: draft.username.trim(), password: draft.password },
+        : { mode: "sqlLogin", username: draft.username.trim(), password: passwordSource(draft) },
     encryption: draft.encryption,
     trustServerCertificate: draft.trustServerCertificate,
     connectTimeoutSeconds: DEFAULT_CONNECT_TIMEOUT_SECONDS,
@@ -71,6 +82,14 @@ export function draftToSettings(
   const instancePart = address.instance === null ? "" : `\\${address.instance}`;
   const portPart = address.port === null ? "" : `,${address.port}`;
   return { ok: true, settings, target: `${address.host}${instancePart}${portPart}` };
+}
+
+/** A typed password wins; an empty field falls back to the remembered one when there is one. */
+function passwordSource(draft: ConnectionDraft): PasswordSource {
+  if (draft.password === "" && draft.passwordIsStored) {
+    return { source: "stored" };
+  }
+  return { source: "provided", value: draft.password };
 }
 
 export function draftToInspectionOptions(draft: ConnectionDraft): InspectionOptions {

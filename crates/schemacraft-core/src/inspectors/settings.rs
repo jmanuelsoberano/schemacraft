@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use super::InspectorError;
 use super::sqlserver::SqlServerConnectionSettings;
+use crate::credentials::{CredentialKey, CredentialStore};
 
 /// Everything needed to reach a database, tagged by engine so the right inspector is chosen.
 ///
@@ -13,6 +15,27 @@ use super::sqlserver::SqlServerConnectionSettings;
 pub enum ConnectionSettings {
     /// Microsoft SQL Server.
     SqlServer(SqlServerConnectionSettings),
+}
+
+impl ConnectionSettings {
+    /// Where a remembered password for this connection lives, when it uses a login.
+    pub fn credential_key(&self) -> Option<CredentialKey> {
+        match self {
+            Self::SqlServer(settings) => settings.credential_key(),
+        }
+    }
+
+    /// Replaces a remembered password with the value kept by `store`, so the settings can connect.
+    pub fn resolve_stored_password(
+        self,
+        store: &dyn CredentialStore,
+    ) -> Result<Self, InspectorError> {
+        match self {
+            Self::SqlServer(settings) => {
+                Ok(Self::SqlServer(settings.resolve_stored_password(store)?))
+            }
+        }
+    }
 }
 
 /// What an inspection extracts.

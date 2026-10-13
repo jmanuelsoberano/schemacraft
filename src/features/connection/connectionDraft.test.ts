@@ -38,9 +38,28 @@ describe("draftToSettings", () => {
       expect(result.settings.authentication).toEqual({
         mode: "sqlLogin",
         username: "sa",
-        password: "secret",
+        password: { source: "provided", value: "secret" },
       });
       expect(result.settings.port).toBe(14333);
+    }
+  });
+
+  it("uses the remembered password when the field is empty", () => {
+    const result = draftToSettings({
+      ...emptyConnectionDraft,
+      server: "db",
+      authenticationMode: "sqlLogin",
+      username: "sa",
+      password: "",
+      passwordIsStored: true,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.settings.authentication).toEqual({
+        mode: "sqlLogin",
+        username: "sa",
+        password: { source: "stored" },
+      });
     }
   });
 

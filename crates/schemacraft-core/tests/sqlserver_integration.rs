@@ -22,7 +22,7 @@ use schemacraft_core::diff::{
     SchemaDiff, TableChange,
 };
 use schemacraft_core::inspectors::sqlserver::{
-    EncryptionMode, SqlServerAuthentication, SqlServerConnectionSettings,
+    EncryptionMode, PasswordSource, SqlServerAuthentication, SqlServerConnectionSettings,
 };
 use schemacraft_core::inspectors::{
     ConnectionSettings, DatabaseInspector, InspectionOptions, InspectionProgress, InspectionStage,
@@ -77,7 +77,9 @@ fn settings(server: &TestServer, database: Option<&str>) -> SqlServerConnectionS
         database: database.map(str::to_string),
         authentication: SqlServerAuthentication::SqlLogin {
             username: server.user.clone(),
-            password: SecretString::from(server.password.clone()),
+            password: PasswordSource::Provided {
+                value: SecretString::from(server.password.clone()),
+            },
         },
         encryption: EncryptionMode::Mandatory,
         // The container presents a self-signed certificate.

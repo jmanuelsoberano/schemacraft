@@ -256,6 +256,22 @@ export const englishMessages = {
     "The history may not survive a restart. Check the permissions of the configuration folder.",
   "error.preferences.corrupt.title": "Preferences are damaged",
   "error.preferences.corrupt.hint": "The file is replaced on the next change.",
+
+  "connection.field.rememberPassword": "Remember password",
+  "connection.field.rememberPassword.description":
+    "Kept by the Windows Credential Manager, never in project files.",
+  "connection.password.stored": "A remembered password will be used. Type one to replace it.",
+  "error.storedPasswordMissing.title": "The remembered password is gone",
+  "error.storedPasswordMissing.hint": "Type the password again to reconnect.",
+  "error.credentialStoreFailed.title": "The credential store could not be read",
+  "error.credentialStoreFailed.hint": "Type the password to continue. The details may say why.",
+  "error.credential.unavailable.title": "Passwords cannot be remembered here",
+  "error.credential.unavailable.hint":
+    "This platform has no credential store, so the password is typed each time.",
+  "error.credential.storeFailed.title": "The credential store failed",
+  "error.credential.storeFailed.hint": "The password was not remembered. The details may say why.",
+  "error.invalidArgument.title": "That cannot be done",
+  "error.invalidArgument.hint": "The application asked for something impossible. Please report it.",
 } as const;
 
 export type MessageKey = keyof typeof englishMessages;

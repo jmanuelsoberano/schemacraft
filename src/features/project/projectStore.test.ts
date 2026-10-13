@@ -63,7 +63,11 @@ const settings: ConnectionSettings = {
   instance: null,
   port: 14333,
   database: "Northwind",
-  authentication: { mode: "sqlLogin", username: "sa", password: "secret" },
+  authentication: {
+    mode: "sqlLogin",
+    username: "sa",
+    password: { source: "provided", value: "secret" },
+  },
   encryption: "mandatory",
   trustServerCertificate: true,
   connectTimeoutSeconds: 15,

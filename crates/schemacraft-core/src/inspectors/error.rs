@@ -85,6 +85,20 @@ pub enum InspectorError {
         /// Feature that is unavailable.
         feature: &'static str,
     },
+    /// The settings refer to a remembered password the credential store no longer has.
+    #[error("no remembered password for {username} on {target}")]
+    StoredPasswordMissing {
+        /// Server as the user typed it.
+        target: String,
+        /// Login whose password was expected.
+        username: String,
+    },
+    /// The credential store could not be read.
+    #[error("the credential store failed: {details}")]
+    CredentialStoreFailed {
+        /// Store message.
+        details: String,
+    },
 }
 
 /// Coarse classification of an [`InspectorError`], shared with the frontend to pick a remedy.
@@ -114,6 +128,10 @@ pub enum InspectorErrorKind {
     Cancelled,
     /// See [`InspectorError::UnsupportedOnPlatform`].
     UnsupportedOnPlatform,
+    /// See [`InspectorError::StoredPasswordMissing`].
+    StoredPasswordMissing,
+    /// See [`InspectorError::CredentialStoreFailed`].
+    CredentialStoreFailed,
 }
 
 impl InspectorError {
@@ -131,6 +149,8 @@ impl InspectorError {
             Self::UnexpectedCatalogData { .. } => InspectorErrorKind::UnexpectedCatalogData,
             Self::Cancelled => InspectorErrorKind::Cancelled,
             Self::UnsupportedOnPlatform { .. } => InspectorErrorKind::UnsupportedOnPlatform,
+            Self::StoredPasswordMissing { .. } => InspectorErrorKind::StoredPasswordMissing,
+            Self::CredentialStoreFailed { .. } => InspectorErrorKind::CredentialStoreFailed,
         }
     }
 }

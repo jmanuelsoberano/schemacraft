@@ -2,6 +2,7 @@
  * Types shared with the Rust side. Everything under `generated/` is emitted by ts-rs from the
  * Rust definitions (`npm run contracts`); edit the Rust types, never these files.
  */
+export type { CredentialErrorKind } from "./generated/credentials/CredentialErrorKind";
 export type { ChangeCounts } from "./generated/diff/ChangeCounts";
 export type { ChangeKind } from "./generated/diff/ChangeKind";
 export type { CheckConstraintChange } from "./generated/diff/CheckConstraintChange";
@@ -21,6 +22,7 @@ export type { InspectionOptions } from "./generated/inspectors/InspectionOptions
 export type { InspectionProgress } from "./generated/inspectors/InspectionProgress";
 export type { InspectionStage } from "./generated/inspectors/InspectionStage";
 export type { InspectorErrorKind } from "./generated/inspectors/InspectorErrorKind";
+export type { PasswordSource } from "./generated/inspectors/PasswordSource";
 export type { ServerInformation } from "./generated/inspectors/ServerInformation";
 export type { SqlServerAuthentication } from "./generated/inspectors/SqlServerAuthentication";
 export type { SqlServerConnectionSettings } from "./generated/inspectors/SqlServerConnectionSettings";

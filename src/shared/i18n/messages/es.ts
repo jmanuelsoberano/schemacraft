@@ -259,4 +259,22 @@ export const spanishMessages: MessageCatalog = {
     "Puede que el historial no sobreviva a un reinicio. Revisa los permisos de la carpeta de configuración.",
   "error.preferences.corrupt.title": "Las preferencias están dañadas",
   "error.preferences.corrupt.hint": "El archivo se sustituye con el siguiente cambio.",
+
+  "connection.field.rememberPassword": "Recordar contraseña",
+  "connection.field.rememberPassword.description":
+    "Se guarda en el Credential Manager de Windows, nunca en los archivos de proyecto.",
+  "connection.password.stored": "Se usará la contraseña recordada. Escribe una para sustituirla.",
+  "error.storedPasswordMissing.title": "La contraseña recordada ya no existe",
+  "error.storedPasswordMissing.hint": "Escribe la contraseña de nuevo para volver a conectar.",
+  "error.credentialStoreFailed.title": "No se pudo leer el almacén de credenciales",
+  "error.credentialStoreFailed.hint":
+    "Escribe la contraseña para continuar. Los detalles pueden decir por qué.",
+  "error.credential.unavailable.title": "Aquí no se pueden recordar contraseñas",
+  "error.credential.unavailable.hint":
+    "Esta plataforma no tiene almacén de credenciales, así que la contraseña se escribe cada vez.",
+  "error.credential.storeFailed.title": "Falló el almacén de credenciales",
+  "error.credential.storeFailed.hint":
+    "La contraseña no se recordó. Los detalles pueden decir por qué.",
+  "error.invalidArgument.title": "Eso no se puede hacer",
+  "error.invalidArgument.hint": "La aplicación pidió algo imposible. Por favor, repórtalo.",
 };
