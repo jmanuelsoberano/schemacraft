@@ -134,6 +134,16 @@ Se prohíben expresamente exportaciones en múltiples páginas cortadas que requ
    - **Strategy**: Para el inspector de bases de datos (dejando la puerta abierta para agregar PostgreSQL/MySQL en v2 sin tocar el resto del sistema).
    - **Builder**: Para construir las especificaciones de exportación (SVG, HTML, PDF).
    - **Memento**: Para guardar y restaurar estados del lienzo.
+4. **Experiencia de Usuario (UX)**:
+   - La calidad de la interfaz es un requisito de producto, no un acabado final: la herramienta debe ser moderna, de buen gusto, fácil de usar y agradable durante sesiones largas de trabajo.
+   - Referencia de estilo: minimalista y densa, al estilo de Linear o Figma. El diagrama es el protagonista; el chrome de la interfaz es mínimo y colapsable.
+   - Interfaz bilingüe (inglés y español) con selector en la aplicación. Todos los textos viven en catálogos de mensajes tipados, con plurales correctos; una traducción faltante debe fallar en compilación.
+   - Tema claro y oscuro derivados de un único conjunto de tokens de diseño, siguiendo el tema del sistema operativo por defecto y con cambio manual.
+   - Todo alcanzable con teclado: cada acción tiene un atajo visible en tooltips y menús, el foco es siempre visible y existe una paleta de comandos.
+   - Respuesta inmediata: feedback en menos de 100 ms; las operaciones largas (introspección, exportación) muestran progreso real y permiten cancelar.
+   - Errores accionables: nunca texto crudo de excepciones; cada error dice qué ocurrió y qué hacer a continuación.
+   - **Definición de terminado UX por funcionalidad**: acción registrada con tooltip y atajo; estados de carga, vacío y error; verificada en tema claro y oscuro; verificada en inglés y español; navegable con teclado y con nombres accesibles; sin saltos de layout; contraste WCAG AA.
+   - Los principios completos, los flujos clave y el lenguaje visual se mantienen en el repositorio en `docs/ux-principles.md`.
 
 ---
 
@@ -148,3 +158,10 @@ Se prohíben expresamente exportaciones en múltiples páginas cortadas que requ
 - [ ] Permite refrescar el esquema contra la BD preservando las coordenadas del diagrama.
 - [ ] Exporta a SVG, HTML interactivo standalone y PDF póster continuo de página única.
 - [ ] Se distribuye y ejecuta como un binario portable `.exe` en Windows.
+- [ ] La interfaz es bilingüe (inglés y español), ofrece tema claro y oscuro, y cada funcionalidad cumple la definición de terminado UX de `docs/ux-principles.md`.
+
+---
+
+## 6. Historial de Cambios
+
+- **2026-10-13**: Se añade el requisito no funcional 4 (Experiencia de Usuario) y su criterio de aceptación, acordados al cierre del Paso 1 de construcción.
