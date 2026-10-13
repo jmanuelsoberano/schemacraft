@@ -12,8 +12,16 @@ publish.workspace = true
 name = "schemacraft_core"
 
 [dependencies]
+async-trait = { workspace = true }
+bb8 = { workspace = true }
 chrono = { workspace = true }
+secrecy = { workspace = true }
 serde = { workspace = true }
+thiserror = { workspace = true }
+tiberius = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
 ts-rs = { workspace = true }
 
 [dev-dependencies]

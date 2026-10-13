@@ -34,6 +34,10 @@ pub struct SqlDataType {
     pub precision: Option<u8>,
     /// Numeric scale.
     pub scale: Option<u8>,
+    /// Name of the user-defined alias type the column was declared with, e.g. `dbo.Money2`,
+    /// when it is not a system type. `name` always holds the underlying system type.
+    #[serde(default)]
+    pub user_defined_type_name: Option<String>,
 }
 
 impl SqlDataType {
@@ -44,6 +48,7 @@ impl SqlDataType {
             length: None,
             precision: None,
             scale: None,
+            user_defined_type_name: None,
         }
     }
 
