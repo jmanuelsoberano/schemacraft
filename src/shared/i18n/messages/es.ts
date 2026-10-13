@@ -13,6 +13,14 @@ export const spanishMessages: MessageCatalog = {
   "action.autoLayout": "Disposición automática",
   "action.export": "Exportar diagrama",
   "action.toggleSidebar": "Mostrar u ocultar el panel de entidades",
+  "action.about": "Acerca de SchemaCraft",
+
+  "credits.developedBy": "Desarrollado por {name}",
+  "about.title": "Acerca de SchemaCraft",
+  "about.version": "Versión {version}",
+  "about.developer": "Desarrollado por",
+  "about.source": "Código fuente",
+  "about.builtWith": "Construido con Tauri, Rust, React, React Flow, Radix UI y Lucide.",
 
   "toolbar.connect": "Conectar",
 

@@ -117,6 +117,12 @@
   white-space: nowrap;
 }
 
+.credit {
+  margin: var(--space-4) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
 @keyframes rise {
   from {
     opacity: 0;

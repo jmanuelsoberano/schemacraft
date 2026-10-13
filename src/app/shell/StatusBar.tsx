@@ -1,3 +1,5 @@
+import { DEVELOPER_NAME } from "@/app/brand/credits";
+import { useAboutStore } from "@/features/about/aboutStore";
 import { useProjectStore } from "@/features/project/projectStore";
 import { describeSavedConnection } from "@/features/project/savedConnection";
 import { useI18n } from "@/shared/i18n/useI18n";
@@ -9,6 +11,7 @@ import styles from "./StatusBar.module.css";
 export function StatusBar() {
   const { t, tCount } = useI18n();
   const appInfo = useAppInfo();
+  const openAbout = useAboutStore((state) => state.open);
   const connection = useProjectStore((state) => state.project?.content.connection ?? null);
   const databaseName = useProjectStore(
     (state) => state.project?.content.snapshot.databaseName ?? null,
@@ -40,7 +43,14 @@ export function StatusBar() {
       <span className={styles.item}>{tCount("statusBar.relations", relationCount)}</span>
       <span className={styles.spacer} />
       <span className={styles.item}>{t("statusBar.zoom", { percent: 100 })}</span>
-      <span className={classNames(styles.item, styles.mono)}>
+      <span className={styles.item}>{t("credits.developedBy", { name: DEVELOPER_NAME })}</span>
+      <button
+        type="button"
+        className={classNames(styles.item, styles.mono, styles.versionButton)}
+        title={t("action.about")}
+        aria-label={t("action.about")}
+        onClick={openAbout}
+      >
         {appInfo.status === "ready" ? (
           <>
             {t("statusBar.version", { version: appInfo.info.version })}
@@ -50,7 +60,7 @@ export function StatusBar() {
           </>
         ) : null}
         {appInfo.status === "unavailable" ? t("statusBar.versionUnavailable") : null}
-      </span>
+      </button>
     </footer>
   );
 }

@@ -41,3 +41,22 @@
 .mono {
   font-family: var(--font-mono);
 }
+
+.versionButton {
+  padding: 2px var(--space-1);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
+}
+
+.versionButton:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}

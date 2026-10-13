@@ -15,6 +15,14 @@ export const englishMessages = {
   "action.autoLayout": "Auto layout",
   "action.export": "Export diagram",
   "action.toggleSidebar": "Toggle entities panel",
+  "action.about": "About SchemaCraft",
+
+  "credits.developedBy": "Developed by {name}",
+  "about.title": "About SchemaCraft",
+  "about.version": "Version {version}",
+  "about.developer": "Developed by",
+  "about.source": "Source code",
+  "about.builtWith": "Built with Tauri, Rust, React, React Flow, Radix UI and Lucide.",
 
   "toolbar.connect": "Connect",
 

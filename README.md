@@ -142,6 +142,10 @@ docs/                      PRD, architecture decisions, UX principles
 - [Architecture and decision records](docs/architecture.md)
 - [UX principles and definition of done](docs/ux-principles.md)
 
+## Author
+
+Developed by Manuel Soberano.
+
 ## Acknowledgements
 
 The canvas is built on [React Flow](https://reactflow.dev) (MIT), with layouts by
