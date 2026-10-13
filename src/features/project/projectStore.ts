@@ -1,5 +1,6 @@
 import { create } from "zustand";
 
+import { ensurePlaced } from "@/features/canvas/canvasState";
 import { usePreferencesStore } from "@/features/preferences/preferencesStore";
 import type {
   CanvasState,
@@ -32,7 +33,25 @@ export interface OpenProject {
   savedAt: string | null;
   /** Whether the file on disk is behind the project in memory. */
   isDirty: boolean;
+  /** Changes whenever a different document is loaded, so the canvas can reset its viewport. */
+  loadToken: number;
 }
+
+/** Undo and redo stacks of canvas states: the caretaker of the canvas Memento. */
+export interface CanvasHistory {
+  past: readonly CanvasState[];
+  future: readonly CanvasState[];
+}
+
+export interface CanvasUpdateOptions {
+  /** Whether the change can be undone. Default `true`. */
+  undoable?: boolean;
+  /** Whether the change marks the project as unsaved. Default `true`. */
+  dirty?: boolean;
+}
+
+const HISTORY_LIMIT = 100;
+const EMPTY_HISTORY: CanvasHistory = { past: [], future: [] };
 
 export type ProjectPhase = "idle" | "opening" | "saving";
 
@@ -48,6 +67,7 @@ interface ProjectState {
   failure: ProjectFailure | null;
   /** Action waiting for the user to confirm that unsaved changes may be discarded. */
   pendingDiscard: (() => void) | null;
+  history: CanvasHistory;
   /** Replaces the project with a schema just read from a database. */
   loadFromInspection: (
     snapshot: SchemaSnapshot,
@@ -59,6 +79,13 @@ interface ProjectState {
   saveProject: () => Promise<void>;
   saveProjectAs: () => Promise<void>;
   setDetailLevel: (detailLevel: DetailLevel) => void;
+  /** Applies a change to the canvas state; unchanged results are ignored. */
+  updateCanvas: (
+    update: (canvas: CanvasState) => CanvasState,
+    options?: CanvasUpdateOptions,
+  ) => void;
+  undo: () => void;
+  redo: () => void;
   /** Adopts the content produced by "refresh from database". */
   applyRefreshedContent: (content: ProjectContent, settings: ConnectionSettings) => void;
   /** Runs `action` now, or after the user agrees to discard unsaved changes. */
@@ -138,16 +165,19 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
         return;
       }
       const file = await backend.readProject(chosen);
-      set({
+      const content = contentOf(file);
+      set((state) => ({
         phase: "idle",
+        history: EMPTY_HISTORY,
         project: {
           path: chosen,
-          content: contentOf(file),
+          content: { ...content, canvas: ensurePlaced(content.canvas, content.snapshot) },
           liveSettings: null,
           savedAt: file.savedAt,
           isDirty: false,
+          loadToken: (state.project?.loadToken ?? 0) + 1,
         },
-      });
+      }));
       void usePreferencesStore.getState().rememberProject(chosen);
     } catch (caught: unknown) {
       const error = toOperationError(caught);
@@ -163,25 +193,27 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
     phase: "idle",
     failure: null,
     pendingDiscard: null,
+    history: EMPTY_HISTORY,
 
     loadFromInspection: (snapshot, settings, inspection) => {
-      const previousDetailLevel = get().project?.content.canvas.detailLevel;
+      const previous = get().project;
+      const canvas = ensurePlaced(
+        {
+          ...defaultCanvasState(),
+          detailLevel: previous?.content.canvas.detailLevel ?? defaultCanvasState().detailLevel,
+        },
+        snapshot,
+      );
       set({
         failure: null,
+        history: EMPTY_HISTORY,
         project: {
           path: null,
-          content: {
-            connection: toSavedConnection(settings),
-            inspection,
-            snapshot,
-            canvas: {
-              ...defaultCanvasState(),
-              detailLevel: previousDetailLevel ?? defaultCanvasState().detailLevel,
-            },
-          },
+          content: { connection: toSavedConnection(settings), inspection, snapshot, canvas },
           liveSettings: settings,
           savedAt: null,
           isDirty: false,
+          loadToken: (previous?.loadToken ?? 0) + 1,
         },
       });
     },
@@ -228,18 +260,73 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
     },
 
     setDetailLevel: (detailLevel) => {
+      get().updateCanvas(
+        (canvas) => (canvas.detailLevel === detailLevel ? canvas : { ...canvas, detailLevel }),
+        {
+          undoable: false,
+        },
+      );
+    },
+
+    updateCanvas: (update, options = {}) => {
+      const { undoable = true, dirty = true } = options;
       set((state) => {
-        if (state.project === null || state.project.content.canvas.detailLevel === detailLevel) {
+        if (state.project === null) {
+          return {};
+        }
+        const current = state.project.content.canvas;
+        const next = update(current);
+        if (next === current) {
+          return {};
+        }
+        return {
+          project: {
+            ...state.project,
+            isDirty: state.project.isDirty || dirty,
+            content: { ...state.project.content, canvas: next },
+          },
+          history: undoable
+            ? { past: [...state.history.past.slice(-(HISTORY_LIMIT - 1)), current], future: [] }
+            : state.history,
+        };
+      });
+    },
+
+    undo: () => {
+      set((state) => {
+        const previous = state.history.past.at(-1);
+        if (previous === undefined || state.project === null) {
           return {};
         }
         return {
           project: {
             ...state.project,
             isDirty: true,
-            content: {
-              ...state.project.content,
-              canvas: { ...state.project.content.canvas, detailLevel },
-            },
+            content: { ...state.project.content, canvas: previous },
+          },
+          history: {
+            past: state.history.past.slice(0, -1),
+            future: [state.project.content.canvas, ...state.history.future],
+          },
+        };
+      });
+    },
+
+    redo: () => {
+      set((state) => {
+        const next = state.history.future[0];
+        if (next === undefined || state.project === null) {
+          return {};
+        }
+        return {
+          project: {
+            ...state.project,
+            isDirty: true,
+            content: { ...state.project.content, canvas: next },
+          },
+          history: {
+            past: [...state.history.past, state.project.content.canvas],
+            future: state.history.future.slice(1),
           },
         };
       });
@@ -249,7 +336,16 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
       set((state) =>
         state.project === null
           ? {}
-          : { project: { ...state.project, content, liveSettings: settings, isDirty: true } },
+          : {
+              history: EMPTY_HISTORY,
+              project: {
+                ...state.project,
+                content: { ...content, canvas: ensurePlaced(content.canvas, content.snapshot) },
+                liveSettings: settings,
+                isDirty: true,
+                loadToken: state.project.loadToken + 1,
+              },
+            },
       );
     },
 

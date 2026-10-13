@@ -54,6 +54,10 @@ export const englishMessages = {
 
   "entity.table": "Table",
   "entity.view": "View",
+  "sidebar.center": "Center on {name}",
+  "sidebar.hide": "Hide {name}",
+  "sidebar.show": "Show {name}",
+
   "entity.columns.one": "{count} column",
   "entity.columns.other": "{count} columns",
 
@@ -63,8 +67,8 @@ export const englishMessages = {
   "welcome.connect": "Connect to SQL Server",
   "welcome.openProject": "Open .scraft project",
 
-  "canvas.loaded.one": "{count} entity loaded. The diagram arrives in the next milestone.",
-  "canvas.loaded.other": "{count} entities loaded. The diagram arrives in the next milestone.",
+  "canvas.node.collapse": "Collapse",
+  "canvas.node.expand": "Expand",
 
   "statusBar.notConnected": "Not connected",
   "statusBar.connected": "{target} · {database}",
@@ -74,6 +78,8 @@ export const englishMessages = {
   "statusBar.views.other": "{count} views",
   "statusBar.relations.one": "{count} relation",
   "statusBar.relations.other": "{count} relations",
+  "statusBar.hidden.one": "{count} hidden",
+  "statusBar.hidden.other": "{count} hidden",
   "statusBar.zoom": "Zoom {percent}%",
   "statusBar.version": "v{version}",
   "statusBar.versionUnavailable": "version unavailable",

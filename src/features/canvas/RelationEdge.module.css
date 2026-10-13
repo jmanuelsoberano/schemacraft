@@ -1,0 +1,44 @@
+.edge {
+  stroke: var(--color-border-strong);
+  stroke-width: 1.5;
+  fill: none;
+  transition: stroke var(--duration-fast) var(--ease-standard);
+}
+
+.disabled {
+  stroke-dasharray: 6 4;
+}
+
+.emphasized {
+  stroke: var(--color-accent);
+  stroke-width: 2;
+}
+
+.hitArea {
+  stroke: transparent;
+  stroke-width: 14;
+  fill: none;
+  pointer-events: stroke;
+}
+
+.label {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-md);
+  font-size: var(--text-xs);
+  pointer-events: none;
+}
+
+.labelName {
+  font-family: var(--font-mono);
+  color: var(--color-text);
+}
+
+.labelColumns {
+  color: var(--color-text-muted);
+}

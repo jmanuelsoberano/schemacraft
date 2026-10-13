@@ -52,6 +52,10 @@ export const spanishMessages: MessageCatalog = {
 
   "entity.table": "Tabla",
   "entity.view": "Vista",
+  "sidebar.center": "Centrar en {name}",
+  "sidebar.hide": "Ocultar {name}",
+  "sidebar.show": "Mostrar {name}",
+
   "entity.columns.one": "{count} columna",
   "entity.columns.other": "{count} columnas",
 
@@ -61,8 +65,8 @@ export const spanishMessages: MessageCatalog = {
   "welcome.connect": "Conectar a SQL Server",
   "welcome.openProject": "Abrir proyecto .scraft",
 
-  "canvas.loaded.one": "{count} entidad cargada. El diagrama llega en el próximo hito.",
-  "canvas.loaded.other": "{count} entidades cargadas. El diagrama llega en el próximo hito.",
+  "canvas.node.collapse": "Contraer",
+  "canvas.node.expand": "Expandir",
 
   "statusBar.notConnected": "Sin conexión",
   "statusBar.connected": "{target} · {database}",
@@ -72,6 +76,8 @@ export const spanishMessages: MessageCatalog = {
   "statusBar.views.other": "{count} vistas",
   "statusBar.relations.one": "{count} relación",
   "statusBar.relations.other": "{count} relaciones",
+  "statusBar.hidden.one": "{count} oculta",
+  "statusBar.hidden.other": "{count} ocultas",
   "statusBar.zoom": "Zoom {percent} %",
   "statusBar.version": "v{version}",
   "statusBar.versionUnavailable": "versión no disponible",
