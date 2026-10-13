@@ -29,7 +29,7 @@
   color: var(--color-text);
 }
 
-.item[data-state="on"] {
+.item[aria-checked="true"] {
   background: var(--color-surface);
   color: var(--color-text);
   box-shadow: var(--shadow-sm);
