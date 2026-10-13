@@ -2,6 +2,19 @@
  * Types shared with the Rust side. Everything under `generated/` is emitted by ts-rs from the
  * Rust definitions (`npm run contracts`); edit the Rust types, never these files.
  */
+export type { ChangeCounts } from "./generated/diff/ChangeCounts";
+export type { ChangeKind } from "./generated/diff/ChangeKind";
+export type { CheckConstraintChange } from "./generated/diff/CheckConstraintChange";
+export type { ColumnChange } from "./generated/diff/ColumnChange";
+export type { ColumnProperty } from "./generated/diff/ColumnProperty";
+export type { DiffSummary } from "./generated/diff/DiffSummary";
+export type { ForeignKeyChange } from "./generated/diff/ForeignKeyChange";
+export type { ForeignKeyProperty } from "./generated/diff/ForeignKeyProperty";
+export type { IndexChange } from "./generated/diff/IndexChange";
+export type { PrimaryKeyChange } from "./generated/diff/PrimaryKeyChange";
+export type { SchemaDiff } from "./generated/diff/SchemaDiff";
+export type { TableChange } from "./generated/diff/TableChange";
+export type { ViewChange } from "./generated/diff/ViewChange";
 export type { ConnectionSettings } from "./generated/inspectors/ConnectionSettings";
 export type { EncryptionMode } from "./generated/inspectors/EncryptionMode";
 export type { InspectionOptions } from "./generated/inspectors/InspectionOptions";
@@ -29,3 +42,19 @@ export type { SqlDataType } from "./generated/model/SqlDataType";
 export type { Table } from "./generated/model/Table";
 export type { TypeLength } from "./generated/model/TypeLength";
 export type { View } from "./generated/model/View";
+export type { Preferences } from "./generated/preferences/Preferences";
+export type { PreferencesErrorKind } from "./generated/preferences/PreferencesErrorKind";
+export type { RecentConnection } from "./generated/preferences/RecentConnection";
+export type { RecentProject } from "./generated/preferences/RecentProject";
+export type { CanvasState } from "./generated/project/CanvasState";
+export type { DetailLevel } from "./generated/project/DetailLevel";
+export type { LayoutKind } from "./generated/project/LayoutKind";
+export type { NodeState } from "./generated/project/NodeState";
+export type { Point } from "./generated/project/Point";
+export type { Project } from "./generated/project/Project";
+export type { ProjectContent } from "./generated/project/ProjectContent";
+export type { ProjectErrorKind } from "./generated/project/ProjectErrorKind";
+export type { SavedConnection } from "./generated/project/SavedConnection";
+export type { SavedSqlServerAuthentication } from "./generated/project/SavedSqlServerAuthentication";
+export type { SavedSqlServerConnection } from "./generated/project/SavedSqlServerConnection";
+export type { Viewport } from "./generated/project/Viewport";

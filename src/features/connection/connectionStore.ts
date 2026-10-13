@@ -1,17 +1,23 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-import { useSchemaStore } from "@/features/schema/schemaStore";
+import { usePreferencesStore } from "@/features/preferences/preferencesStore";
+import { useProjectStore } from "@/features/project/projectStore";
+import { savedConnectionToDraft, toSavedConnection } from "@/features/project/savedConnection";
 import type {
   ConnectionSettings,
   InspectionEvent,
   InspectionOptions,
   InspectionStage,
+  SavedConnection,
+  SchemaDiff,
+  SchemaSnapshot,
   ServerInformation,
 } from "@/shared/contracts";
 import { getConnectionBackend } from "@/shared/ipc/connectionBackend";
 import { inspectorErrorKind, toOperationError } from "@/shared/ipc/operationError";
 import type { OperationError } from "@/shared/ipc/operationError";
+import { getProjectBackend } from "@/shared/ipc/projectBackend";
 
 import { draftToInspectionOptions, draftToSettings, emptyConnectionDraft } from "./connectionDraft";
 import type { ConnectionDraft, DraftValidationError } from "./connectionDraft";
@@ -40,25 +46,44 @@ export interface ConnectionFailure {
   retry: "test" | "inspect";
 }
 
-export type ConnectionPhase = "idle" | "testing" | "loadingSchemas" | "inspecting";
+/** A fresh snapshot waiting for the user to accept or discard its differences. */
+export interface PendingReview {
+  diff: SchemaDiff;
+  snapshot: SchemaSnapshot;
+  settings: ConnectionSettings;
+  options: InspectionOptions;
+}
+
+/** Whether the dialog starts a project or refreshes the open one. */
+export type ConnectionMode = "connect" | "refresh";
+
+export type ConnectionPhase =
+  "idle" | "testing" | "loadingSchemas" | "inspecting" | "reviewing" | "applying";
 
 interface ConnectionState {
   draft: ConnectionDraft;
   isDialogOpen: boolean;
+  mode: ConnectionMode;
   phase: ConnectionPhase;
   tested: TestedConnection | null;
   inspection: RunningInspection | null;
+  review: PendingReview | null;
   failure: ConnectionFailure | null;
   validation: DraftValidationError | null;
   openDialog: () => void;
   closeDialog: () => void;
   updateDraft: (patch: Partial<ConnectionDraft>) => void;
+  /** Fills the form from a history entry; the password must be typed again. */
+  applyRecentConnection: (connection: SavedConnection) => void;
   testConnection: () => Promise<void>;
   selectDatabase: (database: string) => Promise<void>;
   inspect: () => Promise<void>;
+  /** Reads the open project's database again and prepares the review of the differences. */
   refresh: () => Promise<void>;
   cancel: () => Promise<void>;
   trustCertificateAndRetry: () => Promise<void>;
+  applyReview: () => Promise<void>;
+  discardReview: () => void;
   dismissFailure: () => void;
 }
 
@@ -77,7 +102,6 @@ export const useConnectionStore = create<ConnectionState>()(
       const runInspection = async (
         settings: ConnectionSettings,
         options: InspectionOptions,
-        target: string,
         database: string,
       ): Promise<void> => {
         set({
@@ -106,10 +130,23 @@ export const useConnectionStore = create<ConnectionState>()(
         try {
           const backend = await getConnectionBackend();
           const snapshot = await backend.inspectDatabase(settings, options, handleEvent);
-          useSchemaStore
-            .getState()
-            .setSnapshot(snapshot, { target, database, settings, loadedAt: new Date() });
-          set({ phase: "idle", inspection: null, isDialogOpen: false });
+          const project = useProjectStore.getState().project;
+
+          if (get().mode === "refresh" && project !== null) {
+            const diff = await (
+              await getProjectBackend()
+            ).computeSchemaDiff(project.content.snapshot, snapshot);
+            set({
+              phase: "reviewing",
+              inspection: null,
+              review: { diff, snapshot, settings, options },
+            });
+            return;
+          }
+
+          useProjectStore.getState().loadFromInspection(snapshot, settings, options);
+          void usePreferencesStore.getState().rememberConnection(toSavedConnection(settings));
+          set({ phase: "idle", inspection: null, isDialogOpen: false, mode: "connect" });
         } catch (caught: unknown) {
           const error = toOperationError(caught);
           const wasCancelled = inspectorErrorKind(error) === "cancelled";
@@ -124,21 +161,28 @@ export const useConnectionStore = create<ConnectionState>()(
       return {
         draft: emptyConnectionDraft,
         isDialogOpen: false,
+        mode: "connect",
         phase: "idle",
         tested: null,
         inspection: null,
+        review: null,
         failure: null,
         validation: null,
 
         openDialog: () => {
-          set({ isDialogOpen: true, failure: null, validation: null });
+          set({ isDialogOpen: true, mode: "connect", failure: null, validation: null });
         },
 
         closeDialog: () => {
-          if (get().phase === "inspecting") {
+          const { phase } = get();
+          if (phase === "inspecting" || phase === "applying") {
             return;
           }
-          set({ isDialogOpen: false, failure: null, validation: null });
+          if (phase === "reviewing") {
+            get().discardReview();
+            return;
+          }
+          set({ isDialogOpen: false, mode: "connect", failure: null, validation: null });
         },
 
         updateDraft: (patch) => {
@@ -151,6 +195,15 @@ export const useConnectionStore = create<ConnectionState>()(
             failure: null,
             validation: null,
           }));
+        },
+
+        applyRecentConnection: (connection) => {
+          set({
+            draft: savedConnectionToDraft(connection),
+            tested: null,
+            failure: null,
+            validation: null,
+          });
         },
 
         testConnection: async () => {
@@ -210,8 +263,8 @@ export const useConnectionStore = create<ConnectionState>()(
         },
 
         inspect: async () => {
-          const { draft, tested } = get();
-          if (tested === null || draft.database === null) {
+          const { draft } = get();
+          if (draft.database === null) {
             return;
           }
           const built = draftToSettings(draft, draft.database);
@@ -219,26 +272,33 @@ export const useConnectionStore = create<ConnectionState>()(
             set({ validation: built.error });
             return;
           }
-          await runInspection(
-            built.settings,
-            draftToInspectionOptions(draft),
-            built.target,
-            draft.database,
-          );
+          await runInspection(built.settings, draftToInspectionOptions(draft), draft.database);
         },
 
         refresh: async () => {
-          const source = useSchemaStore.getState().source;
-          if (source === null || get().phase !== "idle") {
+          const project = useProjectStore.getState().project;
+          if (project === null || get().phase !== "idle") {
             return;
           }
-          set({ isDialogOpen: true });
-          await runInspection(
-            source.settings,
-            draftToInspectionOptions(get().draft),
-            source.target,
-            source.database,
-          );
+          const database =
+            project.content.connection.database ?? project.content.snapshot.databaseName;
+
+          if (project.liveSettings !== null) {
+            set({ isDialogOpen: true, mode: "refresh", failure: null, validation: null });
+            await runInspection(project.liveSettings, project.content.inspection, database);
+            return;
+          }
+
+          // The project came from a file: the password is not known, so the form is shown
+          // prefilled and the user reads the schema from it.
+          set({
+            isDialogOpen: true,
+            mode: "refresh",
+            failure: null,
+            validation: null,
+            tested: null,
+            draft: savedConnectionToDraft(project.content.connection, project.content.inspection),
+          });
         },
 
         cancel: async () => {
@@ -262,6 +322,33 @@ export const useConnectionStore = create<ConnectionState>()(
           if (retry === "inspect" && get().tested !== null && get().failure === null) {
             await get().inspect();
           }
+        },
+
+        applyReview: async () => {
+          const { review } = get();
+          const project = useProjectStore.getState().project;
+          if (review === null || project === null || get().phase !== "reviewing") {
+            return;
+          }
+          set({ phase: "applying", failure: null });
+          try {
+            const backend = await getProjectBackend();
+            const content = await backend.refreshProjectContent(project.content, review.snapshot);
+            useProjectStore.getState().applyRefreshedContent(content, review.settings);
+            void usePreferencesStore
+              .getState()
+              .rememberConnection(toSavedConnection(review.settings));
+            set({ phase: "idle", review: null, isDialogOpen: false, mode: "connect" });
+          } catch (caught: unknown) {
+            set({
+              phase: "reviewing",
+              failure: { error: toOperationError(caught), retry: "inspect" },
+            });
+          }
+        },
+
+        discardReview: () => {
+          set({ phase: "idle", review: null, isDialogOpen: false, mode: "connect", failure: null });
         },
 
         dismissFailure: () => {

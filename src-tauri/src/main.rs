@@ -13,7 +13,12 @@ mod state;
 
 use std::process::ExitCode;
 
+use tauri::Manager;
+
 use state::AppState;
+
+/// Name of the preferences file inside the per-user configuration directory.
+const PREFERENCES_FILE_NAME: &str = "preferences.json";
 
 fn main() -> ExitCode {
     logging::initialize();
@@ -30,7 +35,7 @@ fn main() -> ExitCode {
 /// Builds the Tauri application and runs it until the last window closes.
 fn run_application() -> tauri::Result<()> {
     tauri::Builder::default()
-        .manage(AppState::default())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let package_info = app.package_info();
             tracing::info!(
@@ -38,6 +43,8 @@ fn run_application() -> tauri::Result<()> {
                 version = %package_info.version,
                 "application started"
             );
+            let preferences_path = app.path().app_config_dir()?.join(PREFERENCES_FILE_NAME);
+            app.manage(AppState::new(preferences_path));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -47,6 +54,15 @@ fn run_application() -> tauri::Result<()> {
             commands::connection::list_schemas,
             commands::connection::inspect_database,
             commands::connection::cancel_inspection,
+            commands::project::read_project,
+            commands::project::write_project,
+            commands::project::compute_schema_diff,
+            commands::project::refresh_project_content,
+            commands::preferences::read_preferences,
+            commands::preferences::remember_connection,
+            commands::preferences::forget_connection,
+            commands::preferences::remember_project,
+            commands::preferences::forget_project,
         ])
         .run(tauri::generate_context!())
 }

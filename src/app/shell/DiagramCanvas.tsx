@@ -2,7 +2,8 @@ import { Background, BackgroundVariant, Controls, ReactFlow } from "@xyflow/reac
 import type { Edge, Node } from "@xyflow/react";
 
 import type { ActionsById } from "@/app/actions/action";
-import { useSchemaStore } from "@/features/schema/schemaStore";
+import { ProjectNotice } from "@/features/project/ProjectNotice";
+import { useProjectStore } from "@/features/project/projectStore";
 import { useI18n } from "@/shared/i18n/useI18n";
 
 import styles from "./DiagramCanvas.module.css";
@@ -19,12 +20,15 @@ interface DiagramCanvasProps {
 /** Infinite canvas that will host the entity-relationship diagram. */
 export function DiagramCanvas({ actions }: DiagramCanvasProps) {
   const { tCount } = useI18n();
-  const entityCount = useSchemaStore((state) =>
-    state.snapshot === null ? null : state.snapshot.tables.length + state.snapshot.views.length,
+  const entityCount = useProjectStore((state) =>
+    state.project === null
+      ? null
+      : state.project.content.snapshot.tables.length + state.project.content.snapshot.views.length,
   );
 
   return (
     <div className={styles.canvas}>
+      <ProjectNotice />
       <ReactFlow
         nodes={NO_NODES}
         edges={NO_EDGES}

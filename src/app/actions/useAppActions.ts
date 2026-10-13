@@ -1,8 +1,17 @@
-import { Database, Download, FolderOpen, PanelLeft, RefreshCw, Save, Workflow } from "lucide-react";
+import {
+  Database,
+  Download,
+  FolderOpen,
+  PanelLeft,
+  RefreshCw,
+  Save,
+  SaveAll,
+  Workflow,
+} from "lucide-react";
 import { useMemo } from "react";
 
 import { useConnectionStore } from "@/features/connection/connectionStore";
-import { useSchemaStore } from "@/features/schema/schemaStore";
+import { useProjectStore } from "@/features/project/projectStore";
 import { useSettingsStore } from "@/shared/settings/settingsStore";
 
 import type { ActionsById, AppAction } from "./action";
@@ -19,7 +28,11 @@ export function useAppActions(): AppActions {
   const toggleSidebar = useSettingsStore((state) => state.toggleSidebar);
   const openConnectionDialog = useConnectionStore((state) => state.openDialog);
   const refreshFromDatabase = useConnectionStore((state) => state.refresh);
-  const hasSnapshot = useSchemaStore((state) => state.snapshot !== null);
+  const hasProject = useProjectStore((state) => state.project !== null);
+  const guardUnsavedChanges = useProjectStore((state) => state.guardUnsavedChanges);
+  const openProject = useProjectStore((state) => state.openProject);
+  const saveProject = useProjectStore((state) => state.saveProject);
+  const saveProjectAs = useProjectStore((state) => state.saveProjectAs);
 
   return useMemo(() => {
     const byId: ActionsById = {
@@ -29,30 +42,47 @@ export function useAppActions(): AppActions {
         icon: Database,
         shortcut: { mod: true, key: "n" },
         isAvailable: true,
-        run: openConnectionDialog,
+        // A new connection replaces the open project, so unsaved changes are confirmed first.
+        run: () => {
+          guardUnsavedChanges(openConnectionDialog);
+        },
       },
       "project.openProject": {
         id: "project.openProject",
         labelKey: "action.openProject",
         icon: FolderOpen,
         shortcut: { mod: true, key: "o" },
-        isAvailable: false,
-        run: notAvailableYet,
+        isAvailable: true,
+        run: () => {
+          openProject();
+        },
       },
       "project.saveProject": {
         id: "project.saveProject",
         labelKey: "action.saveProject",
         icon: Save,
         shortcut: { mod: true, key: "s" },
-        isAvailable: false,
-        run: notAvailableYet,
+        isAvailable: hasProject,
+        run: () => {
+          void saveProject();
+        },
+      },
+      "project.saveProjectAs": {
+        id: "project.saveProjectAs",
+        labelKey: "action.saveProjectAs",
+        icon: SaveAll,
+        shortcut: { mod: true, shift: true, key: "s" },
+        isAvailable: hasProject,
+        run: () => {
+          void saveProjectAs();
+        },
       },
       "project.refreshFromDatabase": {
         id: "project.refreshFromDatabase",
         labelKey: "action.refreshFromDatabase",
         icon: RefreshCw,
         shortcut: { key: "F5" },
-        isAvailable: hasSnapshot,
+        isAvailable: hasProject,
         run: () => {
           void refreshFromDatabase();
         },
@@ -84,5 +114,14 @@ export function useAppActions(): AppActions {
     };
 
     return { byId, list: Object.values(byId) };
-  }, [toggleSidebar, openConnectionDialog, refreshFromDatabase, hasSnapshot]);
+  }, [
+    toggleSidebar,
+    openConnectionDialog,
+    refreshFromDatabase,
+    hasProject,
+    guardUnsavedChanges,
+    openProject,
+    saveProject,
+    saveProjectAs,
+  ]);
 }
