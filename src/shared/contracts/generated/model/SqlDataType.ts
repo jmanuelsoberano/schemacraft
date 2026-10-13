@@ -24,4 +24,9 @@ precision: number | null,
 /**
  * Numeric scale.
  */
-scale: number | null, };
+scale: number | null, 
+/**
+ * Name of the user-defined alias type the column was declared with, e.g. `dbo.Money2`,
+ * when it is not a system type. `name` always holds the underlying system type.
+ */
+userDefinedTypeName: string | null, };
