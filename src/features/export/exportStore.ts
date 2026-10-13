@@ -1,7 +1,14 @@
 import { create } from "zustand";
 
+import { spreadForDetailLevel, withPositions } from "@/features/canvas/canvasState";
 import { useProjectStore } from "@/features/project/projectStore";
-import type { ExportEvent, ExportOutcome, ExportRequest, ExportStage } from "@/shared/contracts";
+import type {
+  DetailLevel,
+  ExportEvent,
+  ExportOutcome,
+  ExportRequest,
+  ExportStage,
+} from "@/shared/contracts";
 import { getExportBackend } from "@/shared/ipc/exportBackend";
 import { toOperationError } from "@/shared/ipc/operationError";
 import type { OperationError } from "@/shared/ipc/operationError";
@@ -51,7 +58,8 @@ interface ExportState {
   progress: ExportProgress | null;
   outcome: ExportOutcome | null;
   failure: OperationError | null;
-  open: () => void;
+  /** Opens the dialog with the canvas's level and theme, overridden by `choices`. */
+  open: (choices?: Partial<ExportChoices>) => void;
   close: () => void;
   updateChoices: (patch: Partial<ExportChoices>) => void;
   runExport: (labels: ExportLabels) => Promise<void>;
@@ -65,6 +73,20 @@ function currentDiagram(): DiagramInput | null {
   return project === null
     ? null
     : { snapshot: project.content.snapshot, canvas: project.content.canvas };
+}
+
+/**
+ * The diagram as the vector and raster formats draw it: when a level taller than the one the
+ * positions were laid out for is chosen, nodes move apart so none covers another.
+ */
+function diagramForLevel(diagram: DiagramInput, detailLevel: DetailLevel): DiagramInput {
+  if (detailLevel === diagram.canvas.detailLevel) {
+    return diagram;
+  }
+  const moved = spreadForDetailLevel(diagram.snapshot, diagram.canvas, detailLevel);
+  return moved.size === 0
+    ? diagram
+    : { snapshot: diagram.snapshot, canvas: withPositions(diagram.canvas, moved) };
 }
 
 function currentTheme(): ExportTheme {
@@ -101,6 +123,7 @@ async function buildDocument(
   const fontFaces = specification.embedFonts ? await loadEmbeddedFontFaces() : "";
   const { detailLevel, theme } = specification;
   if (specification.format === "html") {
+    // The viewer spreads nodes itself for whichever level the reader picks.
     const { viewerScript, viewerStyles } = await import("virtual:schemacraft-viewer");
     return buildStandalonePage({
       data: {
@@ -116,7 +139,7 @@ async function buildDocument(
       fontFaces,
     });
   }
-  return renderDiagramSvg(diagram, {
+  return renderDiagramSvg(diagramForLevel(diagram, detailLevel), {
     detailLevel,
     theme,
     fontFaces,
@@ -135,7 +158,7 @@ export const useExportStore = create<ExportState>()((set, get) => ({
   outcome: null,
   failure: null,
 
-  open: () => {
+  open: (preselected = {}) => {
     const diagram = currentDiagram();
     if (diagram === null) {
       return;
@@ -144,11 +167,12 @@ export const useExportStore = create<ExportState>()((set, get) => ({
       ...get().choices,
       detailLevel: diagram.canvas.detailLevel,
       theme: currentTheme(),
+      ...preselected,
     };
     set({
       isOpen: true,
       choices,
-      extent: measureDiagram(diagram, choices.detailLevel),
+      extent: measureDiagram(diagramForLevel(diagram, choices.detailLevel), choices.detailLevel),
       phase: "idle",
       progress: null,
       outcome: null,
@@ -170,7 +194,7 @@ export const useExportStore = create<ExportState>()((set, get) => ({
       choices,
       extent:
         patch.detailLevel !== undefined && diagram !== null
-          ? measureDiagram(diagram, choices.detailLevel)
+          ? measureDiagram(diagramForLevel(diagram, choices.detailLevel), choices.detailLevel)
           : get().extent,
       failure: null,
     });

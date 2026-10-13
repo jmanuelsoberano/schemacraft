@@ -3,6 +3,7 @@ import {
   ChevronsUpDown,
   Command,
   Database,
+  FileText,
   Download,
   FolderOpen,
   GitFork,
@@ -16,11 +17,13 @@ import {
   RefreshCw,
   Save,
   SaveAll,
+  Search,
   Undo2,
   Workflow,
 } from "lucide-react";
 import { useMemo } from "react";
 
+import { focusEntitiesSearch } from "@/app/shell/entitiesSearch";
 import { useAboutStore } from "@/features/about/aboutStore";
 import {
   applyLastLayout,
@@ -231,7 +234,28 @@ export function useAppActions(): AppActions {
         icon: Download,
         shortcut: { mod: true, key: "e" },
         isAvailable: hasProject,
-        run: openExportDialog,
+        run: () => {
+          openExportDialog();
+        },
+      },
+      // Ctrl+P is what people press to print; the PDF export is the answer in a diagram tool.
+      "diagram.exportPdf": {
+        id: "diagram.exportPdf",
+        labelKey: "action.exportPdf",
+        icon: FileText,
+        shortcut: { mod: true, key: "p" },
+        isAvailable: hasProject,
+        run: () => {
+          openExportDialog({ format: "pdf" });
+        },
+      },
+      "view.searchEntities": {
+        id: "view.searchEntities",
+        labelKey: "action.searchEntities",
+        icon: Search,
+        shortcut: { mod: true, key: "f" },
+        isAvailable: hasProject,
+        run: focusEntitiesSearch,
       },
       "view.toggleSidebar": {
         id: "view.toggleSidebar",

@@ -27,6 +27,8 @@ export const englishMessages = {
   "action.export": "Export diagram",
   "action.toggleSidebar": "Toggle entities panel",
   "action.about": "About SchemaCraft",
+  "action.exportPdf": "Export diagram as PDF",
+  "action.searchEntities": "Search entities",
 
   "credits.developedBy": "Developed by {name}",
   "about.title": "About SchemaCraft",
@@ -51,6 +53,7 @@ export const englishMessages = {
   "export.detailLevel.compact": "Compact",
   "export.detailLevel.keys": "Keys",
   "export.detailLevel.full": "Full",
+  "export.detailLevel.spread": "Tables that grow at this level move down so they do not overlap.",
   "export.theme": "Theme",
   "export.scale": "Scale",
   "export.scale.value": "{scale}x",
@@ -105,6 +108,7 @@ export const englishMessages = {
 
   "sidebar.title": "Entities",
   "sidebar.search": "Search tables",
+  "sidebar.resize": "Resize the entities panel",
   "sidebar.search.noMatches": 'No entities match "{query}"',
   "sidebar.empty.title": "No entities yet",
   "sidebar.empty.description":

@@ -52,26 +52,35 @@ export function matchesShortcut(
   );
 }
 
-/**
- * Browser accelerators that make no sense inside a desktop application, such as reloading the
- * webview with F5 or opening the print dialog with Ctrl+P.
- */
-const RESERVED_BROWSER_SHORTCUTS: readonly Shortcut[] = [
-  { key: "F5" },
-  { key: "F3" },
-  { key: "F7" },
-  { mod: true, key: "r" },
-  { mod: true, key: "p" },
-  { mod: true, key: "f" },
-  { mod: true, key: "g" },
-  { mod: true, key: "u" },
-];
+const RELOAD_AND_FIND_KEYS = ["F3", "F5", "F7"];
+const DEVTOOLS_COMBINATIONS = ["i", "j", "c"];
+/** With the mod key: reload, print, find, view source, bookmarks, history, downloads, tabs, zoom. */
+const MOD_KEYS = ["r", "p", "f", "g", "u", "d", "h", "j", "l", "t", "w", "F4", "=", "+", "-"];
 
+/**
+ * Browser accelerators that make no sense inside a desktop application: reloading the webview
+ * (with any modifier, so Ctrl+F5 and Shift+F5 count), printing, the browser's find bar, page
+ * zoom, history navigation and, unless `allowDevtools`, the developer tools. Application
+ * shortcuts are matched first, so an action may legitimately reuse one of these keys.
+ */
 export function isReservedBrowserShortcut(
   event: ShortcutKeyboardEvent,
   applePlatform: boolean,
+  allowDevtools = false,
 ): boolean {
-  return RESERVED_BROWSER_SHORTCUTS.some((shortcut) =>
-    matchesShortcut(event, shortcut, applePlatform),
-  );
+  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+  const mod = applePlatform ? event.metaKey : event.ctrlKey;
+  if (RELOAD_AND_FIND_KEYS.includes(key)) {
+    return true;
+  }
+  if (
+    !allowDevtools &&
+    (key === "F12" || (mod && event.shiftKey && DEVTOOLS_COMBINATIONS.includes(key)))
+  ) {
+    return true;
+  }
+  if (event.altKey && (key === "ArrowLeft" || key === "ArrowRight" || key === "Home")) {
+    return true;
+  }
+  return mod && (MOD_KEYS.includes(key) || (event.shiftKey && key === "Delete"));
 }

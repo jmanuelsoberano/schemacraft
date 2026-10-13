@@ -1,13 +1,16 @@
 import type {
   CanvasState,
+  DetailLevel,
   NodeState,
   Point,
   QualifiedName,
   SchemaSnapshot,
 } from "@/shared/contracts";
 
-import { entityKey, nodeHeight, NODE_WIDTH } from "./geometry";
+import { describeEntities, entityKey, nodeHeight, NODE_WIDTH, rowsFor } from "./geometry";
 import { gridPosition } from "./graph";
+import { resolveOverlaps } from "./layouts/overlaps";
+import type { PlacedBox } from "./layouts/overlaps";
 
 /**
  * Pure transformations of the saved canvas state. Every entity of the snapshot always has a
@@ -82,6 +85,43 @@ export function withPositions(
     return { ...node, position: { x: position.x, y: position.y } };
   });
   return moved === canvas ? canvas : { ...moved, layout: "manual" };
+}
+
+/**
+ * Positions that keep the visible nodes apart once they are drawn at `detailLevel`: a node that
+ * would overlap a taller node above it moves down, never sideways or up. Only the nodes that
+ * move are returned, so the map is empty when the level fits the current positions.
+ */
+export function spreadForDetailLevel(
+  snapshot: SchemaSnapshot,
+  canvas: CanvasState,
+  detailLevel: DetailLevel,
+): Map<string, Point> {
+  const entities = describeEntities(snapshot);
+  const boxes: PlacedBox[] = [];
+  for (const node of canvas.nodes) {
+    const key = entityKey(node.name);
+    const entity = entities.get(key);
+    if (node.isHidden || entity === undefined) {
+      continue;
+    }
+    boxes.push({
+      id: key,
+      x: node.position.x,
+      y: node.position.y,
+      width: NODE_WIDTH,
+      height: nodeHeight(rowsFor(entity, detailLevel, node.isCollapsed).length),
+    });
+  }
+  const resolved = resolveOverlaps(boxes);
+  const moved = new Map<string, Point>();
+  for (const box of boxes) {
+    const position = resolved.get(box.id);
+    if (position !== undefined && (position.x !== box.x || position.y !== box.y)) {
+      moved.set(box.id, position);
+    }
+  }
+  return moved;
 }
 
 /** Replaces every position with the result of a layout and records which layout ran. */

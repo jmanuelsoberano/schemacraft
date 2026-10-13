@@ -15,6 +15,7 @@ import { EmptyState } from "@/shared/ui/EmptyState";
 import { classNames } from "@/shared/ui/classNames";
 
 import styles from "./EntitiesSidebar.module.css";
+import { ENTITIES_SEARCH_INPUT_ID } from "./entitiesSearch";
 
 /**
  * Lists the tables and views of the open project, grouped by schema and searchable. Clicking an
@@ -60,6 +61,7 @@ export function EntitiesSidebar() {
       <label className={styles.search}>
         <Search className={styles.searchIcon} aria-hidden="true" />
         <input
+          id={ENTITIES_SEARCH_INPUT_ID}
           type="search"
           className={styles.searchInput}
           placeholder={t("sidebar.search")}

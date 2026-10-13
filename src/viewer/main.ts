@@ -5,6 +5,7 @@
  */
 import "./viewer.css";
 
+import { spreadForDetailLevel, withPositions } from "@/features/canvas/canvasState";
 import { describeEntities, entityKey } from "@/features/canvas/geometry";
 import type { EntityDescriptor } from "@/features/canvas/geometry";
 import { VIEWER_DATA_ELEMENT_ID, VIEWER_ROOT_ELEMENT_ID } from "@/features/export/html/viewerData";
@@ -198,8 +199,13 @@ class Viewer {
   }
 
   private render(): void {
+    // Positions were laid out for the exported level; taller levels spread nodes apart.
+    const canvas = withPositions(
+      this.data.canvas,
+      spreadForDetailLevel(this.data.snapshot, this.data.canvas, this.detailLevel),
+    );
     const rendered = renderDiagramSvg(
-      { snapshot: this.data.snapshot, canvas: this.data.canvas },
+      { snapshot: this.data.snapshot, canvas },
       {
         detailLevel: this.detailLevel,
         theme: this.theme,
