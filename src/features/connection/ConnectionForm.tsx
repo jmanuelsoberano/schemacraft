@@ -1,11 +1,14 @@
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, X } from "lucide-react";
 import type { RefObject } from "react";
 
+import { usePreferencesStore } from "@/features/preferences/preferencesStore";
+import { describeSavedConnection, savedConnectionKey } from "@/features/project/savedConnection";
 import type { EncryptionMode } from "@/shared/contracts";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { Alert } from "@/shared/ui/Alert";
 import { Button } from "@/shared/ui/Button";
 import { Checkbox } from "@/shared/ui/Checkbox";
+import { IconButton } from "@/shared/ui/IconButton";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import type { SegmentedOption } from "@/shared/ui/SegmentedControl";
 import { Select } from "@/shared/ui/Select";
@@ -21,23 +24,29 @@ import { toggleSchema } from "./schemaSelection";
 
 interface ConnectionFormProps {
   serverFieldRef: RefObject<HTMLInputElement | null>;
+  passwordFieldRef: RefObject<HTMLInputElement | null>;
 }
 
-export function ConnectionForm({ serverFieldRef }: ConnectionFormProps) {
+export function ConnectionForm({ serverFieldRef, passwordFieldRef }: ConnectionFormProps) {
   const translator = useI18n();
   const { t } = translator;
   const draft = useConnectionStore((state) => state.draft);
+  const mode = useConnectionStore((state) => state.mode);
   const phase = useConnectionStore((state) => state.phase);
   const tested = useConnectionStore((state) => state.tested);
   const failure = useConnectionStore((state) => state.failure);
   const validation = useConnectionStore((state) => state.validation);
   const updateDraft = useConnectionStore((state) => state.updateDraft);
+  const applyRecentConnection = useConnectionStore((state) => state.applyRecentConnection);
   const testConnection = useConnectionStore((state) => state.testConnection);
   const selectDatabase = useConnectionStore((state) => state.selectDatabase);
   const inspect = useConnectionStore((state) => state.inspect);
   const trustCertificateAndRetry = useConnectionStore((state) => state.trustCertificateAndRetry);
+  const recentConnections = usePreferencesStore((state) => state.recentConnections);
+  const forgetConnection = usePreferencesStore((state) => state.forgetConnection);
 
   const isBusy = phase !== "idle";
+  const showsHistory = mode === "connect" && recentConnections.length > 0;
 
   const authenticationOptions: readonly SegmentedOption<AuthenticationMode>[] = [
     {
@@ -58,9 +67,12 @@ export function ConnectionForm({ serverFieldRef }: ConnectionFormProps) {
     { value: "strict", label: t("connection.encryption.strict") },
   ];
 
-  const databaseOptions: readonly SelectOption<string>[] = (tested?.databases ?? []).map(
-    (database) => ({ value: database, label: database }),
-  );
+  // Before a test, a prefilled database (from the history or a project) is the only option.
+  const knownDatabases = tested?.databases ?? (draft.database === null ? [] : [draft.database]);
+  const databaseOptions: readonly SelectOption<string>[] = knownDatabases.map((database) => ({
+    value: database,
+    label: database,
+  }));
 
   const serverError =
     validation?.field === "server"
@@ -87,6 +99,45 @@ export function ConnectionForm({ serverFieldRef }: ConnectionFormProps) {
         void testConnection();
       }}
     >
+      {showsHistory ? (
+        <section className={styles.section}>
+          <h3 className={styles.sectionTitle}>{t("connection.recent.title")}</h3>
+          <ul className={styles.recentList}>
+            {recentConnections.map((entry) => {
+              const { target, database, login } = describeSavedConnection(entry.connection);
+              const details = [database, login ?? t("connection.recent.windows")]
+                .filter((part): part is string => part !== null)
+                .join(" · ");
+              return (
+                <li key={savedConnectionKey(entry.connection)} className={styles.recentItem}>
+                  <button
+                    type="button"
+                    className={styles.recentButton}
+                    aria-label={t("connection.recent.use", { target })}
+                    disabled={isBusy}
+                    onClick={() => {
+                      applyRecentConnection(entry.connection);
+                      serverFieldRef.current?.focus();
+                    }}
+                  >
+                    <span className={styles.recentTarget}>{target}</span>
+                    <span className={styles.recentMeta}>{details}</span>
+                  </button>
+                  <IconButton
+                    label={t("connection.recent.remove", { target })}
+                    icon={X}
+                    disabled={isBusy}
+                    onClick={() => {
+                      void forgetConnection(entry.connection);
+                    }}
+                  />
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
+
       <section className={styles.section}>
         <h3 className={styles.sectionTitle}>{t("connection.section.server")}</h3>
         <TextField
@@ -112,6 +163,7 @@ export function ConnectionForm({ serverFieldRef }: ConnectionFormProps) {
             onValueChange={(authenticationMode) => {
               updateDraft({ authenticationMode });
             }}
+            disabled={isBusy}
           />
         </div>
         {draft.authenticationMode === "sqlLogin" ? (
@@ -128,8 +180,10 @@ export function ConnectionForm({ serverFieldRef }: ConnectionFormProps) {
               disabled={isBusy}
             />
             <TextField
+              ref={passwordFieldRef}
               label={t("connection.field.password")}
               type="password"
+              hint={mode === "refresh" ? t("connection.refresh.passwordHint") : undefined}
               value={draft.password}
               onChange={(event) => {
                 updateDraft({ password: event.target.value });
@@ -168,7 +222,7 @@ export function ConnectionForm({ serverFieldRef }: ConnectionFormProps) {
         <h3 className={styles.sectionTitle}>{t("connection.section.database")}</h3>
         <Select
           label={t("connection.field.database")}
-          value={tested === null ? undefined : (draft.database ?? undefined)}
+          value={draft.database ?? undefined}
           options={databaseOptions}
           placeholder={t("connection.field.database.placeholder")}
           hint={tested === null ? t("connection.field.database.hint") : undefined}

@@ -1,10 +1,14 @@
 import { useConnectionStore } from "@/features/connection/connectionStore";
-import { useSchemaStore } from "@/features/schema/schemaStore";
+import { usePreferencesStore } from "@/features/preferences/preferencesStore";
+import { useProjectStore } from "@/features/project/projectStore";
+import { useSettingsStore } from "@/shared/settings/settingsStore";
 
 /** Stores reachable from the window object, for automated checks against a running build. */
 export interface DevelopmentHooks {
   connection: typeof useConnectionStore;
-  schema: typeof useSchemaStore;
+  project: typeof useProjectStore;
+  preferences: typeof usePreferencesStore;
+  settings: typeof useSettingsStore;
 }
 
 declare global {
@@ -22,5 +26,10 @@ export function installDevelopmentHooks(): void {
   if (!import.meta.env.DEV) {
     return;
   }
-  window.__schemacraft = { connection: useConnectionStore, schema: useSchemaStore };
+  window.__schemacraft = {
+    connection: useConnectionStore,
+    project: useProjectStore,
+    preferences: usePreferencesStore,
+    settings: useSettingsStore,
+  };
 }

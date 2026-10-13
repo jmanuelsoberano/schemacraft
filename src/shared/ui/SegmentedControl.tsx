@@ -17,6 +17,7 @@ interface SegmentedControlProps<Value extends string> {
   value: Value;
   options: readonly SegmentedOption<Value>[];
   onValueChange: (value: Value) => void;
+  disabled?: boolean;
 }
 
 export function SegmentedControl<Value extends string>({
@@ -24,6 +25,7 @@ export function SegmentedControl<Value extends string>({
   value,
   options,
   onValueChange,
+  disabled = false,
 }: SegmentedControlProps<Value>) {
   const handleValueChange = (next: string) => {
     // Radix reports "" when the active item is clicked again; a segmented control keeps it.
@@ -37,6 +39,7 @@ export function SegmentedControl<Value extends string>({
     <ToggleGroup.Root
       type="single"
       value={value}
+      disabled={disabled}
       onValueChange={handleValueChange}
       aria-label={ariaLabel}
       className={styles.root}

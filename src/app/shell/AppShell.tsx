@@ -1,6 +1,11 @@
+import { useEffect } from "react";
+
 import { useAppActions } from "@/app/actions/useAppActions";
 import { useKeyboardShortcuts } from "@/app/actions/useKeyboardShortcuts";
 import { ConnectionDialog } from "@/features/connection/ConnectionDialog";
+import { usePreferencesStore } from "@/features/preferences/preferencesStore";
+import { UnsavedChangesDialog } from "@/features/project/UnsavedChangesDialog";
+import { useProjectWindow } from "@/features/project/useProjectWindow";
 import { useSettingsStore } from "@/shared/settings/settingsStore";
 import { classNames } from "@/shared/ui/classNames";
 
@@ -15,6 +20,11 @@ export function AppShell() {
   const actions = useAppActions();
   const isSidebarOpen = useSettingsStore((state) => state.isSidebarOpen);
   useKeyboardShortcuts(actions.list);
+  useProjectWindow();
+
+  useEffect(() => {
+    void usePreferencesStore.getState().load();
+  }, []);
 
   return (
     <div className={styles.shell}>
@@ -30,6 +40,7 @@ export function AppShell() {
       </main>
       <StatusBar />
       <ConnectionDialog />
+      <UnsavedChangesDialog />
     </div>
   );
 }

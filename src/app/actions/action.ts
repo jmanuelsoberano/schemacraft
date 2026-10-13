@@ -8,6 +8,7 @@ export type ActionId =
   | "project.connect"
   | "project.openProject"
   | "project.saveProject"
+  | "project.saveProjectAs"
   | "project.refreshFromDatabase"
   | "diagram.autoLayout"
   | "diagram.export"

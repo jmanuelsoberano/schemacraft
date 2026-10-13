@@ -6,7 +6,7 @@ import {
   filterEntityGroups,
   groupEntitiesBySchema,
 } from "@/features/schema/entities";
-import { useSchemaStore } from "@/features/schema/schemaStore";
+import { useProjectStore } from "@/features/project/projectStore";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { EmptyState } from "@/shared/ui/EmptyState";
 
@@ -15,7 +15,7 @@ import styles from "./EntitiesSidebar.module.css";
 /** Lists the tables and views of the loaded schema, grouped by schema and searchable. */
 export function EntitiesSidebar() {
   const { t, tCount, locale } = useI18n();
-  const snapshot = useSchemaStore((state) => state.snapshot);
+  const snapshot = useProjectStore((state) => state.project?.content.snapshot ?? null);
   const [query, setQuery] = useState("");
 
   const groups = useMemo(() => (snapshot ? groupEntitiesBySchema(snapshot) : []), [snapshot]);

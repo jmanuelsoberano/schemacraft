@@ -82,7 +82,8 @@ function column(name: string, declaration: string, isNullable = false) {
   };
 }
 
-function previewSnapshot(database: string): SchemaSnapshot {
+/** The fixture schema every preview connection returns. */
+export function previewSnapshot(database: string): SchemaSnapshot {
   const tables = [
     {
       name: { schema: "dbo", name: "Customers" },

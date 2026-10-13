@@ -16,9 +16,11 @@ path = "src/main.rs"
 tauri-build = { workspace = true }
 
 [dependencies]
+chrono = { workspace = true }
 schemacraft-core = { workspace = true }
 serde = { workspace = true }
 tauri = { workspace = true }
+tauri-plugin-dialog = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -26,6 +28,7 @@ ts-rs = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

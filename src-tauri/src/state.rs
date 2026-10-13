@@ -1,9 +1,11 @@
 //! Application state shared by commands and managed by Tauri.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
+use schemacraft_core::preferences::{Preferences, PreferencesError};
 use tokio_util::sync::CancellationToken;
 
 /// Identifier of a running operation, handed to the frontend so it can cancel it.
@@ -47,16 +49,75 @@ impl InspectionJobs {
     }
 }
 
+/// Preferences held in memory and mirrored to disk on every change.
+pub struct PreferencesStore {
+    path: PathBuf,
+    current: Mutex<Preferences>,
+}
+
+impl PreferencesStore {
+    /// Loads the file at `path`, starting from defaults when it is missing or damaged.
+    pub fn load(path: PathBuf) -> Self {
+        let current = Preferences::load_or_default(&path);
+        tracing::debug!(
+            path = %path.display(),
+            recent_connections = current.recent_connections.len(),
+            recent_projects = current.recent_projects.len(),
+            "preferences loaded"
+        );
+        Self {
+            path,
+            current: Mutex::new(current),
+        }
+    }
+
+    /// A copy of the current preferences.
+    pub fn current(&self) -> Preferences {
+        self.guard().clone()
+    }
+
+    /// Applies `change` and writes the result to disk, returning the new preferences.
+    pub fn update(
+        &self,
+        change: impl FnOnce(&mut Preferences),
+    ) -> Result<Preferences, PreferencesError> {
+        let mut guard = self.guard();
+        change(&mut guard);
+        guard.save(&self.path)?;
+        Ok(guard.clone())
+    }
+
+    fn guard(&self) -> MutexGuard<'_, Preferences> {
+        // Preferences are plain data; a panic elsewhere cannot leave them half-updated.
+        self.current.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
 /// Everything commands share across invocations.
-#[derive(Default)]
 pub struct AppState {
     /// Running inspections.
     pub inspection_jobs: InspectionJobs,
+    /// Connection history and recent projects.
+    pub preferences: PreferencesStore,
+}
+
+impl AppState {
+    /// Creates the state, loading the preferences stored at `preferences_path`.
+    pub fn new(preferences_path: PathBuf) -> Self {
+        Self {
+            inspection_jobs: InspectionJobs::default(),
+            preferences: PreferencesStore::load(preferences_path),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::InspectionJobs;
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+
+    use chrono::Utc;
+
+    use super::{InspectionJobs, PreferencesStore};
 
     #[test]
     fn jobs_get_unique_ids_and_cancel_their_tokens() {
@@ -77,5 +138,21 @@ mod tests {
         jobs.finish(&job_id);
         assert!(!jobs.cancel(&job_id));
         assert!(!jobs.cancel("inspection-999"));
+    }
+
+    #[test]
+    fn preference_updates_are_written_to_disk() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config").join("preferences.json");
+
+        let store = PreferencesStore::load(path.clone());
+        assert!(store.current().recent_projects.is_empty());
+        let updated = store
+            .update(|preferences| preferences.remember_project("C:\\work\\shop.scraft", Utc::now()))
+            .unwrap();
+        assert_eq!(updated.recent_projects[0].path, "C:\\work\\shop.scraft");
+
+        let reloaded = PreferencesStore::load(path);
+        assert_eq!(reloaded.current(), updated);
     }
 }

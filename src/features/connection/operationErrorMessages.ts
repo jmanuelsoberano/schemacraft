@@ -1,11 +1,21 @@
-import type { InspectorErrorKind } from "@/shared/contracts";
+import type {
+  InspectorErrorKind,
+  PreferencesErrorKind,
+  ProjectErrorKind,
+} from "@/shared/contracts";
 import type { MessageKey } from "@/shared/i18n/messages/en";
 import type { Translator } from "@/shared/i18n/useI18n";
 import type { OperationError } from "@/shared/ipc/operationError";
 
 import type { AuthenticationMode } from "./connectionDraft";
 
-type ErrorName = InspectorErrorKind | "unknownJob" | "ipcUnavailable" | "unexpected";
+type ErrorName =
+  | InspectorErrorKind
+  | `project.${ProjectErrorKind}`
+  | `preferences.${PreferencesErrorKind}`
+  | "unknownJob"
+  | "ipcUnavailable"
+  | "unexpected";
 
 export interface ErrorPresentation {
   title: string;
@@ -25,6 +35,10 @@ function errorName(error: OperationError): ErrorName {
   switch (error.kind.type) {
     case "inspector":
       return error.kind.value;
+    case "project":
+      return `project.${error.kind.value}`;
+    case "preferences":
+      return `preferences.${error.kind.value}`;
     case "unknownJob":
       return "unknownJob";
     case "ipcUnavailable":

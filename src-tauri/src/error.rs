@@ -1,6 +1,8 @@
 //! Error payload shared by every IPC command.
 
 use schemacraft_core::inspectors::{InspectorError, InspectorErrorKind};
+use schemacraft_core::preferences::{PreferencesError, PreferencesErrorKind};
+use schemacraft_core::project::{ProjectError, ProjectErrorKind};
 use serde::Serialize;
 use ts_rs::TS;
 
@@ -22,6 +24,10 @@ pub struct CommandError {
 pub enum CommandErrorKind {
     /// A database inspector failed; the value says how.
     Inspector(InspectorErrorKind),
+    /// A project file could not be read or written; the value says why.
+    Project(ProjectErrorKind),
+    /// The preferences file could not be read or written; the value says why.
+    Preferences(PreferencesErrorKind),
     /// The job id does not belong to a running operation.
     UnknownJob,
 }
@@ -45,11 +51,30 @@ impl From<InspectorError> for CommandError {
     }
 }
 
+impl From<ProjectError> for CommandError {
+    fn from(error: ProjectError) -> Self {
+        Self {
+            kind: CommandErrorKind::Project(error.kind()),
+            message: error.to_string(),
+        }
+    }
+}
+
+impl From<PreferencesError> for CommandError {
+    fn from(error: PreferencesError) -> Self {
+        Self {
+            kind: CommandErrorKind::Preferences(error.kind()),
+            message: error.to_string(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use schemacraft_core::inspectors::{InspectorError, InspectorErrorKind};
+    use schemacraft_core::project::{ProjectError, ProjectErrorKind};
 
     use super::{CommandError, CommandErrorKind};
 
@@ -66,10 +91,30 @@ mod tests {
     }
 
     #[test]
+    fn project_errors_keep_their_kind_and_path() {
+        let error = CommandError::from(ProjectError::NotFound {
+            path: "C:\\work\\shop.scraft".to_string(),
+        });
+        assert!(matches!(
+            error.kind,
+            CommandErrorKind::Project(ProjectErrorKind::NotFound)
+        ));
+        assert!(error.message.contains("shop.scraft"));
+    }
+
+    #[test]
     fn serialises_as_tagged_kind() {
         let error = CommandError::from(InspectorError::Cancelled);
         let json = serde_json::to_value(&error).unwrap_or_default();
         assert_eq!(json["kind"]["type"], "inspector");
         assert_eq!(json["kind"]["value"], "cancelled");
+
+        let error = CommandError::from(ProjectError::NotAProject {
+            path: "x".to_string(),
+            details: "expected value".to_string(),
+        });
+        let json = serde_json::to_value(&error).unwrap_or_default();
+        assert_eq!(json["kind"]["type"], "project");
+        assert_eq!(json["kind"]["value"], "notAProject");
     }
 }
