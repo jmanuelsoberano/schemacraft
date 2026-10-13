@@ -55,13 +55,15 @@ export const englishMessages = {
   "welcome.connect": "Connect to SQL Server",
   "welcome.openProject": "Open .scraft project",
 
-  "canvas.loaded.one": "{count} table loaded. The diagram arrives in the next milestone.",
-  "canvas.loaded.other": "{count} tables loaded. The diagram arrives in the next milestone.",
+  "canvas.loaded.one": "{count} entity loaded. The diagram arrives in the next milestone.",
+  "canvas.loaded.other": "{count} entities loaded. The diagram arrives in the next milestone.",
 
   "statusBar.notConnected": "Not connected",
   "statusBar.connected": "{target} · {database}",
   "statusBar.tables.one": "{count} table",
   "statusBar.tables.other": "{count} tables",
+  "statusBar.views.one": "{count} view",
+  "statusBar.views.other": "{count} views",
   "statusBar.relations.one": "{count} relation",
   "statusBar.relations.other": "{count} relations",
   "statusBar.zoom": "Zoom {percent}%",

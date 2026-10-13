@@ -53,13 +53,15 @@ export const spanishMessages: MessageCatalog = {
   "welcome.connect": "Conectar a SQL Server",
   "welcome.openProject": "Abrir proyecto .scraft",
 
-  "canvas.loaded.one": "{count} tabla cargada. El diagrama llega en el próximo hito.",
-  "canvas.loaded.other": "{count} tablas cargadas. El diagrama llega en el próximo hito.",
+  "canvas.loaded.one": "{count} entidad cargada. El diagrama llega en el próximo hito.",
+  "canvas.loaded.other": "{count} entidades cargadas. El diagrama llega en el próximo hito.",
 
   "statusBar.notConnected": "Sin conexión",
   "statusBar.connected": "{target} · {database}",
   "statusBar.tables.one": "{count} tabla",
   "statusBar.tables.other": "{count} tablas",
+  "statusBar.views.one": "{count} vista",
+  "statusBar.views.other": "{count} vistas",
   "statusBar.relations.one": "{count} relación",
   "statusBar.relations.other": "{count} relaciones",
   "statusBar.zoom": "Zoom {percent} %",

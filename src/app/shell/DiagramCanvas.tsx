@@ -19,7 +19,9 @@ interface DiagramCanvasProps {
 /** Infinite canvas that will host the entity-relationship diagram. */
 export function DiagramCanvas({ actions }: DiagramCanvasProps) {
   const { tCount } = useI18n();
-  const tableCount = useSchemaStore((state) => state.snapshot?.tables.length ?? null);
+  const entityCount = useSchemaStore((state) =>
+    state.snapshot === null ? null : state.snapshot.tables.length + state.snapshot.views.length,
+  );
 
   return (
     <div className={styles.canvas}>
@@ -34,11 +36,11 @@ export function DiagramCanvas({ actions }: DiagramCanvasProps) {
         <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} />
         <Controls showInteractive={false} position="bottom-right" />
       </ReactFlow>
-      {tableCount === null ? (
+      {entityCount === null ? (
         <WelcomeOverlay actions={actions} />
       ) : (
         <div className={styles.loadedHint} role="status">
-          {tCount("canvas.loaded", tableCount)}
+          {tCount("canvas.loaded", entityCount)}
         </div>
       )}
     </div>
