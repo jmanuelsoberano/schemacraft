@@ -58,3 +58,36 @@ jobs:
           name: schemacraft-windows-x64
           path: target/release/schemacraft.exe
           if-no-files-found: error
+
+  integration:
+    name: SQL Server integration tests (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "SchemaCraft!Ci2026"
+          MSSQL_PID: Developer
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'SchemaCraft!Ci2026' -C -Q 'SELECT 1' || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      SCHEMACRAFT_TEST_MSSQL_HOST: localhost
+      SCHEMACRAFT_TEST_MSSQL_PORT: "1433"
+      SCHEMACRAFT_TEST_MSSQL_USER: sa
+      SCHEMACRAFT_TEST_MSSQL_PASSWORD: "SchemaCraft!Ci2026"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Inspector integration tests
+        run: cargo test -p schemacraft-core --test sqlserver_integration -- --nocapture

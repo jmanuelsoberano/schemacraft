@@ -13,13 +13,18 @@ experience bar in [ux-principles.md](./ux-principles.md).
 ```
 schemacraft/
 ├── crates/schemacraft-core/   Rust library: domain model, inspectors, project files, diff engine
-│   └── src/model/             pure schema types (tables, columns, keys, snapshot)
+│   ├── src/model/             pure schema types (tables, columns, keys, snapshot)
+│   ├── src/inspectors/        DatabaseInspector trait, errors, progress, SQL Server implementation
+│   └── tests/                 integration tests and SQL fixtures (run against a real server)
 ├── src-tauri/                 Rust binary: Tauri host, IPC commands, logging, configuration
 ├── src/                       React + TypeScript frontend
 │   ├── app/                   application shell, actions, brand, global styles
 │   │   ├── actions/           action registry, keyboard shortcuts, action buttons
 │   │   ├── shell/             top bar, entities sidebar, diagram canvas, status bar
 │   │   └── styles/            design tokens and base styles
+│   ├── features/              one folder per product capability
+│   │   ├── connection/        connection dialog, draft, flow store, progress, error guidance
+│   │   └── schema/            loaded snapshot store and entity list helpers
 │   └── shared/                cross-cutting modules
 │       ├── contracts/         TypeScript types generated from Rust (ts-rs)
 │       ├── i18n/              message catalogues and translation hook
@@ -27,6 +32,7 @@ schemacraft/
 │       ├── settings/          persisted preferences (theme, language, layout)
 │       └── ui/                accessible UI primitives (Radix based)
 ├── assets/brand/              source artwork for the application icon
+├── scripts/                   developer scripts (SQL Server container for tests)
 ├── docs/                      PRD, architecture, UX principles
 └── .github/workflows/         continuous integration
 ```
@@ -119,10 +125,16 @@ and adding a feature means adding one action rather than touching every surface.
 
 ### ADR-009: SQL Server access with tiberius 0.13, bb8 and a self-owned connection manager
 
-Planned for milestone 2. `tiberius` 0.13 (TDS 8.0, Windows integrated authentication through the
-`winauth` feature) is the maintained line. `bb8-tiberius` still requires tiberius 0.12, so the
-pool uses `bb8` with a small `ManageConnection` implementation of our own. Fallback if a
-regression appears: tiberius 0.12.3 with `bb8-tiberius`.
+`tiberius` 0.13 (TDS 8.0, Windows integrated authentication through the `winauth` feature) is
+the maintained line. `bb8-tiberius` still requires tiberius 0.12, so the pool uses `bb8` with a
+small `ManageConnection` implementation in `inspectors/sqlserver/pool.rs`: it resolves named
+instances through SQL Browser, bounds the TCP connection with a timeout, runs the login
+handshake and validates idle sessions with `SELECT 1`. Pools live for one operation (test,
+listing or inspection) and are dropped afterwards, so the application never keeps idle sessions
+on a server. An inspection opens up to four sessions and runs its seven set-based catalog
+queries concurrently; the schema filter is applied while assembling, and foreign keys whose
+other end falls outside the selection are dropped. Fallback if a regression appears: tiberius
+0.12.3 with `bb8-tiberius`.
 
 ### ADR-010: The portable executable relies on the WebView2 runtime
 
@@ -139,13 +151,52 @@ development machine in milestone 1, while the debug build runs). Milestone 6 add
 signing of the executable and the installer, for example through Azure Trusted Signing or an
 OV/EV certificate, wired into the Tauri bundle configuration.
 
+### ADR-011: One Server field that understands SSMS notations
+
+The connection dialog has a single Server field that accepts `host`, `host\instance`,
+`host,port`, a `tcp:` prefix and the `.` and `(local)` aliases, parsed by
+`features/connection/serverAddress.ts`.
+
+Why: it is what SQL Server users already type in SSMS and connection strings. Separate host,
+instance and port fields would add a mode switch and three validations for no gain.
+
+### ADR-012: Errors carry a classification, and the UI owns the remedy
+
+Rust reports failures as `InspectorError` variants with a serialisable `InspectorErrorKind`; the
+Tauri layer wraps them in `CommandError`. The frontend maps each kind to a title, a hint and,
+when it applies, a one-click remedy (trusting the server certificate). Raw driver messages are
+shown only as secondary detail.
+
+Why: the core stays free of presentation text, the frontend never parses error strings, and
+every error states what happened and what to do next, as the UX principles require.
+
+### ADR-013: Progress over an ordered channel, cooperative cancellation
+
+`inspect_database` streams `InspectionEvent` messages through `tauri::ipc::Channel`, which
+delivers in order. The first event carries a job id; `cancel_inspection` cancels the matching
+`CancellationToken`, which the inspection checks between stages and while catalog queries run.
+
+Why: channels are the Tauri mechanism designed for ordered, high-frequency updates, and
+cooperative cancellation never leaves a session half-way through a query.
+
+### ADR-014: Simulated backend for browser previews
+
+Development builds running outside the desktop runtime load a simulated connection backend
+through a dynamic import (`shared/ipc/previewConnectionBackend.ts`). Server names such as
+`auth-fail`, `cert-fail`, `down` and `slow` reproduce the classified failures; anything else
+succeeds with a small fixture schema. Production builds never include it, and inside Tauri it
+is never loaded.
+
+Why: the connection flow can be designed, reviewed and screenshot in a plain browser without a
+database, in both themes and languages, which is how the UX definition of done is checked.
+
 ## Milestones
 
 | #   | Scope                                                           | Status  |
 | --- | --------------------------------------------------------------- | ------- |
 | 1   | Workspace, domain model, Tauri host, application shell, tooling | done    |
-| 2   | `DatabaseInspector` trait and SQL Server inspector with tests   | next    |
-| 3   | `.scraft` project files and schema diff engine                  | planned |
+| 2   | `DatabaseInspector`, SQL Server inspector, connection dialog    | done    |
+| 3   | `.scraft` project files and schema diff engine                  | next    |
 | 4   | Canvas: table nodes, relationships, layouts, detail levels      | planned |
 | 5   | Export: SVG, standalone HTML, single-page PDF                   | planned |
 | 6   | Portable executable validation and packaging                    | planned |
