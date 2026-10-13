@@ -60,13 +60,22 @@ competes for attention.
 
 A single dialog with inline validation: server and instance, authentication mode (Windows or SQL
 Server), credentials only when needed, database picker filled after a successful "Test
-connection", optional schema filter, encryption and certificate trust. Passwords are never stored
-in project files. Errors are specific and actionable.
+connection", optional schema filter, encryption and certificate trust. Recent connections sit at
+the top of the dialog: one click fills the form, and each entry can be removed. Passwords are
+never stored in project files or in the history. Errors are specific and actionable.
 
 ### Introspection
 
 A progress indicator names the current stage (tables, columns, keys, indexes) and the counts so
 far. The user can cancel. On completion the diagram appears already laid out.
+
+### Opening and saving a project
+
+Open, Save and Save as use the native file dialogs and the usual shortcuts. The top bar shows
+the project name with a dot for unsaved changes, mirrored in the window title. Any action that
+would throw unsaved changes away (opening another project, connecting, closing the window)
+asks first, with the safe choice focused. A failed open or save is reported over the canvas
+with the cause and the next step; a recent project whose file disappeared leaves the list.
 
 ### Working on the canvas
 
@@ -77,8 +86,10 @@ undoable.
 
 ### Refreshing from the database
 
-The diff is presented before it is applied: new, changed and removed tables, columns and
-relationships. Applying it preserves the positions of unchanged tables.
+The diff is presented before it is applied: new, changed and removed tables, views, columns,
+keys, indexes, constraints and relationships, with before and after values. Applying it
+preserves the positions of surviving tables. A project opened from a file reconnects through
+the connection dialog, prefilled from the saved connection, so only the password is typed again.
 
 ### Exporting
 
