@@ -1,0 +1,56 @@
+[workspace]
+resolver = "3"
+members = ["crates/schemacraft-core", "src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+authors = ["Jose Manuel Campos Soberano"]
+repository = "https://github.com/jmanuelsoberano/schemacraft"
+publish = false
+
+[workspace.dependencies]
+schemacraft-core = { path = "crates/schemacraft-core" }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+ts-rs = { version = "12.0", features = ["serde-compat", "chrono-impl"] }
+tauri = { version = "2.12", features = [] }
+tauri-build = { version = "2.7", features = [] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Production code surfaces failures as typed errors; it never aborts the process.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "warn"
+print_stderr = "warn"
+indexing_slicing = "warn"
+# Pedantic lints that hurt readability more than they help it.
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+# Product and vendor names (SchemaCraft, SQL Server) appear in prose without backticks.
+doc_markdown = "allow"
+
+# Size and speed oriented release profile (https://tauri.app/concept/size/).
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
