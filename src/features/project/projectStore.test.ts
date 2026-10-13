@@ -102,7 +102,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   preferencesBackend.rememberProject.mockResolvedValue(emptyPreferences);
   preferencesBackend.forgetProject.mockResolvedValue(emptyPreferences);
-  useProjectStore.setState({ project: null, phase: "idle", failure: null, pendingDiscard: null });
+  useProjectStore.setState({
+    project: null,
+    phase: "idle",
+    failure: null,
+    pendingDiscard: null,
+    history: { past: [], future: [] },
+  });
 });
 
 describe("loadFromInspection", () => {
