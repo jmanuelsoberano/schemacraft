@@ -17,6 +17,10 @@ use std::collections::HashSet;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
+use schemacraft_core::diff::{
+    ChangeCounts, ColumnChange, ColumnProperty, ForeignKeyChange, ForeignKeyProperty, IndexChange,
+    SchemaDiff, TableChange,
+};
 use schemacraft_core::inspectors::sqlserver::{
     EncryptionMode, SqlServerAuthentication, SqlServerConnectionSettings,
 };
@@ -25,6 +29,7 @@ use schemacraft_core::inspectors::{
     InspectorError, InspectorErrorKind, ProgressReporter, SilentProgress, create_inspector,
 };
 use schemacraft_core::model::{IndexKind, QualifiedName, ReferentialAction, SchemaSnapshot};
+use schemacraft_core::project::{CanvasState, NodeState, Point};
 use secrecy::SecretString;
 use tiberius::Client;
 use tokio::net::TcpStream;
@@ -35,6 +40,8 @@ const FIXTURE_DATABASE: &str = "SchemaCraftFixture";
 const STRESS_DATABASE: &str = "SchemaCraftStress";
 const FIXTURE_SCRIPT: &str = include_str!("fixtures/sqlserver/fixture.sql");
 const STRESS_SCRIPT: &str = include_str!("fixtures/sqlserver/stress_200_tables.sql");
+const CHANGED_DATABASE: &str = "SchemaCraftFixtureChanged";
+const CHANGES_SCRIPT: &str = include_str!("fixtures/sqlserver/changes.sql");
 
 /// Budget for inspecting 200 tables; the product target is 3 seconds on a local network.
 const STRESS_BUDGET: Duration = Duration::from_secs(5);
@@ -631,4 +638,134 @@ async fn inspects_two_hundred_tables_within_budget() {
     assert_eq!(snapshot.foreign_keys.len(), 199);
     assert!(snapshot.tables.iter().all(|table| table.indexes.len() == 2));
     assert!(elapsed < STRESS_BUDGET, "inspection took {elapsed:?}");
+}
+
+/// The fixture recreated under another name, with `changes.sql` applied on top.
+fn changed_fixture_script() -> String {
+    format!(
+        "{}\nGO\nUSE {CHANGED_DATABASE};\nGO\n{}",
+        FIXTURE_SCRIPT.replace(FIXTURE_DATABASE, CHANGED_DATABASE),
+        CHANGES_SCRIPT
+    )
+}
+
+fn placed(schema: &str, name: &str) -> NodeState {
+    NodeState {
+        name: QualifiedName::new(schema, name),
+        position: Point { x: 10.0, y: 20.0 },
+        is_collapsed: false,
+        is_hidden: false,
+    }
+}
+
+#[tokio::test]
+async fn refresh_reports_the_differences_and_keeps_surviving_positions() {
+    let Some(server) = test_server() else { return };
+    let previous = inspect_fixture(&server, InspectionOptions::default()).await;
+    ensure_seeded(&server, CHANGED_DATABASE, &changed_fixture_script()).await;
+    let current = inspector(settings(&server, Some(CHANGED_DATABASE)))
+        .inspect(
+            &InspectionOptions::default(),
+            &SilentProgress,
+            CancellationToken::new(),
+        )
+        .await
+        .expect("inspection succeeds");
+
+    let diff = SchemaDiff::between(&previous, &current);
+
+    assert_eq!(
+        diff.summary.tables,
+        ChangeCounts {
+            added: 1,
+            removed: 0,
+            changed: 2
+        }
+    );
+    assert_eq!(
+        diff.summary.views,
+        ChangeCounts {
+            added: 0,
+            removed: 1,
+            changed: 0
+        }
+    );
+    assert_eq!(
+        diff.summary.foreign_keys,
+        ChangeCounts {
+            added: 1,
+            removed: 0,
+            changed: 1
+        }
+    );
+
+    let names: Vec<String> = diff
+        .tables
+        .iter()
+        .map(|change| change.name().to_string())
+        .collect();
+    assert_eq!(names, ["dbo.Customers", "sales.Invoices", "sales.Orders"]);
+
+    let TableChange::Changed {
+        columns, indexes, ..
+    } = &diff.tables[0]
+    else {
+        panic!(
+            "dbo.Customers should be reported as changed: {:?}",
+            diff.tables[0]
+        );
+    };
+    assert!(matches!(
+        &columns[0],
+        ColumnChange::Changed { before, properties, .. }
+            if before.name == "Name" && properties == &[ColumnProperty::DataType]
+    ));
+    assert!(matches!(&columns[1], ColumnChange::Added { column } if column.name == "PhoneNumber"));
+    assert!(indexes.is_empty());
+
+    assert!(matches!(
+        &diff.tables[1],
+        TableChange::Added {
+            column_count: 4,
+            ..
+        }
+    ));
+
+    let TableChange::Changed {
+        columns, indexes, ..
+    } = &diff.tables[2]
+    else {
+        panic!(
+            "sales.Orders should be reported as changed: {:?}",
+            diff.tables[2]
+        );
+    };
+    assert!(columns.is_empty());
+    assert!(matches!(
+        &indexes[0],
+        IndexChange::Removed { index } if index.name == "IX_Orders_CustomerId"
+    ));
+
+    assert!(matches!(
+        &diff.foreign_keys[0],
+        ForeignKeyChange::Added { key } if key.name == "FK_Invoices_Orders"
+    ));
+    assert!(matches!(
+        &diff.foreign_keys[1],
+        ForeignKeyChange::Changed { after, properties, .. }
+            if after.name == "FK_Orders_Customers"
+                && after.on_delete == ReferentialAction::Cascade
+                && properties == &[ForeignKeyProperty::OnDelete, ForeignKeyProperty::OnUpdate]
+    ));
+
+    let canvas = CanvasState {
+        nodes: vec![placed("dbo", "Customers"), placed("sales", "RecentOrders")],
+        ..CanvasState::default()
+    };
+    let retained = canvas.retaining_entities_of(&current);
+    assert_eq!(retained.nodes.len(), 1);
+    assert_eq!(
+        retained.nodes[0].name,
+        QualifiedName::new("dbo", "Customers")
+    );
 }

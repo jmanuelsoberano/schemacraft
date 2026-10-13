@@ -44,3 +44,13 @@
   margin: 0 var(--space-2);
   background: var(--color-border);
 }
+
+.unsavedDot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-left: var(--space-1);
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-subtle);
+}
