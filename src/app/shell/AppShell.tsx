@@ -1,5 +1,6 @@
 import { useAppActions } from "@/app/actions/useAppActions";
 import { useKeyboardShortcuts } from "@/app/actions/useKeyboardShortcuts";
+import { ConnectionDialog } from "@/features/connection/ConnectionDialog";
 import { useSettingsStore } from "@/shared/settings/settingsStore";
 import { classNames } from "@/shared/ui/classNames";
 
@@ -28,6 +29,7 @@ export function AppShell() {
         <DiagramCanvas actions={actions.byId} />
       </main>
       <StatusBar />
+      <ConnectionDialog />
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { useSchemaStore } from "@/features/schema/schemaStore";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { useAppInfo } from "@/shared/ipc/useAppInfo";
 import { classNames } from "@/shared/ui/classNames";
@@ -7,15 +8,23 @@ import styles from "./StatusBar.module.css";
 export function StatusBar() {
   const { t, tCount } = useI18n();
   const appInfo = useAppInfo();
+  const source = useSchemaStore((state) => state.source);
+  const tableCount = useSchemaStore((state) => state.snapshot?.tables.length ?? 0);
+  const relationCount = useSchemaStore((state) => state.snapshot?.foreignKeys.length ?? 0);
 
   return (
     <footer className={styles.statusBar}>
       <span className={styles.item}>
-        <span className={styles.dot} aria-hidden="true" />
-        {t("statusBar.notConnected")}
+        <span
+          className={classNames(styles.dot, source !== null && styles.dotConnected)}
+          aria-hidden="true"
+        />
+        {source === null
+          ? t("statusBar.notConnected")
+          : t("statusBar.connected", { target: source.target, database: source.database })}
       </span>
-      <span className={styles.item}>{tCount("statusBar.tables", 0)}</span>
-      <span className={styles.item}>{tCount("statusBar.relations", 0)}</span>
+      <span className={styles.item}>{tCount("statusBar.tables", tableCount)}</span>
+      <span className={styles.item}>{tCount("statusBar.relations", relationCount)}</span>
       <span className={styles.spacer} />
       <span className={styles.item}>{t("statusBar.zoom", { percent: 100 })}</span>
       <span className={classNames(styles.item, styles.mono)}>

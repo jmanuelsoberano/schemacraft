@@ -86,3 +86,80 @@
   flex: 1;
   overflow: auto;
 }
+
+.groups,
+.entities {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.group {
+  padding-bottom: var(--space-2);
+}
+
+.groupHeader {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 28px;
+  padding: 0 var(--space-4);
+  background: var(--color-surface);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.groupName {
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--color-text-secondary);
+}
+
+.groupCount {
+  font-variant-numeric: tabular-nums;
+}
+
+.entity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 28px;
+  padding: 0 var(--space-3) 0 var(--space-4);
+  border-radius: 0;
+  color: var(--color-text);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.entity:hover {
+  background: var(--color-hover);
+}
+
+.entityIcon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--color-text-muted);
+}
+
+.entityName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-md);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entityColumns {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}

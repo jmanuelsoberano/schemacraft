@@ -1,6 +1,8 @@
 import { Database, Download, FolderOpen, PanelLeft, RefreshCw, Save, Workflow } from "lucide-react";
 import { useMemo } from "react";
 
+import { useConnectionStore } from "@/features/connection/connectionStore";
+import { useSchemaStore } from "@/features/schema/schemaStore";
 import { useSettingsStore } from "@/shared/settings/settingsStore";
 
 import type { ActionsById, AppAction } from "./action";
@@ -15,6 +17,9 @@ const notAvailableYet = (): void => undefined;
 
 export function useAppActions(): AppActions {
   const toggleSidebar = useSettingsStore((state) => state.toggleSidebar);
+  const openConnectionDialog = useConnectionStore((state) => state.openDialog);
+  const refreshFromDatabase = useConnectionStore((state) => state.refresh);
+  const hasSnapshot = useSchemaStore((state) => state.snapshot !== null);
 
   return useMemo(() => {
     const byId: ActionsById = {
@@ -23,8 +28,8 @@ export function useAppActions(): AppActions {
         labelKey: "action.connect",
         icon: Database,
         shortcut: { mod: true, key: "n" },
-        isAvailable: false,
-        run: notAvailableYet,
+        isAvailable: true,
+        run: openConnectionDialog,
       },
       "project.openProject": {
         id: "project.openProject",
@@ -47,8 +52,10 @@ export function useAppActions(): AppActions {
         labelKey: "action.refreshFromDatabase",
         icon: RefreshCw,
         shortcut: { key: "F5" },
-        isAvailable: false,
-        run: notAvailableYet,
+        isAvailable: hasSnapshot,
+        run: () => {
+          void refreshFromDatabase();
+        },
       },
       "diagram.autoLayout": {
         id: "diagram.autoLayout",
@@ -77,5 +84,5 @@ export function useAppActions(): AppActions {
     };
 
     return { byId, list: Object.values(byId) };
-  }, [toggleSidebar]);
+  }, [toggleSidebar, openConnectionDialog, refreshFromDatabase, hasSnapshot]);
 }

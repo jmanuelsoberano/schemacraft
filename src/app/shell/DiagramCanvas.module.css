@@ -2,3 +2,31 @@
   position: absolute;
   inset: 0;
 }
+
+.loadedHint {
+  position: absolute;
+  top: var(--space-4);
+  left: 50%;
+  z-index: 10;
+  padding: var(--space-1) var(--space-3);
+  border-radius: 999px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  animation: rise var(--duration-slow) var(--ease-emphasized);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}

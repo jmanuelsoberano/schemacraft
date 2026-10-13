@@ -6,7 +6,7 @@ import styles from "./EmptyState.module.css";
 interface EmptyStateProps {
   icon: LucideIcon;
   title: string;
-  description: string;
+  description?: string;
   action?: ReactNode;
 }
 
@@ -17,7 +17,7 @@ export function EmptyState({ icon: Icon, title, description, action }: EmptyStat
         <Icon className={styles.icon} aria-hidden="true" />
       </span>
       <span className={styles.title}>{title}</span>
-      <span className={styles.description}>{description}</span>
+      {description ? <span className={styles.description}>{description}</span> : null}
       {action ? <div className={styles.action}>{action}</div> : null}
     </div>
   );

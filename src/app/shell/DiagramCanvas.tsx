@@ -2,6 +2,8 @@ import { Background, BackgroundVariant, Controls, ReactFlow } from "@xyflow/reac
 import type { Edge, Node } from "@xyflow/react";
 
 import type { ActionsById } from "@/app/actions/action";
+import { useSchemaStore } from "@/features/schema/schemaStore";
+import { useI18n } from "@/shared/i18n/useI18n";
 
 import styles from "./DiagramCanvas.module.css";
 import { WelcomeOverlay } from "./WelcomeOverlay";
@@ -16,6 +18,9 @@ interface DiagramCanvasProps {
 
 /** Infinite canvas that will host the entity-relationship diagram. */
 export function DiagramCanvas({ actions }: DiagramCanvasProps) {
+  const { tCount } = useI18n();
+  const tableCount = useSchemaStore((state) => state.snapshot?.tables.length ?? null);
+
   return (
     <div className={styles.canvas}>
       <ReactFlow
@@ -29,7 +34,13 @@ export function DiagramCanvas({ actions }: DiagramCanvasProps) {
         <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} />
         <Controls showInteractive={false} position="bottom-right" />
       </ReactFlow>
-      <WelcomeOverlay actions={actions} />
+      {tableCount === null ? (
+        <WelcomeOverlay actions={actions} />
+      ) : (
+        <div className={styles.loadedHint} role="status">
+          {tCount("canvas.loaded", tableCount)}
+        </div>
+      )}
     </div>
   );
 }

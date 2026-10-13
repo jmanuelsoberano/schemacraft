@@ -1,0 +1,31 @@
+.track {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-surface-sunken);
+  overflow: hidden;
+}
+
+.fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--color-accent);
+  transition: width var(--duration-slow) var(--ease-standard);
+}
+
+.indeterminate .fill {
+  position: absolute;
+  width: 40%;
+  animation: slide 1.4s var(--ease-standard) infinite;
+}
+
+@keyframes slide {
+  from {
+    left: -40%;
+  }
+
+  to {
+    left: 100%;
+  }
+}
