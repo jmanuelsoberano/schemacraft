@@ -18,6 +18,7 @@ schemacraft/
 │   ├── src/project/           .scraft documents, saved connections, canvas state, atomic JSON files
 │   ├── src/diff/              comparison of two snapshots behind "refresh from database"
 │   ├── src/preferences/       connection history and recent projects (per-user JSON file)
+│   ├── src/credentials/       CredentialStore strategy: Windows Credential Manager, memory
 │   └── tests/                 integration tests and SQL fixtures (run against a real server)
 ├── src-tauri/                 Rust binary: Tauri host, IPC commands, logging, configuration
 ├── src/                       React + TypeScript frontend
@@ -253,6 +254,21 @@ the desktop runtime, a simulated backend in a development browser preview, or a 
 reports the runtime as unavailable. The preview loader is passed as
 `import.meta.env.DEV ? () => import(...) : null`, which lets the bundler drop every simulated
 module from production builds.
+
+### ADR-019: Remembered passwords live in the operating system store and never cross the IPC twice
+
+"Remember password" hands the typed password to the Rust side once, which files it in the
+Windows Credential Manager through the `keyring` crate under a key derived from the server and
+the login (`CredentialStore`, a strategy with an in-memory implementation for tests and other
+platforms). From then on the frontend only learns whether a password is remembered: connection
+settings carry `password: { source: "stored" }`, and the Rust side resolves it right before
+connecting. A remembered password that disappeared is its own classified error, which the dialog
+answers by asking for the password again. Unticking the box on the next successful connection
+removes the entry. Project files and preferences never contain a password in any form.
+
+Why: the PRD requires passwords to live only in memory or in the operating system store. Keeping
+resolution on the Rust side means the secret is never serialised towards the webview, and a
+file opened on another machine simply asks for the password.
 
 ## Milestones
 

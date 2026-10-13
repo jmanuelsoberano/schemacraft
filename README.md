@@ -119,6 +119,11 @@ Recent connections (never passwords) and recent projects are stored in `preferen
 inside the per-user configuration directory, `%APPDATA%\com.jmanuelsoberano.schemacraft` on
 Windows. Delete the file to clear the history.
 
+"Remember password" keeps a SQL login's password in the Windows Credential Manager (entries named
+`sqlserver://<server>/<login>` under the `SchemaCraft` service) and never in any SchemaCraft file.
+The history and a reopened project use it without asking; untick the box and connect again to
+forget it, or remove the entry from the Credential Manager.
+
 ## Project structure
 
 ```

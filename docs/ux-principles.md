@@ -61,8 +61,11 @@ competes for attention.
 A single dialog with inline validation: server and instance, authentication mode (Windows or SQL
 Server), credentials only when needed, database picker filled after a successful "Test
 connection", optional schema filter, encryption and certificate trust. Recent connections sit at
-the top of the dialog: one click fills the form, and each entry can be removed. Passwords are
-never stored in project files or in the history. Errors are specific and actionable.
+the top of the dialog: one click fills the form, and each entry can be removed. "Remember
+password" keeps a SQL login's password in the operating system store, so a history entry or a
+reopened project reconnects without typing it; the field says when a remembered password will be
+used. Passwords are never stored in project files or in the history. Errors are specific and
+actionable.
 
 ### Introspection
 
