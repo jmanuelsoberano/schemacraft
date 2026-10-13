@@ -133,6 +133,8 @@ export const englishMessages = {
   "error.authenticationFailed.title": "The login was rejected",
   "error.authenticationFailed.hint":
     "Check the login name and password, or use Windows Authentication if your account has access.",
+  "error.authenticationFailed.hint.integrated":
+    "The server did not accept your Windows account. Check that it has a login there, or switch to SQL Server Authentication.",
   "error.untrustedCertificate.title": "The server certificate is not trusted",
   "error.untrustedCertificate.hint":
     "The server uses a certificate this machine cannot verify, which is common for development instances. Trust it for this connection or install its certificate authority.",
