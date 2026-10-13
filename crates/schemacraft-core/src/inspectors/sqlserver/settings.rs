@@ -128,11 +128,7 @@ impl SqlServerConnectionSettings {
 
     /// Server as users write it, e.g. `localhost\SQLEXPRESS` or `db.example.com,1433`.
     pub fn display_target(&self) -> String {
-        let host = self.host.trim();
-        match self.instance_name() {
-            Some(instance) => format!("{host}\\{instance}"),
-            None => format!("{host},{}", self.port.unwrap_or(DEFAULT_PORT)),
-        }
+        format_target(&self.host, self.instance.as_deref(), self.port)
     }
 
     fn instance_name(&self) -> Option<&str> {
@@ -163,6 +159,15 @@ impl SqlServerConnectionSettings {
                 Ok(AuthMethod::sql_server(username, password.expose_secret()))
             }
         }
+    }
+}
+
+/// Server as users write it: `host\instance` for named instances, otherwise `host,port`.
+pub fn format_target(host: &str, instance: Option<&str>, port: Option<u16>) -> String {
+    let host = host.trim();
+    match non_empty(instance) {
+        Some(instance) => format!("{host}\\{instance}"),
+        None => format!("{host},{}", port.unwrap_or(DEFAULT_PORT)),
     }
 }
 
