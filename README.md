@@ -7,13 +7,15 @@ the same diagram, and renders fast, interactive diagrams with high-fidelity sing
 
 ## Status
 
-Milestone 1 of 6 is complete: Rust workspace, domain model, Tauri host, application shell with
-design system, bilingual UI (English and Spanish), light and dark themes, tooling and CI.
+Milestones 1 and 2 of 6 are complete: Rust workspace, domain model, Tauri host, application
+shell with design system, bilingual UI (English and Spanish), light and dark themes, tooling and
+CI; then the SQL Server inspector with SQL Server and Windows Authentication, the connection
+dialog with actionable errors and progress, and the entities panel listing the loaded schema.
 
 | Milestone | Scope                                                       |
 | --------- | ----------------------------------------------------------- |
 | 1 ✅      | Project bootstrap, domain model, application shell          |
-| 2         | SQL Server inspector (SQL and Windows authentication)       |
+| 2 ✅      | SQL Server inspector, connection dialog, entities panel     |
 | 3         | `.scraft` project files and schema diff ("refresh from DB") |
 | 4         | Canvas: table nodes, relationships, layouts, detail levels  |
 | 5         | Export: SVG, standalone interactive HTML, single-page PDF   |
@@ -21,8 +23,8 @@ design system, bilingual UI (English and Spanish), light and dark themes, toolin
 
 ## Stack
 
-- **Core:** Rust (`crates/schemacraft-core`), `serde`, `ts-rs`; SQL Server access with `tiberius`
-  from milestone 2.
+- **Core:** Rust (`crates/schemacraft-core`), `serde`, `ts-rs`, `tiberius` with a `bb8` pool for
+  SQL Server.
 - **Host:** Tauri 2 (`src-tauri`), `tracing`.
 - **Frontend:** React 19, TypeScript, Vite, React Flow, Radix primitives, Lucide icons, Zustand.
 - **Quality:** Clippy with panic-free lints, rustfmt, ESLint (type-checked), Prettier, Vitest,
@@ -73,6 +75,35 @@ The portable binary is written to `target/release/schemacraft.exe` and the insta
 | `npm run contracts:check`                               | Fail if the generated TypeScript types are out of date     |
 | `cargo test --workspace`                                | Run Rust tests (also regenerates the TypeScript contracts) |
 | `cargo clippy --workspace --all-targets -- -D warnings` | Lint Rust with the project's strict rules                  |
+
+## Integration tests against SQL Server
+
+The core crate has integration tests that run against a real SQL Server 2022. They are skipped
+unless the `SCHEMACRAFT_TEST_MSSQL_*` variables are set. With Docker Desktop running:
+
+```powershell
+.\scripts\dev-sqlserver.ps1 start
+```
+
+```powershell
+.\scripts\dev-sqlserver.ps1 env | Invoke-Expression
+```
+
+```powershell
+cargo test -p schemacraft-core --test sqlserver_integration -- --nocapture
+```
+
+The tests seed two databases on the container: a fixture covering keys, indexes, constraints,
+alias types and views, and a 200-table database used to check the extraction time budget.
+Windows Authentication cannot run in the Linux container; it is validated manually against a
+Windows instance.
+
+## Browser preview
+
+`npm run dev` serves the frontend alone. Outside the desktop runtime a simulated backend takes
+the place of the Rust commands, so the connection flow can be reviewed in a browser: use
+`localhost` to succeed, or `auth-fail`, `cert-fail`, `down` and `slow` as server names to see
+each failure.
 
 ## Project structure
 
