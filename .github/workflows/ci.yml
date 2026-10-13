@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  verify:
+    name: Lint, test and build (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: npm ci
+
+      - name: Frontend quality gates
+        run: |
+          npm run format:check
+          npm run lint
+          npm run typecheck
+          npm test
+
+      - name: Rust quality gates
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+
+      - name: Generated TypeScript contracts are up to date
+        run: git diff --exit-code -- src/shared/contracts/generated
+
+      - name: Build portable executable
+        run: npm run tauri build -- --no-bundle
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: schemacraft-windows-x64
+          path: target/release/schemacraft.exe
+          if-no-files-found: error
