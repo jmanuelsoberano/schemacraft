@@ -1,19 +1,37 @@
 import {
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Command,
   Database,
   Download,
   FolderOpen,
+  GitFork,
   Info,
+  Layers,
+  Maximize2,
+  Network,
+  Orbit,
   PanelLeft,
+  Redo2,
   RefreshCw,
   Save,
   SaveAll,
+  Undo2,
   Workflow,
 } from "lucide-react";
 import { useMemo } from "react";
 
 import { useAboutStore } from "@/features/about/aboutStore";
+import {
+  applyLastLayout,
+  applyLayout,
+  setCollapsedForAll,
+  showAllEntities,
+} from "@/features/canvas/canvasActions";
+import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { useConnectionStore } from "@/features/connection/connectionStore";
 import { useProjectStore } from "@/features/project/projectStore";
+import { usePaletteStore } from "@/features/palette/paletteStore";
 import { useSettingsStore } from "@/shared/settings/settingsStore";
 
 import type { ActionsById, AppAction } from "./action";
@@ -36,6 +54,18 @@ export function useAppActions(): AppActions {
   const saveProject = useProjectStore((state) => state.saveProject);
   const saveProjectAs = useProjectStore((state) => state.saveProjectAs);
   const openAbout = useAboutStore((state) => state.open);
+  const canUndo = useProjectStore((state) => state.history.past.length > 0);
+  const canRedo = useProjectStore((state) => state.history.future.length > 0);
+  const hasHidden = useProjectStore(
+    (state) => state.project?.content.canvas.nodes.some((node) => node.isHidden) ?? false,
+  );
+  const undo = useProjectStore((state) => state.undo);
+  const redo = useProjectStore((state) => state.redo);
+  const isLayoutRunning = useCanvasUiStore((state) => state.isLayoutRunning);
+  const requestFit = useCanvasUiStore((state) => state.requestFit);
+  const selectedKeys = useCanvasUiStore((state) => state.selectedKeys);
+  const togglePalette = usePaletteStore((state) => state.toggle);
+  const canLayout = hasProject && !isLayoutRunning;
 
   return useMemo(() => {
     const byId: ActionsById = {
@@ -95,8 +125,106 @@ export function useAppActions(): AppActions {
         labelKey: "action.autoLayout",
         icon: Workflow,
         shortcut: { mod: true, shift: true, key: "l" },
-        isAvailable: false,
-        run: notAvailableYet,
+        isAvailable: canLayout,
+        run: () => {
+          void applyLastLayout();
+        },
+      },
+      "diagram.layoutLayered": {
+        id: "diagram.layoutLayered",
+        labelKey: "action.layoutLayered",
+        icon: Network,
+        isAvailable: canLayout,
+        run: () => {
+          void applyLayout({ kind: "layered", direction: "down" });
+        },
+      },
+      "diagram.layoutLayeredHorizontal": {
+        id: "diagram.layoutLayeredHorizontal",
+        labelKey: "action.layoutLayeredHorizontal",
+        icon: GitFork,
+        isAvailable: canLayout,
+        run: () => {
+          void applyLayout({ kind: "layered", direction: "right" });
+        },
+      },
+      "diagram.layoutOrganic": {
+        id: "diagram.layoutOrganic",
+        labelKey: "action.layoutOrganic",
+        icon: Workflow,
+        isAvailable: canLayout,
+        run: () => {
+          void applyLayout({ kind: "organic" });
+        },
+      },
+      "diagram.layoutRadial": {
+        id: "diagram.layoutRadial",
+        labelKey: "action.layoutRadial",
+        icon: Orbit,
+        isAvailable: canLayout,
+        run: () => {
+          void applyLayout({ kind: "radial", focusId: selectedKeys[0] ?? null });
+        },
+      },
+      "diagram.fitView": {
+        id: "diagram.fitView",
+        labelKey: "action.fitView",
+        icon: Maximize2,
+        shortcut: { mod: true, key: "0" },
+        isAvailable: hasProject,
+        run: requestFit,
+      },
+      "diagram.showAll": {
+        id: "diagram.showAll",
+        labelKey: "action.showAll",
+        icon: Layers,
+        shortcut: { mod: true, shift: true, key: "h" },
+        isAvailable: hasHidden,
+        run: showAllEntities,
+      },
+      "diagram.collapseAll": {
+        id: "diagram.collapseAll",
+        labelKey: "action.collapseAll",
+        icon: ChevronsDownUp,
+        isAvailable: hasProject,
+        run: () => {
+          setCollapsedForAll(true);
+        },
+      },
+      "diagram.expandAll": {
+        id: "diagram.expandAll",
+        labelKey: "action.expandAll",
+        icon: ChevronsUpDown,
+        isAvailable: hasProject,
+        run: () => {
+          setCollapsedForAll(false);
+        },
+      },
+      "edit.undo": {
+        id: "edit.undo",
+        labelKey: "action.undo",
+        icon: Undo2,
+        shortcut: { mod: true, key: "z" },
+        isAvailable: canUndo,
+        skipWhenEditing: true,
+        run: undo,
+      },
+      "edit.redo": {
+        id: "edit.redo",
+        labelKey: "action.redo",
+        icon: Redo2,
+        shortcut: { mod: true, key: "y" },
+        isAvailable: canRedo,
+        skipWhenEditing: true,
+        run: redo,
+      },
+      "view.commandPalette": {
+        id: "view.commandPalette",
+        labelKey: "action.commandPalette",
+        icon: Command,
+        shortcut: { mod: true, key: "k" },
+        isAvailable: true,
+        run: togglePalette,
       },
       "diagram.export": {
         id: "diagram.export",
@@ -135,5 +263,14 @@ export function useAppActions(): AppActions {
     saveProject,
     saveProjectAs,
     openAbout,
+    canUndo,
+    canRedo,
+    hasHidden,
+    undo,
+    redo,
+    canLayout,
+    requestFit,
+    selectedKeys,
+    togglePalette,
   ]);
 }

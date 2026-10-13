@@ -1,6 +1,8 @@
 import { create } from "zustand";
 
 import { ensurePlaced } from "@/features/canvas/canvasState";
+import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
+import { placeRefreshedEntities } from "@/features/canvas/refreshPlacement";
 import { usePreferencesStore } from "@/features/preferences/preferencesStore";
 import type {
   CanvasState,
@@ -333,6 +335,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
     },
 
     applyRefreshedContent: (content, settings) => {
+      const placement = placeRefreshedEntities(content.canvas, content.snapshot);
       set((state) =>
         state.project === null
           ? {}
@@ -340,13 +343,14 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
               history: EMPTY_HISTORY,
               project: {
                 ...state.project,
-                content: { ...content, canvas: ensurePlaced(content.canvas, content.snapshot) },
+                content: { ...content, canvas: ensurePlaced(placement.canvas, content.snapshot) },
                 liveSettings: settings,
                 isDirty: true,
                 loadToken: state.project.loadToken + 1,
               },
             },
       );
+      useCanvasUiStore.getState().highlightEntities(placement.placed);
     },
 
     guardUnsavedChanges: (action) => {

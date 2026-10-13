@@ -31,8 +31,12 @@ export function useKeyboardShortcuts(actions: readonly AppAction[]): void {
       );
 
       if (action?.shortcut !== undefined) {
-        // Plain keys must not fire while the user types in a field; modifier combos may.
-        if (!action.shortcut.mod && isEditableTarget(event.target)) {
+        // Plain keys must not fire while the user types in a field; modifier combos may,
+        // unless the action leaves editing shortcuts such as undo to the field.
+        if (
+          (!action.shortcut.mod || action.skipWhenEditing === true) &&
+          isEditableTarget(event.target)
+        ) {
           return;
         }
         event.preventDefault();

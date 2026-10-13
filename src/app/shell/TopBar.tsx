@@ -18,6 +18,7 @@ import type { RadioMenuOption } from "@/shared/ui/RadioMenu";
 import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import type { SegmentedOption } from "@/shared/ui/SegmentedControl";
 
+import { LayoutMenu } from "./LayoutMenu";
 import styles from "./TopBar.module.css";
 
 const THEME_ICONS: Record<ThemePreference, LucideIcon> = {
@@ -112,7 +113,10 @@ export function TopBar({ actions }: TopBarProps) {
         <ActionIconButton action={actions["project.saveProjectAs"]} />
         <ActionIconButton action={actions["project.refreshFromDatabase"]} />
         <span className={styles.separator} aria-hidden="true" />
-        <ActionIconButton action={actions["diagram.autoLayout"]} />
+        <ActionIconButton action={actions["edit.undo"]} />
+        <ActionIconButton action={actions["edit.redo"]} />
+        <span className={styles.separator} aria-hidden="true" />
+        <LayoutMenu actions={actions} />
         <ActionIconButton action={actions["diagram.export"]} />
         <span className={styles.separator} aria-hidden="true" />
         <RadioMenu

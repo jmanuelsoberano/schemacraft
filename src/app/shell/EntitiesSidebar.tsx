@@ -26,6 +26,7 @@ export function EntitiesSidebar() {
   const nodeStates = useProjectStore((state) => state.project?.content.canvas.nodes ?? null);
   const updateCanvas = useProjectStore((state) => state.updateCanvas);
   const focusEntity = useCanvasUiStore((state) => state.focusEntity);
+  const openContextMenu = useCanvasUiStore((state) => state.openContextMenu);
   const selectedKeys = useCanvasUiStore((state) => state.selectedKeys);
   const [query, setQuery] = useState("");
 
@@ -106,6 +107,14 @@ export function EntitiesSidebar() {
                             isHidden && styles.entityHidden,
                             selected.has(entity.key) && styles.entitySelected,
                           )}
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            openContextMenu({
+                              key: entity.key,
+                              x: event.clientX,
+                              y: event.clientY,
+                            });
+                          }}
                         >
                           <button
                             type="button"
