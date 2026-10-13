@@ -1,0 +1,9 @@
+dist
+node_modules
+target
+src-tauri/gen
+src-tauri/icons
+src/shared/contracts/generated
+package-lock.json
+Cargo.lock
+docs/PRD_SchemaCraft_v1.md
