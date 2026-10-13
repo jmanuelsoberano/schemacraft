@@ -133,6 +133,12 @@ file into a folder of roughly 150 MB, so it is not the default. The NSIS install
 WebView2 bootstrapper for machines that lack the runtime; milestone 6 adds a friendly startup
 check for the portable executable.
 
+Code signing is a distribution requirement, not an option: on Windows 11 machines where Smart
+App Control is enforced, the unsigned release build is refused at launch (observed on the
+development machine in milestone 1, while the debug build runs). Milestone 6 adds Authenticode
+signing of the executable and the installer, for example through Azure Trusted Signing or an
+OV/EV certificate, wired into the Tauri bundle configuration.
+
 ## Milestones
 
 | #   | Scope                                                           | Status  |
