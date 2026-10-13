@@ -5,6 +5,7 @@ import { useKeyboardShortcuts } from "@/app/actions/useKeyboardShortcuts";
 import { AboutDialog } from "@/features/about/AboutDialog";
 import { CanvasContextMenu } from "@/features/canvas/CanvasContextMenu";
 import { ConnectionDialog } from "@/features/connection/ConnectionDialog";
+import { ExportDialog } from "@/features/export/ExportDialog";
 import { CommandPalette } from "@/features/palette/CommandPalette";
 import { usePreferencesStore } from "@/features/preferences/preferencesStore";
 import { UnsavedChangesDialog } from "@/features/project/UnsavedChangesDialog";
@@ -45,6 +46,7 @@ export function AppShell() {
       <ConnectionDialog />
       <UnsavedChangesDialog />
       <AboutDialog />
+      <ExportDialog />
       <CommandPalette actions={actions} />
       <CanvasContextMenu />
     </div>

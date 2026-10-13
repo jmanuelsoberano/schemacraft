@@ -12,18 +12,27 @@ use tokio_util::sync::CancellationToken;
 /// Identifier of a running operation, handed to the frontend so it can cancel it.
 pub type JobId = String;
 
-/// Registry of cancellable operations.
-#[derive(Default)]
-pub struct InspectionJobs {
+/// Registry of cancellable operations of one kind; ids read `<prefix>-<number>`.
+pub struct Jobs {
+    prefix: &'static str,
     next_number: AtomicU64,
     cancellations: Mutex<HashMap<JobId, CancellationToken>>,
 }
 
-impl InspectionJobs {
+impl Jobs {
+    /// Creates an empty registry whose job ids start with `prefix`.
+    pub fn new(prefix: &'static str) -> Self {
+        Self {
+            prefix,
+            next_number: AtomicU64::new(0),
+            cancellations: Mutex::new(HashMap::new()),
+        }
+    }
+
     /// Registers a new job. The returned token must be honoured by the operation.
     pub fn start(&self) -> (JobId, CancellationToken) {
         let number = self.next_number.fetch_add(1, Ordering::Relaxed) + 1;
-        let job_id = format!("inspection-{number}");
+        let job_id = format!("{}-{number}", self.prefix);
         let token = CancellationToken::new();
         self.cancellations().insert(job_id.clone(), token.clone());
         (job_id, token)
@@ -97,7 +106,9 @@ impl PreferencesStore {
 /// Everything commands share across invocations.
 pub struct AppState {
     /// Running inspections.
-    pub inspection_jobs: InspectionJobs,
+    pub inspection_jobs: Jobs,
+    /// Running exports.
+    pub export_jobs: Jobs,
     /// Connection history and recent projects.
     pub preferences: PreferencesStore,
     /// Remembered passwords, kept by the operating system.
@@ -108,7 +119,8 @@ impl AppState {
     /// Creates the state, loading the preferences stored at `preferences_path`.
     pub fn new(preferences_path: PathBuf) -> Self {
         Self {
-            inspection_jobs: InspectionJobs::default(),
+            inspection_jobs: Jobs::new("inspection"),
+            export_jobs: Jobs::new("export"),
             preferences: PreferencesStore::load(preferences_path),
             credentials: Box::new(SystemCredentialStore),
         }
@@ -121,14 +133,15 @@ mod tests {
 
     use chrono::Utc;
 
-    use super::{InspectionJobs, PreferencesStore};
+    use super::{Jobs, PreferencesStore};
 
     #[test]
     fn jobs_get_unique_ids_and_cancel_their_tokens() {
-        let jobs = InspectionJobs::default();
+        let jobs = Jobs::new("inspection");
         let (first_id, first_token) = jobs.start();
         let (second_id, second_token) = jobs.start();
         assert_ne!(first_id, second_id);
+        assert_eq!(first_id, "inspection-1");
 
         assert!(jobs.cancel(&first_id));
         assert!(first_token.is_cancelled());
@@ -137,11 +150,12 @@ mod tests {
 
     #[test]
     fn finished_or_unknown_jobs_cannot_be_cancelled() {
-        let jobs = InspectionJobs::default();
+        let jobs = Jobs::new("export");
         let (job_id, _token) = jobs.start();
+        assert_eq!(job_id, "export-1");
         jobs.finish(&job_id);
         assert!(!jobs.cancel(&job_id));
-        assert!(!jobs.cancel("inspection-999"));
+        assert!(!jobs.cancel("export-999"));
     }
 
     #[test]

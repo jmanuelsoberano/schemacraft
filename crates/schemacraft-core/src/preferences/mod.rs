@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use ts_rs::TS;
 
-use crate::project::{JsonFileError, SavedConnection, read_json_bytes, write_json_atomically};
+use crate::project::{FileError, SavedConnection, read_json_bytes, write_json_atomically};
 
 /// Newest preferences format this build writes and reads.
 pub const PREFERENCES_FORMAT_VERSION: u32 = 1;
@@ -76,7 +76,7 @@ impl Preferences {
     pub fn load(path: &Path) -> Result<Self, PreferencesError> {
         let bytes = match read_json_bytes(path) {
             Ok(bytes) => bytes,
-            Err(JsonFileError::NotFound) => return Ok(Self::default()),
+            Err(FileError::NotFound) => return Ok(Self::default()),
             Err(error) => {
                 return Err(PreferencesError::Read {
                     path: path.display().to_string(),

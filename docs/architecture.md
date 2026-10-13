@@ -329,13 +329,62 @@ Why: ELK gives the best layered result but is CPU heavy; the worker keeps pannin
 it runs. One request type keeps the menu, the palette and the keyboard shortcuts on the same
 code path, and Step 5 can reuse the strategies without a canvas.
 
+### ADR-023: One SVG renderer in TypeScript draws the canvas's diagram for every export
+
+The export never screenshots the DOM. `src/features/export/svg/renderDiagram.ts` builds an SVG
+document from the project data with the geometry of ADR-020 (`geometry.ts`, `edgeGeometry.ts`)
+and the same crow's foot markers, so the file is the canvas drawn again: the visible entities at
+their positions, collapsed ones collapsed, at the chosen detail level and theme. Colours are the
+design tokens converted once to sRGB hex (`palette.ts`), because renderers outside the browser
+understand neither `oklch()` nor `light-dark()`; styles are plain class rules without
+combinators, the subset every SVG consumer shares. Text stays text, selectable in SVG and PDF;
+names that do not fit are shortened with an ellipsis, measured with a canvas in the webview and
+estimated in tests. The renderer is deterministic for a given input, which the unit tests check.
+
+Why: the PRD asks for continuous vector output with selectable text that matches the screen.
+One renderer, shared with the standalone viewer, keeps the drawing rules in a single place.
+
+### ADR-024: PNG and PDF are produced in Rust with resvg and svg2pdf, fonts bundled
+
+`core::export` receives the SVG document and the destination (an `ExportRequest`, built from a
+specification the TypeScript side validates with a Builder) and writes SVG and HTML verbatim,
+rasterises PNG with resvg at 1x, 2x or 4x, or converts to a single-page PDF with svg2pdf whose
+page is the diagram's size at 96 px per inch, with the text embedded as text. Four static TTF
+faces (Inter and JetBrains Mono, regular and semibold, produced from the Fontsource packages by
+`scripts/prepare-fonts.mjs`) are compiled into the binary and registered in a font database
+shared across exports, with the system fonts behind them for glyphs the Latin subsets lack. The
+raster is capped at 16 384 px per side, checked before allocation and mirrored by the dialog,
+which refuses the scale and explains the limit. Files are written atomically like projects; the
+command runs on a blocking thread, streams its stages through a channel and honours cancellation
+between stages. resvg and usvg are pinned to 0.45 because svg2pdf 0.13 is built against that
+usvg: the three must share one tree type.
+
+Why: rendering in-process makes the output identical on every machine and works in the portable
+executable without printers or dialogs; the WebView2 print path, with its page sizes and its
+dialog, stays out of the picture.
+
+### ADR-025: The standalone HTML is a viewer with the schema embedded, bundled by a Vite plugin
+
+The HTML export embeds the visible part of the schema as JSON (never the server, the login or the
+server version: only the database name, the objects on the diagram and their positions) together
+with a small vanilla TypeScript viewer (`src/viewer`) that draws with the renderer of ADR-023 in
+the browser: pan and zoom, the three detail levels, search, neighbour highlighting, a detail
+panel per table and light and dark themes. A plugin in `vite.config.ts` bundles the viewer on
+demand into a virtual module (`virtual:schemacraft-viewer`), so the application build stays one
+command and the viewer never pulls React or the application stores. Fonts are embedded as
+`@font-face` data URLs while "Embed fonts" stays on, as in SVG, adding about 125 KB.
+
+Why: the user chose the full viewer over pre-rendered pictures; it keeps the file lighter for
+large schemas and lets the reader explore. Sharing the renderer avoids a second drawing
+implementation.
+
 ## Milestones
 
-| #   | Scope                                                           | Status  |
-| --- | --------------------------------------------------------------- | ------- |
-| 1   | Workspace, domain model, Tauri host, application shell, tooling | done    |
-| 2   | `DatabaseInspector`, SQL Server inspector, connection dialog    | done    |
-| 3   | `.scraft` project files and schema diff engine                  | done    |
-| 4   | Canvas: table nodes, relationships, layouts, detail levels      | done    |
-| 5   | Export: SVG, standalone HTML, single-page PDF                   | next    |
-| 6   | Portable executable validation and packaging                    | planned |
+| #   | Scope                                                           | Status |
+| --- | --------------------------------------------------------------- | ------ |
+| 1   | Workspace, domain model, Tauri host, application shell, tooling | done   |
+| 2   | `DatabaseInspector`, SQL Server inspector, connection dialog    | done   |
+| 3   | `.scraft` project files and schema diff engine                  | done   |
+| 4   | Canvas: table nodes, relationships, layouts, detail levels      | done   |
+| 5   | Export: SVG, standalone HTML, single-page PDF                   | done   |
+| 6   | Portable executable validation and packaging                    | next   |

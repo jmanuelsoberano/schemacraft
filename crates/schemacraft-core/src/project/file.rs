@@ -12,10 +12,10 @@ use super::error::ProjectError;
 /// Reads a project file, checking the format version before parsing the whole document.
 pub fn read_project(path: &Path) -> Result<Project, ProjectError> {
     let bytes = read_json_bytes(path).map_err(|error| match error {
-        JsonFileError::NotFound => ProjectError::NotFound {
+        FileError::NotFound => ProjectError::NotFound {
             path: display(path),
         },
-        JsonFileError::Read(details) | JsonFileError::Write(details) => ProjectError::Read {
+        FileError::Read(details) | FileError::Write(details) => ProjectError::Read {
             path: display(path),
             details,
         },
@@ -55,9 +55,9 @@ struct ProjectHeader {
     format_version: u32,
 }
 
-/// Low-level failure of the JSON file helpers shared by projects and preferences.
+/// Low-level failure of the file helpers shared by projects, preferences and exports.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum JsonFileError {
+pub(crate) enum FileError {
     /// No file at the path.
     NotFound,
     /// The file could not be read.
@@ -66,7 +66,7 @@ pub(crate) enum JsonFileError {
     Write(String),
 }
 
-impl fmt::Display for JsonFileError {
+impl fmt::Display for FileError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NotFound => formatter.write_str("the file does not exist"),
@@ -76,40 +76,41 @@ impl fmt::Display for JsonFileError {
 }
 
 /// Reads a whole file, telling a missing file apart from other failures.
-pub(crate) fn read_json_bytes(path: &Path) -> Result<Vec<u8>, JsonFileError> {
+pub(crate) fn read_json_bytes(path: &Path) -> Result<Vec<u8>, FileError> {
     fs::read(path).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
-            JsonFileError::NotFound
+            FileError::NotFound
         } else {
-            JsonFileError::Read(error.to_string())
+            FileError::Read(error.to_string())
         }
     })
 }
 
-/// Serialises `value` as pretty JSON and replaces `path` in one step: the document goes to a
-/// sibling temporary file first and is renamed over the destination, so a crash or a full disk
-/// never leaves a truncated file behind. Missing parent directories are created.
-pub(crate) fn write_json_atomically<T: Serialize>(
-    path: &Path,
-    value: &T,
-) -> Result<(), JsonFileError> {
-    let mut bytes = serde_json::to_vec_pretty(value)
-        .map_err(|error| JsonFileError::Write(error.to_string()))?;
+/// Serialises `value` as pretty JSON and writes it with [`write_bytes_atomically`].
+pub(crate) fn write_json_atomically<T: Serialize>(path: &Path, value: &T) -> Result<(), FileError> {
+    let mut bytes =
+        serde_json::to_vec_pretty(value).map_err(|error| FileError::Write(error.to_string()))?;
     bytes.push(b'\n');
+    write_bytes_atomically(path, &bytes)
+}
 
+/// Replaces `path` with `bytes` in one step: the content goes to a sibling temporary file first
+/// and is renamed over the destination, so a crash or a full disk never leaves a truncated file
+/// behind. Missing parent directories are created.
+pub(crate) fn write_bytes_atomically(path: &Path, bytes: &[u8]) -> Result<(), FileError> {
     if let Some(parent) = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
     {
-        fs::create_dir_all(parent).map_err(|error| JsonFileError::Write(error.to_string()))?;
+        fs::create_dir_all(parent).map_err(|error| FileError::Write(error.to_string()))?;
     }
 
     let temporary = temporary_path(path);
-    fs::write(&temporary, &bytes).map_err(|error| JsonFileError::Write(error.to_string()))?;
+    fs::write(&temporary, bytes).map_err(|error| FileError::Write(error.to_string()))?;
     if let Err(error) = fs::rename(&temporary, path) {
         // The temporary file is useless once the rename failed; removing it is best effort.
         let _ = fs::remove_file(&temporary);
-        return Err(JsonFileError::Write(error.to_string()));
+        return Err(FileError::Write(error.to_string()));
     }
     Ok(())
 }

@@ -4,6 +4,11 @@
  */
 export type { CredentialErrorKind } from "./generated/credentials/CredentialErrorKind";
 export type { ChangeCounts } from "./generated/diff/ChangeCounts";
+export type { ExportErrorKind } from "./generated/export/ExportErrorKind";
+export type { ExportFormat } from "./generated/export/ExportFormat";
+export type { ExportOutcome } from "./generated/export/ExportOutcome";
+export type { ExportRequest } from "./generated/export/ExportRequest";
+export type { ExportStage } from "./generated/export/ExportStage";
 export type { ChangeKind } from "./generated/diff/ChangeKind";
 export type { CheckConstraintChange } from "./generated/diff/CheckConstraintChange";
 export type { ColumnChange } from "./generated/diff/ColumnChange";
@@ -29,6 +34,7 @@ export type { SqlServerConnectionSettings } from "./generated/inspectors/SqlServ
 export type { AppInfo } from "./generated/ipc/AppInfo";
 export type { CommandError } from "./generated/ipc/CommandError";
 export type { CommandErrorKind } from "./generated/ipc/CommandErrorKind";
+export type { ExportEvent } from "./generated/ipc/ExportEvent";
 export type { InspectionEvent } from "./generated/ipc/InspectionEvent";
 export type { CheckConstraint } from "./generated/model/CheckConstraint";
 export type { Column } from "./generated/model/Column";

@@ -1,6 +1,12 @@
 import type { Edge, Node } from "@xyflow/react";
 
-import type { DetailLevel, ForeignKey, NodeState, SchemaSnapshot } from "@/shared/contracts";
+import type {
+  Column,
+  DetailLevel,
+  ForeignKey,
+  NodeState,
+  SchemaSnapshot,
+} from "@/shared/contracts";
 
 import { NODE_WIDTH, entityKey, nodeHeight, rowsFor } from "./geometry";
 import type { ColumnRow, EntityDescriptor } from "./geometry";
@@ -116,11 +122,7 @@ export function buildRelationEdges(
     if (sourceRows === undefined || targetRows === undefined) {
       continue;
     }
-    const sourceColumns = columnsByKey.get(source) ?? [];
-    const isOptional = foreignKey.columnPairs.every(
-      (pair) =>
-        sourceColumns.find((column) => column.name === pair.referencingColumn)?.isNullable === true,
-    );
+    const isOptional = isOptionalForeignKey(columnsByKey.get(source) ?? [], foreignKey);
     edges.push({
       id: relationEdgeId(foreignKey),
       type: RELATION_EDGE_TYPE,
@@ -130,6 +132,18 @@ export function buildRelationEdges(
     });
   }
   return edges;
+}
+
+/** Whether every referencing column accepts NULL: "zero or many" rather than "many". */
+export function isOptionalForeignKey(
+  referencingColumns: readonly Column[],
+  foreignKey: ForeignKey,
+): boolean {
+  return foreignKey.columnPairs.every(
+    (pair) =>
+      referencingColumns.find((column) => column.name === pair.referencingColumn)?.isNullable ===
+      true,
+  );
 }
 
 /** Number of foreign keys drawn between the visible entities. */

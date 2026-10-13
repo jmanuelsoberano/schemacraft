@@ -1,4 +1,5 @@
-import { Position } from "@xyflow/react";
+// The headless package, so the export renderer and the standalone viewer stay free of React.
+import { Position } from "@xyflow/system";
 
 /** Axis-aligned box of a node in canvas coordinates. */
 export interface NodeBox {
