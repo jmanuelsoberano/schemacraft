@@ -1,7 +1,7 @@
 {
   "name": "schemacraft",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Desktop CASE tool for database reverse engineering and ERD visualisation",
   "type": "module",
   "scripts": {

@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { Dialog as RadixDialog } from "radix-ui";
+import { useRef } from "react";
 import type { ReactNode, RefObject } from "react";
 
 import styles from "./Dialog.module.css";
@@ -14,7 +15,10 @@ interface DialogProps {
   closeLabel: string;
   /** False while an operation runs, so the dialog cannot be dismissed by accident. */
   isDismissable?: boolean;
-  /** Element to focus when the dialog opens, instead of the first focusable one. */
+  /**
+   * Element to focus when the dialog opens. Without one the dialog itself takes focus, so no
+   * control's tooltip pops open before the user acts and Escape closes the dialog right away.
+   */
   initialFocusRef?: RefObject<HTMLElement | null>;
   width?: number;
   children: ReactNode;
@@ -39,12 +43,10 @@ export function Dialog({
     }
   };
 
+  const contentRef = useRef<HTMLDivElement>(null);
   const focusInitialElement = (event: Event) => {
-    const element = initialFocusRef?.current;
-    if (element) {
-      event.preventDefault();
-      element.focus();
-    }
+    event.preventDefault();
+    (initialFocusRef?.current ?? contentRef.current)?.focus();
   };
 
   return (
@@ -52,6 +54,8 @@ export function Dialog({
       <RadixDialog.Portal>
         <RadixDialog.Overlay className={styles.overlay} />
         <RadixDialog.Content
+          ref={contentRef}
+          tabIndex={-1}
           className={styles.content}
           style={{ width }}
           onEscapeKeyDown={preventWhenLocked}

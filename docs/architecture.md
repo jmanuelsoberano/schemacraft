@@ -149,14 +149,14 @@ regression appears: tiberius 0.12.3 with `bb8-tiberius`.
 Tauri application on Windows it renders through the Evergreen WebView2 runtime, which ships with
 Windows 11 and with Windows 10 updates. Bundling a fixed-version runtime would turn the single
 file into a folder of roughly 150 MB, so it is not the default. The NSIS installer embeds the
-WebView2 bootstrapper for machines that lack the runtime; milestone 6 adds a friendly startup
-check for the portable executable.
+WebView2 bootstrapper for machines that lack the runtime; milestone 6 added the startup check
+of the portable executable (ADR-027).
 
 Code signing is a distribution requirement, not an option: on Windows 11 machines where Smart
 App Control is enforced, the unsigned release build is refused at launch (observed on the
-development machine in milestone 1, while the debug build runs). Milestone 6 adds Authenticode
-signing of the executable and the installer, for example through Azure Trusted Signing or an
-OV/EV certificate, wired into the Tauri bundle configuration.
+development machine in milestone 1, while the debug build runs). Milestone 6 wired Authenticode
+signing through Azure Trusted Signing into the release workflow as an optional step (ADR-027);
+version 1.0 ships unsigned by decision.
 
 ### ADR-011: One Server field that understands SSMS notations
 
@@ -393,6 +393,25 @@ Why: a reload threw the open project away and the print dialog printed the page 
 reached the user. Suppressing the defaults in one place keeps every future screen covered, and
 mapping the familiar keys keeps the muscle memory useful.
 
+### ADR-027: Releases are cut by a tag-driven workflow; signing is an optional step
+
+Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`: it checks that the tag matches the
+package version, runs every quality gate, builds the portable executable and the NSIS installer,
+signs both with Azure Trusted Signing when the secrets exist, smoke-tests the real binary,
+computes SHA-256 sums and publishes a draft GitHub release with the assets and generated notes.
+The smoke test (`scripts/smoke-test-release.mjs`) starts the executable with WebView2 remote
+debugging in a private profile and checks through the DevTools protocol that the welcome screen
+renders, that About shows the version, that the language and the theme switch and that F5 does
+not reload, saving screenshots as artifacts; CI runs the same test on every push. Before any
+window exists, the executable checks that the WebView2 runtime loads and otherwise shows a
+native bilingual dialog offering Microsoft's download page, through `rfd`, which the dialog
+plugin already compiles, since the workspace forbids `unsafe` FFI.
+
+Why: a release must be reproducible from a tag and verified on the real binary, not in
+development mode. Version 1.0 ships unsigned by decision; keeping the signing step in place
+makes a certificate a configuration change, not a code change. The draft release gives the
+author a last manual check against a production database before publishing.
+
 ## Milestones
 
 | #   | Scope                                                           | Status |
@@ -402,4 +421,4 @@ mapping the familiar keys keeps the muscle memory useful.
 | 3   | `.scraft` project files and schema diff engine                  | done   |
 | 4   | Canvas: table nodes, relationships, layouts, detail levels      | done   |
 | 5   | Export: SVG, standalone HTML, single-page PDF                   | done   |
-| 6   | Portable executable validation and packaging                    | next   |
+| 6   | Portable executable validation and packaging                    | done   |

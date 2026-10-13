@@ -20,14 +20,54 @@ use state::AppState;
 /// Name of the preferences file inside the per-user configuration directory.
 const PREFERENCES_FILE_NAME: &str = "preferences.json";
 
+/// Microsoft's page for the Evergreen WebView2 runtime.
+const WEBVIEW2_DOWNLOAD_URL: &str = "https://developer.microsoft.com/microsoft-edge/webview2/";
+
+/// Shown before any window exists, so it speaks both languages the application supports.
+const MISSING_WEBVIEW2_MESSAGE: &str = "SchemaCraft needs the Microsoft Edge WebView2 Runtime, \
+which is not installed on this computer. Open the download page now?\n\n\
+SchemaCraft necesita Microsoft Edge WebView2 Runtime y no está instalado en este equipo. \
+¿Abrir la página de descarga ahora?";
+
 fn main() -> ExitCode {
     logging::initialize();
+
+    if !webview_runtime_available() {
+        return ExitCode::FAILURE;
+    }
 
     match run_application() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             tracing::error!(%error, "SchemaCraft could not start");
             ExitCode::FAILURE
+        }
+    }
+}
+
+/// Whether the WebView2 runtime can be loaded. The portable executable relies on the Evergreen
+/// runtime that ships with Windows; when it is missing, a native dialog explains it and offers
+/// to open the download page instead of leaving the user with a generic error.
+fn webview_runtime_available() -> bool {
+    match tauri::webview_version() {
+        Ok(version) => {
+            tracing::debug!(%version, "WebView2 runtime found");
+            true
+        }
+        Err(error) => {
+            tracing::error!(%error, "WebView2 runtime not found");
+            let answer = rfd::MessageDialog::new()
+                .set_level(rfd::MessageLevel::Warning)
+                .set_title("SchemaCraft")
+                .set_description(MISSING_WEBVIEW2_MESSAGE)
+                .set_buttons(rfd::MessageButtons::YesNo)
+                .show();
+            if matches!(answer, rfd::MessageDialogResult::Yes)
+                && let Err(error) = open::that_detached(WEBVIEW2_DOWNLOAD_URL)
+            {
+                tracing::error!(%error, "could not open the WebView2 download page");
+            }
+            false
         }
     }
 }

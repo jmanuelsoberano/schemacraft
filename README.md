@@ -7,7 +7,7 @@ the same diagram, and renders fast, interactive diagrams with high-fidelity sing
 
 ## Status
 
-Milestones 1 to 5 of 6 are complete: Rust workspace, domain model, Tauri host, application
+All six milestones are complete: Rust workspace, domain model, Tauri host, application
 shell with design system, bilingual UI (English and Spanish), light and dark themes, tooling and
 CI; the SQL Server inspector with SQL Server and Windows Authentication, the connection dialog
 with actionable errors and progress, and the entities panel listing the loaded schema; then
@@ -16,7 +16,9 @@ reviewed diff that keeps diagram positions, and a history of recent connections;
 canvas: entity cards with three detail levels, crow's foot relationships, layered, organic and
 radial layouts, isolation of a table with its neighbours, undo and redo, and a command palette;
 and the exports: SVG with selectable text, a self-contained interactive HTML viewer,
-single-page PDF and PNG at 1x, 2x and 4x, all drawn by one renderer with bundled fonts.
+single-page PDF and PNG at 1x, 2x and 4x, all drawn by one renderer with bundled fonts; and the
+release: a portable `schemacraft.exe` with a WebView2 check, a per-user installer, a smoke test
+of the real binary in CI and a tag-driven release workflow.
 
 | Milestone | Scope                                                       |
 | --------- | ----------------------------------------------------------- |
@@ -25,7 +27,7 @@ single-page PDF and PNG at 1x, 2x and 4x, all drawn by one renderer with bundled
 | 3 ✅      | `.scraft` project files and schema diff ("refresh from DB") |
 | 4 ✅      | Canvas: table nodes, relationships, layouts, detail levels  |
 | 5 ✅      | Export: SVG, standalone interactive HTML, single-page PDF   |
-| 6         | Portable `schemacraft.exe` validation and packaging         |
+| 6 ✅      | Portable `schemacraft.exe` validation and packaging         |
 
 ## Stack
 
@@ -43,8 +45,9 @@ single-page PDF and PNG at 1x, 2x and 4x, all drawn by one renderer with bundled
   Microsoft C++ Build Tools.
 - [Node.js](https://nodejs.org) 24 or newer with npm.
 
-Release builds are not code-signed yet. Windows machines with Smart App Control enforced refuse
-to launch unsigned executables; signing is scheduled for milestone 6 (see the architecture notes).
+Release builds are not code-signed in 1.0: SmartScreen shows a warning on the first launch (More
+info, then Run anyway) and machines with Smart App Control enforced may refuse the executable.
+The release workflow signs with Azure Trusted Signing as soon as its secrets exist (ADR-027).
 
 ## Getting started
 
@@ -67,6 +70,21 @@ npm run tauri build
 The portable binary is written to `target/release/schemacraft.exe` and the installer to
 `target/release/bundle/nsis/`.
 
+## Distribution
+
+Every tag `vX.Y.Z` builds, smoke-tests and publishes a draft GitHub release with:
+
+- `schemacraft-vX.Y.Z-windows-x64.exe`: the portable executable, a single file of about 12 MB.
+  It needs the Microsoft Edge WebView2 runtime, which Windows 11 and updated Windows 10 already
+  have; when it is missing, the application says so and offers the download page.
+- `schemacraft-vX.Y.Z-windows-x64-setup.exe`: the per-user NSIS installer, which embeds the
+  WebView2 bootstrapper and needs no administrator rights.
+- `SHA256SUMS.txt`: checksums of both files.
+
+[docs/release-checklist.md](docs/release-checklist.md) lists what CI verifies and what is checked
+by hand before the draft is published. To cut a release: set the version in `package.json` and
+`Cargo.toml`, commit, tag `vX.Y.Z` and push the tag.
+
 ## Scripts
 
 | Command                                                 | Purpose                                                    |
@@ -82,6 +100,7 @@ The portable binary is written to `target/release/schemacraft.exe` and the insta
 | `cargo test --workspace`                                | Run Rust tests (also regenerates the TypeScript contracts) |
 | `cargo clippy --workspace --all-targets -- -D warnings` | Lint Rust with the project's strict rules                  |
 | `node scripts/prepare-fonts.mjs`                        | Regenerate the TTF fonts bundled by the export renderer    |
+| `node scripts/smoke-test-release.mjs <exe> [dir]`       | Start a release build and check its first screens          |
 
 ## Integration tests against SQL Server
 
