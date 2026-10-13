@@ -7,9 +7,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod error;
 mod logging;
+mod state;
 
 use std::process::ExitCode;
+
+use state::AppState;
 
 fn main() -> ExitCode {
     logging::initialize();
@@ -26,6 +30,7 @@ fn main() -> ExitCode {
 /// Builds the Tauri application and runs it until the last window closes.
 fn run_application() -> tauri::Result<()> {
     tauri::Builder::default()
+        .manage(AppState::default())
         .setup(|app| {
             let package_info = app.package_info();
             tracing::info!(
@@ -35,6 +40,13 @@ fn run_application() -> tauri::Result<()> {
             );
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![commands::app_info::get_app_info])
+        .invoke_handler(tauri::generate_handler![
+            commands::app_info::get_app_info,
+            commands::connection::test_connection,
+            commands::connection::list_databases,
+            commands::connection::list_schemas,
+            commands::connection::inspect_database,
+            commands::connection::cancel_inspection,
+        ])
         .run(tauri::generate_context!())
 }

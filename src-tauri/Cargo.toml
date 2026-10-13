@@ -16,11 +16,16 @@ path = "src/main.rs"
 tauri-build = { workspace = true }
 
 [dependencies]
+schemacraft-core = { workspace = true }
 serde = { workspace = true }
 tauri = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 ts-rs = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
 
 [lints]
 workspace = true
