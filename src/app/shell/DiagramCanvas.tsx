@@ -4,26 +4,24 @@ import {
   Controls,
   MiniMap,
   ReactFlow,
-  ReactFlowProvider,
   useEdgesState,
   useNodesState,
-  useReactFlow,
 } from "@xyflow/react";
 import type {
-  Edge,
-  Node,
   NodeMouseHandler,
   OnMoveEnd,
   OnNodeDrag,
   OnSelectionChangeFunc,
+  ReactFlowInstance,
   Viewport,
 } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type { ActionsById } from "@/app/actions/action";
 import { EntityNode } from "@/features/canvas/EntityNode";
 import { RelationEdge } from "@/features/canvas/RelationEdge";
 import { RelationMarkers } from "@/features/canvas/RelationMarkers";
+import { layoutFreshProject } from "@/features/canvas/canvasActions";
 import { toggleCollapsed, withPositions } from "@/features/canvas/canvasState";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import {
@@ -31,6 +29,7 @@ import {
   describeEntities,
   effectiveDetailLevel,
 } from "@/features/canvas/geometry";
+import type { EntityDescriptor } from "@/features/canvas/geometry";
 import {
   ENTITY_NODE_TYPE,
   RELATION_EDGE_TYPE,
@@ -41,21 +40,24 @@ import type {
   EntityNode as EntityNodeType,
   RelationEdge as RelationEdgeType,
 } from "@/features/canvas/graph";
+import { exposeFlowInstance } from "@/app/developmentHooks";
 import { ProjectNotice } from "@/features/project/ProjectNotice";
 import { useProjectStore } from "@/features/project/projectStore";
-import type { OpenProject } from "@/features/project/projectStore";
+import { useI18n } from "@/shared/i18n/useI18n";
+import { Spinner } from "@/shared/ui/Spinner";
 
 import styles from "./DiagramCanvas.module.css";
 import { WelcomeOverlay } from "./WelcomeOverlay";
 
 // Stable references keep React Flow from re-initialising on every render.
-const NO_NODES: Node[] = [];
-const NO_EDGES: Edge[] = [];
 const NODE_TYPES = { [ENTITY_NODE_TYPE]: EntityNode };
 const EDGE_TYPES = { [RELATION_EDGE_TYPE]: RelationEdge };
 const FIT_VIEW_OPTIONS = { padding: 0.15, maxZoom: 1 };
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 2.5;
+const NO_ENTITIES: ReadonlyMap<string, EntityDescriptor> = new Map();
+
+type FlowInstance = ReactFlowInstance<EntityNodeType, RelationEdgeType>;
 
 interface DiagramCanvasProps {
   actions: ActionsById;
@@ -63,37 +65,15 @@ interface DiagramCanvasProps {
 
 /** Infinite canvas hosting the entity-relationship diagram of the open project. */
 export function DiagramCanvas({ actions }: DiagramCanvasProps) {
-  const project = useProjectStore((state) => state.project);
+  const hasProject = useProjectStore((state) => state.project !== null);
 
   return (
     <div className={styles.canvas}>
       <ProjectNotice />
-      <ReactFlowProvider>
-        {project === null ? (
-          <EmptyCanvas />
-        ) : (
-          <ProjectCanvas key={project.loadToken} project={project} />
-        )}
-      </ReactFlowProvider>
-      {project === null ? <WelcomeOverlay actions={actions} /> : null}
+      <FlowCanvas />
+      {hasProject ? null : <WelcomeOverlay actions={actions} />}
       <RelationMarkers />
     </div>
-  );
-}
-
-function EmptyCanvas() {
-  return (
-    <ReactFlow
-      nodes={NO_NODES}
-      edges={NO_EDGES}
-      minZoom={MIN_ZOOM}
-      maxZoom={MAX_ZOOM}
-      nodesConnectable={false}
-      deleteKeyCode={null}
-    >
-      <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} />
-      <Controls showInteractive={false} position="bottom-right" />
-    </ReactFlow>
   );
 }
 
@@ -101,37 +81,60 @@ function isDefaultViewport(viewport: Viewport): boolean {
   return viewport.x === 0 && viewport.y === 0 && viewport.zoom === 1;
 }
 
-interface ProjectCanvasProps {
-  project: OpenProject;
+/** Small pill shown while a layout engine runs. */
+function LayoutProgress() {
+  const { t } = useI18n();
+  const isLayoutRunning = useCanvasUiStore((state) => state.isLayoutRunning);
+  if (!isLayoutRunning) {
+    return null;
+  }
+  return (
+    <div className={styles.layoutProgress} role="status">
+      <Spinner size={14} />
+      {t("canvas.layout.running")}
+    </div>
+  );
 }
 
-/** The diagram of one loaded document; remounted whenever another document is loaded. */
-function ProjectCanvas({ project }: ProjectCanvasProps) {
-  const { content } = project;
+/**
+ * One React Flow instance for the lifetime of the window. Nodes and edges derive from the open
+ * project; a document switch restores its viewport or fits the diagram.
+ */
+function FlowCanvas() {
+  const snapshot = useProjectStore((state) => state.project?.content.snapshot ?? null);
+  const nodeStates = useProjectStore((state) => state.project?.content.canvas.nodes ?? null);
+  const savedDetailLevel = useProjectStore(
+    (state) => state.project?.content.canvas.detailLevel ?? "keys",
+  );
+  const loadToken = useProjectStore((state) => state.project?.loadToken ?? 0);
   const updateCanvas = useProjectStore((state) => state.updateCanvas);
   const isCompactZoom = useCanvasUiStore((state) => state.zoom < COMPACT_ZOOM_THRESHOLD);
   const highlighted = useCanvasUiStore((state) => state.highlightedKeys);
   const focusRequest = useCanvasUiStore((state) => state.focusRequest);
+  const fitRequest = useCanvasUiStore((state) => state.fitRequest);
   const setZoom = useCanvasUiStore((state) => state.setZoom);
   const setSelectedKeys = useCanvasUiStore((state) => state.setSelectedKeys);
   const clearHighlights = useCanvasUiStore((state) => state.clearHighlights);
-  const reactFlow = useReactFlow<EntityNodeType, RelationEdgeType>();
-  // The viewport saved with the document is restored once; a fresh document is fitted instead.
-  const [initialViewport] = useState(() => content.canvas.viewport);
+  const openContextMenu = useCanvasUiStore((state) => state.openContextMenu);
+  const closeContextMenu = useCanvasUiStore((state) => state.closeContextMenu);
+  const instanceRef = useRef<FlowInstance | null>(null);
 
-  const entities = useMemo(() => describeEntities(content.snapshot), [content.snapshot]);
-  const detailLevel = effectiveDetailLevel(content.canvas.detailLevel, isCompactZoom ? 0 : 1);
-  const nodeStates = content.canvas.nodes;
+  const entities = useMemo(
+    () => (snapshot === null ? NO_ENTITIES : describeEntities(snapshot)),
+    [snapshot],
+  );
+  const detailLevel = effectiveDetailLevel(savedDetailLevel, isCompactZoom ? 0 : 1);
   const derivedNodes = useMemo(
-    () => buildEntityNodes(entities, nodeStates, detailLevel, highlighted),
+    () =>
+      nodeStates === null ? [] : buildEntityNodes(entities, nodeStates, detailLevel, highlighted),
     [entities, nodeStates, detailLevel, highlighted],
   );
   const derivedEdges = useMemo(
-    () => buildRelationEdges(content.snapshot, derivedNodes),
-    [content.snapshot, derivedNodes],
+    () => (snapshot === null ? [] : buildRelationEdges(snapshot, derivedNodes)),
+    [snapshot, derivedNodes],
   );
-  const [nodes, setNodes, onNodesChange] = useNodesState<EntityNodeType>(derivedNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<RelationEdgeType>(derivedEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState<EntityNodeType>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<RelationEdgeType>([]);
 
   useEffect(() => {
     setNodes((previous) => {
@@ -146,11 +149,50 @@ function ProjectCanvas({ project }: ProjectCanvasProps) {
     setEdges(derivedEdges);
   }, [derivedEdges, setEdges]);
 
+  // A new document: restore its viewport or fit it, and lay out a schema just read from a
+  // database. Runs after the nodes of the document reached React Flow.
   useEffect(() => {
-    if (focusRequest === null || reactFlow.getNode(focusRequest.key) === undefined) {
+    if (loadToken === 0) {
       return;
     }
-    void reactFlow.fitView({
+    const timer = window.setTimeout(() => {
+      const instance = instanceRef.current;
+      const { project } = useProjectStore.getState();
+      if (instance === null || project === null) {
+        return;
+      }
+      const { viewport, layout } = project.content.canvas;
+      const isFresh =
+        project.path === null &&
+        project.savedAt === null &&
+        !project.isDirty &&
+        layout === "manual";
+      if (isFresh) {
+        void layoutFreshProject();
+      } else if (isDefaultViewport(viewport)) {
+        void instance.fitView(FIT_VIEW_OPTIONS);
+      } else {
+        void instance.setViewport(viewport);
+        setZoom(viewport.zoom);
+      }
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [loadToken, setZoom]);
+
+  useEffect(() => {
+    if (fitRequest > 0) {
+      void instanceRef.current?.fitView({ ...FIT_VIEW_OPTIONS, duration: 300 });
+    }
+  }, [fitRequest]);
+
+  useEffect(() => {
+    const instance = instanceRef.current;
+    if (focusRequest === null || instance?.getNode(focusRequest.key) === undefined) {
+      return;
+    }
+    void instance.fitView({
       nodes: [{ id: focusRequest.key }],
       duration: 300,
       maxZoom: 1,
@@ -159,7 +201,12 @@ function ProjectCanvas({ project }: ProjectCanvasProps) {
     setNodes((previous) =>
       previous.map((node) => ({ ...node, selected: node.id === focusRequest.key })),
     );
-  }, [focusRequest, reactFlow, setNodes]);
+  }, [focusRequest, setNodes]);
+
+  const handleInit = useCallback((instance: FlowInstance) => {
+    instanceRef.current = instance;
+    exposeFlowInstance(instance);
+  }, []);
 
   const handleNodeDragStop = useCallback<OnNodeDrag<EntityNodeType>>(
     (_event, _node, draggedNodes) => {
@@ -179,6 +226,19 @@ function ProjectCanvas({ project }: ProjectCanvasProps) {
     },
     [updateCanvas],
   );
+
+  const handleNodeContextMenu = useCallback<NodeMouseHandler<EntityNodeType>>(
+    (event, node) => {
+      event.preventDefault();
+      openContextMenu({ key: node.id, x: event.clientX, y: event.clientY });
+    },
+    [openContextMenu],
+  );
+
+  const handlePaneClick = useCallback(() => {
+    clearHighlights();
+    closeContextMenu();
+  }, [clearHighlights, closeContextMenu]);
 
   const handleSelectionChange = useCallback<
     OnSelectionChangeFunc<EntityNodeType, RelationEdgeType>
@@ -212,24 +272,22 @@ function ProjectCanvas({ project }: ProjectCanvasProps) {
     [setZoom, updateCanvas],
   );
 
-  const fitsOnLoad = isDefaultViewport(initialViewport);
-
   return (
     <ReactFlow<EntityNodeType, RelationEdgeType>
       nodes={nodes}
       edges={edges}
       nodeTypes={NODE_TYPES}
       edgeTypes={EDGE_TYPES}
+      onInit={handleInit}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onNodeDragStop={handleNodeDragStop}
       onNodeClick={handleNodeClick}
+      onNodeContextMenu={handleNodeContextMenu}
+      onPaneClick={handlePaneClick}
       onSelectionChange={handleSelectionChange}
       onMove={handleMove}
       onMoveEnd={handleMoveEnd}
-      fitView={fitsOnLoad}
-      fitViewOptions={FIT_VIEW_OPTIONS}
-      defaultViewport={fitsOnLoad ? undefined : initialViewport}
       minZoom={MIN_ZOOM}
       maxZoom={MAX_ZOOM}
       nodesConnectable={false}
@@ -241,6 +299,7 @@ function ProjectCanvas({ project }: ProjectCanvasProps) {
       <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} />
       <Controls showInteractive={false} position="bottom-right" />
       <MiniMap position="bottom-left" pannable zoomable nodeStrokeWidth={0} />
+      <LayoutProgress />
     </ReactFlow>
   );
 }

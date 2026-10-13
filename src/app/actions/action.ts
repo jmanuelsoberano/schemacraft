@@ -11,7 +11,18 @@ export type ActionId =
   | "project.saveProjectAs"
   | "project.refreshFromDatabase"
   | "diagram.autoLayout"
+  | "diagram.layoutLayered"
+  | "diagram.layoutLayeredHorizontal"
+  | "diagram.layoutOrganic"
+  | "diagram.layoutRadial"
+  | "diagram.fitView"
+  | "diagram.showAll"
+  | "diagram.collapseAll"
+  | "diagram.expandAll"
   | "diagram.export"
+  | "edit.undo"
+  | "edit.redo"
+  | "view.commandPalette"
   | "view.toggleSidebar"
   | "help.about";
 
@@ -26,6 +37,8 @@ export interface AppAction {
   shortcut?: Shortcut;
   /** False while the feature behind the action has not shipped; the UI explains why. */
   isAvailable: boolean;
+  /** Leave the shortcut to the focused text field, e.g. undo inside the search box. */
+  skipWhenEditing?: boolean;
   run: () => void;
 }
 

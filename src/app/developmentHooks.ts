@@ -1,4 +1,7 @@
+import * as canvasActions from "@/features/canvas/canvasActions";
+import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { useConnectionStore } from "@/features/connection/connectionStore";
+import { usePaletteStore } from "@/features/palette/paletteStore";
 import { usePreferencesStore } from "@/features/preferences/preferencesStore";
 import { useProjectStore } from "@/features/project/projectStore";
 import { useSettingsStore } from "@/shared/settings/settingsStore";
@@ -9,6 +12,11 @@ export interface DevelopmentHooks {
   project: typeof useProjectStore;
   preferences: typeof usePreferencesStore;
   settings: typeof useSettingsStore;
+  canvasUi: typeof useCanvasUiStore;
+  canvasActions: typeof canvasActions;
+  palette: typeof usePaletteStore;
+  /** The React Flow instance once the canvas initialised, for scripted checks. */
+  flow: unknown;
 }
 
 declare global {
@@ -27,9 +35,20 @@ export function installDevelopmentHooks(): void {
     return;
   }
   window.__schemacraft = {
+    flow: null,
     connection: useConnectionStore,
     project: useProjectStore,
     preferences: usePreferencesStore,
     settings: useSettingsStore,
+    canvasUi: useCanvasUiStore,
+    canvasActions,
+    palette: usePaletteStore,
   };
+}
+
+/** Records the React Flow instance on the development hooks; a no-op in production. */
+export function exposeFlowInstance(instance: unknown): void {
+  if (window.__schemacraft !== undefined) {
+    window.__schemacraft.flow = instance;
+  }
 }

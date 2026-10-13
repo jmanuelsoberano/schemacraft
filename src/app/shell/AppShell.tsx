@@ -3,7 +3,9 @@ import { useEffect } from "react";
 import { useAppActions } from "@/app/actions/useAppActions";
 import { useKeyboardShortcuts } from "@/app/actions/useKeyboardShortcuts";
 import { AboutDialog } from "@/features/about/AboutDialog";
+import { CanvasContextMenu } from "@/features/canvas/CanvasContextMenu";
 import { ConnectionDialog } from "@/features/connection/ConnectionDialog";
+import { CommandPalette } from "@/features/palette/CommandPalette";
 import { usePreferencesStore } from "@/features/preferences/preferencesStore";
 import { UnsavedChangesDialog } from "@/features/project/UnsavedChangesDialog";
 import { useProjectWindow } from "@/features/project/useProjectWindow";
@@ -43,6 +45,8 @@ export function AppShell() {
       <ConnectionDialog />
       <UnsavedChangesDialog />
       <AboutDialog />
+      <CommandPalette actions={actions} />
+      <CanvasContextMenu />
     </div>
   );
 }
