@@ -35,6 +35,9 @@ design system, bilingual UI (English and Spanish), light and dark themes, toolin
   Microsoft C++ Build Tools.
 - [Node.js](https://nodejs.org) 24 or newer with npm.
 
+Release builds are not code-signed yet. Windows machines with Smart App Control enforced refuse
+to launch unsigned executables; signing is scheduled for milestone 6 (see the architecture notes).
+
 ## Getting started
 
 ```bash
