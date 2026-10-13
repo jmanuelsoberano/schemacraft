@@ -1,0 +1,23 @@
+[package]
+name = "schemacraft-core"
+description = "Database-agnostic domain model, inspectors, project persistence and diff engine for SchemaCraft"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "schemacraft_core"
+
+[dependencies]
+chrono = { workspace = true }
+serde = { workspace = true }
+ts-rs = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
