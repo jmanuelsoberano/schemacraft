@@ -12,7 +12,8 @@ export type ActionId =
   | "project.refreshFromDatabase"
   | "diagram.autoLayout"
   | "diagram.export"
-  | "view.toggleSidebar";
+  | "view.toggleSidebar"
+  | "help.about";
 
 /**
  * A user-facing operation defined once and surfaced consistently by toolbars, menus, the

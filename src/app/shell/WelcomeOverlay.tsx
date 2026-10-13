@@ -3,6 +3,7 @@ import { FileText } from "lucide-react";
 import { ActionButton } from "@/app/actions/ActionButton";
 import type { ActionsById } from "@/app/actions/action";
 import { Logo } from "@/app/brand/Logo";
+import { DEVELOPER_NAME } from "@/app/brand/credits";
 import { usePreferencesStore } from "@/features/preferences/preferencesStore";
 import { projectDirectory, projectDisplayName } from "@/features/project/projectPaths";
 import { useProjectStore } from "@/features/project/projectStore";
@@ -68,6 +69,7 @@ export function WelcomeOverlay({ actions }: WelcomeOverlayProps) {
             </ul>
           </nav>
         ) : null}
+        <p className={styles.credit}>{t("credits.developedBy", { name: DEVELOPER_NAME })}</p>
       </section>
     </div>
   );

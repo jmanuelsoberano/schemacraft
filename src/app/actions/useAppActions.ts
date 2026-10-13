@@ -2,6 +2,7 @@ import {
   Database,
   Download,
   FolderOpen,
+  Info,
   PanelLeft,
   RefreshCw,
   Save,
@@ -10,6 +11,7 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 
+import { useAboutStore } from "@/features/about/aboutStore";
 import { useConnectionStore } from "@/features/connection/connectionStore";
 import { useProjectStore } from "@/features/project/projectStore";
 import { useSettingsStore } from "@/shared/settings/settingsStore";
@@ -33,6 +35,7 @@ export function useAppActions(): AppActions {
   const openProject = useProjectStore((state) => state.openProject);
   const saveProject = useProjectStore((state) => state.saveProject);
   const saveProjectAs = useProjectStore((state) => state.saveProjectAs);
+  const openAbout = useAboutStore((state) => state.open);
 
   return useMemo(() => {
     const byId: ActionsById = {
@@ -111,6 +114,14 @@ export function useAppActions(): AppActions {
         isAvailable: true,
         run: toggleSidebar,
       },
+      "help.about": {
+        id: "help.about",
+        labelKey: "action.about",
+        icon: Info,
+        shortcut: { key: "F1" },
+        isAvailable: true,
+        run: openAbout,
+      },
     };
 
     return { byId, list: Object.values(byId) };
@@ -123,5 +134,6 @@ export function useAppActions(): AppActions {
     openProject,
     saveProject,
     saveProjectAs,
+    openAbout,
   ]);
 }

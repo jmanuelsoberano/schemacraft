@@ -2,6 +2,7 @@ import { useEffect } from "react";
 
 import { useAppActions } from "@/app/actions/useAppActions";
 import { useKeyboardShortcuts } from "@/app/actions/useKeyboardShortcuts";
+import { AboutDialog } from "@/features/about/AboutDialog";
 import { ConnectionDialog } from "@/features/connection/ConnectionDialog";
 import { usePreferencesStore } from "@/features/preferences/preferencesStore";
 import { UnsavedChangesDialog } from "@/features/project/UnsavedChangesDialog";
@@ -41,6 +42,7 @@ export function AppShell() {
       <StatusBar />
       <ConnectionDialog />
       <UnsavedChangesDialog />
+      <AboutDialog />
     </div>
   );
 }
