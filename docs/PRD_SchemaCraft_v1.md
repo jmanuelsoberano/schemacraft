@@ -51,6 +51,7 @@ Permite conectarse a una base de datos mediante autenticación mixta, extraer me
   - Encriptación y validación de certificado (`TrustServerCertificate=true/false`).
   - Capacidad de filtrar por uno o varios esquemas (ej. `dbo`, `sales`, `hr`).
 - **Seguridad**: Las contraseñas **nunca** se guardan en texto plano en los archivos de proyecto. Se almacenan temporalmente en memoria o en el Credential Manager del sistema operativo.
+- **Historial de conexiones**: La aplicación recuerda las últimas conexiones utilizadas (servidor, base de datos, modo de autenticación y usuario; nunca la contraseña), permite rellenar el diálogo de conexión con un clic y quitar entradas. La opción "Recordar contraseña" guarda la contraseña únicamente en el Credential Manager del sistema operativo.
 
 ### 3.2 Introspección y Reverse Engineering (Solo Lectura)
 - **Extracción Completa de Metadatos**:
@@ -94,6 +95,7 @@ El usuario puede cambiar la disposición del diagrama con un solo clic:
 
 ### 3.6 Persistencia de Proyectos (Formato Nativo `.scraft`)
 - **Regla Fundamental**: El usuario **no debe tener que volver a consultar la base de datos** cada vez que abre la herramienta o desea revisar un diagrama.
+- **Proyectos recientes**: La pantalla de bienvenida lista los últimos proyectos `.scraft` abiertos para reabrirlos con un clic.
 - **Contenido del archivo de proyecto (`.scraft` / JSON estructurado)**:
   - Metadatos de la conexión (servidor, base de datos, esquema, usuario — sin passwords).
   - Snapshot completo del esquema extraído (fecha y hora de extracción, tablas, columnas, relaciones).
@@ -165,3 +167,4 @@ Se prohíben expresamente exportaciones en múltiples páginas cortadas que requ
 ## 6. Historial de Cambios
 
 - **2026-10-13**: Se añade el requisito no funcional 4 (Experiencia de Usuario) y su criterio de aceptación, acordados al cierre del Paso 1 de construcción.
+- **2026-10-13**: Se añaden el historial de conexiones recientes (3.1) y los proyectos recientes (3.6), acordados al planificar el Paso 3.
