@@ -15,6 +15,9 @@ schemacraft/
 ├── crates/schemacraft-core/   Rust library: domain model, inspectors, project files, diff engine
 │   ├── src/model/             pure schema types (tables, columns, keys, snapshot)
 │   ├── src/inspectors/        DatabaseInspector trait, errors, progress, SQL Server implementation
+│   ├── src/project/           .scraft documents, saved connections, canvas state, atomic JSON files
+│   ├── src/diff/              comparison of two snapshots behind "refresh from database"
+│   ├── src/preferences/       connection history and recent projects (per-user JSON file)
 │   └── tests/                 integration tests and SQL fixtures (run against a real server)
 ├── src-tauri/                 Rust binary: Tauri host, IPC commands, logging, configuration
 ├── src/                       React + TypeScript frontend
@@ -23,12 +26,14 @@ schemacraft/
 │   │   ├── shell/             top bar, entities sidebar, diagram canvas, status bar
 │   │   └── styles/            design tokens and base styles
 │   ├── features/              one folder per product capability
-│   │   ├── connection/        connection dialog, draft, flow store, progress, error guidance
-│   │   └── schema/            loaded snapshot store and entity list helpers
+│   │   ├── connection/        connection dialog, history, flow store, progress, change review
+│   │   ├── preferences/       mirror of the preferences file: history and recent projects
+│   │   ├── project/           open project store, open/save flows, unsaved-changes guard
+│   │   └── schema/            entity list helpers and data type formatting
 │   └── shared/                cross-cutting modules
 │       ├── contracts/         TypeScript types generated from Rust (ts-rs)
 │       ├── i18n/              message catalogues and translation hook
-│       ├── ipc/               typed wrappers over Tauri `invoke`
+│       ├── ipc/               typed wrappers over Tauri `invoke` and native dialogs; preview backends
 │       ├── settings/          persisted preferences (theme, language, layout)
 │       └── ui/                accessible UI primitives (Radix based)
 ├── assets/brand/              source artwork for the application icon
@@ -45,10 +50,9 @@ from `app/`.
 
 ### ADR-001: Rust workspace with a framework-free core
 
-`crates/schemacraft-core` knows nothing about Tauri, HTTP or any UI. It contains the schema model
-and, in later milestones, the database inspectors (`DatabaseInspector` strategy), `.scraft`
-persistence and the diff engine. `src-tauri` is a thin adapter that maps core operations to IPC
-commands.
+`crates/schemacraft-core` knows nothing about Tauri, HTTP or any UI. It contains the schema model,
+the database inspectors (`DatabaseInspector` strategy), `.scraft` persistence, the diff engine and
+the preferences. `src-tauri` is a thin adapter that maps core operations to IPC commands.
 
 Why: the core can be unit tested with `cargo test` in seconds and without a window, the PRD's
 module boundaries (`inspectors`, `model`, `project`, `diff`, `ui`) map one-to-one to directories,
@@ -192,13 +196,71 @@ is never loaded.
 Why: the connection flow can be designed, reviewed and screenshot in a plain browser without a
 database, in both themes and languages, which is how the UX definition of done is checked.
 
+### ADR-015: `.scraft` is versioned, pretty JSON written atomically
+
+A project file is one JSON document: a header (`formatVersion`, `savedAt`, `savedWith`)
+followed by the content the application holds in memory, `ProjectContent`: the connection
+without its password, the inspection options, the snapshot and the canvas state. Readers parse
+the header first and refuse newer format versions with a classified error; missing fields of
+older files take defaults. Files are written to a sibling temporary file and renamed over the
+destination, so a crash never leaves a truncated project behind. Node states are stored sorted
+by qualified name, so saving the same project twice yields the same bytes.
+
+Why: the PRD asks for a readable, structured file that reopens without a database. Pretty
+JSON with camelCase keys is diff-friendly and matches the IPC payloads, which means one set of
+Rust types (`ts-rs` exported) describes the file, the IPC and the frontend state.
+
+The canvas state is the Memento of the diagram: an immutable, serialisable value the canvas
+produces when a project is saved and restores when it is opened. Milestone 4 adds the
+caretaker (undo and redo) on top of the same value.
+
+### ADR-016: The diff matches objects by name and is reviewed before it is applied
+
+`SchemaDiff::between` pairs tables and views by schema-qualified name, foreign keys by
+referencing table plus constraint name, and columns, indexes and constraints by name. A rename
+is therefore a removal plus an addition; there is no heuristic rename detection in v1. Column
+order is not compared, because reordering changes nothing in a diagram. Every list is sorted,
+so the same two snapshots always produce the same diff, and a summary carries the counts the
+review dialog shows.
+
+Refresh from database reads the schema again, computes the diff on the Rust side and shows it
+in the connection dialog; nothing changes until the user applies it. Applying replaces the
+snapshot and carries the canvas state over to every surviving entity, changed or not; new
+entities wait for a layout. A project opened from a file reconnects through the same dialog,
+prefilled from the saved connection, because the password is never on disk.
+
+### ADR-017: Preferences live in one Rust-owned file in the user's configuration directory
+
+The connection history (last ten endpoints, most recent first, never a password) and the
+recent projects (last ten paths) are a `Preferences` document stored as
+`preferences.json` under the per-user application configuration directory
+(`%APPDATA%\com.jmanuelsoberano.schemacraft` on Windows), written with the same atomic writer as
+project files. Entries are deduplicated by endpoint (server, database and login, case
+insensitive) and by path. The Rust side applies every change and returns the whole document;
+the frontend mirrors it in a store and never writes the file itself. A damaged file is logged
+and replaced by defaults rather than blocking start-up.
+
+Why: a file the user can find and back up, consistent with the project format, independent of
+the webview's storage, and ready to take theme and language later. Keeping it in AppData rather
+than next to the executable keeps the portable build usable from read-only locations.
+
+### ADR-018: Native dialogs through the Tauri plugin, preview backends behind a resolver
+
+File pickers use `tauri-plugin-dialog`; the chosen path is then passed to the Rust commands
+that read and write projects, so no file content crosses the IPC boundary twice. Every feature
+backend (connection, project, preferences) is resolved by one helper: the Tauri commands inside
+the desktop runtime, a simulated backend in a development browser preview, or a backend that
+reports the runtime as unavailable. The preview loader is passed as
+`import.meta.env.DEV ? () => import(...) : null`, which lets the bundler drop every simulated
+module from production builds.
+
 ## Milestones
 
 | #   | Scope                                                           | Status  |
 | --- | --------------------------------------------------------------- | ------- |
 | 1   | Workspace, domain model, Tauri host, application shell, tooling | done    |
 | 2   | `DatabaseInspector`, SQL Server inspector, connection dialog    | done    |
-| 3   | `.scraft` project files and schema diff engine                  | next    |
-| 4   | Canvas: table nodes, relationships, layouts, detail levels      | planned |
+| 3   | `.scraft` project files and schema diff engine                  | done    |
+| 4   | Canvas: table nodes, relationships, layouts, detail levels      | next    |
 | 5   | Export: SVG, standalone HTML, single-page PDF                   | planned |
 | 6   | Portable executable validation and packaging                    | planned |

@@ -1,3 +1,5 @@
+import { useRef } from "react";
+
 import { useProjectStore } from "@/features/project/projectStore";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { Button } from "@/shared/ui/Button";
@@ -13,6 +15,8 @@ export function UnsavedChangesDialog() {
   const projectPath = useProjectStore((state) => state.project?.path ?? null);
   const confirmDiscard = useProjectStore((state) => state.confirmDiscard);
   const cancelDiscard = useProjectStore((state) => state.cancelDiscard);
+  // The safe choice gets the focus, so Enter never discards by accident.
+  const keepEditingRef = useRef<HTMLButtonElement>(null);
 
   const name = projectPath === null ? t("project.untitled") : projectDisplayName(projectPath);
 
@@ -28,9 +32,12 @@ export function UnsavedChangesDialog() {
       description={t("project.discard.description", { name })}
       closeLabel={t("connection.action.close")}
       width={440}
+      initialFocusRef={keepEditingRef}
       footer={
         <>
-          <Button onClick={cancelDiscard}>{t("project.discard.cancel")}</Button>
+          <Button ref={keepEditingRef} onClick={cancelDiscard}>
+            {t("project.discard.cancel")}
+          </Button>
           <Button variant="primary" onClick={confirmDiscard}>
             {t("project.discard.confirm")}
           </Button>

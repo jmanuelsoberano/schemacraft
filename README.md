@@ -7,16 +7,18 @@ the same diagram, and renders fast, interactive diagrams with high-fidelity sing
 
 ## Status
 
-Milestones 1 and 2 of 6 are complete: Rust workspace, domain model, Tauri host, application
+Milestones 1 to 3 of 6 are complete: Rust workspace, domain model, Tauri host, application
 shell with design system, bilingual UI (English and Spanish), light and dark themes, tooling and
-CI; then the SQL Server inspector with SQL Server and Windows Authentication, the connection
-dialog with actionable errors and progress, and the entities panel listing the loaded schema.
+CI; the SQL Server inspector with SQL Server and Windows Authentication, the connection dialog
+with actionable errors and progress, and the entities panel listing the loaded schema; then
+`.scraft` project files with open, save and recent projects, refresh from database with a
+reviewed diff that keeps diagram positions, and a history of recent connections.
 
 | Milestone | Scope                                                       |
 | --------- | ----------------------------------------------------------- |
 | 1 ✅      | Project bootstrap, domain model, application shell          |
 | 2 ✅      | SQL Server inspector, connection dialog, entities panel     |
-| 3         | `.scraft` project files and schema diff ("refresh from DB") |
+| 3 ✅      | `.scraft` project files and schema diff ("refresh from DB") |
 | 4         | Canvas: table nodes, relationships, layouts, detail levels  |
 | 5         | Export: SVG, standalone interactive HTML, single-page PDF   |
 | 6         | Portable `schemacraft.exe` validation and packaging         |
@@ -100,10 +102,22 @@ Windows instance.
 
 ## Browser preview
 
-`npm run dev` serves the frontend alone. Outside the desktop runtime a simulated backend takes
-the place of the Rust commands, so the connection flow can be reviewed in a browser: use
-`localhost` to succeed, or `auth-fail`, `cert-fail`, `down` and `slow` as server names to see
-each failure.
+`npm run dev` serves the frontend alone. Outside the desktop runtime simulated backends take
+the place of the Rust commands, so the flows can be reviewed in a browser: use `localhost` to
+connect, or `auth-fail`, `cert-fail`, `down` and `slow` as server names to see each failure.
+Projects are kept in memory (open returns the last saved project or a sample), the history is
+seeded with two connections, and refresh shows a fabricated review with every kind of change.
+
+## Project files and preferences
+
+A `.scraft` file is pretty-printed JSON: a header with the format version and the save time,
+the connection without its password, the inspection options, the full snapshot and the diagram
+state. It reopens without a database; refresh reconnects through the connection dialog and
+shows the differences before applying them, keeping the positions of surviving tables.
+
+Recent connections (never passwords) and recent projects are stored in `preferences.json`
+inside the per-user configuration directory, `%APPDATA%\com.jmanuelsoberano.schemacraft` on
+Windows. Delete the file to clear the history.
 
 ## Project structure
 
@@ -111,6 +125,7 @@ each failure.
 crates/schemacraft-core/   domain model, inspectors, project files, diff engine (no Tauri)
 src-tauri/                 Tauri host: IPC commands, configuration, icons
 src/app/                   application shell, actions, brand, global styles
+src/features/              connection, project, preferences and schema features
 src/shared/                contracts, i18n, ipc, settings, ui primitives
 assets/brand/              source artwork for the application icon
 docs/                      PRD, architecture decisions, UX principles
