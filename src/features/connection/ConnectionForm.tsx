@@ -47,6 +47,12 @@ export function ConnectionForm({ serverFieldRef, passwordFieldRef }: ConnectionF
 
   const isBusy = phase !== "idle";
   const showsHistory = mode === "connect" && recentConnections.length > 0;
+  const passwordHint =
+    draft.passwordIsStored && draft.password === ""
+      ? t("connection.password.stored")
+      : mode === "refresh"
+        ? t("connection.refresh.passwordHint")
+        : undefined;
 
   const authenticationOptions: readonly SegmentedOption<AuthenticationMode>[] = [
     {
@@ -167,31 +173,42 @@ export function ConnectionForm({ serverFieldRef, passwordFieldRef }: ConnectionF
           />
         </div>
         {draft.authenticationMode === "sqlLogin" ? (
-          <div className={styles.row}>
-            <TextField
-              label={t("connection.field.username")}
-              error={usernameError}
-              value={draft.username}
-              onChange={(event) => {
-                updateDraft({ username: event.target.value });
-              }}
-              autoComplete="username"
-              spellCheck={false}
+          <>
+            <div className={styles.row}>
+              <TextField
+                label={t("connection.field.username")}
+                error={usernameError}
+                value={draft.username}
+                onChange={(event) => {
+                  updateDraft({ username: event.target.value });
+                }}
+                autoComplete="username"
+                spellCheck={false}
+                disabled={isBusy}
+              />
+              <TextField
+                ref={passwordFieldRef}
+                label={t("connection.field.password")}
+                type="password"
+                hint={passwordHint}
+                value={draft.password}
+                onChange={(event) => {
+                  updateDraft({ password: event.target.value });
+                }}
+                autoComplete="current-password"
+                disabled={isBusy}
+              />
+            </div>
+            <Checkbox
+              label={t("connection.field.rememberPassword")}
+              description={t("connection.field.rememberPassword.description")}
+              checked={draft.rememberPassword}
               disabled={isBusy}
-            />
-            <TextField
-              ref={passwordFieldRef}
-              label={t("connection.field.password")}
-              type="password"
-              hint={mode === "refresh" ? t("connection.refresh.passwordHint") : undefined}
-              value={draft.password}
-              onChange={(event) => {
-                updateDraft({ password: event.target.value });
+              onCheckedChange={(rememberPassword) => {
+                updateDraft({ rememberPassword });
               }}
-              autoComplete="current-password"
-              disabled={isBusy}
             />
-          </div>
+          </>
         ) : null}
         <div className={styles.row}>
           <Select

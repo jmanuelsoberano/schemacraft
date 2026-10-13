@@ -3,7 +3,11 @@ import { persist } from "zustand/middleware";
 
 import { usePreferencesStore } from "@/features/preferences/preferencesStore";
 import { useProjectStore } from "@/features/project/projectStore";
-import { savedConnectionToDraft, toSavedConnection } from "@/features/project/savedConnection";
+import {
+  savedConnectionToDraft,
+  savedConnectionToSettings,
+  toSavedConnection,
+} from "@/features/project/savedConnection";
 import type {
   ConnectionSettings,
   InspectionEvent,
@@ -15,6 +19,7 @@ import type {
   ServerInformation,
 } from "@/shared/contracts";
 import { getConnectionBackend } from "@/shared/ipc/connectionBackend";
+import { getCredentialsBackend } from "@/shared/ipc/credentialsBackend";
 import { inspectorErrorKind, toOperationError } from "@/shared/ipc/operationError";
 import type { OperationError } from "@/shared/ipc/operationError";
 import { getProjectBackend } from "@/shared/ipc/projectBackend";
@@ -94,15 +99,50 @@ const FIELDS_KEPT_AFTER_TEST: ReadonlySet<keyof ConnectionDraft> = new Set([
   "database",
   "schemas",
   "includeViews",
+  "rememberPassword",
 ]);
 
 export const useConnectionStore = create<ConnectionState>()(
   persist(
     (set, get) => {
+      const markStoredPassword = async (connection: SavedConnection): Promise<void> => {
+        try {
+          const backend = await getCredentialsBackend();
+          const stored = await backend.hasStoredPassword(connection);
+          set((state) => ({
+            draft: { ...state.draft, passwordIsStored: stored, rememberPassword: stored },
+          }));
+        } catch (caught: unknown) {
+          console.warn("Could not check for a remembered password", caught);
+        }
+      };
+
+      // Honours the "remember password" choice once the connection proved to work.
+      const syncRememberedPassword = async (settings: ConnectionSettings): Promise<void> => {
+        const { draft } = get();
+        if (settings.authentication.mode !== "sqlLogin") {
+          return;
+        }
+        const connection = toSavedConnection(settings);
+        try {
+          const backend = await getCredentialsBackend();
+          if (draft.rememberPassword && draft.password !== "") {
+            await backend.rememberPassword(connection, draft.password);
+            set((state) => ({ draft: { ...state.draft, passwordIsStored: true } }));
+          } else if (!draft.rememberPassword && draft.passwordIsStored) {
+            await backend.forgetPassword(connection);
+            set((state) => ({ draft: { ...state.draft, passwordIsStored: false } }));
+          }
+        } catch (caught: unknown) {
+          console.warn("Could not update the remembered password", caught);
+        }
+      };
+
       const runInspection = async (
         settings: ConnectionSettings,
         options: InspectionOptions,
         database: string,
+        rememberFromForm: boolean,
       ): Promise<void> => {
         set({
           phase: "inspecting",
@@ -130,6 +170,9 @@ export const useConnectionStore = create<ConnectionState>()(
         try {
           const backend = await getConnectionBackend();
           const snapshot = await backend.inspectDatabase(settings, options, handleEvent);
+          if (rememberFromForm) {
+            await syncRememberedPassword(settings);
+          }
           const project = useProjectStore.getState().project;
 
           if (get().mode === "refresh" && project !== null) {
@@ -204,6 +247,7 @@ export const useConnectionStore = create<ConnectionState>()(
             failure: null,
             validation: null,
           });
+          void markStoredPassword(connection);
         },
 
         testConnection: async () => {
@@ -272,7 +316,12 @@ export const useConnectionStore = create<ConnectionState>()(
             set({ validation: built.error });
             return;
           }
-          await runInspection(built.settings, draftToInspectionOptions(draft), draft.database);
+          await runInspection(
+            built.settings,
+            draftToInspectionOptions(draft),
+            draft.database,
+            true,
+          );
         },
 
         refresh: async () => {
@@ -285,20 +334,30 @@ export const useConnectionStore = create<ConnectionState>()(
 
           if (project.liveSettings !== null) {
             set({ isDialogOpen: true, mode: "refresh", failure: null, validation: null });
-            await runInspection(project.liveSettings, project.content.inspection, database);
+            await runInspection(project.liveSettings, project.content.inspection, database, false);
             return;
           }
 
-          // The project came from a file: the password is not known, so the form is shown
-          // prefilled and the user reads the schema from it.
+          // The project came from a file: the form is prefilled, and when no password is
+          // needed (Windows Authentication, or a remembered one) the schema is read right away.
+          const { connection, inspection } = project.content;
           set({
             isDialogOpen: true,
             mode: "refresh",
             failure: null,
             validation: null,
             tested: null,
-            draft: savedConnectionToDraft(project.content.connection, project.content.inspection),
+            draft: savedConnectionToDraft(connection, inspection),
           });
+          await markStoredPassword(connection);
+          if (connection.authentication.mode === "integrated" || get().draft.passwordIsStored) {
+            await runInspection(
+              savedConnectionToSettings(connection, { source: "stored" }),
+              inspection,
+              database,
+              false,
+            );
+          }
         },
 
         cancel: async () => {

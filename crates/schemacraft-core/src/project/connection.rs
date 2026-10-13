@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::credentials::CredentialKey;
 use crate::inspectors::sqlserver::{EncryptionMode, format_target};
 
 /// A connection as recorded in a project file or in the history: everything but the password.
@@ -24,6 +25,13 @@ impl SavedConnection {
     pub fn database(&self) -> Option<&str> {
         match self {
             Self::SqlServer(connection) => connection.database.as_deref(),
+        }
+    }
+
+    /// Where a remembered password for this connection lives; `None` without a login.
+    pub fn credential_key(&self) -> Option<CredentialKey> {
+        match self {
+            Self::SqlServer(connection) => connection.credential_key(),
         }
     }
 
@@ -80,6 +88,16 @@ impl SavedSqlServerConnection {
     /// Server as users write it.
     pub fn display_target(&self) -> String {
         format_target(&self.host, self.instance.as_deref(), self.port)
+    }
+
+    /// See [`SavedConnection::credential_key`].
+    pub fn credential_key(&self) -> Option<CredentialKey> {
+        match &self.authentication {
+            SavedSqlServerAuthentication::Integrated => None,
+            SavedSqlServerAuthentication::SqlLogin { username } => Some(
+                CredentialKey::sql_server_login(&self.display_target(), username),
+            ),
+        }
     }
 
     /// See [`SavedConnection::same_endpoint_as`].
@@ -155,6 +173,14 @@ mod tests {
         });
         assert_eq!(integrated.display_target(), "localhost\\SQLEXPRESS");
         assert!(integrated.database().is_none());
+        assert!(integrated.credential_key().is_none());
+        assert_eq!(
+            sql_login("Db.Example.com", "x", "app")
+                .credential_key()
+                .expect("login key")
+                .account(),
+            "sqlserver://db.example.com,14333/app"
+        );
         assert!(integrated.same_endpoint_as(&integrated.clone()));
         assert!(!integrated.same_endpoint_as(&sql_login("localhost", "x", "app")));
     }

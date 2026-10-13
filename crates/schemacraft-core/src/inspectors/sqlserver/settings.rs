@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use tiberius::{AuthMethod, Config, EncryptionLevel};
 use ts_rs::TS;
 
+use crate::credentials::{CredentialKey, CredentialStore};
 use crate::inspectors::InspectorError;
 
 /// Default TCP port of a SQL Server default instance.
@@ -60,10 +61,25 @@ pub enum SqlServerAuthentication {
     SqlLogin {
         /// Login name, e.g. `sa`.
         username: String,
-        /// Password, kept out of logs and never serialised.
-        #[ts(type = "string")]
-        password: SecretString,
+        /// Password, typed or remembered; kept out of logs and never serialised.
+        password: PasswordSource,
     },
+}
+
+/// Password of a SQL login: typed for this session, or remembered by the credential store and
+/// resolved right before connecting.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(tag = "source", rename_all = "camelCase")]
+#[ts(export, export_to = "inspectors/")]
+pub enum PasswordSource {
+    /// Typed by the user.
+    Provided {
+        /// The password.
+        #[ts(type = "string")]
+        value: SecretString,
+    },
+    /// Kept by the credential store; see `resolve_stored_password`.
+    Stored,
 }
 
 /// Transport encryption policy, from most permissive to strictest.
@@ -131,6 +147,48 @@ impl SqlServerConnectionSettings {
         format_target(&self.host, self.instance.as_deref(), self.port)
     }
 
+    /// Where a remembered password for this connection lives; `None` for Windows Authentication.
+    pub fn credential_key(&self) -> Option<CredentialKey> {
+        match &self.authentication {
+            SqlServerAuthentication::Integrated => None,
+            SqlServerAuthentication::SqlLogin { username, .. } => Some(
+                CredentialKey::sql_server_login(&self.display_target(), username),
+            ),
+        }
+    }
+
+    /// Replaces a remembered password with the value kept by `store`, so the settings can
+    /// connect. Settings with a typed password or Windows Authentication pass through.
+    pub fn resolve_stored_password(
+        self,
+        store: &dyn CredentialStore,
+    ) -> Result<Self, InspectorError> {
+        let SqlServerAuthentication::SqlLogin {
+            username,
+            password: PasswordSource::Stored,
+        } = &self.authentication
+        else {
+            return Ok(self);
+        };
+        let key = CredentialKey::sql_server_login(&self.display_target(), username);
+        let value = store
+            .retrieve(&key)
+            .map_err(|error| InspectorError::CredentialStoreFailed {
+                details: error.to_string(),
+            })?
+            .ok_or_else(|| InspectorError::StoredPasswordMissing {
+                target: self.display_target(),
+                username: username.clone(),
+            })?;
+        Ok(Self {
+            authentication: SqlServerAuthentication::SqlLogin {
+                username: username.clone(),
+                password: PasswordSource::Provided { value },
+            },
+            ..self
+        })
+    }
+
     fn instance_name(&self) -> Option<&str> {
         non_empty(self.instance.as_deref())
     }
@@ -156,7 +214,15 @@ impl SqlServerConnectionSettings {
                         reason: "the login name is empty".to_string(),
                     });
                 }
-                Ok(AuthMethod::sql_server(username, password.expose_secret()))
+                match password {
+                    PasswordSource::Provided { value } => {
+                        Ok(AuthMethod::sql_server(username, value.expose_secret()))
+                    }
+                    PasswordSource::Stored => Err(InspectorError::InvalidSettings {
+                        reason: "the remembered password was not resolved before connecting"
+                            .to_string(),
+                    }),
+                }
             }
         }
     }
@@ -181,8 +247,17 @@ mod tests {
 
     use secrecy::SecretString;
 
-    use super::{EncryptionMode, SqlServerAuthentication, SqlServerConnectionSettings};
+    use super::{
+        EncryptionMode, PasswordSource, SqlServerAuthentication, SqlServerConnectionSettings,
+    };
+    use crate::credentials::{CredentialStore, InMemoryCredentialStore};
     use crate::inspectors::InspectorError;
+
+    fn typed(password: &str) -> PasswordSource {
+        PasswordSource::Provided {
+            value: SecretString::from(password.to_string()),
+        }
+    }
 
     fn sql_login_settings() -> SqlServerConnectionSettings {
         SqlServerConnectionSettings {
@@ -192,7 +267,7 @@ mod tests {
             database: Some("Northwind".to_string()),
             authentication: SqlServerAuthentication::SqlLogin {
                 username: "app".to_string(),
-                password: SecretString::from("s3cret".to_string()),
+                password: typed("s3cret"),
             },
             encryption: EncryptionMode::Mandatory,
             trust_server_certificate: false,
@@ -253,7 +328,7 @@ mod tests {
         let settings = SqlServerConnectionSettings {
             authentication: SqlServerAuthentication::SqlLogin {
                 username: String::new(),
-                password: SecretString::from("x".to_string()),
+                password: typed("x"),
             },
             ..sql_login_settings()
         };
@@ -270,6 +345,58 @@ mod tests {
             ..sql_login_settings()
         };
         assert_eq!(settings.connect_timeout().as_secs(), 1);
+    }
+
+    fn stored_login_settings() -> SqlServerConnectionSettings {
+        SqlServerConnectionSettings {
+            authentication: SqlServerAuthentication::SqlLogin {
+                username: "app".to_string(),
+                password: PasswordSource::Stored,
+            },
+            ..sql_login_settings()
+        }
+    }
+
+    #[test]
+    fn a_stored_password_must_be_resolved_before_connecting() {
+        assert!(matches!(
+            stored_login_settings().to_tiberius_config(),
+            Err(InspectorError::InvalidSettings { .. })
+        ));
+    }
+
+    #[test]
+    fn resolves_the_stored_password_from_the_store() {
+        let store = InMemoryCredentialStore::default();
+        let key = stored_login_settings().credential_key().expect("login key");
+        assert_eq!(key.account(), "sqlserver://db.example.com,14333/app");
+        store
+            .store(&key, &SecretString::from("remembered".to_string()))
+            .expect("store writes");
+
+        let resolved = stored_login_settings()
+            .resolve_stored_password(&store)
+            .expect("password resolved");
+        assert!(matches!(
+            resolved.authentication,
+            SqlServerAuthentication::SqlLogin {
+                password: PasswordSource::Provided { .. },
+                ..
+            }
+        ));
+        assert!(resolved.to_tiberius_config().is_ok());
+    }
+
+    #[test]
+    fn a_missing_stored_password_is_reported() {
+        let store = InMemoryCredentialStore::default();
+        assert!(matches!(
+            stored_login_settings().resolve_stored_password(&store),
+            Err(InspectorError::StoredPasswordMissing { .. })
+        ));
+
+        let typed_settings = sql_login_settings();
+        assert!(typed_settings.resolve_stored_password(&store).is_ok());
     }
 
     #[test]

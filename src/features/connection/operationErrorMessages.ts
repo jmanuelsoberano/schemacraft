@@ -1,4 +1,5 @@
 import type {
+  CredentialErrorKind,
   InspectorErrorKind,
   PreferencesErrorKind,
   ProjectErrorKind,
@@ -13,6 +14,8 @@ type ErrorName =
   | InspectorErrorKind
   | `project.${ProjectErrorKind}`
   | `preferences.${PreferencesErrorKind}`
+  | `credential.${CredentialErrorKind}`
+  | "invalidArgument"
   | "unknownJob"
   | "ipcUnavailable"
   | "unexpected";
@@ -39,6 +42,10 @@ function errorName(error: OperationError): ErrorName {
       return `project.${error.kind.value}`;
     case "preferences":
       return `preferences.${error.kind.value}`;
+    case "credential":
+      return `credential.${error.kind.value}`;
+    case "invalidArgument":
+      return "invalidArgument";
     case "unknownJob":
       return "unknownJob";
     case "ipcUnavailable":

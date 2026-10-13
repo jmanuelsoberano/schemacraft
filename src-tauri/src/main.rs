@@ -63,6 +63,9 @@ fn run_application() -> tauri::Result<()> {
             commands::preferences::forget_connection,
             commands::preferences::remember_project,
             commands::preferences::forget_project,
+            commands::credentials::has_stored_password,
+            commands::credentials::remember_password,
+            commands::credentials::forget_password,
         ])
         .run(tauri::generate_context!())
 }

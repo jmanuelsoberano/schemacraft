@@ -31,9 +31,11 @@ pub enum InspectionEvent {
 /// Verifies the connection and returns the server identity.
 #[tauri::command]
 pub async fn test_connection(
+    state: State<'_, AppState>,
     settings: ConnectionSettings,
 ) -> Result<ServerInformation, CommandError> {
-    let inspector = create_inspector(settings)?;
+    let inspector =
+        create_inspector(settings.resolve_stored_password(state.credentials.as_ref())?)?;
     tracing::debug!("test_connection requested");
     let information = inspector.test_connection().await?;
     tracing::debug!(product = %information.product, "test_connection succeeded");
@@ -42,15 +44,23 @@ pub async fn test_connection(
 
 /// Databases the login can open, for the database picker.
 #[tauri::command]
-pub async fn list_databases(settings: ConnectionSettings) -> Result<Vec<String>, CommandError> {
-    let inspector = create_inspector(settings)?;
+pub async fn list_databases(
+    state: State<'_, AppState>,
+    settings: ConnectionSettings,
+) -> Result<Vec<String>, CommandError> {
+    let inspector =
+        create_inspector(settings.resolve_stored_password(state.credentials.as_ref())?)?;
     Ok(inspector.list_databases().await?)
 }
 
 /// User schemas of the selected database, for the schema filter.
 #[tauri::command]
-pub async fn list_schemas(settings: ConnectionSettings) -> Result<Vec<String>, CommandError> {
-    let inspector = create_inspector(settings)?;
+pub async fn list_schemas(
+    state: State<'_, AppState>,
+    settings: ConnectionSettings,
+) -> Result<Vec<String>, CommandError> {
+    let inspector =
+        create_inspector(settings.resolve_stored_password(state.credentials.as_ref())?)?;
     Ok(inspector.list_schemas().await?)
 }
 
@@ -62,7 +72,8 @@ pub async fn inspect_database(
     options: InspectionOptions,
     on_event: Channel<InspectionEvent>,
 ) -> Result<SchemaSnapshot, CommandError> {
-    let inspector = create_inspector(settings)?;
+    let inspector =
+        create_inspector(settings.resolve_stored_password(state.credentials.as_ref())?)?;
     let (job_id, cancellation) = state.inspection_jobs.start();
     tracing::debug!(job_id, "inspect_database started");
     send(
