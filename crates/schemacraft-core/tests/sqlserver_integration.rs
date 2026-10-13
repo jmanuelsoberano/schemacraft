@@ -259,6 +259,7 @@ async fn lists_databases_and_schemas() {
         .list_schemas()
         .await
         .expect("schemas");
+    // `staging` is empty and `db_datareader` is owned by dbo in the fixture; neither is offered.
     assert_eq!(schemas, ["dbo", "hr", "sales"]);
 }
 

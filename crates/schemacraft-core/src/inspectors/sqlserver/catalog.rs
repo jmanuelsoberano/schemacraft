@@ -40,13 +40,15 @@ WHERE d.state = 0
 ORDER BY d.name;",
 };
 
+/// Schemas that hold at least one user table or view. Ownership is not a usable signal: the
+/// schemas of fixed database roles (`db_datareader`, ...) are re-owned in some real databases,
+/// and an empty schema has nothing to filter anyway.
 pub(super) const SCHEMAS: CatalogQuery = CatalogQuery {
     name: "schemas",
     sql: "SELECT s.name AS schema_name
 FROM sys.schemas AS s
-JOIN sys.database_principals AS owner_principal ON owner_principal.principal_id = s.principal_id
-WHERE owner_principal.type <> 'R'
-  AND s.name NOT IN ('sys', 'INFORMATION_SCHEMA', 'guest')
+WHERE EXISTS (SELECT 1 FROM sys.objects AS o
+              WHERE o.schema_id = s.schema_id AND o.type IN ('U', 'V') AND o.is_ms_shipped = 0)
 ORDER BY s.name;",
 };
 

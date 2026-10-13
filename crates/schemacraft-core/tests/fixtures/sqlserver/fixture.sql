@@ -14,6 +14,12 @@ CREATE SCHEMA sales;
 GO
 CREATE SCHEMA hr;
 GO
+-- An empty schema has nothing to filter and must not be offered.
+CREATE SCHEMA staging;
+GO
+-- Real databases re-own fixed-role schemas; ownership must not drive the schema list.
+ALTER AUTHORIZATION ON SCHEMA::db_datareader TO dbo;
+GO
 CREATE TYPE dbo.Money2 FROM decimal(19, 4) NOT NULL;
 GO
 CREATE TABLE dbo.Customers (
