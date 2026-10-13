@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { ensurePlaced } from "@/features/canvas/canvasState";
+import { ensurePlaced, spreadForDetailLevel, withPositions } from "@/features/canvas/canvasState";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { placeRefreshedEntities } from "@/features/canvas/refreshPlacement";
 import { usePreferencesStore } from "@/features/preferences/preferencesStore";
@@ -262,12 +262,19 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
     },
 
     setDetailLevel: (detailLevel) => {
-      get().updateCanvas(
-        (canvas) => (canvas.detailLevel === detailLevel ? canvas : { ...canvas, detailLevel }),
-        {
-          undoable: false,
-        },
+      const { project } = get();
+      if (project === null || project.content.canvas.detailLevel === detailLevel) {
+        return;
+      }
+      // Taller nodes must not cover their neighbours; moving them apart is a real edit.
+      const moved = spreadForDetailLevel(
+        project.content.snapshot,
+        project.content.canvas,
+        detailLevel,
       );
+      get().updateCanvas((canvas) => ({ ...withPositions(canvas, moved), detailLevel }), {
+        undoable: moved.size > 0,
+      });
     },
 
     updateCanvas: (update, options = {}) => {

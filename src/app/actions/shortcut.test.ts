@@ -64,3 +64,38 @@ describe("isApplePlatform", () => {
     expect(isApplePlatform("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")).toBe(false);
   });
 });
+
+describe("isReservedBrowserShortcut with modifiers and developer tools", () => {
+  it("treats every reload combination as reserved", () => {
+    expect(isReservedBrowserShortcut(keyboardEvent({ key: "F5", ctrlKey: true }), false)).toBe(
+      true,
+    );
+    expect(isReservedBrowserShortcut(keyboardEvent({ key: "F5", shiftKey: true }), false)).toBe(
+      true,
+    );
+    expect(
+      isReservedBrowserShortcut(keyboardEvent({ key: "R", ctrlKey: true, shiftKey: true }), false),
+    ).toBe(true);
+  });
+
+  it("keeps the developer tools only when asked to", () => {
+    const f12 = keyboardEvent({ key: "F12" });
+    const inspect = keyboardEvent({ key: "I", ctrlKey: true, shiftKey: true });
+    expect(isReservedBrowserShortcut(f12, false)).toBe(true);
+    expect(isReservedBrowserShortcut(inspect, false)).toBe(true);
+    expect(isReservedBrowserShortcut(f12, false, true)).toBe(false);
+    expect(isReservedBrowserShortcut(inspect, false, true)).toBe(false);
+  });
+
+  it("covers history navigation, zoom and the find bar but not application keys", () => {
+    expect(
+      isReservedBrowserShortcut(keyboardEvent({ key: "ArrowLeft", altKey: true }), false),
+    ).toBe(true);
+    expect(isReservedBrowserShortcut(keyboardEvent({ key: "=", ctrlKey: true }), false)).toBe(true);
+    expect(isReservedBrowserShortcut(keyboardEvent({ key: "f", ctrlKey: true }), false)).toBe(true);
+    expect(isReservedBrowserShortcut(keyboardEvent({ key: "e", ctrlKey: true }), false)).toBe(
+      false,
+    );
+    expect(isReservedBrowserShortcut(keyboardEvent({ key: "ArrowLeft" }), false)).toBe(false);
+  });
+});

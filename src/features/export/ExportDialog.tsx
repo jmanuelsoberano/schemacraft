@@ -3,6 +3,7 @@ import type { LucideIcon } from "lucide-react";
 import { useRef } from "react";
 
 import { describeOperationError } from "@/features/connection/operationErrorMessages";
+import { useProjectStore } from "@/features/project/projectStore";
 import type { DetailLevel, ExportFormat } from "@/shared/contracts";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { useAppInfo } from "@/shared/ipc/useAppInfo";
@@ -55,6 +56,7 @@ export function ExportDialog() {
   const reveal = useExportStore((state) => state.reveal);
   const exportAnother = useExportStore((state) => state.exportAnother);
   const appInfo = useAppInfo();
+  const canvasLevel = useProjectStore((state) => state.project?.content.canvas.detailLevel ?? null);
   const primaryRef = useRef<HTMLButtonElement>(null);
 
   const isExporting = phase === "exporting";
@@ -202,6 +204,9 @@ export function ExportDialog() {
                   updateChoices({ detailLevel });
                 }}
               />
+              {canvasLevel !== null && choices.detailLevel !== canvasLevel ? (
+                <p className={styles.hint}>{t("export.detailLevel.spread")}</p>
+              ) : null}
             </div>
             <div className={styles.field}>
               <span className={styles.fieldLabel}>{t("export.theme")}</span>

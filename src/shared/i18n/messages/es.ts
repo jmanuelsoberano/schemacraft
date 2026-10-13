@@ -25,6 +25,8 @@ export const spanishMessages: MessageCatalog = {
   "action.export": "Exportar diagrama",
   "action.toggleSidebar": "Mostrar u ocultar el panel de entidades",
   "action.about": "Acerca de SchemaCraft",
+  "action.exportPdf": "Exportar diagrama como PDF",
+  "action.searchEntities": "Buscar entidades",
 
   "credits.developedBy": "Desarrollado por {name}",
   "about.title": "Acerca de SchemaCraft",
@@ -49,6 +51,7 @@ export const spanishMessages: MessageCatalog = {
   "export.detailLevel.compact": "Compacta",
   "export.detailLevel.keys": "Claves",
   "export.detailLevel.full": "Completa",
+  "export.detailLevel.spread": "Las tablas que crecen en este nivel bajan para no encimarse.",
   "export.theme": "Tema",
   "export.scale": "Escala",
   "export.scale.value": "{scale}x",
@@ -103,6 +106,7 @@ export const spanishMessages: MessageCatalog = {
 
   "sidebar.title": "Entidades",
   "sidebar.search": "Buscar tablas",
+  "sidebar.resize": "Cambiar el ancho del panel de entidades",
   "sidebar.search.noMatches": 'Ninguna entidad coincide con "{query}"',
   "sidebar.empty.title": "Aún no hay entidades",
   "sidebar.empty.description":

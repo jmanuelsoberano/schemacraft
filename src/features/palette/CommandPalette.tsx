@@ -40,7 +40,11 @@ export function CommandPalette({ actions }: CommandPaletteProps) {
     >
       <Dialog.Portal>
         <Dialog.Overlay className={styles.overlay} />
-        <Dialog.Content className={styles.content} aria-describedby={undefined}>
+        <Dialog.Content
+          className={styles.content}
+          aria-describedby={undefined}
+          data-command-palette=""
+        >
           <VisuallyHidden.Root>
             <Dialog.Title>{t("palette.title")}</Dialog.Title>
           </VisuallyHidden.Root>

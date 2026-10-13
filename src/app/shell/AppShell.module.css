@@ -7,11 +7,17 @@
 }
 
 .sidebar {
+  position: relative;
   grid-row: 2;
   grid-column: 1;
   width: var(--sidebar-width);
   overflow: hidden;
   transition: width var(--duration-base) var(--ease-emphasized);
+}
+
+/* Follow the pointer instantly while the panel is being resized. */
+.sidebar:has([data-resizing]) {
+  transition: none;
 }
 
 .sidebarCollapsed {

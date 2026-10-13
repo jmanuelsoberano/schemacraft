@@ -20,10 +20,12 @@ export type ActionId =
   | "diagram.collapseAll"
   | "diagram.expandAll"
   | "diagram.export"
+  | "diagram.exportPdf"
   | "edit.undo"
   | "edit.redo"
   | "view.commandPalette"
   | "view.toggleSidebar"
+  | "view.searchEntities"
   | "help.about";
 
 /**

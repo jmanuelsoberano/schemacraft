@@ -34,6 +34,10 @@ typography, keyboard first, and the diagram occupying almost the whole window.
 10. **Details are the product.** Tooltips show shortcuts, cursors match the interaction, numbers
     use tabular figures, empty states explain the next step, and undo/redo covers every canvas
     change.
+11. **A desktop application, not a web page.** The browser never shows through: no browser
+    context menu outside text fields, no reload, print, find or zoom accelerators (F5 refreshes
+    from the database, Ctrl+P exports a PDF, Ctrl+F searches the entities), no middle-click
+    autoscroll. Panels resize by dragging their edge and remember their width.
 
 ## Definition of done (UX)
 
@@ -84,8 +88,9 @@ with the cause and the next step; a recent project whose file disappeared leaves
 
 The entities panel lists tables and views with instant search, column counters, a visibility
 toggle and "center in view" per entity, and the same context menu as the canvas. The canvas
-offers three detail levels (compact, keys, full), automatic layouts (layered top-down or
-left-to-right, organic, radial around a table), free dragging, multi-select with Shift, isolation
+offers three detail levels (compact, keys, full; switching to a taller level moves tables apart
+so none covers another, undoably), automatic layouts (layered top-down or left-to-right, organic,
+radial around a table), free dragging, multi-select with Shift, isolation
 of a table with its neighbours one or two levels deep, hide, show all, collapse and expand, a
 minimap and semantic zoom (cards turn compact below 40 %). Relationships use crow's foot
 notation, attach at the key column and reveal their name and columns on hover. Every change is

@@ -378,6 +378,21 @@ Why: the user chose the full viewer over pre-rendered pictures; it keeps the fil
 large schemas and lets the reader explore. Sharing the renderer avoids a second drawing
 implementation.
 
+### ADR-026: The shell behaves like a desktop application, not a web page
+
+Inside Tauri the webview's browser habits are switched off at the window, in the capture phase
+so no component can let them through: the browser context menu is suppressed everywhere except
+text fields (the diagram and the entities panel open their own), middle-click autoscroll and
+dragging images or links out of the window are prevented, and every accelerator that would
+reload, print, find, zoom, navigate history or (outside development) open the developer tools is
+swallowed, held keys included. Where the habit has an application meaning it is mapped instead:
+F5 refreshes from the database, Ctrl+P exports a PDF and Ctrl+F searches the entities. The
+entities panel resizes by dragging its edge or with the arrow keys and remembers its width.
+
+Why: a reload threw the open project away and the print dialog printed the page chrome; both
+reached the user. Suppressing the defaults in one place keeps every future screen covered, and
+mapping the familiar keys keeps the muscle memory useful.
+
 ## Milestones
 
 | #   | Scope                                                           | Status |
