@@ -1,6 +1,9 @@
 import type { InspectorErrorKind } from "@/shared/contracts";
+import type { MessageKey } from "@/shared/i18n/messages/en";
 import type { Translator } from "@/shared/i18n/useI18n";
 import type { OperationError } from "@/shared/ipc/operationError";
+
+import type { AuthenticationMode } from "./connectionDraft";
 
 type ErrorName = InspectorErrorKind | "unknownJob" | "ipcUnavailable" | "unexpected";
 
@@ -11,6 +14,11 @@ export interface ErrorPresentation {
   detail: string;
   /** Whether trusting the server certificate would address the failure. */
   offersCertificateTrust: boolean;
+}
+
+/** What the user was attempting, so the guidance can match it. */
+export interface ErrorContext {
+  authenticationMode: AuthenticationMode;
 }
 
 function errorName(error: OperationError): ErrorName {
@@ -30,12 +38,21 @@ function errorName(error: OperationError): ErrorName {
 export function describeOperationError(
   error: OperationError,
   translator: Translator,
+  context: ErrorContext,
 ): ErrorPresentation {
   const name = errorName(error);
   return {
     title: translator.t(`error.${name}.title`),
-    hint: translator.t(`error.${name}.hint`),
+    hint: translator.t(hintKey(name, context)),
     detail: error.message,
     offersCertificateTrust: name === "untrustedCertificate",
   };
+}
+
+function hintKey(name: ErrorName, context: ErrorContext): MessageKey {
+  // A rejected Windows account calls for different advice than a wrong password.
+  if (name === "authenticationFailed" && context.authenticationMode === "integrated") {
+    return "error.authenticationFailed.hint.integrated";
+  }
+  return `error.${name}.hint`;
 }

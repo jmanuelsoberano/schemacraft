@@ -233,7 +233,9 @@ export function ConnectionForm({ serverFieldRef }: ConnectionFormProps) {
 
       {failure !== null
         ? (() => {
-            const presentation = describeOperationError(failure.error, translator);
+            const presentation = describeOperationError(failure.error, translator, {
+              authenticationMode: draft.authenticationMode,
+            });
             return (
               <Alert
                 variant="danger"

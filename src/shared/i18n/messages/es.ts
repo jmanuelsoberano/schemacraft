@@ -132,6 +132,8 @@ export const spanishMessages: MessageCatalog = {
   "error.authenticationFailed.title": "El inicio de sesión fue rechazado",
   "error.authenticationFailed.hint":
     "Comprueba el nombre de inicio de sesión y la contraseña, o usa autenticación de Windows si tu cuenta tiene acceso.",
+  "error.authenticationFailed.hint.integrated":
+    "El servidor no aceptó tu cuenta de Windows. Comprueba que tenga un inicio de sesión allí o cambia a autenticación de SQL Server.",
   "error.untrustedCertificate.title": "El certificado del servidor no es de confianza",
   "error.untrustedCertificate.hint":
     "El servidor usa un certificado que este equipo no puede verificar, algo habitual en instancias de desarrollo. Confía en él para esta conexión o instala su autoridad certificadora.",
