@@ -16,7 +16,9 @@ use chrono::Utc;
 use tiberius::Config;
 use tokio_util::sync::CancellationToken;
 
-pub use settings::{EncryptionMode, SqlServerAuthentication, SqlServerConnectionSettings};
+pub use settings::{
+    EncryptionMode, SqlServerAuthentication, SqlServerConnectionSettings, format_target,
+};
 
 use self::assembly::SnapshotIdentity;
 use self::catalog::CatalogSession;
