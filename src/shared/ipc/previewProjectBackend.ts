@@ -32,7 +32,7 @@ function sampleProject(): Project {
   return {
     formatVersion: 1,
     savedAt: new Date(Date.now() - 3_600_000).toISOString(),
-    savedWith: "SchemaCraft 0.1.0 (preview)",
+    savedWith: "SchemaCraft 1.0.0 (preview)",
     connection: {
       provider: "sqlServer",
       host: "localhost",
@@ -183,7 +183,7 @@ export const previewProjectBackend: ProjectBackend = {
     const file: Project = {
       formatVersion: 1,
       savedAt: new Date().toISOString(),
-      savedWith: "SchemaCraft 0.1.0 (preview)",
+      savedWith: "SchemaCraft 1.0.0 (preview)",
       ...structuredClone(content),
     };
     files.set(path, file);

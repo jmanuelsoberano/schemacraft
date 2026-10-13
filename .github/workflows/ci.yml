@@ -53,10 +53,19 @@ jobs:
       - name: Build portable executable
         run: npm run tauri build -- --no-bundle
 
+      - name: Smoke-test the portable executable
+        run: node scripts/smoke-test-release.mjs target/release/schemacraft.exe smoke-test
+
       - uses: actions/upload-artifact@v4
         with:
           name: schemacraft-windows-x64
           path: target/release/schemacraft.exe
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-screenshots
+          path: smoke-test
           if-no-files-found: error
 
   integration:

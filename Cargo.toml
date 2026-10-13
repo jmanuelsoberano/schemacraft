@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/schemacraft-core", "src-tauri"]
 
 [workspace.package]
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 rust-version = "1.90"
 authors = ["Jose Manuel Campos Soberano"]
@@ -33,6 +33,9 @@ tauri = { version = "2.12", features = [] }
 tauri-build = { version = "2.7", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+# Native message box and URL opening before the webview exists; both already compile for the plugins.
+rfd = "0.16"
+open = "5"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

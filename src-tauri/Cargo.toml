@@ -17,6 +17,8 @@ tauri-build = { workspace = true }
 
 [dependencies]
 chrono = { workspace = true }
+open = { workspace = true }
+rfd = { workspace = true }
 schemacraft-core = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true }
