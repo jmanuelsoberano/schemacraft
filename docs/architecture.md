@@ -133,8 +133,10 @@ handshake and validates idle sessions with `SELECT 1`. Pools live for one operat
 listing or inspection) and are dropped afterwards, so the application never keeps idle sessions
 on a server. An inspection opens up to four sessions and runs its seven set-based catalog
 queries concurrently; the schema filter is applied while assembling, and foreign keys whose
-other end falls outside the selection are dropped. Fallback if a regression appears: tiberius
-0.12.3 with `bb8-tiberius`.
+other end falls outside the selection are dropped. The schema picker lists only schemas that
+hold user tables or views: ownership of the fixed-role schemas (`db_datareader` and friends) is
+not reliable in real databases, and an empty schema has nothing to filter. Fallback if a
+regression appears: tiberius 0.12.3 with `bb8-tiberius`.
 
 ### ADR-010: The portable executable relies on the WebView2 runtime
 
