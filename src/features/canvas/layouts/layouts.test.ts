@@ -153,6 +153,26 @@ describe("organic layout", () => {
     assertNoOverlap(layout, first);
     expect(organicLayout({ nodes: [], edges: [], positions: new Map() }).size).toBe(0);
   });
+
+  it("keeps tables without relationships in a block below the diagram", () => {
+    const layout = input();
+    const positions = organicLayout(layout);
+    const y = (id: string) => positions.get(id)?.y ?? Number.NaN;
+    const linkedBottom = Math.max(y("dbo.Customers"), y("sales.Orders"), y("sales.OrderLines"));
+    expect(y("dbo.Tags")).toBeGreaterThan(linkedBottom);
+    expect(y("hr.Employees")).toBe(y("dbo.Tags"));
+    expect(positions.get("hr.Employees")?.x).toBeGreaterThan(positions.get("dbo.Tags")?.x ?? 0);
+
+    const unrelated: LayoutInput = {
+      nodes: ["a", "b", "c", "d", "e"].map((id) => ({ id, width: 240, height: 38 })),
+      edges: [],
+      positions: new Map(),
+    };
+    const grid = organicLayout(unrelated);
+    expect(grid.size).toBe(5);
+    expect(grid.get("e")?.y).toBeGreaterThan(grid.get("a")?.y ?? 0);
+    assertNoOverlap(unrelated, grid);
+  });
 });
 
 describe("radial layout", () => {
@@ -163,12 +183,31 @@ describe("radial layout", () => {
       ["dbo.Customers"],
       ["sales.Orders"],
       ["sales.OrderLines"],
-      ["dbo.Tags", "hr.Employees"],
     ]);
     const positions = radialLayout(layout, "dbo.Customers");
     expect(positions.size).toBe(5);
+    const y = (id: string) => positions.get(id)?.y ?? Number.NaN;
+    expect(y("sales.OrderLines")).toBeLessThan(y("sales.Orders"));
+    expect(y("sales.Orders")).toBeLessThan(y("dbo.Customers"));
+    expect(y("dbo.Tags")).toBeGreaterThan(y("dbo.Customers"));
+    expect(y("hr.Employees")).toBe(y("dbo.Tags"));
     assertNoOverlap(layout, positions);
     expect(radialLayout(layout, "missing").size).toBe(5);
+  });
+
+  it("lays other connected components out side by side", () => {
+    const layout: LayoutInput = {
+      nodes: ["a", "b", "c", "d"].map((id) => ({ id, width: 240, height: 38 })),
+      edges: [
+        { id: "ab", source: "a", target: "b" },
+        { id: "cd", source: "c", target: "d" },
+      ],
+      positions: new Map(),
+    };
+    const positions = radialLayout(layout, "a");
+    const x = (id: string) => positions.get(id)?.x ?? Number.NaN;
+    expect(Math.min(x("c"), x("d"))).toBeGreaterThan(Math.max(x("a"), x("b")));
+    assertNoOverlap(layout, positions);
   });
 });
 

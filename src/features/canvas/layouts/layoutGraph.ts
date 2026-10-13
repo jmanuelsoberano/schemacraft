@@ -73,6 +73,68 @@ export function adjacency(input: LayoutInput): Map<string, Set<string>> {
   return neighbours;
 }
 
+/** Ids of the nodes that take part in no edge, in input order. */
+export function detachedNodeIds(input: LayoutInput): string[] {
+  const linked = new Set<string>();
+  for (const edge of input.edges) {
+    linked.add(edge.source);
+    linked.add(edge.target);
+  }
+  return input.nodes.map((node) => node.id).filter((id) => !linked.has(id));
+}
+
+const DETACHED_GAP = 40;
+const DETACHED_BLOCK_GAP = 120;
+const MIN_DETACHED_COLUMNS = 4;
+
+/**
+ * Adds the detached nodes as a block of rows under the positioned ones, about as wide as the
+ * diagram above and never narrower than four columns, so they never dilute a layout.
+ */
+export function placeDetachedBelow(
+  positions: ReadonlyMap<string, Point>,
+  input: LayoutInput,
+  detached: readonly string[],
+): LayoutResult {
+  const result: LayoutResult = new Map(positions);
+  if (detached.length === 0) {
+    return result;
+  }
+  const sizes = new Map(input.nodes.map((node) => [node.id, node]));
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const [id, point] of positions) {
+    const size = sizes.get(id);
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x + (size?.width ?? NODE_WIDTH));
+    maxY = Math.max(maxY, point.y + (size?.height ?? 0));
+  }
+  const hasDiagram = positions.size > 0;
+  const columnWidth = NODE_WIDTH + DETACHED_GAP;
+  const columns = Math.max(
+    MIN_DETACHED_COLUMNS,
+    hasDiagram
+      ? Math.floor((maxX - minX + DETACHED_GAP) / columnWidth)
+      : Math.ceil(Math.sqrt(detached.length)),
+  );
+  const startX = hasDiagram ? minX : 0;
+  let y = hasDiagram ? maxY + DETACHED_BLOCK_GAP : 0;
+  let column = 0;
+  let rowHeight = 0;
+  for (const id of detached) {
+    if (column === columns) {
+      column = 0;
+      y += rowHeight + DETACHED_GAP;
+      rowHeight = 0;
+    }
+    result.set(id, { x: startX + column * columnWidth, y });
+    rowHeight = Math.max(rowHeight, sizes.get(id)?.height ?? 0);
+    column += 1;
+  }
+  return result;
+}
+
 /** Shifts positions so the diagram starts near the origin, keeping relative placement. */
 export function normalizePositions(
   positions: ReadonlyMap<string, Point>,

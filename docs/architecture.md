@@ -270,6 +270,65 @@ Why: the PRD requires passwords to live only in memory or in the operating syste
 resolution on the Rust side means the secret is never serialised towards the webview, and a
 file opened on another machine simply asks for the password.
 
+### ADR-020: Diagram geometry is computed from data, shared by the canvas and the exports
+
+Node sizes (240 px wide, 38 px header, 22 px rows), the rows shown at each detail level, the
+row at which a relationship attaches and the semantic zoom threshold (compact cards below 40 %)
+live in `src/features/canvas/geometry.ts`, with no React in it. The canvas never measures the
+DOM to decide where an edge goes: nodes are built with their computed size, and an edge attaches
+at the row of its first column pair on each table. Anchors (`edgeGeometry.ts`) float with the
+nodes: tables stacked vertically connect through their facing top and bottom edges, tables side
+by side through their facing sides at the key row, overlapping tables leave through the same
+side and bend around, and a self-reference loops out of the right side. Crow's foot markers are
+SVG markers defined once (`RelationMarkers.tsx`) and painted with `context-stroke`, so they
+inherit the colour and the emphasis of their edge.
+
+Why: Step 5 renders the same diagram to SVG, HTML and PDF without a browser layout pass. When
+geometry is a function of the project file, the export is the canvas, pixel for pixel, and the
+unit tests cover the drawing rules without a DOM.
+
+### ADR-021: Canvas state is a Memento in the project, undo lives in the project store
+
+`CanvasState` (detail level, layout kind, viewport and, per entity, position, collapsed and
+hidden) is a plain value inside `ProjectContent`: it is what `.scraft` saves and what Rust
+validates (`retaining_entities_of`, `normalized`). Every change to it goes through
+`projectStore.updateCanvas(update, { undoable, dirty })`, which pushes the previous value on a
+bounded history (100 entries) and clears the redo stack; undo and redo swap values back. The
+first layout of a fresh project is applied with `undoable: false, dirty: false`, so it is
+neither an edit nor an undo step. Transient interaction state (selection, hover, zoom level,
+refresh highlights, context menu, layout in progress) lives in `canvasUiStore` and is never
+saved. After a refresh, `refreshPlacement.ts` places new tables in free space next to the
+tables they reference, or in a row below the diagram, and highlights them; surviving positions
+never move.
+
+Why: the PRD asks for the Memento pattern on the canvas and for positions that survive a
+refresh. A value type makes saving, diffing and undoing the same operation, and keeps UI noise
+out of the file.
+
+### ADR-022: Three layout strategies behind one request, ELK runs in a worker
+
+`LayoutRequest` is a tagged union (`layered` with a direction, `organic`, `radial` with a focus)
+resolved by `runLayout` in `src/features/canvas/layouts`. Layered uses ELK.js inside a Web
+Worker created from the bundled worker script, so the UI never blocks; organic runs d3-force
+synchronously for a fixed number of ticks from the current positions; radial places rings by
+breadth-first distance around the focused table (or the most connected one), each ring sorted so
+a table sits in the direction of the table it was reached from. Tables without any visible
+relationship stay out of the organic simulation and the radial rings and are placed in a block
+below the diagram. Strategies receive only the visible entities with their computed sizes and
+the visible relationships, and return positions; applying a result is one undoable
+`updateCanvas`, and the saved layout kind lets "Apply last layout" repeat it after a refresh.
+Measured in the real application on 200 tables: layered 456 ms from request to painted diagram,
+organic 222 ms, pan and zoom at 72 fps on average.
+
+Known limitation: edges are drawn between the floating anchors of ADR-020, not along the routes
+ELK computes, so an edge that spans several layers can pass behind a table placed between its
+ends. Adopting ELK's bend points is a candidate for Step 5, when the export needs the same
+routes.
+
+Why: ELK gives the best layered result but is CPU heavy; the worker keeps panning smooth while
+it runs. One request type keeps the menu, the palette and the keyboard shortcuts on the same
+code path, and Step 5 can reuse the strategies without a canvas.
+
 ## Milestones
 
 | #   | Scope                                                           | Status  |
@@ -277,6 +336,6 @@ file opened on another machine simply asks for the password.
 | 1   | Workspace, domain model, Tauri host, application shell, tooling | done    |
 | 2   | `DatabaseInspector`, SQL Server inspector, connection dialog    | done    |
 | 3   | `.scraft` project files and schema diff engine                  | done    |
-| 4   | Canvas: table nodes, relationships, layouts, detail levels      | next    |
-| 5   | Export: SVG, standalone HTML, single-page PDF                   | planned |
+| 4   | Canvas: table nodes, relationships, layouts, detail levels      | done    |
+| 5   | Export: SVG, standalone HTML, single-page PDF                   | next    |
 | 6   | Portable executable validation and packaging                    | planned |

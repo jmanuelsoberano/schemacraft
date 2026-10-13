@@ -7,19 +7,21 @@ the same diagram, and renders fast, interactive diagrams with high-fidelity sing
 
 ## Status
 
-Milestones 1 to 3 of 6 are complete: Rust workspace, domain model, Tauri host, application
+Milestones 1 to 4 of 6 are complete: Rust workspace, domain model, Tauri host, application
 shell with design system, bilingual UI (English and Spanish), light and dark themes, tooling and
 CI; the SQL Server inspector with SQL Server and Windows Authentication, the connection dialog
 with actionable errors and progress, and the entities panel listing the loaded schema; then
 `.scraft` project files with open, save and recent projects, refresh from database with a
-reviewed diff that keeps diagram positions, and a history of recent connections.
+reviewed diff that keeps diagram positions, and a history of recent connections; then the
+canvas: entity cards with three detail levels, crow's foot relationships, layered, organic and
+radial layouts, isolation of a table with its neighbours, undo and redo, and a command palette.
 
 | Milestone | Scope                                                       |
 | --------- | ----------------------------------------------------------- |
 | 1 ✅      | Project bootstrap, domain model, application shell          |
 | 2 ✅      | SQL Server inspector, connection dialog, entities panel     |
 | 3 ✅      | `.scraft` project files and schema diff ("refresh from DB") |
-| 4         | Canvas: table nodes, relationships, layouts, detail levels  |
+| 4 ✅      | Canvas: table nodes, relationships, layouts, detail levels  |
 | 5         | Export: SVG, standalone interactive HTML, single-page PDF   |
 | 6         | Portable `schemacraft.exe` validation and packaging         |
 

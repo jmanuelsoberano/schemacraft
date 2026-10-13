@@ -23,6 +23,8 @@
 
 .label {
   position: absolute;
+  /* The label renderer sits under the nodes; a hovered relationship must read over them. */
+  z-index: 1001;
   display: flex;
   flex-direction: column;
   gap: 1px;
