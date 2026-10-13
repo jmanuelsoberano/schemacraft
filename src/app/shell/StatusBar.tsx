@@ -10,6 +10,7 @@ export function StatusBar() {
   const appInfo = useAppInfo();
   const source = useSchemaStore((state) => state.source);
   const tableCount = useSchemaStore((state) => state.snapshot?.tables.length ?? 0);
+  const viewCount = useSchemaStore((state) => state.snapshot?.views.length ?? 0);
   const relationCount = useSchemaStore((state) => state.snapshot?.foreignKeys.length ?? 0);
 
   return (
@@ -24,6 +25,9 @@ export function StatusBar() {
           : t("statusBar.connected", { target: source.target, database: source.database })}
       </span>
       <span className={styles.item}>{tCount("statusBar.tables", tableCount)}</span>
+      {viewCount > 0 ? (
+        <span className={styles.item}>{tCount("statusBar.views", viewCount)}</span>
+      ) : null}
       <span className={styles.item}>{tCount("statusBar.relations", relationCount)}</span>
       <span className={styles.spacer} />
       <span className={styles.item}>{t("statusBar.zoom", { percent: 100 })}</span>
