@@ -1,0 +1,48 @@
+import { useId } from "react";
+
+interface LogoProps {
+  size?: number;
+  className?: string;
+}
+
+/**
+ * SchemaCraft mark: two entity cards joined by a relationship curve. The same artwork lives in
+ * `assets/brand/schemacraft-icon.svg` for the application icon.
+ */
+export function Logo({ size = 20, className }: LogoProps) {
+  const gradientId = useId();
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 64 64"
+      role="img"
+      aria-label="SchemaCraft"
+      className={className}
+    >
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#7C6CF8" />
+          <stop offset="100%" stopColor="#3D8BFD" />
+        </linearGradient>
+      </defs>
+      <rect width="64" height="64" rx="14" fill={`url(#${gradientId})`} />
+      <rect x="11" y="12" width="24" height="17" rx="3.5" fill="#fff" />
+      <rect x="14" y="20" width="10" height="2" rx="1" fill="#7C6CF8" opacity="0.6" />
+      <rect x="14" y="24.5" width="15" height="2" rx="1" fill="#7C6CF8" opacity="0.35" />
+      <rect x="29" y="35" width="24" height="17" rx="3.5" fill="#fff" />
+      <rect x="32" y="43" width="10" height="2" rx="1" fill="#3D8BFD" opacity="0.6" />
+      <rect x="32" y="47.5" width="15" height="2" rx="1" fill="#3D8BFD" opacity="0.35" />
+      <path
+        d="M23 29 C23 40 41 24 41 35"
+        fill="none"
+        stroke="#fff"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+      <circle cx="23" cy="29" r="2.4" fill="#fff" />
+      <circle cx="41" cy="35" r="2.4" fill="#fff" />
+    </svg>
+  );
+}
