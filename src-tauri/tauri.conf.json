@@ -33,6 +33,10 @@
     "targets": ["nsis"],
     "category": "DeveloperTool",
     "shortDescription": "Reverse-engineer SQL Server schemas into ERD diagrams",
+    "publisher": "Manuel Soberano",
+    "copyright": "Copyright (c) 2026 Jose Manuel Campos Soberano",
+    "license": "AGPL-3.0-only",
+    "licenseFile": "../LICENSE",
     "longDescription": "SchemaCraft connects to Microsoft SQL Server, extracts the schema, persists it in a portable .scraft project and renders interactive entity-relationship diagrams with high-fidelity SVG, HTML and PDF export.",
     "icon": [
       "icons/32x32.png",
@@ -42,8 +46,13 @@
       "icons/icon.ico"
     ],
     "windows": {
-      "webviewInstallMode": { "type": "embedBootstrapper" },
-      "nsis": { "installMode": "currentUser", "languages": ["English", "Spanish"] }
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["English", "Spanish"]
+      }
     }
   }
 }
