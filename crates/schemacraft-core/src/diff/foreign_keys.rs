@@ -189,6 +189,9 @@ mod tests {
 
     #[test]
     fn identical_keys_produce_nothing() {
-        assert!(diff_foreign_keys(&[orders_to_customers()], &[orders_to_customers()]).is_empty());
+        assert_eq!(
+            diff_foreign_keys(&[orders_to_customers()], &[orders_to_customers()]),
+            []
+        );
     }
 }

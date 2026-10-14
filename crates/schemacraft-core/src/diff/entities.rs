@@ -507,7 +507,7 @@ mod tests {
         else {
             panic!("expected one changed table, got {changes:?}");
         };
-        assert!(columns.is_empty());
+        assert_eq!(columns.as_slice(), []);
         let key_change = primary_key.as_ref().expect("primary key changed");
         assert_eq!(key_change.before.as_ref().unwrap().columns.len(), 1);
         assert_eq!(key_change.after.as_ref().unwrap().columns.len(), 2);
@@ -525,7 +525,7 @@ mod tests {
 
     #[test]
     fn unchanged_tables_produce_nothing() {
-        assert!(diff_tables(&[orders()], &[orders()]).is_empty());
+        assert_eq!(diff_tables(&[orders()], &[orders()]), []);
     }
 
     #[test]

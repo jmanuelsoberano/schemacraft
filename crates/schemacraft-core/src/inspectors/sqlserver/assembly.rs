@@ -565,9 +565,9 @@ mod tests {
         let snapshot = assemble(&options);
 
         assert_eq!(table_names(&snapshot), ["sales.Orders"]);
-        assert!(snapshot.views.is_empty());
+        assert_eq!(snapshot.views, []);
         // The Orders -> Customers key loses its referenced table and must not survive.
-        assert!(snapshot.foreign_keys.is_empty());
+        assert_eq!(snapshot.foreign_keys, []);
     }
 
     #[test]

@@ -164,7 +164,7 @@ mod tests {
         let path = directory.path().join("config").join("preferences.json");
 
         let store = PreferencesStore::load(path.clone());
-        assert!(store.current().recent_projects.is_empty());
+        assert_eq!(store.current().recent_projects, []);
         let updated = store
             .update(|preferences| preferences.remember_project("C:\\work\\shop.scraft", Utc::now()))
             .unwrap();
