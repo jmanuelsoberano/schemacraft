@@ -34,8 +34,36 @@ Grab the latest release from the
 
 Both need the Microsoft Edge WebView2 runtime, which Windows 11 and updated Windows 10 already
 have; when it is missing, SchemaCraft says so and offers the download page. Releases are not
-code-signed yet, so SmartScreen shows a warning on the first launch (More info, then Run anyway),
-and a PC with Smart App Control turned on refuses unsigned executables.
+code-signed yet (see the code signing policy below), so SmartScreen shows a warning on the
+first launch (More info, then Run anyway), and a PC with Smart App Control turned on refuses
+unsigned executables.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org).
+
+The application to SignPath Foundation is under review; until it is approved, release files are
+not signed.
+
+- Committers and reviewers: [Manuel Soberano](https://github.com/jmanuelsoberano)
+- Approvers: [Manuel Soberano](https://github.com/jmanuelsoberano)
+
+The project has one maintainer, who holds every role. After the initial commit, every change has
+reached `main` through a pull request that passed the required CI checks, and the branch rules
+allow no bypass. Contributions from others are reviewed with particular attention to build
+scripts and workflows, and every signing request is approved by the maintainer.
+
+Only the files that the release workflow builds from this repository are signed: the portable
+executable and the installer attached to each GitHub release.
+
+### Privacy policy
+
+This program will not transfer any information to other networked systems unless specifically
+requested by the user or the person installing or operating it.
+
+SchemaCraft has no telemetry and no update check. It connects only to the SQL Server the user
+specifies, and it opens Microsoft's WebView2 download page only when the user asks.
 
 ## Stack
 

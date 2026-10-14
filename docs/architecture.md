@@ -148,15 +148,14 @@ regression appears: tiberius 0.12.3 with `bb8-tiberius`.
 `npm run tauri build` produces a single `schemacraft.exe` with the frontend embedded. Like every
 Tauri application on Windows it renders through the Evergreen WebView2 runtime, which ships with
 Windows 11 and with Windows 10 updates. Bundling a fixed-version runtime would turn the single
-file into a folder of roughly 150 MB, so it is not the default. The NSIS installer embeds the
-WebView2 bootstrapper for machines that lack the runtime; milestone 6 added the startup check
-of the portable executable (ADR-027).
+file into a folder of roughly 150 MB, so it is not the default. Milestone 6 added a startup
+check of the runtime (ADR-027), and since ADR-029 the NSIS installer relies on it too instead
+of embedding the WebView2 bootstrapper.
 
 Code signing is a distribution requirement, not an option: on Windows 11 machines where Smart
 App Control is enforced, the unsigned release build is refused at launch (observed on the
-development machine in milestone 1, while the debug build runs). Milestone 6 wired Authenticode
-signing through Azure Trusted Signing into the release workflow as an optional step (ADR-027);
-version 1.0 ships unsigned by decision.
+development machine in milestone 1, while the debug build runs). Signing goes through the
+SignPath Foundation (ADR-029); version 1.0.0 ships unsigned while that application is reviewed.
 
 ### ADR-011: One Server field that understands SSMS notations
 
@@ -393,11 +392,11 @@ Why: a reload threw the open project away and the print dialog printed the page 
 reached the user. Suppressing the defaults in one place keeps every future screen covered, and
 mapping the familiar keys keeps the muscle memory useful.
 
-### ADR-027: Releases are cut by a tag-driven workflow; signing is an optional step
+### ADR-027: Releases are cut by a tag-driven workflow and smoke-tested
 
 Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`: it checks that the tag matches the
 package version, runs every quality gate, builds the portable executable and the NSIS installer,
-signs both with Azure Trusted Signing when the secrets exist, smoke-tests the real binary,
+smoke-tests the real binary,
 computes SHA-256 sums and publishes a draft GitHub release with the assets and generated notes.
 The smoke test (`scripts/smoke-test-release.mjs`) starts the executable with a DevTools port,
 which the application opens when `SCHEMACRAFT_REMOTE_DEBUGGING_PORT` is set, in a private
@@ -409,9 +408,8 @@ native bilingual dialog offering Microsoft's download page, through `rfd`, which
 plugin already compiles, since the workspace forbids `unsafe` FFI.
 
 Why: a release must be reproducible from a tag and verified on the real binary, not in
-development mode. Version 1.0 ships unsigned by decision; keeping the signing step in place
-makes a certificate a configuration change, not a code change. The draft release gives the
-author a last manual check against a production database before publishing.
+development mode. The draft release gives the author a last manual check before publishing.
+Signing was first planned as an optional Azure Trusted Signing step; ADR-029 replaced it.
 
 ### ADR-028: SchemaCraft is free software under the AGPL-3.0-only license
 
@@ -429,6 +427,26 @@ Why: an open-source license is a condition of free code signing for open-source 
 the copyleft keeps improvements shared with the project. The SPDX identifier appears in
 `package.json`, in the Cargo workspace and in the Tauri bundle, which shows the license in the
 installer.
+
+### ADR-029: Signing through SignPath Foundation; the installer leaves WebView2 to Windows
+
+Azure Trusted Signing, the optional step of ADR-027, is not available to individual developers
+outside the United States and Canada. The SignPath Foundation signs open-source projects for
+free, and its terms shape the release: a published code signing policy (the README section of
+that name, also linked from every release), binaries built only by the release workflow from
+the repository on GitHub-hosted runners without caches from earlier builds, and no proprietary
+components. The release workflow therefore drops the Azure step and its caches, and the NSIS
+installer no longer embeds Microsoft's WebView2 bootstrapper (`webviewInstallMode: skip`): like
+the portable executable, the installed program checks for the runtime at startup and offers
+Microsoft's download page when it is missing. Version 1.0.0 ships unsigned while the
+application is reviewed; once it is approved, the release workflow submits the executable and
+the installer to SignPath and the maintainer approves every signing request.
+
+Why: Smart App Control refuses unsigned executables outright, so signing decides whether
+SchemaCraft runs on a growing share of Windows 11 machines, and a certificate in the name of an
+individual costs a yearly fee and a hardware token. The bootstrapper was the only third-party
+binary in the installer, and leaving the runtime to Windows also keeps the installer from
+contacting Microsoft on its own.
 
 ## Milestones
 
