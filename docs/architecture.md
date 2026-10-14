@@ -413,6 +413,23 @@ development mode. Version 1.0 ships unsigned by decision; keeping the signing st
 makes a certificate a configuration change, not a code change. The draft release gives the
 author a last manual check against a production database before publishing.
 
+### ADR-028: SchemaCraft is free software under the AGPL-3.0-only license
+
+The project is published under the GNU Affero General Public License, version 3 only, the most
+restrictive license approved by the Open Source Initiative in common use: anyone may use, study,
+share and modify it, and whoever distributes a modified version, or offers one as a network
+service, must publish its source under the same terms. Every dependency was checked for
+compatibility: the Rust crates are under MIT, Apache-2.0, BSD, Zlib, MPL-2.0, Unicode or similar
+permissive terms; the frontend packages are under MIT, ISC or Apache-2.0; ELK is dual-licensed
+EPL-2.0 or GPL-3.0-or-later, which makes it usable in a GPL work; and the bundled fonts, Inter
+and JetBrains Mono, are under the SIL Open Font License 1.1, which allows embedding them in a
+program under any license as long as their license texts ship with them.
+
+Why: an open-source license is a condition of free code signing for open-source projects, and
+the copyleft keeps improvements shared with the project. The SPDX identifier appears in
+`package.json`, in the Cargo workspace and in the Tauri bundle, which shows the license in the
+installer.
+
 ## Milestones
 
 | #   | Scope                                                           | Status |

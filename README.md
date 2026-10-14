@@ -5,29 +5,37 @@ visualisation, built with Tauri 2, Rust and React. It connects to Microsoft SQL 
 the schema, keeps it in a portable `.scraft` project so the database is never queried twice for
 the same diagram, and renders fast, interactive diagrams with high-fidelity single-page exports.
 
-## Status
+![SchemaCraft showing a sales schema at the Keys detail level](docs/images/canvas-keys-light.png)
 
-All six milestones are complete: Rust workspace, domain model, Tauri host, application
-shell with design system, bilingual UI (English and Spanish), light and dark themes, tooling and
-CI; the SQL Server inspector with SQL Server and Windows Authentication, the connection dialog
-with actionable errors and progress, and the entities panel listing the loaded schema; then
-`.scraft` project files with open, save and recent projects, refresh from database with a
-reviewed diff that keeps diagram positions, and a history of recent connections; then the
-canvas: entity cards with three detail levels, crow's foot relationships, layered, organic and
-radial layouts, isolation of a table with its neighbours, undo and redo, and a command palette;
-and the exports: SVG with selectable text, a self-contained interactive HTML viewer,
-single-page PDF and PNG at 1x, 2x and 4x, all drawn by one renderer with bundled fonts; and the
-release: a portable `schemacraft.exe` with a WebView2 check, a per-user installer, a smoke test
-of the real binary in CI and a tag-driven release workflow.
+## Features
 
-| Milestone | Scope                                                       |
-| --------- | ----------------------------------------------------------- |
-| 1 ✅      | Project bootstrap, domain model, application shell          |
-| 2 ✅      | SQL Server inspector, connection dialog, entities panel     |
-| 3 ✅      | `.scraft` project files and schema diff ("refresh from DB") |
-| 4 ✅      | Canvas: table nodes, relationships, layouts, detail levels  |
-| 5 ✅      | Export: SVG, standalone interactive HTML, single-page PDF   |
-| 6 ✅      | Portable `schemacraft.exe` validation and packaging         |
+- **Reverse engineering of SQL Server.** Tables, views, columns and types, primary and foreign
+  keys, indexes and check constraints, with SQL Server or Windows Authentication over encrypted
+  connections.
+- **Portable projects.** A `.scraft` file keeps the schema and the diagram, reopens without a
+  database and refreshes from it with a reviewed diff that keeps your layout.
+- **Interactive diagrams.** Entity cards at three detail levels, crow's foot relationships,
+  layered, organic and radial layouts, isolation of a table with its neighbours, undo and redo,
+  and a command palette.
+- **Exports.** SVG with selectable text, a self-contained interactive HTML viewer, single-page
+  PDF and PNG at 1x, 2x and 4x, all drawn by one renderer with bundled fonts.
+- **Desktop quality.** English and Spanish, light and dark themes, keyboard access throughout, a
+  portable executable of about 12 MB and a per-user installer.
+
+## Download
+
+Grab the latest release from the
+[releases page](https://github.com/jmanuelsoberano/schemacraft/releases):
+
+- `schemacraft-vX.Y.Z-windows-x64.exe`: the portable executable; nothing to install.
+- `schemacraft-vX.Y.Z-windows-x64-setup.exe`: the per-user installer, which adds a Start menu
+  entry and needs no administrator rights.
+- `SHA256SUMS.txt`: checksums of both files.
+
+Both need the Microsoft Edge WebView2 runtime, which Windows 11 and updated Windows 10 already
+have; when it is missing, SchemaCraft says so and offers the download page. Releases are not
+code-signed yet, so SmartScreen shows a warning on the first launch (More info, then Run anyway),
+and a PC with Smart App Control turned on refuses unsigned executables.
 
 ## Stack
 
@@ -44,10 +52,6 @@ of the real binary in CI and a tag-driven release workflow.
 - [Rust](https://rustup.rs) through rustup, which installs the toolchain pinned in
   `rust-toolchain.toml` (1.99.0, MSVC), plus the Microsoft C++ Build Tools.
 - [Node.js](https://nodejs.org) 24 or newer with npm.
-
-Release builds are not code-signed in 1.0: SmartScreen shows a warning on the first launch (More
-info, then Run anyway) and machines with Smart App Control enforced may refuse the executable.
-The release workflow signs with Azure Trusted Signing as soon as its secrets exist (ADR-027).
 
 ## Getting started
 
@@ -72,18 +76,11 @@ The portable binary is written to `target/release/schemacraft.exe` and the insta
 
 ## Distribution
 
-Every tag `vX.Y.Z` builds, smoke-tests and publishes a draft GitHub release with:
-
-- `schemacraft-vX.Y.Z-windows-x64.exe`: the portable executable, a single file of about 12 MB.
-  It needs the Microsoft Edge WebView2 runtime, which Windows 11 and updated Windows 10 already
-  have; when it is missing, the application says so and offers the download page.
-- `schemacraft-vX.Y.Z-windows-x64-setup.exe`: the per-user NSIS installer, which embeds the
-  WebView2 bootstrapper and needs no administrator rights.
-- `SHA256SUMS.txt`: checksums of both files.
-
-[docs/release-checklist.md](docs/release-checklist.md) lists what CI verifies and what is checked
-by hand before the draft is published. To cut a release: set the version in `package.json` and
-`Cargo.toml`, commit, tag `vX.Y.Z` and push the tag.
+Every tag `vX.Y.Z` builds the assets listed under Download, smoke-tests the real executable and
+publishes a draft GitHub release. [docs/release-checklist.md](docs/release-checklist.md) lists
+what CI verifies and what is checked by hand before the draft is published. To cut a release: set
+the version in `package.json` and `Cargo.toml`, add the entry to `CHANGELOG.md`, commit, tag
+`vX.Y.Z` and push the tag.
 
 ## Scripts
 
@@ -169,6 +166,12 @@ docs/                      PRD, architecture decisions, UX principles
 - [Product requirements (PRD)](docs/PRD_SchemaCraft_v1.md)
 - [Architecture and decision records](docs/architecture.md)
 - [UX principles and definition of done](docs/ux-principles.md)
+- [Changelog](CHANGELOG.md)
+
+## Contributing
+
+Issues and pull requests are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) explains the setup,
+the quality gates and the conventions. Security problems go through [SECURITY.md](SECURITY.md).
 
 ## Author
 
@@ -176,6 +179,17 @@ Developed by Manuel Soberano.
 
 ## Acknowledgements
 
-The canvas is built on [React Flow](https://reactflow.dev) (MIT), with layouts by
+The canvas is built on [React Flow](https://reactflow.dev), with layouts by
 [ELK](https://eclipse.dev/elk/) and [d3-force](https://d3js.org). UI primitives come from
-[Radix](https://www.radix-ui.com) and icons from [Lucide](https://lucide.dev).
+[Radix](https://www.radix-ui.com) and icons from [Lucide](https://lucide.dev). Exports are
+rendered with [resvg](https://github.com/linebender/resvg) and
+[svg2pdf](https://github.com/typst/svg2pdf), and the bundled fonts are
+[Inter](https://rsms.me/inter/) and [JetBrains Mono](https://www.jetbrains.com/lp/mono/), both
+under the SIL Open Font License 1.1.
+
+## License
+
+SchemaCraft is free software, licensed under the
+[GNU Affero General Public License, version 3](LICENSE). You may use, study, share and modify
+it; if you distribute a modified version, or run one as a network service, you must offer its
+source under the same license.

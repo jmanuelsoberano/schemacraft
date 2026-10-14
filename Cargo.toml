@@ -9,6 +9,7 @@ rust-version = "1.90"
 authors = ["Jose Manuel Campos Soberano"]
 repository = "https://github.com/jmanuelsoberano/schemacraft"
 publish = false
+license = "AGPL-3.0-only"
 
 [workspace.dependencies]
 schemacraft-core = { path = "crates/schemacraft-core" }

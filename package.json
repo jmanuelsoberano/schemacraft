@@ -2,6 +2,7 @@
   "name": "schemacraft",
   "private": true,
   "version": "1.0.0",
+  "license": "AGPL-3.0-only",
   "description": "Desktop CASE tool for database reverse engineering and ERD visualisation",
   "type": "module",
   "scripts": {

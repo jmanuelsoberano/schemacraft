@@ -18,6 +18,3 @@ Thumbs.db
 
 # Local overrides
 *.local
-
-# Claude Code session files
-.claude/
