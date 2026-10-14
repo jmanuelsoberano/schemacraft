@@ -1,11 +1,15 @@
 // Starts a built SchemaCraft executable with WebView2 remote debugging, checks the first screen
-// and a few interactions through the Chrome DevTools Protocol, saves screenshots and exits with
-// a non-zero code on any failure. It needs a release build (`npm run tauri build -- --no-bundle`):
-// debug builds load the Vite development server instead of the embedded frontend.
+// and a few interactions through the Chrome DevTools Protocol, saves screenshots and a JSON report
+// and exits with a non-zero code on any failure. It needs a release build (`npm run tauri build
+// -- --no-bundle`): debug builds load the Vite development server instead of the embedded
+// frontend. The machine needs the WebView2 runtime, like any user's machine; without it the test
+// fails right away instead of waiting for a window that never comes.
 //   node scripts/smoke-test-release.mjs <path-to-exe> [output-dir]
-import { spawn } from "node:child_process";
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { execFile, spawn } from "node:child_process";
+import { mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 
 const [exePath, outputDir = "smoke-test"] = process.argv.slice(2);
 if (!exePath) {
@@ -13,6 +17,12 @@ if (!exePath) {
   process.exit(2);
 }
 const PORT = 9333;
+// Where the Evergreen WebView2 runtime registers itself: per machine (64-bit Windows) and per user.
+const WEBVIEW2_CLIENT_KEYS = [
+  "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+  "HKCU\\SOFTWARE\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+];
+const execFileAsync = promisify(execFile);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const failures = [];
 const report = { exe: resolve(exePath), checks: {} };
@@ -24,13 +34,67 @@ function check(name, condition, detail) {
   }
 }
 
+async function webview2RuntimeVersion() {
+  for (const key of WEBVIEW2_CLIENT_KEYS) {
+    try {
+      const { stdout } = await execFileAsync("reg.exe", ["query", key, "/v", "pv"]);
+      const match = /pv\s+REG_SZ\s+(\S+)/u.exec(stdout);
+      if (match) return match[1];
+    } catch {
+      // The key does not exist: try the next location.
+    }
+  }
+  return null;
+}
+
+/** Lists the windows on the desktop and saves a screenshot of it, to explain a window that never came. */
+async function describeDesktop(screenshotPath) {
+  const target = screenshotPath.replaceAll("\\", "/").replaceAll("'", "''");
+  const script = [
+    "Get-Process | Where-Object { $_.MainWindowTitle } | ForEach-Object { $_.ProcessName + ': ' + $_.MainWindowTitle }",
+    "Add-Type -AssemblyName System.Windows.Forms,System.Drawing",
+    "$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds",
+    "$bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height",
+    "$graphics = [System.Drawing.Graphics]::FromImage($bitmap)",
+    "$graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)",
+    `$bitmap.Save('${target}')`,
+  ].join("; ");
+  try {
+    const { stdout } = await execFileAsync("powershell.exe", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      script,
+    ]);
+    return stdout.trim().split(/\r?\n/u).filter(Boolean);
+  } catch (error) {
+    return [
+      `desktop diagnostics failed: ${error instanceof Error ? error.message : String(error)}`,
+    ];
+  }
+}
+
+async function finish() {
+  report.failures = failures;
+  await writeFile(join(outputDir, "report.json"), JSON.stringify(report, null, 2));
+  console.log(JSON.stringify(report, null, 2));
+  process.exit(failures.length === 0 ? 0 : 1);
+}
+
 await mkdir(outputDir, { recursive: true });
 report.exeBytes = (await stat(exePath)).size;
+report.webview2Version = await webview2RuntimeVersion();
+if (report.webview2Version === null) {
+  failures.push(
+    "the WebView2 runtime is not installed on this machine; the application cannot start",
+  );
+  await finish();
+}
 
 const startedAt = Date.now();
-// A private WebView2 profile: no clash with a running instance, no leftover settings.
-const profileDir = resolve(outputDir, "webview2-profile");
-await mkdir(profileDir, { recursive: true });
+// A private WebView2 profile outside the output directory: no clash with a running instance, no
+// leftover settings and no cache in the artifacts.
+const profileDir = await mkdtemp(join(tmpdir(), "schemacraft-smoke-"));
 const child = spawn(resolve(exePath), [], {
   env: {
     ...process.env,
@@ -44,6 +108,8 @@ let exited = null;
 child.on("exit", (code, signal) => {
   exited = { code, signal };
 });
+// The application logs through tracing on stdout; keep its lines next to the test output.
+child.stdout.on("data", (chunk) => process.stdout.write(chunk));
 child.stderr.on("data", (chunk) => process.stderr.write(chunk));
 
 async function findPage() {
@@ -223,11 +289,13 @@ try {
   failures.push(error instanceof Error ? error.message : String(error));
 } finally {
   if (ws) ws.close();
+  if (failures.length > 0) {
+    // Taken while the application is still running, so a stray dialog shows up in both.
+    report.desktop = await describeDesktop(resolve(outputDir, "99-desktop-on-failure.png"));
+  }
   if (exited === null) {
     child.kill();
   }
 }
 
-report.failures = failures;
-console.log(JSON.stringify(report, null, 2));
-process.exit(failures.length === 0 ? 0 : 1);
+await finish();
