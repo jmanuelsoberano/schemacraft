@@ -1,0 +1,23 @@
+# Dependencies and build output
+node_modules/
+dist/
+target/
+
+# Tauri generated schemas
+src-tauri/gen/schemas/
+
+# Logs and OS noise
+*.log
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Local overrides
+*.local
+
+# Claude Code session files
+.claude/

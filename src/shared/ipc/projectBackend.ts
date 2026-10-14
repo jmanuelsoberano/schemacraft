@@ -1,0 +1,63 @@
+import { invoke } from "@tauri-apps/api/core";
+import { open, save } from "@tauri-apps/plugin-dialog";
+
+import type { Project, ProjectContent, SchemaDiff, SchemaSnapshot } from "@/shared/contracts";
+
+import { createBackendResolver } from "./backendResolver";
+import { ipcUnavailableError, toOperationError } from "./operationError";
+
+/** File extension of project files, without the dot. */
+export const PROJECT_FILE_EXTENSION = "scraft";
+
+/** Operations the project feature needs from the Rust side and the native file dialogs. */
+export interface ProjectBackend {
+  /** Lets the user choose a project file; `null` when the dialog is cancelled. */
+  pickProjectToOpen(title: string): Promise<string | null>;
+  /** Lets the user choose where to save; `null` when the dialog is cancelled. */
+  pickProjectToSave(title: string, suggestedFileName: string): Promise<string | null>;
+  readProject(path: string): Promise<Project>;
+  writeProject(path: string, content: ProjectContent): Promise<Project>;
+  computeSchemaDiff(previous: SchemaSnapshot, current: SchemaSnapshot): Promise<SchemaDiff>;
+  refreshProjectContent(content: ProjectContent, snapshot: SchemaSnapshot): Promise<ProjectContent>;
+}
+
+async function invokeCommand<T>(command: string, arguments_: Record<string, unknown>): Promise<T> {
+  try {
+    return await invoke<T>(command, arguments_);
+  } catch (error: unknown) {
+    throw toOperationError(error);
+  }
+}
+
+const PROJECT_FILTER = { name: "SchemaCraft project", extensions: [PROJECT_FILE_EXTENSION] };
+
+const tauriProjectBackend: ProjectBackend = {
+  pickProjectToOpen: (title) =>
+    open({ title, multiple: false, directory: false, filters: [PROJECT_FILTER] }),
+  pickProjectToSave: (title, suggestedFileName) =>
+    save({ title, defaultPath: suggestedFileName, filters: [PROJECT_FILTER] }),
+  readProject: (path) => invokeCommand("read_project", { path }),
+  writeProject: (path, content) => invokeCommand("write_project", { path, content }),
+  computeSchemaDiff: (previous, current) =>
+    invokeCommand("compute_schema_diff", { previous, current }),
+  refreshProjectContent: (content, snapshot) =>
+    invokeCommand("refresh_project_content", { content, snapshot }),
+};
+
+const unavailableProjectBackend: ProjectBackend = {
+  pickProjectToOpen: () => Promise.reject(ipcUnavailableError()),
+  pickProjectToSave: () => Promise.reject(ipcUnavailableError()),
+  readProject: () => Promise.reject(ipcUnavailableError()),
+  writeProject: () => Promise.reject(ipcUnavailableError()),
+  computeSchemaDiff: () => Promise.reject(ipcUnavailableError()),
+  refreshProjectContent: () => Promise.reject(ipcUnavailableError()),
+};
+
+/** Resolves the project backend for this window. */
+export const getProjectBackend = createBackendResolver<ProjectBackend>(
+  tauriProjectBackend,
+  unavailableProjectBackend,
+  import.meta.env.DEV
+    ? () => import("./previewProjectBackend").then((module) => module.previewProjectBackend)
+    : null,
+);

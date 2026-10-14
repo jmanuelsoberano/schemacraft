@@ -1,0 +1,133 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    name: Build, smoke-test and publish (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      # Signing runs only when the Azure Trusted Signing secrets exist; v1 ships unsigned.
+      SIGNING_ENABLED: ${{ secrets.AZURE_TENANT_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install the Rust toolchain pinned in rust-toolchain.toml
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: npm ci
+
+      - name: The tag matches the package version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME does not match package version $version"
+            exit 1
+          fi
+
+      - name: Frontend quality gates
+        run: |
+          npm run format:check
+          npm run lint
+          npm run typecheck
+          npm test
+
+      - name: Rust quality gates
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+
+      - name: Generated TypeScript contracts are up to date
+        run: git diff --exit-code -- src/shared/contracts/generated
+
+      - name: Build the portable executable and the installer
+        run: npm run tauri build
+
+      - name: Sign the executable and the installer
+        if: env.SIGNING_ENABLED == 'true'
+        uses: azure/trusted-signing-action@v0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_SIGNING_PROFILE }}
+          files-folder: target/release
+          files-folder-filter: exe
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3339: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Ensure the WebView2 runtime is installed
+        # Hosted Windows runners ship Edge but not always the WebView2 runtime the app needs.
+        shell: pwsh
+        run: |
+          $key = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+          $version = (Get-ItemProperty -Path $key -Name pv -ErrorAction SilentlyContinue).pv
+          if ($version) { Write-Host "WebView2 runtime $version is installed"; exit 0 }
+          Write-Host "WebView2 runtime missing: installing the Evergreen runtime"
+          $setup = Join-Path $env:RUNNER_TEMP "MicrosoftEdgeWebview2Setup.exe"
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile $setup
+          Start-Process -FilePath $setup -ArgumentList "/silent", "/install" -Wait
+          $version = (Get-ItemProperty -Path $key -Name pv -ErrorAction SilentlyContinue).pv
+          if (-not $version) { throw "the WebView2 runtime did not install" }
+          Write-Host "WebView2 runtime $version installed"
+
+      - name: Smoke-test the portable executable
+        run: node scripts/smoke-test-release.mjs target/release/schemacraft.exe smoke-test
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-test-screenshots
+          path: smoke-test
+          if-no-files-found: error
+
+      - name: Package the release assets
+        run: |
+          mkdir -p release
+          cp target/release/schemacraft.exe "release/schemacraft-$GITHUB_REF_NAME-windows-x64.exe"
+          cp target/release/bundle/nsis/*-setup.exe "release/schemacraft-$GITHUB_REF_NAME-windows-x64-setup.exe"
+          (cd release && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-${{ github.ref_name }}
+          path: smoke-test
+          if-no-files-found: error
+
+      - name: Publish a draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          body: |
+            Portable executable (`schemacraft-${{ github.ref_name }}-windows-x64.exe`) and per-user installer
+            (`schemacraft-${{ github.ref_name }}-windows-x64-setup.exe`) for Windows 10/11 x64. Verify the
+            downloads with `SHA256SUMS.txt`. See the README for the WebView2 requirement and the SmartScreen
+            notice on unsigned builds.
+          files: release/*

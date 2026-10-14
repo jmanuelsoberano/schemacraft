@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  verify:
+    name: Lint, test and build (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install the Rust toolchain pinned in rust-toolchain.toml
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: npm ci
+
+      - name: Frontend quality gates
+        run: |
+          npm run format:check
+          npm run lint
+          npm run typecheck
+          npm test
+
+      - name: Rust quality gates
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+
+      - name: Generated TypeScript contracts are up to date
+        run: git diff --exit-code -- src/shared/contracts/generated
+
+      - name: Build portable executable
+        run: npm run tauri build -- --no-bundle
+
+      - name: Ensure the WebView2 runtime is installed
+        # Hosted Windows runners ship Edge but not always the WebView2 runtime the app needs.
+        shell: pwsh
+        run: |
+          $key = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+          $version = (Get-ItemProperty -Path $key -Name pv -ErrorAction SilentlyContinue).pv
+          if ($version) { Write-Host "WebView2 runtime $version is installed"; exit 0 }
+          Write-Host "WebView2 runtime missing: installing the Evergreen runtime"
+          $setup = Join-Path $env:RUNNER_TEMP "MicrosoftEdgeWebview2Setup.exe"
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile $setup
+          Start-Process -FilePath $setup -ArgumentList "/silent", "/install" -Wait
+          $version = (Get-ItemProperty -Path $key -Name pv -ErrorAction SilentlyContinue).pv
+          if (-not $version) { throw "the WebView2 runtime did not install" }
+          Write-Host "WebView2 runtime $version installed"
+
+      - name: Smoke-test the portable executable
+        run: node scripts/smoke-test-release.mjs target/release/schemacraft.exe smoke-test
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: schemacraft-windows-x64
+          path: target/release/schemacraft.exe
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-test-screenshots
+          path: smoke-test
+          if-no-files-found: error
+
+  integration:
+    name: SQL Server integration tests (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "SchemaCraft!Ci2026"
+          MSSQL_PID: Developer
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'SchemaCraft!Ci2026' -C -Q 'SELECT 1' || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      SCHEMACRAFT_TEST_MSSQL_HOST: localhost
+      SCHEMACRAFT_TEST_MSSQL_PORT: "1433"
+      SCHEMACRAFT_TEST_MSSQL_USER: sa
+      SCHEMACRAFT_TEST_MSSQL_PASSWORD: "SchemaCraft!Ci2026"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Rust toolchain pinned in rust-toolchain.toml
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Inspector integration tests
+        run: cargo test -p schemacraft-core --test sqlserver_integration -- --nocapture
