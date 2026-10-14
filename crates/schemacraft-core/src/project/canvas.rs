@@ -168,7 +168,7 @@ mod tests {
         let canvas = CanvasState::default();
         assert_eq!(canvas.viewport, Viewport::default());
         assert_eq!(canvas.viewport.zoom, 1.0);
-        assert!(canvas.nodes.is_empty());
+        assert_eq!(canvas.nodes, []);
     }
 
     #[test]

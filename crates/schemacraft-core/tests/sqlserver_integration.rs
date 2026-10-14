@@ -189,8 +189,8 @@ async fn test_connection_reports_server_identity() {
         "{}",
         information.product
     );
-    assert!(!information.product_version.is_empty());
-    assert!(!information.edition.is_empty());
+    assert_ne!(information.product_version, "");
+    assert_ne!(information.edition, "");
     assert_eq!(information.database_name, "master");
 }
 
@@ -557,7 +557,7 @@ async fn inspects_views_and_honours_filters() {
         table_names,
         ["sales.OrderLines", "sales.Orders", "sales.Shipments"]
     );
-    assert!(filtered.views.is_empty());
+    assert_eq!(filtered.views, []);
     let key_names: Vec<&str> = filtered
         .foreign_keys
         .iter()
@@ -723,7 +723,7 @@ async fn refresh_reports_the_differences_and_keeps_surviving_positions() {
             if before.name == "Name" && properties == &[ColumnProperty::DataType]
     ));
     assert!(matches!(&columns[1], ColumnChange::Added { column } if column.name == "PhoneNumber"));
-    assert!(indexes.is_empty());
+    assert_eq!(indexes.as_slice(), []);
 
     assert!(matches!(
         &diff.tables[1],
@@ -742,7 +742,7 @@ async fn refresh_reports_the_differences_and_keeps_surviving_positions() {
             diff.tables[2]
         );
     };
-    assert!(columns.is_empty());
+    assert_eq!(columns.as_slice(), []);
     assert!(matches!(
         &indexes[0],
         IndexChange::Removed { index } if index.name == "IX_Orders_CustomerId"

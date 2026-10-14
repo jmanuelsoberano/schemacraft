@@ -22,6 +22,8 @@ parts run on every push (`ci.yml`) and on every tag (`release.yml`).
 ## Automated on every tag
 
 - The tag matches `version` in `package.json` (and therefore in `Cargo.toml`).
+- The Rust toolchain is the one pinned in `rust-toolchain.toml`, the same one used locally;
+  bumping it is a deliberate change that runs through the gates first.
 - Frontend and Rust quality gates, generated contracts up to date.
 - `npm run tauri build`: portable executable and NSIS installer.
 - Signing with Azure Trusted Signing, only when the secrets exist (not in 1.0).

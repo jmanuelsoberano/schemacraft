@@ -41,8 +41,8 @@ of the real binary in CI and a tag-driven release workflow.
 ## Prerequisites
 
 - Windows 10/11 with the WebView2 runtime (included in Windows 11).
-- [Rust](https://rustup.rs) stable (1.90 or newer) with the MSVC toolchain and the
-  Microsoft C++ Build Tools.
+- [Rust](https://rustup.rs) through rustup, which installs the toolchain pinned in
+  `rust-toolchain.toml` (1.99.0, MSVC), plus the Microsoft C++ Build Tools.
 - [Node.js](https://nodejs.org) 24 or newer with npm.
 
 Release builds are not code-signed in 1.0: SmartScreen shows a warning on the first launch (More
