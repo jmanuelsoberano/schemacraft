@@ -1,4 +1,5 @@
-// Starts a built SchemaCraft executable with WebView2 remote debugging, checks the first screen
+// Starts a built SchemaCraft executable with a remote debugging port (the application opens it
+// when SCHEMACRAFT_REMOTE_DEBUGGING_PORT is set), checks the first screen
 // and a few interactions through the Chrome DevTools Protocol, saves screenshots and a JSON report
 // and exits with a non-zero code on any failure. It needs a release build (`npm run tauri build
 // -- --no-bundle`): debug builds load the Vite development server instead of the embedded
@@ -47,11 +48,17 @@ async function webview2RuntimeVersion() {
   return null;
 }
 
-/** Lists the windows on the desktop and saves a screenshot of it, to explain a window that never came. */
-async function describeDesktop(screenshotPath) {
+/**
+ * Explains a page that never answered: the windows on the desktop, the WebView2 browser process
+ * command line (which shows whether the port switch reached it), who listens on the port, and a
+ * screenshot of the whole desktop.
+ */
+async function describeMachine(screenshotPath) {
   const target = screenshotPath.replaceAll("\\", "/").replaceAll("'", "''");
   const script = [
     "Get-Process | Where-Object { $_.MainWindowTitle } | ForEach-Object { $_.ProcessName + ': ' + $_.MainWindowTitle }",
+    "Get-CimInstance Win32_Process -Filter \"Name = 'msedgewebview2.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' } | ForEach-Object { 'webview2 browser: ' + (($_.CommandLine -split ' --' | Where-Object { $_ -match 'webview-exe-name|user-data-dir|disable-features|remote-debugging' } | ForEach-Object { '--' + $_ }) -join ' ') }",
+    `Get-NetTCPConnection -LocalPort ${PORT} -State Listen -ErrorAction SilentlyContinue | ForEach-Object { 'listening on ${PORT}: pid ' + $_.OwningProcess }`,
     "Add-Type -AssemblyName System.Windows.Forms,System.Drawing",
     "$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds",
     "$bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height",
@@ -98,7 +105,7 @@ const profileDir = await mkdtemp(join(tmpdir(), "schemacraft-smoke-"));
 const child = spawn(resolve(exePath), [], {
   env: {
     ...process.env,
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${PORT}`,
+    SCHEMACRAFT_REMOTE_DEBUGGING_PORT: String(PORT),
     WEBVIEW2_USER_DATA_FOLDER: profileDir,
     SCHEMACRAFT_LOG: "info",
   },
@@ -291,7 +298,7 @@ try {
   if (ws) ws.close();
   if (failures.length > 0) {
     // Taken while the application is still running, so a stray dialog shows up in both.
-    report.desktop = await describeDesktop(resolve(outputDir, "99-desktop-on-failure.png"));
+    report.machine = await describeMachine(resolve(outputDir, "99-desktop-on-failure.png"));
   }
   if (exited === null) {
     child.kill();

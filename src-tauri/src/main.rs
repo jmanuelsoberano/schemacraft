@@ -72,6 +72,50 @@ fn webview_runtime_available() -> bool {
     }
 }
 
+/// Environment variable that opens a Chrome DevTools Protocol port on the webview, for automated
+/// tests such as `scripts/smoke-test-release.mjs`. Unset for users; the port is local only.
+const REMOTE_DEBUGGING_PORT_ENVIRONMENT_VARIABLE: &str = "SCHEMACRAFT_REMOTE_DEBUGGING_PORT";
+/// Browser switches wry passes to WebView2 when nothing else is specified: they hide the mini
+/// menu and the SmartScreen prompts. Setting any switch replaces them, so they are repeated here.
+const DEFAULT_BROWSER_ARGUMENTS: &str =
+    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
+
+/// Creates the main window from the configuration (which does not create it automatically) so
+/// that a test run can ask the webview for a remote debugging port before it starts.
+fn create_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let window_config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == "main")
+        .ok_or("the main window is missing from tauri.conf.json")?;
+    let mut builder = tauri::WebviewWindowBuilder::from_config(app.handle(), window_config)?;
+    if let Some(port) = remote_debugging_port() {
+        tracing::warn!(port, "remote debugging requested through the environment");
+        builder = builder.additional_browser_args(&format!(
+            "{DEFAULT_BROWSER_ARGUMENTS} --remote-debugging-port={port}"
+        ));
+    }
+    builder.build()?;
+    Ok(())
+}
+
+/// The remote debugging port requested by the environment, if any and valid.
+fn remote_debugging_port() -> Option<u16> {
+    let value = std::env::var(REMOTE_DEBUGGING_PORT_ENVIRONMENT_VARIABLE).ok()?;
+    match value.trim().parse::<u16>() {
+        Ok(port) if port > 0 => Some(port),
+        _ => {
+            tracing::warn!(
+                value,
+                "ignoring an invalid {REMOTE_DEBUGGING_PORT_ENVIRONMENT_VARIABLE}"
+            );
+            None
+        }
+    }
+}
+
 /// Builds the Tauri application and runs it until the last window closes.
 fn run_application() -> tauri::Result<()> {
     tauri::Builder::default()
@@ -86,6 +130,7 @@ fn run_application() -> tauri::Result<()> {
             );
             let preferences_path = app.path().app_config_dir()?.join(PREFERENCES_FILE_NAME);
             app.manage(AppState::new(preferences_path));
+            create_main_window(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
