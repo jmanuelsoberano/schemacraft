@@ -298,7 +298,9 @@ function FlowCanvas() {
     >
       <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} />
       <Controls showInteractive={false} position="bottom-right" />
-      <MiniMap position="bottom-left" pannable zoomable nodeStrokeWidth={0} />
+      {nodes.length > 0 ? (
+        <MiniMap position="bottom-left" pannable zoomable nodeStrokeWidth={0} />
+      ) : null}
       <LayoutProgress />
     </ReactFlow>
   );
