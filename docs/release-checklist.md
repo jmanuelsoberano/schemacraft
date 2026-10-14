@@ -27,7 +27,7 @@ parts run on every push (`ci.yml`) and on every tag (`release.yml`).
 - Frontend and Rust quality gates, generated contracts up to date.
 - `npm run tauri build`: portable executable and NSIS installer.
 - No dependency or build caches: the release is built from the repository alone.
-- Signing through SignPath Foundation once the application is approved (not in 1.0.0).
+- Signing through SignPath Foundation once the application to it is approved (not in 1.0.0).
 - Smoke test of the built executable with screenshots and a report as an artifact; the runner
   installs the WebView2 runtime first when it lacks it, as a user's machine would need it.
 - `SHA256SUMS.txt` and a draft GitHub release with both files.

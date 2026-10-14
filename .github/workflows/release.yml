@@ -102,5 +102,5 @@ jobs:
 
             Portable executable (`schemacraft-${{ github.ref_name }}-windows-x64.exe`) and per-user installer (`schemacraft-${{ github.ref_name }}-windows-x64-setup.exe`) for Windows 10/11 x64; verify the downloads with `SHA256SUMS.txt`. Both need the Microsoft Edge WebView2 runtime, which Windows 11 and updated Windows 10 include.
 
-            [Code signing policy](https://github.com/jmanuelsoberano/schemacraft#code-signing-policy): free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org). The application is under review; until it is approved, release files are not signed and SmartScreen warns on the first launch.
+            [Code signing policy](https://github.com/jmanuelsoberano/schemacraft#code-signing-policy): free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org). The application to SignPath Foundation is under review; until it is approved, release files are not signed and SmartScreen warns on the first launch.
           files: release/*

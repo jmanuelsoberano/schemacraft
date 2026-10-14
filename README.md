@@ -49,10 +49,12 @@ not signed.
 - Committers and reviewers: [Manuel Soberano](https://github.com/jmanuelsoberano)
 - Approvers: [Manuel Soberano](https://github.com/jmanuelsoberano)
 
-The project has one maintainer, who holds every role. After the initial commit, every change has
-reached `main` through a pull request that passed the required CI checks, and the branch rules
-allow no bypass. Contributions from others are reviewed with particular attention to build
-scripts and workflows, and every signing request is approved by the maintainer.
+The project has one maintainer, who holds every role. Changes reach `main` only through pull
+requests that pass the required CI checks; the branch rules have no bypass list. On 2026-10-14
+the history of `main` was rewritten once, with the branch rules paused for that push, to
+replace the author email of earlier commits; no file changed, and pull requests #1 and #2 still
+show the original commits. Contributions from others are reviewed with particular attention to
+build scripts and workflows, and every signing request is approved by the maintainer.
 
 Only the files that the release workflow builds from this repository are signed: the portable
 executable and the installer attached to each GitHub release.
@@ -63,7 +65,10 @@ This program will not transfer any information to other networked systems unless
 requested by the user or the person installing or operating it.
 
 SchemaCraft has no telemetry and no update check. It connects only to the SQL Server the user
-specifies, and it opens Microsoft's WebView2 download page only when the user asks.
+specifies, and it opens Microsoft's WebView2 download page only when the user asks. Its
+interface runs in the Microsoft Edge WebView2 runtime that Windows provides, whose diagnostic
+data is covered by the [Microsoft Privacy Statement](https://privacy.microsoft.com/privacystatement)
+and follows the Windows diagnostic data setting.
 
 ## Stack
 
