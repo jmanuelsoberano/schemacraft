@@ -399,10 +399,11 @@ Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`: it checks that the 
 package version, runs every quality gate, builds the portable executable and the NSIS installer,
 signs both with Azure Trusted Signing when the secrets exist, smoke-tests the real binary,
 computes SHA-256 sums and publishes a draft GitHub release with the assets and generated notes.
-The smoke test (`scripts/smoke-test-release.mjs`) starts the executable with WebView2 remote
-debugging in a private profile and checks through the DevTools protocol that the welcome screen
-renders, that About shows the version, that the language and the theme switch and that F5 does
-not reload, saving screenshots as artifacts; CI runs the same test on every push. Before any
+The smoke test (`scripts/smoke-test-release.mjs`) starts the executable with a DevTools port,
+which the application opens when `SCHEMACRAFT_REMOTE_DEBUGGING_PORT` is set, in a private
+profile, and checks through that protocol that the welcome screen renders, that About shows the
+version, that the language and the theme switch and that F5 does not reload, saving screenshots
+as artifacts; CI runs the same test on every push. Before any
 window exists, the executable checks that the WebView2 runtime loads and otherwise shows a
 native bilingual dialog offering Microsoft's download page, through `rfd`, which the dialog
 plugin already compiles, since the workspace forbids `unsafe` FFI.

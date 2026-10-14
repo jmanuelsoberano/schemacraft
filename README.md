@@ -102,6 +102,9 @@ by hand before the draft is published. To cut a release: set the version in `pac
 | `node scripts/prepare-fonts.mjs`                        | Regenerate the TTF fonts bundled by the export renderer    |
 | `node scripts/smoke-test-release.mjs <exe> [dir]`       | Start a release build and check its first screens          |
 
+The smoke test sets `SCHEMACRAFT_REMOTE_DEBUGGING_PORT`, which makes any build of the application
+open a Chrome DevTools Protocol port on localhost, so a script can drive the real executable.
+
 ## Integration tests against SQL Server
 
 The core crate has integration tests that run against a real SQL Server 2022. They are skipped
