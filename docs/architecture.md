@@ -1,0 +1,425 @@
+# Architecture
+
+SchemaCraft is a Tauri 2 desktop application. A Rust workspace holds the domain core and the
+application host; a React frontend renders the diagram. This document records the decisions that
+shape the codebase as short architecture decision records (ADRs). Each one states the decision and
+the reason; alternatives appear only when they were seriously considered.
+
+The product requirements live in [PRD_SchemaCraft_v1.md](./PRD_SchemaCraft_v1.md) and the user
+experience bar in [ux-principles.md](./ux-principles.md).
+
+## Layout
+
+```
+schemacraft/
+├── crates/schemacraft-core/   Rust library: domain model, inspectors, project files, diff engine
+│   ├── src/model/             pure schema types (tables, columns, keys, snapshot)
+│   ├── src/inspectors/        DatabaseInspector trait, errors, progress, SQL Server implementation
+│   ├── src/project/           .scraft documents, saved connections, canvas state, atomic JSON files
+│   ├── src/diff/              comparison of two snapshots behind "refresh from database"
+│   ├── src/preferences/       connection history and recent projects (per-user JSON file)
+│   ├── src/credentials/       CredentialStore strategy: Windows Credential Manager, memory
+│   └── tests/                 integration tests and SQL fixtures (run against a real server)
+├── src-tauri/                 Rust binary: Tauri host, IPC commands, logging, configuration
+├── src/                       React + TypeScript frontend
+│   ├── app/                   application shell, actions, brand, global styles
+│   │   ├── actions/           action registry, keyboard shortcuts, action buttons
+│   │   ├── shell/             top bar, entities sidebar, diagram canvas, status bar
+│   │   └── styles/            design tokens and base styles
+│   ├── features/              one folder per product capability
+│   │   ├── connection/        connection dialog, history, flow store, progress, change review
+│   │   ├── preferences/       mirror of the preferences file: history and recent projects
+│   │   ├── project/           open project store, open/save flows, unsaved-changes guard
+│   │   └── schema/            entity list helpers and data type formatting
+│   └── shared/                cross-cutting modules
+│       ├── contracts/         TypeScript types generated from Rust (ts-rs)
+│       ├── i18n/              message catalogues and translation hook
+│       ├── ipc/               typed wrappers over Tauri `invoke` and native dialogs; preview backends
+│       ├── settings/          persisted preferences (theme, language, layout)
+│       └── ui/                accessible UI primitives (Radix based)
+├── assets/brand/              source artwork for the application icon
+├── scripts/                   developer scripts (SQL Server container for tests)
+├── docs/                      PRD, architecture, UX principles
+└── .github/workflows/         continuous integration
+```
+
+Dependencies only point inwards: `src-tauri` depends on `schemacraft-core`, never the other way
+round; the frontend talks to Rust exclusively through IPC commands; `shared/` modules never import
+from `app/`.
+
+## Decisions
+
+### ADR-001: Rust workspace with a framework-free core
+
+`crates/schemacraft-core` knows nothing about Tauri, HTTP or any UI. It contains the schema model,
+the database inspectors (`DatabaseInspector` strategy), `.scraft` persistence, the diff engine and
+the preferences. `src-tauri` is a thin adapter that maps core operations to IPC commands.
+
+Why: the core can be unit tested with `cargo test` in seconds and without a window, the PRD's
+module boundaries (`inspectors`, `model`, `project`, `diff`, `ui`) map one-to-one to directories,
+and a future CLI or server could reuse the core unchanged.
+
+### ADR-002: Tauri 2 stable in a single binary crate
+
+The application targets Tauri 2.12 (crate and CLI). Tauri 3 was in alpha when the project started
+and is not used. `src-tauri` is a plain binary crate (`main.rs` plus modules) instead of the
+template's library-plus-binary split, which exists to support mobile targets this product does not
+have.
+
+Why: fewer build artefacts on Windows (no `cdylib`/`staticlib` link steps) and a simpler mental
+model. The split can be reintroduced if mobile ever becomes a goal.
+
+### ADR-003: TypeScript contracts are generated from Rust
+
+Every type that crosses the IPC boundary or is persisted derives `ts_rs::TS`. Running
+`cargo test --workspace` (or `npm run contracts`) regenerates `src/shared/contracts/generated/`,
+which is committed; CI fails when the generated files are out of date.
+
+Why: a single source of truth for the model. Hand-written TypeScript mirrors drift silently and
+produce the most tedious class of integration bugs. `ts-rs` was preferred over `tauri-specta`
+because it is stable, small and does not change how commands are declared.
+
+### ADR-004: Failures are typed errors, never panics
+
+Clippy denies `unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented` and `dbg_macro` across
+the workspace; tests opt out locally. Library errors use `thiserror` enums; the Tauri layer maps
+them to a serialisable error payload for the frontend (introduced with the first fallible command
+in milestone 2). The release profile sets `panic = "abort"`, which is consistent with the rule: a
+panic is a bug, not a flow.
+
+### ADR-005: React 19 and React Flow for the canvas, own SVG renderer for export
+
+The interactive canvas is built on `@xyflow/react` (React Flow), which provides pan, zoom,
+minimap, selection and node dragging with good performance for hundreds of nodes. Automatic
+layouts will use ELK.js (layered/Sugiyama) and d3-force (organic). High-fidelity export (milestone 5) will use a dedicated, deterministic SVG renderer that shares the node geometry module with the
+canvas, so exported and on-screen diagrams are identical.
+
+Why: React Flow is named in the PRD and removes a large amount of interaction code; export must
+not depend on DOM screenshots. The small React Flow attribution stays visible, as its authors
+ask of users without a Pro subscription; it is styled to blend with the canvas.
+
+### ADR-006: Design tokens with `light-dark()`, no CSS framework
+
+All colours, type sizes, spacing, radii and motion live as custom properties in
+`src/app/styles/tokens.css`. Colours are declared once with `light-dark()`; the theme is chosen via
+`color-scheme` on the root element (`system`, `light` or `dark`). Components use CSS Modules.
+
+Why: one token set means light and dark cannot drift, native controls and scrollbars follow the
+theme automatically, and there is no flash on startup because the system preference applies
+before any JavaScript runs. A utility framework would add a build step and verbose markup for a
+UI that is mostly bespoke.
+
+### ADR-007: Typed message catalogues instead of an i18n library
+
+Messages are plain TypeScript objects (`src/shared/i18n/messages/`). The English catalogue defines
+the `MessageKey` type; other languages are typed against it, so a missing or extra key fails
+type-checking. Plurals use `Intl.PluralRules`; interpolation is `{name}` replacement. A unit test
+verifies every catalogue has the same keys and placeholders.
+
+Why: two languages and a few hundred strings do not justify an i18n framework. The typed approach
+gives compile-time completeness checks that most libraries lack.
+
+### ADR-008: Action registry as the single source of commands
+
+Every user operation is an `AppAction` (id, label key, icon, shortcut, availability, `run`).
+Toolbars, menus, the welcome screen and keyboard shortcuts read from the same registry; the
+command palette (milestone 4) will too.
+
+Why: labels, icons and shortcuts shown in tooltips can never disagree with what the keyboard does,
+and adding a feature means adding one action rather than touching every surface.
+
+### ADR-009: SQL Server access with tiberius 0.13, bb8 and a self-owned connection manager
+
+`tiberius` 0.13 (TDS 8.0, Windows integrated authentication through the `winauth` feature) is
+the maintained line. `bb8-tiberius` still requires tiberius 0.12, so the pool uses `bb8` with a
+small `ManageConnection` implementation in `inspectors/sqlserver/pool.rs`: it resolves named
+instances through SQL Browser, bounds the TCP connection with a timeout, runs the login
+handshake and validates idle sessions with `SELECT 1`. Pools live for one operation (test,
+listing or inspection) and are dropped afterwards, so the application never keeps idle sessions
+on a server. An inspection opens up to four sessions and runs its seven set-based catalog
+queries concurrently; the schema filter is applied while assembling, and foreign keys whose
+other end falls outside the selection are dropped. The schema picker lists only schemas that
+hold user tables or views: ownership of the fixed-role schemas (`db_datareader` and friends) is
+not reliable in real databases, and an empty schema has nothing to filter. Fallback if a
+regression appears: tiberius 0.12.3 with `bb8-tiberius`.
+
+### ADR-010: The portable executable relies on the WebView2 runtime
+
+`npm run tauri build` produces a single `schemacraft.exe` with the frontend embedded. Like every
+Tauri application on Windows it renders through the Evergreen WebView2 runtime, which ships with
+Windows 11 and with Windows 10 updates. Bundling a fixed-version runtime would turn the single
+file into a folder of roughly 150 MB, so it is not the default. The NSIS installer embeds the
+WebView2 bootstrapper for machines that lack the runtime; milestone 6 added the startup check
+of the portable executable (ADR-027).
+
+Code signing is a distribution requirement, not an option: on Windows 11 machines where Smart
+App Control is enforced, the unsigned release build is refused at launch (observed on the
+development machine in milestone 1, while the debug build runs). Milestone 6 wired Authenticode
+signing through Azure Trusted Signing into the release workflow as an optional step (ADR-027);
+version 1.0 ships unsigned by decision.
+
+### ADR-011: One Server field that understands SSMS notations
+
+The connection dialog has a single Server field that accepts `host`, `host\instance`,
+`host,port`, a `tcp:` prefix and the `.` and `(local)` aliases, parsed by
+`features/connection/serverAddress.ts`.
+
+Why: it is what SQL Server users already type in SSMS and connection strings. Separate host,
+instance and port fields would add a mode switch and three validations for no gain.
+
+### ADR-012: Errors carry a classification, and the UI owns the remedy
+
+Rust reports failures as `InspectorError` variants with a serialisable `InspectorErrorKind`; the
+Tauri layer wraps them in `CommandError`. The frontend maps each kind to a title, a hint and,
+when it applies, a one-click remedy (trusting the server certificate). Raw driver messages are
+shown only as secondary detail.
+
+Why: the core stays free of presentation text, the frontend never parses error strings, and
+every error states what happened and what to do next, as the UX principles require.
+
+### ADR-013: Progress over an ordered channel, cooperative cancellation
+
+`inspect_database` streams `InspectionEvent` messages through `tauri::ipc::Channel`, which
+delivers in order. The first event carries a job id; `cancel_inspection` cancels the matching
+`CancellationToken`, which the inspection checks between stages and while catalog queries run.
+
+Why: channels are the Tauri mechanism designed for ordered, high-frequency updates, and
+cooperative cancellation never leaves a session half-way through a query.
+
+### ADR-014: Simulated backend for browser previews
+
+Development builds running outside the desktop runtime load a simulated connection backend
+through a dynamic import (`shared/ipc/previewConnectionBackend.ts`). Server names such as
+`auth-fail`, `cert-fail`, `down` and `slow` reproduce the classified failures; anything else
+succeeds with a small fixture schema. Production builds never include it, and inside Tauri it
+is never loaded.
+
+Why: the connection flow can be designed, reviewed and screenshot in a plain browser without a
+database, in both themes and languages, which is how the UX definition of done is checked.
+
+### ADR-015: `.scraft` is versioned, pretty JSON written atomically
+
+A project file is one JSON document: a header (`formatVersion`, `savedAt`, `savedWith`)
+followed by the content the application holds in memory, `ProjectContent`: the connection
+without its password, the inspection options, the snapshot and the canvas state. Readers parse
+the header first and refuse newer format versions with a classified error; missing fields of
+older files take defaults. Files are written to a sibling temporary file and renamed over the
+destination, so a crash never leaves a truncated project behind. Node states are stored sorted
+by qualified name, so saving the same project twice yields the same bytes.
+
+Why: the PRD asks for a readable, structured file that reopens without a database. Pretty
+JSON with camelCase keys is diff-friendly and matches the IPC payloads, which means one set of
+Rust types (`ts-rs` exported) describes the file, the IPC and the frontend state.
+
+The canvas state is the Memento of the diagram: an immutable, serialisable value the canvas
+produces when a project is saved and restores when it is opened. Milestone 4 adds the
+caretaker (undo and redo) on top of the same value.
+
+### ADR-016: The diff matches objects by name and is reviewed before it is applied
+
+`SchemaDiff::between` pairs tables and views by schema-qualified name, foreign keys by
+referencing table plus constraint name, and columns, indexes and constraints by name. A rename
+is therefore a removal plus an addition; there is no heuristic rename detection in v1. Column
+order is not compared, because reordering changes nothing in a diagram. Every list is sorted,
+so the same two snapshots always produce the same diff, and a summary carries the counts the
+review dialog shows.
+
+Refresh from database reads the schema again, computes the diff on the Rust side and shows it
+in the connection dialog; nothing changes until the user applies it. Applying replaces the
+snapshot and carries the canvas state over to every surviving entity, changed or not; new
+entities wait for a layout. A project opened from a file reconnects through the same dialog,
+prefilled from the saved connection, because the password is never on disk.
+
+### ADR-017: Preferences live in one Rust-owned file in the user's configuration directory
+
+The connection history (last ten endpoints, most recent first, never a password) and the
+recent projects (last ten paths) are a `Preferences` document stored as
+`preferences.json` under the per-user application configuration directory
+(`%APPDATA%\com.jmanuelsoberano.schemacraft` on Windows), written with the same atomic writer as
+project files. Entries are deduplicated by endpoint (server, database and login, case
+insensitive) and by path. The Rust side applies every change and returns the whole document;
+the frontend mirrors it in a store and never writes the file itself. A damaged file is logged
+and replaced by defaults rather than blocking start-up.
+
+Why: a file the user can find and back up, consistent with the project format, independent of
+the webview's storage, and ready to take theme and language later. Keeping it in AppData rather
+than next to the executable keeps the portable build usable from read-only locations.
+
+### ADR-018: Native dialogs through the Tauri plugin, preview backends behind a resolver
+
+File pickers use `tauri-plugin-dialog`; the chosen path is then passed to the Rust commands
+that read and write projects, so no file content crosses the IPC boundary twice. Every feature
+backend (connection, project, preferences) is resolved by one helper: the Tauri commands inside
+the desktop runtime, a simulated backend in a development browser preview, or a backend that
+reports the runtime as unavailable. The preview loader is passed as
+`import.meta.env.DEV ? () => import(...) : null`, which lets the bundler drop every simulated
+module from production builds.
+
+### ADR-019: Remembered passwords live in the operating system store and never cross the IPC twice
+
+"Remember password" hands the typed password to the Rust side once, which files it in the
+Windows Credential Manager through the `keyring` crate under a key derived from the server and
+the login (`CredentialStore`, a strategy with an in-memory implementation for tests and other
+platforms). From then on the frontend only learns whether a password is remembered: connection
+settings carry `password: { source: "stored" }`, and the Rust side resolves it right before
+connecting. A remembered password that disappeared is its own classified error, which the dialog
+answers by asking for the password again. Unticking the box on the next successful connection
+removes the entry. Project files and preferences never contain a password in any form.
+
+Why: the PRD requires passwords to live only in memory or in the operating system store. Keeping
+resolution on the Rust side means the secret is never serialised towards the webview, and a
+file opened on another machine simply asks for the password.
+
+### ADR-020: Diagram geometry is computed from data, shared by the canvas and the exports
+
+Node sizes (240 px wide, 38 px header, 22 px rows), the rows shown at each detail level, the
+row at which a relationship attaches and the semantic zoom threshold (compact cards below 40 %)
+live in `src/features/canvas/geometry.ts`, with no React in it. The canvas never measures the
+DOM to decide where an edge goes: nodes are built with their computed size, and an edge attaches
+at the row of its first column pair on each table. Anchors (`edgeGeometry.ts`) float with the
+nodes: tables stacked vertically connect through their facing top and bottom edges, tables side
+by side through their facing sides at the key row, overlapping tables leave through the same
+side and bend around, and a self-reference loops out of the right side. Crow's foot markers are
+SVG markers defined once (`RelationMarkers.tsx`) and painted with `context-stroke`, so they
+inherit the colour and the emphasis of their edge.
+
+Why: Step 5 renders the same diagram to SVG, HTML and PDF without a browser layout pass. When
+geometry is a function of the project file, the export is the canvas, pixel for pixel, and the
+unit tests cover the drawing rules without a DOM.
+
+### ADR-021: Canvas state is a Memento in the project, undo lives in the project store
+
+`CanvasState` (detail level, layout kind, viewport and, per entity, position, collapsed and
+hidden) is a plain value inside `ProjectContent`: it is what `.scraft` saves and what Rust
+validates (`retaining_entities_of`, `normalized`). Every change to it goes through
+`projectStore.updateCanvas(update, { undoable, dirty })`, which pushes the previous value on a
+bounded history (100 entries) and clears the redo stack; undo and redo swap values back. The
+first layout of a fresh project is applied with `undoable: false, dirty: false`, so it is
+neither an edit nor an undo step. Transient interaction state (selection, hover, zoom level,
+refresh highlights, context menu, layout in progress) lives in `canvasUiStore` and is never
+saved. After a refresh, `refreshPlacement.ts` places new tables in free space next to the
+tables they reference, or in a row below the diagram, and highlights them; surviving positions
+never move.
+
+Why: the PRD asks for the Memento pattern on the canvas and for positions that survive a
+refresh. A value type makes saving, diffing and undoing the same operation, and keeps UI noise
+out of the file.
+
+### ADR-022: Three layout strategies behind one request, ELK runs in a worker
+
+`LayoutRequest` is a tagged union (`layered` with a direction, `organic`, `radial` with a focus)
+resolved by `runLayout` in `src/features/canvas/layouts`. Layered uses ELK.js inside a Web
+Worker created from the bundled worker script, so the UI never blocks; organic runs d3-force
+synchronously for a fixed number of ticks from the current positions; radial places rings by
+breadth-first distance around the focused table (or the most connected one), each ring sorted so
+a table sits in the direction of the table it was reached from. Tables without any visible
+relationship stay out of the organic simulation and the radial rings and are placed in a block
+below the diagram. Strategies receive only the visible entities with their computed sizes and
+the visible relationships, and return positions; applying a result is one undoable
+`updateCanvas`, and the saved layout kind lets "Apply last layout" repeat it after a refresh.
+Measured in the real application on 200 tables: layered 456 ms from request to painted diagram,
+organic 222 ms, pan and zoom at 72 fps on average.
+
+Known limitation: edges are drawn between the floating anchors of ADR-020, not along the routes
+ELK computes, so an edge that spans several layers can pass behind a table placed between its
+ends. Adopting ELK's bend points is a candidate for Step 5, when the export needs the same
+routes.
+
+Why: ELK gives the best layered result but is CPU heavy; the worker keeps panning smooth while
+it runs. One request type keeps the menu, the palette and the keyboard shortcuts on the same
+code path, and Step 5 can reuse the strategies without a canvas.
+
+### ADR-023: One SVG renderer in TypeScript draws the canvas's diagram for every export
+
+The export never screenshots the DOM. `src/features/export/svg/renderDiagram.ts` builds an SVG
+document from the project data with the geometry of ADR-020 (`geometry.ts`, `edgeGeometry.ts`)
+and the same crow's foot markers, so the file is the canvas drawn again: the visible entities at
+their positions, collapsed ones collapsed, at the chosen detail level and theme. Colours are the
+design tokens converted once to sRGB hex (`palette.ts`), because renderers outside the browser
+understand neither `oklch()` nor `light-dark()`; styles are plain class rules without
+combinators, the subset every SVG consumer shares. Text stays text, selectable in SVG and PDF;
+names that do not fit are shortened with an ellipsis, measured with a canvas in the webview and
+estimated in tests. The renderer is deterministic for a given input, which the unit tests check.
+
+Why: the PRD asks for continuous vector output with selectable text that matches the screen.
+One renderer, shared with the standalone viewer, keeps the drawing rules in a single place.
+
+### ADR-024: PNG and PDF are produced in Rust with resvg and svg2pdf, fonts bundled
+
+`core::export` receives the SVG document and the destination (an `ExportRequest`, built from a
+specification the TypeScript side validates with a Builder) and writes SVG and HTML verbatim,
+rasterises PNG with resvg at 1x, 2x or 4x, or converts to a single-page PDF with svg2pdf whose
+page is the diagram's size at 96 px per inch, with the text embedded as text. Four static TTF
+faces (Inter and JetBrains Mono, regular and semibold, produced from the Fontsource packages by
+`scripts/prepare-fonts.mjs`) are compiled into the binary and registered in a font database
+shared across exports, with the system fonts behind them for glyphs the Latin subsets lack. The
+raster is capped at 16 384 px per side, checked before allocation and mirrored by the dialog,
+which refuses the scale and explains the limit. Files are written atomically like projects; the
+command runs on a blocking thread, streams its stages through a channel and honours cancellation
+between stages. resvg and usvg are pinned to 0.45 because svg2pdf 0.13 is built against that
+usvg: the three must share one tree type.
+
+Why: rendering in-process makes the output identical on every machine and works in the portable
+executable without printers or dialogs; the WebView2 print path, with its page sizes and its
+dialog, stays out of the picture.
+
+### ADR-025: The standalone HTML is a viewer with the schema embedded, bundled by a Vite plugin
+
+The HTML export embeds the visible part of the schema as JSON (never the server, the login or the
+server version: only the database name, the objects on the diagram and their positions) together
+with a small vanilla TypeScript viewer (`src/viewer`) that draws with the renderer of ADR-023 in
+the browser: pan and zoom, the three detail levels, search, neighbour highlighting, a detail
+panel per table and light and dark themes. A plugin in `vite.config.ts` bundles the viewer on
+demand into a virtual module (`virtual:schemacraft-viewer`), so the application build stays one
+command and the viewer never pulls React or the application stores. Fonts are embedded as
+`@font-face` data URLs while "Embed fonts" stays on, as in SVG, adding about 125 KB.
+
+Why: the user chose the full viewer over pre-rendered pictures; it keeps the file lighter for
+large schemas and lets the reader explore. Sharing the renderer avoids a second drawing
+implementation.
+
+### ADR-026: The shell behaves like a desktop application, not a web page
+
+Inside Tauri the webview's browser habits are switched off at the window, in the capture phase
+so no component can let them through: the browser context menu is suppressed everywhere except
+text fields (the diagram and the entities panel open their own), middle-click autoscroll and
+dragging images or links out of the window are prevented, and every accelerator that would
+reload, print, find, zoom, navigate history or (outside development) open the developer tools is
+swallowed, held keys included. Where the habit has an application meaning it is mapped instead:
+F5 refreshes from the database, Ctrl+P exports a PDF and Ctrl+F searches the entities. The
+entities panel resizes by dragging its edge or with the arrow keys and remembers its width.
+
+Why: a reload threw the open project away and the print dialog printed the page chrome; both
+reached the user. Suppressing the defaults in one place keeps every future screen covered, and
+mapping the familiar keys keeps the muscle memory useful.
+
+### ADR-027: Releases are cut by a tag-driven workflow; signing is an optional step
+
+Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`: it checks that the tag matches the
+package version, runs every quality gate, builds the portable executable and the NSIS installer,
+signs both with Azure Trusted Signing when the secrets exist, smoke-tests the real binary,
+computes SHA-256 sums and publishes a draft GitHub release with the assets and generated notes.
+The smoke test (`scripts/smoke-test-release.mjs`) starts the executable with a DevTools port,
+which the application opens when `SCHEMACRAFT_REMOTE_DEBUGGING_PORT` is set, in a private
+profile, and checks through that protocol that the welcome screen renders, that About shows the
+version, that the language and the theme switch and that F5 does not reload, saving screenshots
+as artifacts; CI runs the same test on every push. Before any
+window exists, the executable checks that the WebView2 runtime loads and otherwise shows a
+native bilingual dialog offering Microsoft's download page, through `rfd`, which the dialog
+plugin already compiles, since the workspace forbids `unsafe` FFI.
+
+Why: a release must be reproducible from a tag and verified on the real binary, not in
+development mode. Version 1.0 ships unsigned by decision; keeping the signing step in place
+makes a certificate a configuration change, not a code change. The draft release gives the
+author a last manual check against a production database before publishing.
+
+## Milestones
+
+| #   | Scope                                                           | Status |
+| --- | --------------------------------------------------------------- | ------ |
+| 1   | Workspace, domain model, Tauri host, application shell, tooling | done   |
+| 2   | `DatabaseInspector`, SQL Server inspector, connection dialog    | done   |
+| 3   | `.scraft` project files and schema diff engine                  | done   |
+| 4   | Canvas: table nodes, relationships, layouts, detail levels      | done   |
+| 5   | Export: SVG, standalone HTML, single-page PDF                   | done   |
+| 6   | Portable executable validation and packaging                    | done   |

@@ -1,0 +1,73 @@
+[workspace]
+resolver = "3"
+members = ["crates/schemacraft-core", "src-tauri"]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.90"
+authors = ["Jose Manuel Campos Soberano"]
+repository = "https://github.com/jmanuelsoberano/schemacraft"
+publish = false
+
+[workspace.dependencies]
+schemacraft-core = { path = "crates/schemacraft-core" }
+async-trait = "0.1"
+bb8 = "0.9"
+chrono = { version = "0.4", features = ["serde"] }
+keyring = { version = "3", features = ["windows-native"] }
+# resvg, usvg and svg2pdf must agree on one usvg: svg2pdf 0.13 is built against usvg 0.45.
+resvg = { version = "0.45", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
+usvg = { version = "0.45", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
+svg2pdf = { version = "0.13", default-features = false, features = ["text"] }
+secrecy = { version = "0.10", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tempfile = "3"
+thiserror = "2.0"
+tiberius = { version = "0.13", features = ["sql-browser-tokio"] }
+tokio = { version = "1.53", features = ["rt-multi-thread", "net", "time", "macros", "sync"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+ts-rs = { version = "12.0", features = ["serde-compat", "chrono-impl"] }
+tauri = { version = "2.12", features = [] }
+tauri-build = { version = "2.7", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+# Native message box and URL opening before the webview exists; both already compile for the plugins.
+rfd = "0.16"
+open = "5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Production code surfaces failures as typed errors; it never aborts the process.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "warn"
+print_stderr = "warn"
+indexing_slicing = "warn"
+# Pedantic lints that hurt readability more than they help it.
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+# Product and vendor names (SchemaCraft, SQL Server) appear in prose without backticks.
+doc_markdown = "allow"
+
+# Size and speed oriented release profile (https://tauri.app/concept/size/).
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

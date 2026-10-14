@@ -1,0 +1,39 @@
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 280px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-tooltip-background);
+  color: var(--color-tooltip-text);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  box-shadow: var(--shadow-md);
+  z-index: 50;
+  user-select: none;
+  animation: tooltipIn var(--duration-fast) var(--ease-standard);
+}
+
+.row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.description {
+  color: oklch(from var(--color-tooltip-text) l c h / 0.7);
+  font-size: var(--text-xs);
+}
+
+@keyframes tooltipIn {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

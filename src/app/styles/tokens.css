@@ -1,0 +1,100 @@
+/*
+ * Design tokens. Every colour is declared once with light-dark(): the active theme is
+ * selected through `color-scheme`, which also keeps native controls and scrollbars in sync.
+ * With no explicit choice the system preference applies, so there is no flash on startup.
+ */
+:root {
+  color-scheme: light dark;
+
+  /* Typography */
+  --font-sans: "Inter Variable", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "Cascadia Code", Consolas, monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+  --text-xl: 20px;
+  --leading-tight: 1.25;
+  --leading-normal: 1.45;
+
+  /* Spacing on a 4px grid */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Shape */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+
+  /* Layout */
+  --topbar-height: 44px;
+  --statusbar-height: 28px;
+  --sidebar-width: 280px;
+  --control-height: 28px;
+
+  /* Motion */
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 280ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.3, 0, 0, 1);
+
+  /* Surfaces: neutrals carry a hint of the accent hue so the palette feels cohesive. */
+  --color-canvas: light-dark(oklch(97.5% 0.004 275), oklch(18% 0.012 275));
+  --color-surface: light-dark(oklch(100% 0 0), oklch(22% 0.012 275));
+  --color-surface-raised: light-dark(oklch(100% 0 0), oklch(26% 0.014 275));
+  --color-surface-sunken: light-dark(oklch(96% 0.005 275), oklch(16.5% 0.01 275));
+  --color-border: light-dark(oklch(90% 0.008 275), oklch(30% 0.012 275));
+  --color-border-strong: light-dark(oklch(84% 0.012 275), oklch(38% 0.014 275));
+
+  /* Text */
+  --color-text: light-dark(oklch(23% 0.02 275), oklch(92% 0.008 275));
+  --color-text-secondary: light-dark(oklch(45% 0.02 275), oklch(72% 0.012 275));
+  --color-text-muted: light-dark(oklch(58% 0.018 275), oklch(58% 0.014 275));
+
+  /* Accent */
+  --color-accent: light-dark(oklch(55% 0.19 278), oklch(62% 0.18 278));
+  --color-accent-hover: light-dark(oklch(50% 0.2 278), oklch(67% 0.17 278));
+  --color-accent-subtle: light-dark(oklch(94% 0.03 278), oklch(30% 0.06 278));
+  --color-accent-text: light-dark(oklch(45% 0.19 278), oklch(80% 0.12 278));
+  --color-on-accent: oklch(99% 0 0);
+
+  /* Semantic */
+  --color-success: light-dark(oklch(60% 0.16 150), oklch(72% 0.17 150));
+  --color-warning: light-dark(oklch(70% 0.16 70), oklch(78% 0.15 70));
+  --color-danger: light-dark(oklch(58% 0.2 25), oklch(70% 0.18 25));
+
+  /* Interaction */
+  --color-hover: light-dark(oklch(0% 0 0 / 0.05), oklch(100% 0 0 / 0.06));
+  --color-active: light-dark(oklch(0% 0 0 / 0.08), oklch(100% 0 0 / 0.1));
+  --color-focus-ring: var(--color-accent);
+  --color-grid-dot: light-dark(oklch(82% 0.01 275), oklch(30% 0.012 275));
+  --color-tooltip-background: light-dark(oklch(25% 0.02 275), oklch(32% 0.014 275));
+  --color-tooltip-text: oklch(97% 0.004 275);
+  --color-minimap-mask: light-dark(oklch(97.5% 0.004 275 / 0.7), oklch(18% 0.012 275 / 0.7));
+
+  /* Elevation: a hairline border plus a soft shadow reads well on both themes. */
+  --shadow-sm:
+    0 1px 2px light-dark(oklch(0% 0 0 / 0.06), oklch(0% 0 0 / 0.4)), 0 0 0 1px var(--color-border);
+  --shadow-md:
+    0 4px 12px light-dark(oklch(0% 0 0 / 0.08), oklch(0% 0 0 / 0.45)), 0 0 0 1px var(--color-border);
+  --shadow-lg:
+    0 16px 40px light-dark(oklch(0% 0 0 / 0.12), oklch(0% 0 0 / 0.55)),
+    0 0 0 1px var(--color-border);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
