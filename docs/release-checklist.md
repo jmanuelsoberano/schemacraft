@@ -27,7 +27,8 @@ parts run on every push (`ci.yml`) and on every tag (`release.yml`).
 - Frontend and Rust quality gates, generated contracts up to date.
 - `npm run tauri build`: portable executable and NSIS installer.
 - Signing with Azure Trusted Signing, only when the secrets exist (not in 1.0).
-- Smoke test of the built executable with screenshots as an artifact.
+- Smoke test of the built executable with screenshots and a report as an artifact; the runner
+  installs the WebView2 runtime first when it lacks it, as a user's machine would need it.
 - `SHA256SUMS.txt` and a draft GitHub release with both files.
 
 ## By hand before publishing the draft
