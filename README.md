@@ -34,8 +34,41 @@ Grab the latest release from the
 
 Both need the Microsoft Edge WebView2 runtime, which Windows 11 and updated Windows 10 already
 have; when it is missing, SchemaCraft says so and offers the download page. Releases are not
-code-signed yet, so SmartScreen shows a warning on the first launch (More info, then Run anyway),
-and a PC with Smart App Control turned on refuses unsigned executables.
+code-signed yet (see the code signing policy below), so SmartScreen shows a warning on the
+first launch (More info, then Run anyway), and a PC with Smart App Control turned on refuses
+unsigned executables.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org).
+
+The application to SignPath Foundation is under review; until it is approved, release files are
+not signed.
+
+- Committers and reviewers: [Manuel Soberano](https://github.com/jmanuelsoberano)
+- Approvers: [Manuel Soberano](https://github.com/jmanuelsoberano)
+
+The project has one maintainer, who holds every role. Changes reach `main` only through pull
+requests that pass the required CI checks; the branch rules have no bypass list. On 2026-10-14
+the history of `main` was rewritten once, with the branch rules paused for that push, to
+replace the author email of earlier commits; no file changed, and pull requests #1 and #2 still
+show the original commits. Contributions from others are reviewed with particular attention to
+build scripts and workflows, and every signing request is approved by the maintainer.
+
+Only the files that the release workflow builds from this repository are signed: the portable
+executable and the installer attached to each GitHub release.
+
+### Privacy policy
+
+This program will not transfer any information to other networked systems unless specifically
+requested by the user or the person installing or operating it.
+
+SchemaCraft has no telemetry and no update check. It connects only to the SQL Server the user
+specifies, and it opens Microsoft's WebView2 download page only when the user asks. Its
+interface runs in the Microsoft Edge WebView2 runtime that Windows provides, whose diagnostic
+data is covered by the [Microsoft Privacy Statement](https://privacy.microsoft.com/privacystatement)
+and follows the Windows diagnostic data setting.
 
 ## Stack
 

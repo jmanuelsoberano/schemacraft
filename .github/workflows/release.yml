@@ -19,22 +19,17 @@ jobs:
   release:
     name: Build, smoke-test and publish (Windows)
     runs-on: windows-latest
-    timeout-minutes: 90
-    env:
-      # Signing runs only when the Azure Trusted Signing secrets exist; v1 ships unsigned.
-      SIGNING_ENABLED: ${{ secrets.AZURE_TENANT_ID != '' }}
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
+      # No dependency or build caches: a release is built from the repository alone.
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
 
       - name: Install the Rust toolchain pinned in rust-toolchain.toml
         run: rustup toolchain install
-
-      - uses: Swatinem/rust-cache@v2
 
       - run: npm ci
 
@@ -64,23 +59,6 @@ jobs:
 
       - name: Build the portable executable and the installer
         run: npm run tauri build
-
-      - name: Sign the executable and the installer
-        if: env.SIGNING_ENABLED == 'true'
-        uses: azure/trusted-signing-action@v0
-        with:
-          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
-          trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ secrets.AZURE_SIGNING_PROFILE }}
-          files-folder: target/release
-          files-folder-filter: exe
-          files-folder-recurse: true
-          file-digest: SHA256
-          timestamp-rfc3339: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
 
       - name: Ensure the WebView2 runtime is installed
         # Hosted Windows runners ship Edge but not always the WebView2 runtime the app needs.
@@ -114,20 +92,15 @@ jobs:
           cp target/release/bundle/nsis/*-setup.exe "release/schemacraft-$GITHUB_REF_NAME-windows-x64-setup.exe"
           (cd release && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt)
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: smoke-test-${{ github.ref_name }}
-          path: smoke-test
-          if-no-files-found: error
-
       - name: Publish a draft release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
           generate_release_notes: true
           body: |
-            Portable executable (`schemacraft-${{ github.ref_name }}-windows-x64.exe`) and per-user installer
-            (`schemacraft-${{ github.ref_name }}-windows-x64-setup.exe`) for Windows 10/11 x64. Verify the
-            downloads with `SHA256SUMS.txt`. See the README for the WebView2 requirement and the SmartScreen
-            notice on unsigned builds.
+            SchemaCraft reads the schema of a Microsoft SQL Server database and shows it as an interactive entity-relationship diagram, with SVG, HTML, PDF and PNG export. The [README](https://github.com/jmanuelsoberano/schemacraft#features) lists every feature.
+
+            Portable executable (`schemacraft-${{ github.ref_name }}-windows-x64.exe`) and per-user installer (`schemacraft-${{ github.ref_name }}-windows-x64-setup.exe`) for Windows 10/11 x64; verify the downloads with `SHA256SUMS.txt`. Both need the Microsoft Edge WebView2 runtime, which Windows 11 and updated Windows 10 include.
+
+            [Code signing policy](https://github.com/jmanuelsoberano/schemacraft#code-signing-policy): free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org). The application to SignPath Foundation is under review; until it is approved, release files are not signed and SmartScreen warns on the first launch.
           files: release/*

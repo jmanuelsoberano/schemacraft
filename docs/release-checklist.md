@@ -26,7 +26,8 @@ parts run on every push (`ci.yml`) and on every tag (`release.yml`).
   bumping it is a deliberate change that runs through the gates first.
 - Frontend and Rust quality gates, generated contracts up to date.
 - `npm run tauri build`: portable executable and NSIS installer.
-- Signing with Azure Trusted Signing, only when the secrets exist (not in 1.0).
+- No dependency or build caches: the release is built from the repository alone.
+- Signing through SignPath Foundation once the application to it is approved (not in 1.0.0).
 - Smoke test of the built executable with screenshots and a report as an artifact; the runner
   installs the WebView2 runtime first when it lacks it, as a user's machine would need it.
 - `SHA256SUMS.txt` and a draft GitHub release with both files.
@@ -40,6 +41,7 @@ parts run on every push (`ci.yml`) and on every tag (`release.yml`).
       export to PDF and HTML.
 - [ ] Open the HTML export in a browser on a machine without SchemaCraft.
 - [ ] Run the installer and uninstall it; no administrator prompt appears.
+- [ ] The release notes describe the program and link the code signing policy.
 
 ## Known limitations of 1.0.0
 
