@@ -197,7 +197,9 @@ docs/                      PRD, architecture decisions, UX principles
 ## Documentation
 
 - [Product requirements (PRD)](docs/PRD_SchemaCraft_v1.md)
-- [Architecture and decision records](docs/architecture.md)
+- [Architecture page](https://jmanuelsoberano.github.io/schemacraft/architecture/): layers,
+  components, data, flows and how to add a feature
+- [Architecture decision records](docs/architecture.md)
 - [UX principles and definition of done](docs/ux-principles.md)
 - [Changelog](CHANGELOG.md)
 

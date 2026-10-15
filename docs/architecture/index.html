@@ -1,0 +1,2328 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SchemaCraft Architecture</title>
+    <meta
+      name="description"
+      content="How SchemaCraft is built: layers, components, data, flows and how to add a feature."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%237C6CF8'/%3E%3Cstop offset='1' stop-color='%233D8BFD'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='url(%23g)'/%3E%3Crect x='11' y='12' width='24' height='17' rx='3.5' fill='%23fff'/%3E%3Crect x='29' y='35' width='24' height='17' rx='3.5' fill='%23fff'/%3E%3Cpath d='M23 29 C23 40 41 24 41 35' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+    <style>
+      /* Layout: a sticky section rail beside one reading column; the layered map is the centrepiece. */
+      :root {
+        color-scheme: light;
+        --bg: oklch(97.5% 0.004 275);
+        --surface: oklch(100% 0 0);
+        --sunken: oklch(95.5% 0.006 275);
+        --border: oklch(90% 0.008 275);
+        --border-strong: oklch(82% 0.014 275);
+        --fg: oklch(23% 0.02 275);
+        --fg-2: oklch(42% 0.02 275);
+        --muted: oklch(55% 0.018 275);
+        --accent: oklch(55% 0.19 278);
+        --accent-strong: oklch(48% 0.2 278);
+        --accent-subtle: oklch(94% 0.03 278);
+        --accent-text: oklch(45% 0.19 278);
+        --incoming: oklch(55% 0.13 200);
+        --incoming-subtle: oklch(94% 0.03 200);
+        --major: oklch(58% 0.2 25);
+        --major-subtle: oklch(95% 0.03 25);
+        --minor: oklch(62% 0.14 70);
+        --minor-subtle: oklch(95.5% 0.04 80);
+        --ok: oklch(55% 0.14 150);
+        --grid-dot: oklch(85% 0.01 275);
+        --shadow: 0 1px 2px oklch(20% 0.02 275 / 0.06), 0 8px 24px oklch(20% 0.02 275 / 0.06);
+        --font-sans:
+          "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial,
+          sans-serif;
+        --font-display:
+          "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue",
+          Arial, sans-serif;
+        --font-mono:
+          "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, "SF Mono", Menlo, monospace;
+        --radius: 10px;
+        --radius-sm: 6px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          color-scheme: dark;
+          --bg: oklch(17% 0.012 275);
+          --surface: oklch(21% 0.013 275);
+          --sunken: oklch(15.5% 0.01 275);
+          --border: oklch(29% 0.014 275);
+          --border-strong: oklch(37% 0.016 275);
+          --fg: oklch(92% 0.008 275);
+          --fg-2: oklch(78% 0.012 275);
+          --muted: oklch(62% 0.014 275);
+          --accent: oklch(66% 0.17 278);
+          --accent-strong: oklch(72% 0.15 278);
+          --accent-subtle: oklch(30% 0.07 278);
+          --accent-text: oklch(80% 0.12 278);
+          --incoming: oklch(72% 0.12 200);
+          --incoming-subtle: oklch(29% 0.05 200);
+          --major: oklch(72% 0.17 25);
+          --major-subtle: oklch(29% 0.06 25);
+          --minor: oklch(80% 0.13 75);
+          --minor-subtle: oklch(30% 0.05 75);
+          --ok: oklch(74% 0.15 150);
+          --grid-dot: oklch(31% 0.012 275);
+          --shadow: 0 1px 2px oklch(0% 0 0 / 0.3), 0 8px 24px oklch(0% 0 0 / 0.25);
+        }
+      }
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        --bg: oklch(17% 0.012 275);
+        --surface: oklch(21% 0.013 275);
+        --sunken: oklch(15.5% 0.01 275);
+        --border: oklch(29% 0.014 275);
+        --border-strong: oklch(37% 0.016 275);
+        --fg: oklch(92% 0.008 275);
+        --fg-2: oklch(78% 0.012 275);
+        --muted: oklch(62% 0.014 275);
+        --accent: oklch(66% 0.17 278);
+        --accent-strong: oklch(72% 0.15 278);
+        --accent-subtle: oklch(30% 0.07 278);
+        --accent-text: oklch(80% 0.12 278);
+        --incoming: oklch(72% 0.12 200);
+        --incoming-subtle: oklch(29% 0.05 200);
+        --major: oklch(72% 0.17 25);
+        --major-subtle: oklch(29% 0.06 25);
+        --minor: oklch(80% 0.13 75);
+        --minor-subtle: oklch(30% 0.05 75);
+        --ok: oklch(74% 0.15 150);
+        --grid-dot: oklch(31% 0.012 275);
+        --shadow: 0 1px 2px oklch(0% 0 0 / 0.3), 0 8px 24px oklch(0% 0 0 / 0.25);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+        scroll-padding-top: 72px;
+        -webkit-text-size-adjust: 100%;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+        *,
+        *::before,
+        *::after {
+          transition: none !important;
+          animation: none !important;
+        }
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 15px/1.55 var(--font-sans);
+      }
+      a {
+        color: var(--accent-text);
+      }
+      code,
+      .mono {
+        font-family: var(--font-mono);
+        font-size: 0.88em;
+      }
+      code {
+        background: var(--sunken);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0 4px;
+        overflow-wrap: anywhere;
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      h1,
+      h2,
+      h3 {
+        font-family: var(--font-display);
+        text-wrap: balance;
+        line-height: 1.2;
+        margin: 0;
+      }
+      h2 {
+        font-size: 1.45rem;
+        font-weight: 650;
+      }
+      h3 {
+        font-size: 1.02rem;
+        font-weight: 620;
+      }
+      p {
+        margin: 0;
+      }
+
+      /* Top bar */
+      .topbar {
+        position: sticky;
+        top: env(safe-area-inset-top, 0px);
+        z-index: 20;
+        background: color-mix(in oklch, var(--bg) 88%, transparent);
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--border);
+      }
+      .topbar-inner {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        max-width: 1320px;
+        margin: 0 auto;
+        padding-block: 10px;
+        padding-left: max(16px, env(safe-area-inset-left, 0px));
+        padding-right: max(16px, env(safe-area-inset-right, 0px));
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        text-decoration: none;
+        color: var(--fg);
+        margin-right: auto;
+        min-width: 0;
+      }
+      .brand svg {
+        flex: none;
+      }
+      .brand-name {
+        font: 650 1rem/1.1 var(--font-display);
+      }
+      .brand-sub {
+        font-size: 0.78rem;
+        color: var(--muted);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .segmented {
+        display: inline-flex;
+        background: var(--sunken);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 2px;
+      }
+      .segmented button {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: var(--fg-2);
+        font: 600 0.78rem/1 var(--font-sans);
+        padding: 7px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        min-height: 30px;
+      }
+      .segmented button[aria-pressed="true"] {
+        background: var(--surface);
+        color: var(--fg);
+        box-shadow: 0 1px 2px oklch(20% 0.02 275 / 0.12);
+      }
+
+      /* Page frame */
+      .frame {
+        display: grid;
+        grid-template-columns: 220px minmax(0, 1fr);
+        gap: 40px;
+        max-width: 1320px;
+        margin: 0 auto;
+        padding-block: 28px 64px;
+        padding-left: max(16px, env(safe-area-inset-left, 0px));
+        padding-right: max(16px, env(safe-area-inset-right, 0px));
+      }
+      .toc {
+        position: sticky;
+        top: 76px;
+        align-self: start;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .toc-title {
+        font-size: 0.72rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 0 0 8px 10px;
+      }
+      .toc a {
+        display: block;
+        text-decoration: none;
+        color: var(--fg-2);
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-size: 0.9rem;
+      }
+      .toc a:hover {
+        background: var(--sunken);
+        color: var(--fg);
+      }
+      .toc a[aria-current="true"] {
+        color: var(--accent-text);
+        background: var(--accent-subtle);
+        font-weight: 600;
+      }
+      main {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 56px;
+      }
+      section {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        min-width: 0;
+      }
+      .eyebrow {
+        font-size: 0.74rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent-text);
+        font-weight: 650;
+      }
+      .lead {
+        color: var(--fg-2);
+        max-width: 68ch;
+      }
+
+      /* Hero */
+      .hero {
+        gap: 14px;
+      }
+      .hero h1 {
+        font-size: clamp(1.8rem, 1.2rem + 2.2vw, 2.6rem);
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+      .hero .one-liner {
+        font-size: 1.12rem;
+        color: var(--fg-2);
+        max-width: 62ch;
+      }
+      .prose {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        max-width: 72ch;
+      }
+      .facts {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+        margin-top: 6px;
+      }
+      .fact {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 12px 14px;
+      }
+      .fact b {
+        display: block;
+        font: 700 1.35rem/1.1 var(--font-display);
+        font-variant-numeric: tabular-nums;
+      }
+      .fact span {
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      /* Request path ribbon */
+      .ribbon {
+        display: flex;
+        align-items: stretch;
+        gap: 0;
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+      .ribbon-step {
+        flex: 1 0 140px;
+        padding: 12px 14px;
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .ribbon-step:last-child {
+        border-right: 0;
+      }
+      .ribbon-step b {
+        font-size: 0.9rem;
+      }
+      .ribbon-step span {
+        font-size: 0.78rem;
+        color: var(--muted);
+      }
+
+      /* Architecture map */
+      .map-tools {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .search {
+        flex: 1 1 240px;
+        min-width: 0;
+        appearance: none;
+        border: 1px solid var(--border-strong);
+        background: var(--surface);
+        color: var(--fg);
+        border-radius: 8px;
+        padding: 9px 12px;
+        font: inherit;
+        font-size: 0.92rem;
+      }
+      .legend {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        font-size: 0.8rem;
+        color: var(--fg-2);
+      }
+      .legend i {
+        display: inline-block;
+        width: 18px;
+        height: 3px;
+        border-radius: 2px;
+        vertical-align: middle;
+        margin-right: 6px;
+      }
+      .map-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 340px;
+        gap: 16px;
+        align-items: start;
+      }
+      .map {
+        position: relative;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background-color: var(--sunken);
+        background-image: radial-gradient(var(--grid-dot) 1px, transparent 1.2px);
+        background-size: 18px 18px;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-width: 0;
+      }
+      .map-lines {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        overflow: visible;
+        z-index: 2;
+      }
+      .layer {
+        position: relative;
+        display: grid;
+        grid-template-columns: 170px minmax(0, 1fr);
+        gap: 12px;
+        background: color-mix(in oklch, var(--surface) 92%, transparent);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 12px;
+      }
+      .layer-head {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        min-width: 0;
+      }
+      .layer-name {
+        font: 650 0.9rem/1.25 var(--font-display);
+      }
+      .layer-path {
+        font-family: var(--font-mono);
+        font-size: 0.74rem;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+      .layer-tech {
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-content: flex-start;
+        min-width: 0;
+      }
+      .chip {
+        position: relative;
+        z-index: 3;
+        appearance: none;
+        border: 1px solid var(--border-strong);
+        background: var(--surface);
+        color: var(--fg);
+        border-radius: 6px;
+        padding: 6px 9px;
+        font: 550 0.8rem/1.2 var(--font-sans);
+        cursor: pointer;
+        text-align: left;
+        max-width: 100%;
+        overflow-wrap: anywhere;
+        transition:
+          border-color 0.12s,
+          background 0.12s,
+          opacity 0.12s;
+      }
+      .chip:hover {
+        border-color: var(--accent);
+      }
+      .map.has-selection .chip {
+        opacity: 0.42;
+      }
+      .map.has-selection .chip.is-selected,
+      .map.has-selection .chip.is-out,
+      .map.has-selection .chip.is-in {
+        opacity: 1;
+      }
+      .chip.is-selected {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: oklch(99% 0 0);
+      }
+      .chip.is-out {
+        border-color: var(--accent);
+        background: var(--accent-subtle);
+        color: var(--accent-text);
+      }
+      .chip.is-in {
+        border-color: var(--incoming);
+        background: var(--incoming-subtle);
+      }
+      .chip.is-match {
+        outline: 2px solid var(--minor);
+        outline-offset: 1px;
+      }
+      .map.is-filtering .chip:not(.is-match) {
+        opacity: 0.35;
+      }
+
+      .detail {
+        position: sticky;
+        top: 76px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-width: 0;
+        max-height: calc(100vh - 96px);
+        overflow: auto;
+      }
+      .detail-empty {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      .detail h3 {
+        font-size: 1.08rem;
+      }
+      .detail .path {
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+      .detail-block {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .detail-label {
+        font-size: 0.7rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-weight: 650;
+      }
+      .rel-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .rel-list button {
+        appearance: none;
+        width: 100%;
+        text-align: left;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--fg);
+        border-radius: 6px;
+        padding: 6px 8px;
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.82rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+      }
+      .rel-list button:hover {
+        border-color: var(--accent);
+      }
+      .rel-list .rel-label {
+        color: var(--muted);
+        font-size: 0.76rem;
+      }
+      .kind {
+        display: inline-block;
+        font: 650 0.64rem/1 var(--font-sans);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 3px 5px;
+        border-radius: 4px;
+        background: var(--sunken);
+        color: var(--fg-2);
+        border: 1px solid var(--border);
+        margin-right: 6px;
+        vertical-align: 1px;
+      }
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+      .tag {
+        font-size: 0.74rem;
+        padding: 2px 7px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--fg-2);
+        background: var(--bg);
+      }
+
+      /* Generic blocks */
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 16px;
+        min-width: 0;
+      }
+      .grid-2 {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 12px;
+      }
+      .card h3 {
+        margin-bottom: 6px;
+      }
+      .card .where {
+        font-family: var(--font-mono);
+        font-size: 0.76rem;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+        margin-bottom: 6px;
+      }
+      .card p {
+        color: var(--fg-2);
+        font-size: 0.92rem;
+      }
+      .table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 0.88rem;
+      }
+      th,
+      td {
+        text-align: left;
+        vertical-align: top;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      th {
+        font-size: 0.72rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+        background: var(--sunken);
+        position: sticky;
+        top: 0;
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      td.mono {
+        white-space: nowrap;
+      }
+      .pill {
+        display: inline-block;
+        font: 650 0.7rem/1 var(--font-sans);
+        padding: 4px 7px;
+        border-radius: 999px;
+        letter-spacing: 0.03em;
+      }
+      .pill-stream {
+        background: var(--accent-subtle);
+        color: var(--accent-text);
+      }
+      .pill-major {
+        background: var(--major-subtle);
+        color: var(--major);
+      }
+      .pill-minor {
+        background: var(--minor-subtle);
+        color: var(--minor);
+      }
+      .pill-fixed {
+        background: var(--sunken);
+        color: var(--ok);
+        border: 1px solid var(--border);
+      }
+      .deviation-pills {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+      }
+      .deviation.is-fixed .what,
+      .deviation.is-fixed .fix {
+        color: var(--muted);
+      }
+
+      /* Data stores */
+      .stores {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 12px;
+      }
+      .store dl {
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
+        gap: 6px 12px;
+        margin: 10px 0 0;
+        font-size: 0.86rem;
+      }
+      .store dt {
+        color: var(--muted);
+      }
+      .store dd {
+        margin: 0;
+        color: var(--fg-2);
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      .callout {
+        border: 1px solid var(--accent);
+        background: var(--accent-subtle);
+        border-radius: var(--radius);
+        padding: 14px 16px;
+        color: var(--fg);
+        max-width: 80ch;
+      }
+
+      /* Tabs */
+      .tabs {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .tabs button {
+        appearance: none;
+        border: 1px solid var(--border-strong);
+        background: var(--surface);
+        color: var(--fg-2);
+        border-radius: 999px;
+        padding: 7px 12px;
+        font: 600 0.84rem/1.1 var(--font-sans);
+        cursor: pointer;
+      }
+      .tabs button[aria-selected="true"] {
+        background: var(--fg);
+        color: var(--bg);
+        border-color: var(--fg);
+      }
+      .steps {
+        list-style: none;
+        counter-reset: step;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+      }
+      .steps li {
+        counter-increment: step;
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr);
+        gap: 12px;
+        position: relative;
+        padding-bottom: 16px;
+      }
+      .steps li::before {
+        content: counter(step);
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--surface);
+        border: 1.5px solid var(--accent);
+        color: var(--accent-text);
+        display: grid;
+        place-items: center;
+        font: 700 0.8rem/1 var(--font-sans);
+        font-variant-numeric: tabular-nums;
+        position: relative;
+        z-index: 1;
+      }
+      .steps li::after {
+        content: "";
+        position: absolute;
+        left: 13.5px;
+        top: 28px;
+        bottom: 0;
+        width: 1.5px;
+        background: var(--border-strong);
+      }
+      .steps li:last-child::after {
+        display: none;
+      }
+      .step-body {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        min-width: 0;
+        padding-top: 3px;
+      }
+      .actor {
+        appearance: none;
+        align-self: flex-start;
+        border: 1px solid var(--border);
+        background: var(--sunken);
+        color: var(--fg-2);
+        border-radius: 5px;
+        padding: 2px 7px;
+        font: 600 0.74rem/1.4 var(--font-mono);
+      }
+      button.actor {
+        cursor: pointer;
+      }
+      button.actor:hover {
+        border-color: var(--accent);
+        color: var(--accent-text);
+      }
+      .step-action {
+        font-weight: 600;
+      }
+      .step-detail {
+        color: var(--fg-2);
+        font-size: 0.88rem;
+      }
+      .files {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        margin-top: 4px;
+      }
+      .file {
+        font-family: var(--font-mono);
+        font-size: 0.74rem;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: var(--sunken);
+        border: 1px solid var(--border);
+        color: var(--fg-2);
+        overflow-wrap: anywhere;
+      }
+      .layer-badge {
+        font: 650 0.68rem/1 var(--font-sans);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--accent-text);
+      }
+      .checklist {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .checklist li {
+        display: grid;
+        grid-template-columns: 22px minmax(0, 1fr);
+        gap: 8px;
+        color: var(--fg-2);
+        font-size: 0.92rem;
+      }
+      .checklist li::before {
+        content: "";
+        width: 15px;
+        height: 15px;
+        margin-top: 3px;
+        border: 1.5px solid var(--ok);
+        border-radius: 4px;
+      }
+      .bullets {
+        margin: 0;
+        padding-left: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        color: var(--fg-2);
+        max-width: 80ch;
+      }
+      .deviation {
+        display: grid;
+        grid-template-columns: 70px minmax(0, 1fr);
+        gap: 12px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .deviation:last-child {
+        border-bottom: 0;
+      }
+      .deviation .what {
+        font-weight: 600;
+      }
+      .deviation .where {
+        font-family: var(--font-mono);
+        font-size: 0.76rem;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+        margin: 2px 0 4px;
+      }
+      .deviation .fix {
+        color: var(--fg-2);
+        font-size: 0.88rem;
+      }
+      .glossary {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 10px;
+        margin: 0;
+      }
+      .glossary div {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 12px;
+      }
+      .glossary dt {
+        font-weight: 650;
+        font-size: 0.9rem;
+      }
+      .glossary dd {
+        margin: 3px 0 0;
+        color: var(--fg-2);
+        font-size: 0.86rem;
+      }
+      footer {
+        border-top: 1px solid var(--border);
+        padding-top: 18px;
+        color: var(--muted);
+        font-size: 0.84rem;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .loading {
+        color: var(--muted);
+      }
+
+      /* Narrow screens */
+      .toc-mobile {
+        display: none;
+      }
+      .detail-close {
+        display: none;
+      }
+      @media (max-width: 1100px) {
+        .map-layout {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        /* On narrow screens the detail is a bottom sheet that appears with a selection. */
+        .detail {
+          display: none;
+          position: fixed;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          top: auto;
+          z-index: 30;
+          max-height: 62vh;
+          border-radius: 14px 14px 0 0;
+          padding-block: 16px max(16px, env(safe-area-inset-bottom, 0px));
+          padding-left: max(16px, env(safe-area-inset-left, 0px));
+          padding-right: max(16px, env(safe-area-inset-right, 0px));
+        }
+        .detail.is-open {
+          display: flex;
+        }
+        .detail-close {
+          display: inline-flex;
+          align-self: flex-end;
+          appearance: none;
+          border: 1px solid var(--border-strong);
+          background: var(--bg);
+          color: var(--fg);
+          border-radius: 6px;
+          padding: 6px 10px;
+          font: 600 0.8rem/1 var(--font-sans);
+          cursor: pointer;
+        }
+      }
+      @media (max-width: 900px) {
+        .frame {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 24px;
+          padding-block: 18px 48px;
+        }
+        .toc {
+          display: none;
+        }
+        .toc-mobile {
+          display: flex;
+          gap: 6px;
+          overflow-x: auto;
+          padding-block: 2px 8px;
+          margin: 0 -2px;
+          scrollbar-width: thin;
+        }
+        .toc-mobile a {
+          flex: none;
+          text-decoration: none;
+          font-size: 0.8rem;
+          color: var(--fg-2);
+          border: 1px solid var(--border);
+          background: var(--surface);
+          border-radius: 999px;
+          padding: 6px 11px;
+        }
+        main {
+          gap: 44px;
+        }
+      }
+      @media (max-width: 640px) {
+        body {
+          font-size: 14.5px;
+        }
+        .layer {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 8px;
+        }
+        .brand-sub {
+          display: none;
+        }
+        .deviation {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 6px;
+        }
+        .map-lines {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="#overview">
+          <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true">
+            <defs>
+              <linearGradient id="brand-g" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#7C6CF8" />
+                <stop offset="100%" stop-color="#3D8BFD" />
+              </linearGradient>
+            </defs>
+            <rect width="64" height="64" rx="14" fill="url(#brand-g)" />
+            <rect x="11" y="12" width="24" height="17" rx="3.5" fill="#fff" />
+            <rect x="29" y="35" width="24" height="17" rx="3.5" fill="#fff" />
+            <path
+              d="M23 29 C23 40 41 24 41 35"
+              fill="none"
+              stroke="#fff"
+              stroke-width="3"
+              stroke-linecap="round"
+            />
+          </svg>
+          <span>
+            <span class="brand-name">SchemaCraft</span><br />
+            <span class="brand-sub" data-i18n="brandSub">Architecture</span>
+          </span>
+        </a>
+        <div class="segmented" role="group" aria-label="Language" id="lang-switch">
+          <button type="button" data-lang="en" aria-pressed="true">EN</button>
+          <button type="button" data-lang="es" aria-pressed="false">ES</button>
+        </div>
+        <div class="segmented" role="group" aria-label="Theme" id="theme-switch">
+          <button
+            type="button"
+            data-theme-choice="system"
+            aria-pressed="true"
+            data-i18n="themeSystem"
+          >
+            Auto
+          </button>
+          <button
+            type="button"
+            data-theme-choice="light"
+            aria-pressed="false"
+            data-i18n="themeLight"
+          >
+            Light
+          </button>
+          <button type="button" data-theme-choice="dark" aria-pressed="false" data-i18n="themeDark">
+            Dark
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="frame">
+      <nav class="toc" aria-label="Sections" id="toc"></nav>
+      <main id="main">
+        <p class="loading" id="loading">Loading the architecture model…</p>
+      </main>
+    </div>
+
+    <script>
+      (function () {
+        "use strict";
+
+        var UI = {
+          en: {
+            brandSub: "Architecture",
+            themeSystem: "Auto",
+            themeLight: "Light",
+            themeDark: "Dark",
+            sections: "On this page",
+            overview: "Overview",
+            map: "Map",
+            data: "Data",
+            flows: "Flows",
+            commands: "Commands",
+            patterns: "Patterns",
+            recipes: "Add a feature",
+            conventions: "Conventions",
+            conformance: "Conformance",
+            sync: "Keeping in sync",
+            glossary: "Glossary",
+            mapTitle: "Layers and components",
+            mapLead:
+              "Each band is a layer; dependencies point downwards. Select a component to see what it uses and what uses it.",
+            search: "Find a component, file or pattern",
+            outgoing: "Uses",
+            incoming: "Used by",
+            none: "Nothing listed.",
+            patternsUsed: "Patterns",
+            pickHint:
+              "Select a component in the map to see its responsibility, its file path and its connections.",
+            legendOut: "uses",
+            legendIn: "used by",
+            dataTitle: "Where data lives",
+            dataLead:
+              "SchemaCraft has no database of its own. This is every place that keeps something.",
+            location: "Location",
+            format: "Format",
+            owner: "Owner",
+            contents: "Contents",
+            notes: "Notes",
+            flowsTitle: "How the parts talk",
+            flowsLead: "End-to-end flows, step by step. Select an actor to find it in the map.",
+            commandsTitle: "IPC commands",
+            commandsLead:
+              "Every command the Tauri host registers. The frontend calls them only through src/shared/ipc.",
+            command: "Command",
+            purpose: "Purpose",
+            streams: "Events",
+            streamsYes: "Channel",
+            patternsTitle: "Patterns and why",
+            recipesTitle: "Adding a feature",
+            recipesLead:
+              "Pick the kind of change. The steps follow the layers in the order they are usually written.",
+            example: "Example",
+            crossCutting: "Cross-cutting concerns",
+            crossLead: "Any feature may touch these. Check each one.",
+            dod: "Definition of done",
+            conventionsTitle: "Conventions",
+            conformanceTitle: "Conformance",
+            conformanceLead:
+              "How closely the code follows the architecture, and the known deviations to fix.",
+            syncTitle: "Keeping this page in sync",
+            manifestTitle: "Checked in CI",
+            manifestLead:
+              "scripts/check-architecture-page.mjs compares these lists with the code on every pull request.",
+            glossaryTitle: "Glossary",
+            filterGlossary: "Filter terms",
+            factCommands: "IPC commands",
+            factFeatures: "feature folders",
+            factModules: "core modules",
+            factAdrs: "decision records",
+            footer:
+              "This page reads docs/architecture/model.json. Update both together with each feature.",
+            adrLink: "Decision records (ADRs)",
+            prdLink: "Product requirements (PRD)",
+            repoLink: "Repository",
+            loadError:
+              "The model could not be loaded. Open this page through GitHub Pages or run npm run docs:serve.",
+            major: "major",
+            minor: "minor",
+            pathRibbon: "The request path",
+            close: "Close",
+            fixed: "fixed",
+          },
+          es: {
+            brandSub: "Arquitectura",
+            themeSystem: "Auto",
+            themeLight: "Claro",
+            themeDark: "Oscuro",
+            sections: "En esta página",
+            overview: "Resumen",
+            map: "Mapa",
+            data: "Datos",
+            flows: "Flujos",
+            commands: "Comandos",
+            patterns: "Patrones",
+            recipes: "Agregar una función",
+            conventions: "Convenciones",
+            conformance: "Conformidad",
+            sync: "Mantenerla al día",
+            glossary: "Glosario",
+            mapTitle: "Capas y componentes",
+            mapLead:
+              "Cada franja es una capa; las dependencias van hacia abajo. Selecciona un componente para ver qué usa y quién lo usa.",
+            search: "Busca un componente, archivo o patrón",
+            outgoing: "Usa",
+            incoming: "Lo usan",
+            none: "Nada registrado.",
+            patternsUsed: "Patrones",
+            pickHint:
+              "Selecciona un componente del mapa para ver su responsabilidad, su ruta y sus conexiones.",
+            legendOut: "usa",
+            legendIn: "lo usan",
+            dataTitle: "Dónde viven los datos",
+            dataLead:
+              "SchemaCraft no tiene base de datos propia. Estos son todos los lugares donde guarda algo.",
+            location: "Ubicación",
+            format: "Formato",
+            owner: "Responsable",
+            contents: "Contenido",
+            notes: "Notas",
+            flowsTitle: "Cómo se comunican las partes",
+            flowsLead:
+              "Flujos de punta a punta, paso a paso. Selecciona un actor para encontrarlo en el mapa.",
+            commandsTitle: "Comandos IPC",
+            commandsLead:
+              "Todos los comandos que registra el host de Tauri. El frontend los llama solo a través de src/shared/ipc.",
+            command: "Comando",
+            purpose: "Para qué sirve",
+            streams: "Eventos",
+            streamsYes: "Canal",
+            patternsTitle: "Patrones y por qué",
+            recipesTitle: "Cómo agregar una función",
+            recipesLead:
+              "Elige el tipo de cambio. Los pasos siguen las capas en el orden en que se suelen escribir.",
+            example: "Ejemplo",
+            crossCutting: "Aspectos transversales",
+            crossLead: "Cualquier función puede tocarlos. Revisa cada uno.",
+            dod: "Definición de terminado",
+            conventionsTitle: "Convenciones",
+            conformanceTitle: "Conformidad",
+            conformanceLead:
+              "Qué tan fiel es el código a la arquitectura, y las desviaciones conocidas por corregir.",
+            syncTitle: "Mantener esta página al día",
+            manifestTitle: "Revisado en CI",
+            manifestLead:
+              "scripts/check-architecture-page.mjs compara estas listas con el código en cada pull request.",
+            glossaryTitle: "Glosario",
+            filterGlossary: "Filtra los términos",
+            factCommands: "comandos IPC",
+            factFeatures: "carpetas de funciones",
+            factModules: "módulos del núcleo",
+            factAdrs: "decisiones registradas",
+            footer:
+              "Esta página lee docs/architecture/model.json. Actualiza ambos junto con cada función.",
+            adrLink: "Decisiones de arquitectura (ADR)",
+            prdLink: "Requisitos del producto (PRD)",
+            repoLink: "Repositorio",
+            loadError:
+              "No se pudo cargar el modelo. Abre esta página desde GitHub Pages o ejecuta npm run docs:serve.",
+            major: "mayor",
+            minor: "menor",
+            pathRibbon: "El camino de una petición",
+            close: "Cerrar",
+            fixed: "corregida",
+          },
+        };
+
+        var REPO_URL = "https://github.com/jmanuelsoberano/schemacraft";
+        var SECTION_IDS = [
+          "overview",
+          "map",
+          "data",
+          "flows",
+          "commands",
+          "patterns",
+          "recipes",
+          "conventions",
+          "conformance",
+          "sync",
+          "glossary",
+        ];
+
+        var state = {
+          model: null,
+          lang: "en",
+          selected: null,
+          flow: 0,
+          recipe: 0,
+          query: "",
+          glossaryQuery: "",
+        };
+
+        function readStored(key) {
+          try {
+            return window.localStorage.getItem(key);
+          } catch (error) {
+            return null;
+          }
+        }
+        function writeStored(key, value) {
+          try {
+            window.localStorage.setItem(key, value);
+          } catch (error) {
+            /* storage unavailable: the choice lasts for this visit only */
+          }
+        }
+
+        function esc(value) {
+          return String(value == null ? "" : value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+        }
+        /* Escapes text and turns `code` spans into <code>. */
+        function rich(value) {
+          return esc(value).replace(/`([^`]+)`/g, "<code>$1</code>");
+        }
+        function t(key) {
+          return (UI[state.lang] && UI[state.lang][key]) || UI.en[key] || key;
+        }
+        function content() {
+          return state.model[state.lang] || state.model.en;
+        }
+
+        /* ---------- theme and language ---------- */
+        function applyTheme(choice) {
+          var root = document.documentElement;
+          if (choice === "light" || choice === "dark") {
+            root.setAttribute("data-theme", choice);
+          } else {
+            root.removeAttribute("data-theme");
+          }
+          document.querySelectorAll("#theme-switch button").forEach(function (button) {
+            button.setAttribute(
+              "aria-pressed",
+              String(button.dataset.themeChoice === (choice || "system")),
+            );
+          });
+        }
+        function setLang(lang) {
+          state.lang = lang === "es" ? "es" : "en";
+          document.documentElement.lang = state.lang;
+          document.querySelectorAll("#lang-switch button").forEach(function (button) {
+            button.setAttribute("aria-pressed", String(button.dataset.lang === state.lang));
+          });
+          document.querySelectorAll("[data-i18n]").forEach(function (node) {
+            node.textContent = t(node.dataset.i18n);
+          });
+          document
+            .getElementById("lang-switch")
+            .setAttribute("aria-label", state.lang === "es" ? "Idioma" : "Language");
+          document
+            .getElementById("theme-switch")
+            .setAttribute("aria-label", state.lang === "es" ? "Tema" : "Theme");
+          if (state.model) render();
+        }
+
+        /* ---------- model helpers ---------- */
+        function components() {
+          var list = [];
+          content().layers.forEach(function (layer) {
+            layer.components.forEach(function (component) {
+              list.push({ layer: layer, component: component });
+            });
+          });
+          return list;
+        }
+        function componentById(id) {
+          var found = null;
+          components().forEach(function (entry) {
+            if (entry.component.id === id) found = entry;
+          });
+          return found;
+        }
+        function findActor(actor) {
+          if (!actor) return null;
+          var needle = String(actor).toLowerCase();
+          var match = null;
+          components().forEach(function (entry) {
+            if (match) return;
+            var c = entry.component;
+            if (c.id.toLowerCase() === needle || c.name.toLowerCase() === needle) match = c.id;
+          });
+          if (match) return match;
+          components().forEach(function (entry) {
+            if (match) return;
+            var c = entry.component;
+            var base = String(c.path || "")
+              .split("/")
+              .pop()
+              .replace(/\.(tsx?|rs|mjs|json|css)$/, "")
+              .toLowerCase();
+            if (base && base === needle) match = c.id;
+          });
+          return match;
+        }
+
+        /* ---------- rendering ---------- */
+        function renderToc() {
+          var links = SECTION_IDS.map(function (id) {
+            return '<a href="#' + id + '" data-section="' + id + '">' + esc(t(id)) + "</a>";
+          }).join("");
+          document.getElementById("toc").innerHTML =
+            '<p class="toc-title">' + esc(t("sections")) + "</p>" + links;
+          return (
+            '<nav class="toc-mobile" aria-label="' + esc(t("sections")) + '">' + links + "</nav>"
+          );
+        }
+
+        function sectionOverview(c) {
+          var manifest = state.model.manifest || {};
+          var facts = [
+            [manifest.commands ? manifest.commands.length : c.commands.length, t("factCommands")],
+            [manifest.featureFolders ? manifest.featureFolders.length : "", t("factFeatures")],
+            [manifest.coreModules ? manifest.coreModules.length : "", t("factModules")],
+            [manifest.adrCount || "", t("factAdrs")],
+          ]
+            .filter(function (fact) {
+              return fact[0] !== "";
+            })
+            .map(function (fact) {
+              return (
+                '<div class="fact"><b>' +
+                esc(fact[0]) +
+                "</b><span>" +
+                esc(fact[1]) +
+                "</span></div>"
+              );
+            })
+            .join("");
+          var ribbonLayers = c.layers.filter(function (layer) {
+            return ["shell", "ipc", "host", "core", "external"].indexOf(layer.id) >= 0;
+          });
+          var ribbon = ribbonLayers
+            .map(function (layer) {
+              return (
+                '<div class="ribbon-step"><b>' +
+                esc(layer.name) +
+                '</b><span class="mono">' +
+                esc(layer.path) +
+                "</span></div>"
+              );
+            })
+            .join("");
+          return (
+            '<section id="overview" class="hero">' +
+            '<p class="eyebrow">' +
+            esc(t("overview")) +
+            "</p>" +
+            "<h1>" +
+            esc(c.overview.title) +
+            "</h1>" +
+            '<p class="one-liner">' +
+            rich(c.overview.oneLiner) +
+            "</p>" +
+            '<div class="prose">' +
+            c.overview.paragraphs
+              .map(function (p) {
+                return "<p>" + rich(p) + "</p>";
+              })
+              .join("") +
+            "</div>" +
+            (facts ? '<div class="facts">' + facts + "</div>" : "") +
+            (ribbon
+              ? '<p class="eyebrow" style="margin-top:8px">' +
+                esc(t("pathRibbon")) +
+                '</p><div class="ribbon">' +
+                ribbon +
+                "</div>"
+              : "") +
+            "</section>"
+          );
+        }
+
+        function sectionMap(c) {
+          var layers = c.layers
+            .map(function (layer) {
+              var chips = layer.components
+                .map(function (component) {
+                  return (
+                    '<button type="button" class="chip" data-component="' +
+                    esc(component.id) +
+                    '" title="' +
+                    esc(component.path) +
+                    '">' +
+                    esc(component.name) +
+                    "</button>"
+                  );
+                })
+                .join("");
+              return (
+                '<div class="layer" data-layer="' +
+                esc(layer.id) +
+                '">' +
+                '<div class="layer-head"><span class="layer-name">' +
+                esc(layer.name) +
+                '</span><span class="layer-path">' +
+                esc(layer.path) +
+                "</span>" +
+                (layer.technologies && layer.technologies.length
+                  ? '<span class="layer-tech">' + esc(layer.technologies.join(" · ")) + "</span>"
+                  : "") +
+                '</div><div class="chips">' +
+                chips +
+                "</div></div>"
+              );
+            })
+            .join("");
+          return (
+            '<section id="map">' +
+            '<p class="eyebrow">' +
+            esc(t("map")) +
+            "</p><h2>" +
+            esc(t("mapTitle")) +
+            '</h2><p class="lead">' +
+            esc(t("mapLead")) +
+            "</p>" +
+            '<div class="map-tools"><input class="search" id="component-search" type="search" autocomplete="off" placeholder="' +
+            esc(t("search")) +
+            '" aria-label="' +
+            esc(t("search")) +
+            '" value="' +
+            esc(state.query) +
+            '"><div class="legend"><span><i style="background:var(--accent)"></i>' +
+            esc(t("legendOut")) +
+            '</span><span><i style="background:var(--incoming)"></i>' +
+            esc(t("legendIn")) +
+            "</span></div></div>" +
+            '<div class="map-layout"><div class="map" id="map-canvas"><svg class="map-lines" id="map-lines" aria-hidden="true"></svg>' +
+            layers +
+            '</div><aside class="detail" id="detail" aria-live="polite"></aside></div>' +
+            "</section>"
+          );
+        }
+
+        function relationButton(edge, otherId, direction) {
+          var other = componentById(otherId);
+          var name = other ? other.component.name : otherId;
+          return (
+            '<li><button type="button" data-component="' +
+            esc(otherId) +
+            '" data-direction="' +
+            direction +
+            '"><span><span class="kind">' +
+            esc(edge.kind) +
+            "</span>" +
+            esc(name) +
+            '</span><span class="rel-label">' +
+            rich(edge.label) +
+            "</span></button></li>"
+          );
+        }
+
+        function renderDetail() {
+          var detail = document.getElementById("detail");
+          if (!detail) return;
+          var entry = state.selected ? componentById(state.selected) : null;
+          if (!entry) {
+            detail.classList.remove("is-open");
+            detail.innerHTML = '<p class="detail-empty">' + esc(t("pickHint")) + "</p>";
+            return;
+          }
+          var c = content();
+          var outgoing = c.edges.filter(function (edge) {
+            return edge.from === entry.component.id;
+          });
+          var incoming = c.edges.filter(function (edge) {
+            return edge.to === entry.component.id;
+          });
+          var patterns = (entry.component.patterns || [])
+            .map(function (p) {
+              return '<span class="tag">' + esc(p) + "</span>";
+            })
+            .join("");
+          detail.classList.add("is-open");
+          detail.innerHTML =
+            '<button type="button" class="detail-close" data-close-detail>' +
+            esc(t("close")) +
+            "</button>" +
+            '<div><p class="detail-label">' +
+            esc(entry.layer.name) +
+            "</p><h3>" +
+            esc(entry.component.name) +
+            '</h3><p class="path">' +
+            esc(entry.component.path) +
+            "</p></div>" +
+            "<p>" +
+            rich(entry.component.responsibility) +
+            "</p>" +
+            (patterns
+              ? '<div class="detail-block"><p class="detail-label">' +
+                esc(t("patternsUsed")) +
+                '</p><div class="tags">' +
+                patterns +
+                "</div></div>"
+              : "") +
+            '<div class="detail-block"><p class="detail-label">' +
+            esc(t("outgoing")) +
+            " · " +
+            outgoing.length +
+            "</p>" +
+            (outgoing.length
+              ? '<ul class="rel-list">' +
+                outgoing
+                  .map(function (edge) {
+                    return relationButton(edge, edge.to, "out");
+                  })
+                  .join("") +
+                "</ul>"
+              : '<p class="detail-empty">' + esc(t("none")) + "</p>") +
+            '</div><div class="detail-block"><p class="detail-label">' +
+            esc(t("incoming")) +
+            " · " +
+            incoming.length +
+            "</p>" +
+            (incoming.length
+              ? '<ul class="rel-list">' +
+                incoming
+                  .map(function (edge) {
+                    return relationButton(edge, edge.from, "in");
+                  })
+                  .join("") +
+                "</ul>"
+              : '<p class="detail-empty">' + esc(t("none")) + "</p>") +
+            "</div>";
+        }
+
+        function applySelection() {
+          var map = document.getElementById("map-canvas");
+          if (!map) return;
+          var c = content();
+          var out = {};
+          var inc = {};
+          if (state.selected) {
+            c.edges.forEach(function (edge) {
+              if (edge.from === state.selected) out[edge.to] = true;
+              if (edge.to === state.selected) inc[edge.from] = true;
+            });
+          }
+          map.classList.toggle("has-selection", Boolean(state.selected));
+          map.querySelectorAll(".chip").forEach(function (chip) {
+            var id = chip.dataset.component;
+            chip.classList.toggle("is-selected", id === state.selected);
+            chip.classList.toggle("is-out", Boolean(out[id]) && id !== state.selected);
+            chip.classList.toggle("is-in", Boolean(inc[id]) && !out[id] && id !== state.selected);
+            chip.setAttribute("aria-pressed", String(id === state.selected));
+          });
+          renderDetail();
+          drawLines();
+        }
+
+        function drawLines() {
+          var map = document.getElementById("map-canvas");
+          var svg = document.getElementById("map-lines");
+          if (!map || !svg) return;
+          svg.innerHTML = "";
+          if (!state.selected || window.matchMedia("(max-width: 640px)").matches) return;
+          var origin = map.getBoundingClientRect();
+          var source = map.querySelector(
+            '.chip[data-component="' + CSS.escape(state.selected) + '"]',
+          );
+          if (!source) return;
+          var s = source.getBoundingClientRect();
+          var sx = s.left + s.width / 2 - origin.left;
+          var sy = s.top + s.height / 2 - origin.top;
+          var paths = [];
+          content().edges.forEach(function (edge) {
+            var otherId =
+              edge.from === state.selected
+                ? edge.to
+                : edge.to === state.selected
+                  ? edge.from
+                  : null;
+            if (!otherId || otherId === state.selected) return;
+            var target = map.querySelector('.chip[data-component="' + CSS.escape(otherId) + '"]');
+            if (!target) return;
+            var r = target.getBoundingClientRect();
+            var tx = r.left + r.width / 2 - origin.left;
+            var ty = r.top + r.height / 2 - origin.top;
+            var bend = Math.max(30, Math.abs(ty - sy) * 0.45);
+            var outgoing = edge.from === state.selected;
+            var d =
+              "M" +
+              sx +
+              "," +
+              sy +
+              " C" +
+              sx +
+              "," +
+              (sy + (ty > sy ? bend : -bend)) +
+              " " +
+              tx +
+              "," +
+              (ty + (ty > sy ? -bend : bend)) +
+              " " +
+              tx +
+              "," +
+              ty;
+            paths.push(
+              '<path d="' +
+                d +
+                '" fill="none" stroke="' +
+                (outgoing ? "var(--accent)" : "var(--incoming)") +
+                '" stroke-width="1.6" stroke-opacity="0.75"' +
+                (edge.kind === "build" ? ' stroke-dasharray="4 4"' : "") +
+                "></path>",
+            );
+          });
+          svg.innerHTML = paths.join("");
+        }
+
+        function applySearch() {
+          var map = document.getElementById("map-canvas");
+          if (!map) return;
+          var q = state.query.trim().toLowerCase();
+          map.classList.toggle("is-filtering", q.length > 0);
+          map.querySelectorAll(".chip").forEach(function (chip) {
+            var entry = componentById(chip.dataset.component);
+            var c = entry ? entry.component : {};
+            var haystack = [c.name, c.path, c.responsibility, (c.patterns || []).join(" ")]
+              .join(" ")
+              .toLowerCase();
+            chip.classList.toggle("is-match", q.length > 0 && haystack.indexOf(q) >= 0);
+          });
+        }
+
+        function sectionData(c) {
+          var stores = c.dataStores
+            .map(function (store) {
+              var rows = [
+                ["location", store.location],
+                ["format", store.format],
+                ["owner", store.owner],
+                ["contents", store.contents],
+                ["notes", store.notes],
+              ]
+                .filter(function (row) {
+                  return row[1];
+                })
+                .map(function (row) {
+                  return "<dt>" + esc(t(row[0])) + "</dt><dd>" + rich(row[1]) + "</dd>";
+                })
+                .join("");
+              return (
+                '<article class="card store"><h3>' +
+                esc(store.name) +
+                "</h3><dl>" +
+                rows +
+                "</dl></article>"
+              );
+            })
+            .join("");
+          return (
+            '<section id="data"><p class="eyebrow">' +
+            esc(t("data")) +
+            "</p><h2>" +
+            esc(t("dataTitle")) +
+            '</h2><p class="callout">' +
+            esc(t("dataLead")) +
+            '</p><div class="stores">' +
+            stores +
+            "</div></section>"
+          );
+        }
+
+        function sectionFlows(c) {
+          var flow = c.flows[state.flow] || c.flows[0];
+          var tabs = c.flows
+            .map(function (f, index) {
+              return (
+                '<button type="button" role="tab" data-flow="' +
+                index +
+                '" aria-selected="' +
+                (f === flow) +
+                '">' +
+                esc(f.name) +
+                "</button>"
+              );
+            })
+            .join("");
+          var steps = flow.steps
+            .map(function (step) {
+              var actorId = findActor(step.actor);
+              var actor = actorId
+                ? '<button type="button" class="actor" data-component="' +
+                  esc(actorId) +
+                  '">' +
+                  esc(step.actor) +
+                  "</button>"
+                : '<span class="actor">' + esc(step.actor) + "</span>";
+              return (
+                '<li><div class="step-body">' +
+                actor +
+                '<span class="step-action">' +
+                rich(step.action) +
+                "</span>" +
+                (step.detail ? '<span class="step-detail">' + rich(step.detail) + "</span>" : "") +
+                "</div></li>"
+              );
+            })
+            .join("");
+          return (
+            '<section id="flows"><p class="eyebrow">' +
+            esc(t("flows")) +
+            "</p><h2>" +
+            esc(t("flowsTitle")) +
+            '</h2><p class="lead">' +
+            esc(t("flowsLead")) +
+            '</p><div class="tabs" role="tablist">' +
+            tabs +
+            '</div><div class="card"><p class="lead" style="margin-bottom:14px">' +
+            rich(flow.summary) +
+            '</p><ol class="steps">' +
+            steps +
+            "</ol></div></section>"
+          );
+        }
+
+        function sectionCommands(c) {
+          var rows = c.commands
+            .map(function (command) {
+              return (
+                '<tr><td class="mono">' +
+                esc(command.name) +
+                "</td><td>" +
+                rich(command.purpose) +
+                "</td><td>" +
+                (command.streamsEvents
+                  ? '<span class="pill pill-stream">' + esc(t("streamsYes")) + "</span>"
+                  : "") +
+                "</td></tr>"
+              );
+            })
+            .join("");
+          return (
+            '<section id="commands"><p class="eyebrow">' +
+            esc(t("commands")) +
+            "</p><h2>" +
+            esc(t("commandsTitle")) +
+            '</h2><p class="lead">' +
+            rich(t("commandsLead")) +
+            '</p><div class="table-wrap"><table><thead><tr><th>' +
+            esc(t("command")) +
+            "</th><th>" +
+            esc(t("purpose")) +
+            "</th><th>" +
+            esc(t("streams")) +
+            "</th></tr></thead><tbody>" +
+            rows +
+            "</tbody></table></div></section>"
+          );
+        }
+
+        function sectionPatterns(c) {
+          var cards = c.patterns
+            .map(function (pattern) {
+              return (
+                '<article class="card"><h3>' +
+                esc(pattern.name) +
+                '</h3><p class="where">' +
+                esc(pattern.where) +
+                "</p><p>" +
+                rich(pattern.why) +
+                "</p></article>"
+              );
+            })
+            .join("");
+          return (
+            '<section id="patterns"><p class="eyebrow">' +
+            esc(t("patterns")) +
+            "</p><h2>" +
+            esc(t("patternsTitle")) +
+            '</h2><div class="grid-2">' +
+            cards +
+            "</div></section>"
+          );
+        }
+
+        function sectionRecipes(c) {
+          var recipes = c.recipes.featureTypes || [];
+          var recipe = recipes[state.recipe] || recipes[0];
+          var tabs = recipes
+            .map(function (r, index) {
+              return (
+                '<button type="button" role="tab" data-recipe="' +
+                index +
+                '" aria-selected="' +
+                (r === recipe) +
+                '">' +
+                esc(r.kind) +
+                "</button>"
+              );
+            })
+            .join("");
+          var steps = recipe
+            ? recipe.steps
+                .map(function (step) {
+                  var files = (step.files || [])
+                    .map(function (file) {
+                      return '<span class="file">' + esc(file) + "</span>";
+                    })
+                    .join("");
+                  return (
+                    '<li><div class="step-body"><span class="layer-badge">' +
+                    esc(step.layer) +
+                    '</span><span class="step-detail" style="color:var(--fg)">' +
+                    rich(step.step) +
+                    "</span>" +
+                    (files ? '<div class="files">' + files + "</div>" : "") +
+                    "</div></li>"
+                  );
+                })
+                .join("")
+            : "";
+          var cross = (c.recipes.crossCutting || [])
+            .map(function (item) {
+              return (
+                '<article class="card"><h3>' +
+                esc(item.concern) +
+                "</h3><p>" +
+                rich(item.touches) +
+                "</p></article>"
+              );
+            })
+            .join("");
+          var dod = (c.recipes.definitionOfDone || [])
+            .map(function (item) {
+              return "<li><span>" + rich(item) + "</span></li>";
+            })
+            .join("");
+          return (
+            '<section id="recipes"><p class="eyebrow">' +
+            esc(t("recipes")) +
+            "</p><h2>" +
+            esc(t("recipesTitle")) +
+            '</h2><p class="lead">' +
+            esc(t("recipesLead")) +
+            '</p><div class="tabs" role="tablist">' +
+            tabs +
+            "</div>" +
+            (recipe
+              ? '<div class="card"><p class="lead" style="margin-bottom:14px"><b>' +
+                esc(t("example")) +
+                ":</b> " +
+                rich(recipe.example) +
+                '</p><ol class="steps">' +
+                steps +
+                "</ol></div>"
+              : "") +
+            "<h3>" +
+            esc(t("crossCutting")) +
+            '</h3><p class="lead">' +
+            esc(t("crossLead")) +
+            '</p><div class="grid-2">' +
+            cross +
+            "</div><h3>" +
+            esc(t("dod")) +
+            '</h3><div class="card"><ul class="checklist">' +
+            dod +
+            "</ul></div></section>"
+          );
+        }
+
+        function sectionConventions(c) {
+          return (
+            '<section id="conventions"><p class="eyebrow">' +
+            esc(t("conventions")) +
+            "</p><h2>" +
+            esc(t("conventionsTitle")) +
+            '</h2><ul class="bullets">' +
+            c.conventions
+              .map(function (item) {
+                return "<li>" + rich(item) + "</li>";
+              })
+              .join("") +
+            "</ul></section>"
+          );
+        }
+
+        function sectionConformance(c) {
+          var deviations = (c.conformance.deviations || [])
+            .slice()
+            .sort(function (a, b) {
+              var fixedA = a.status === "fixed" ? 1 : 0;
+              var fixedB = b.status === "fixed" ? 1 : 0;
+              if (fixedA !== fixedB) return fixedA - fixedB;
+              return (a.severity === "major" ? 0 : 1) - (b.severity === "major" ? 0 : 1);
+            })
+            .map(function (d) {
+              var fixed = d.status === "fixed";
+              return (
+                '<div class="deviation' +
+                (fixed ? " is-fixed" : "") +
+                '"><div class="deviation-pills"><span class="pill pill-' +
+                (d.severity === "major" ? "major" : "minor") +
+                '">' +
+                esc(t(d.severity === "major" ? "major" : "minor")) +
+                "</span>" +
+                (fixed ? '<span class="pill pill-fixed">' + esc(t("fixed")) + "</span>" : "") +
+                '</div><div><p class="what">' +
+                rich(d.what) +
+                '</p><p class="where">' +
+                esc(d.where) +
+                '</p><p class="fix">' +
+                rich(d.fix) +
+                "</p></div></div>"
+              );
+            })
+            .join("");
+          var verdict = String(c.conformance.verdict || "")
+            .split(/\n+/)
+            .filter(Boolean)
+            .map(function (line) {
+              var trimmed = line.replace(/^[-*]\s*/, "");
+              return line.match(/^[-*]\s/)
+                ? "<li>" + rich(trimmed) + "</li>"
+                : "<p>" + rich(trimmed) + "</p>";
+            })
+            .join("")
+            .replace(/(<li>.*?<\/li>)+/g, function (items) {
+              return '<ul class="bullets">' + items + "</ul>";
+            });
+          return (
+            '<section id="conformance"><p class="eyebrow">' +
+            esc(t("conformance")) +
+            "</p><h2>" +
+            esc(t("conformanceTitle")) +
+            '</h2><p class="lead">' +
+            esc(t("conformanceLead")) +
+            '</p><div class="card prose">' +
+            verdict +
+            '</div><div class="card">' +
+            deviations +
+            "</div></section>"
+          );
+        }
+
+        function sectionSync(c) {
+          var manifest = state.model.manifest || {};
+          var groups = [
+            ["commands", manifest.commands],
+            ["featureFolders", manifest.featureFolders],
+            ["coreModules", manifest.coreModules],
+            ["ipcBackends", manifest.ipcBackends],
+          ]
+            .filter(function (group) {
+              return group[1] && group[1].length;
+            })
+            .map(function (group) {
+              return (
+                '<div class="detail-block"><p class="detail-label">' +
+                esc(group[0]) +
+                " · " +
+                group[1].length +
+                '</p><div class="files">' +
+                group[1]
+                  .map(function (item) {
+                    return '<span class="file">' + esc(item) + "</span>";
+                  })
+                  .join("") +
+                "</div></div>"
+              );
+            })
+            .join("");
+          var rules = (c.keepingInSync.rules || [])
+            .map(function (rule) {
+              return "<li><span>" + rich(rule) + "</span></li>";
+            })
+            .join("");
+          var auto = c.keepingInSync.automatedCheck;
+          var check = "";
+          if (auto && typeof auto === "object") {
+            check =
+              '<div class="card"><h3>' +
+              esc(auto.name || "") +
+              '</h3><p class="where">' +
+              esc(auto.script || "") +
+              '</p><ul class="bullets">' +
+              (auto.how || [])
+                .map(function (item) {
+                  return "<li>" + rich(item) + "</li>";
+                })
+                .join("") +
+              "</ul></div>";
+          } else if (auto) {
+            check = '<p class="lead">' + rich(auto) + "</p>";
+          }
+          return (
+            '<section id="sync"><p class="eyebrow">' +
+            esc(t("sync")) +
+            "</p><h2>" +
+            esc(t("syncTitle")) +
+            '</h2><div class="card"><ul class="checklist">' +
+            rules +
+            "</ul></div>" +
+            check +
+            (groups
+              ? "<h3>" +
+                esc(t("manifestTitle")) +
+                '</h3><p class="lead">' +
+                rich(t("manifestLead")) +
+                '</p><div class="card" style="display:flex;flex-direction:column;gap:14px">' +
+                groups +
+                "</div>"
+              : "") +
+            "</section>"
+          );
+        }
+
+        function sectionGlossary(c) {
+          var q = state.glossaryQuery.trim().toLowerCase();
+          var items = c.glossary
+            .filter(function (item) {
+              return !q || (item.term + " " + item.meaning).toLowerCase().indexOf(q) >= 0;
+            })
+            .map(function (item) {
+              return (
+                "<div><dt>" + esc(item.term) + "</dt><dd>" + rich(item.meaning) + "</dd></div>"
+              );
+            })
+            .join("");
+          return (
+            '<section id="glossary"><p class="eyebrow">' +
+            esc(t("glossary")) +
+            "</p><h2>" +
+            esc(t("glossaryTitle")) +
+            '</h2><input class="search" id="glossary-search" type="search" autocomplete="off" placeholder="' +
+            esc(t("filterGlossary")) +
+            '" aria-label="' +
+            esc(t("filterGlossary")) +
+            '" value="' +
+            esc(state.glossaryQuery) +
+            '"><dl class="glossary" id="glossary-list">' +
+            items +
+            "</dl></section>"
+          );
+        }
+
+        function footer() {
+          return (
+            "<footer><p>" +
+            rich(t("footer")) +
+            '</p><p><a href="' +
+            REPO_URL +
+            '/blob/main/docs/architecture.md">' +
+            esc(t("adrLink")) +
+            '</a> · <a href="' +
+            REPO_URL +
+            '/blob/main/docs/PRD_SchemaCraft_v1.md">' +
+            esc(t("prdLink")) +
+            '</a> · <a href="' +
+            REPO_URL +
+            '">' +
+            esc(t("repoLink")) +
+            "</a></p></footer>"
+          );
+        }
+
+        function render() {
+          var c = content();
+          var mobileToc = renderToc();
+          var main = document.getElementById("main");
+          main.innerHTML =
+            mobileToc +
+            sectionOverview(c) +
+            sectionMap(c) +
+            sectionData(c) +
+            sectionFlows(c) +
+            sectionCommands(c) +
+            sectionPatterns(c) +
+            sectionRecipes(c) +
+            sectionConventions(c) +
+            sectionConformance(c) +
+            sectionSync(c) +
+            sectionGlossary(c) +
+            footer();
+          applySearch();
+          applySelection();
+          observeSections();
+        }
+
+        /* ---------- interaction ---------- */
+        function selectComponent(id, scroll) {
+          state.selected = state.selected === id && !scroll ? null : id;
+          applySelection();
+          if (scroll) {
+            var chip = document.querySelector('.chip[data-component="' + CSS.escape(id) + '"]');
+            if (chip) {
+              chip.scrollIntoView({ block: "center", behavior: "smooth" });
+              chip.focus({ preventScroll: true });
+            }
+          }
+        }
+
+        document.addEventListener("click", function (event) {
+          var target = event.target.closest(
+            "[data-component], [data-flow], [data-recipe], [data-lang], [data-theme-choice], [data-close-detail]",
+          );
+          if (!target) return;
+          if (target.hasAttribute("data-close-detail")) {
+            state.selected = null;
+            applySelection();
+            return;
+          }
+          if (target.dataset.lang) {
+            setLang(target.dataset.lang);
+            writeStored("schemacraft.docs.lang", state.lang);
+            return;
+          }
+          if (target.dataset.themeChoice) {
+            applyTheme(target.dataset.themeChoice);
+            writeStored("schemacraft.docs.theme", target.dataset.themeChoice);
+            return;
+          }
+          if (target.dataset.flow) {
+            state.flow = Number(target.dataset.flow);
+            render();
+            var flows = document.getElementById("flows");
+            if (flows) flows.querySelector('[data-flow="' + state.flow + '"]').focus();
+            return;
+          }
+          if (target.dataset.recipe) {
+            state.recipe = Number(target.dataset.recipe);
+            render();
+            var recipes = document.getElementById("recipes");
+            if (recipes) recipes.querySelector('[data-recipe="' + state.recipe + '"]').focus();
+            return;
+          }
+          if (target.dataset.component) {
+            var fromMap = target.classList.contains("chip");
+            selectComponent(target.dataset.component, !fromMap);
+          }
+        });
+
+        document.addEventListener("input", function (event) {
+          if (event.target.id === "component-search") {
+            state.query = event.target.value;
+            applySearch();
+          }
+          if (event.target.id === "glossary-search") {
+            state.glossaryQuery = event.target.value;
+            var list = document.getElementById("glossary-list");
+            var q = state.glossaryQuery.trim().toLowerCase();
+            list.innerHTML = content()
+              .glossary.filter(function (item) {
+                return !q || (item.term + " " + item.meaning).toLowerCase().indexOf(q) >= 0;
+              })
+              .map(function (item) {
+                return (
+                  "<div><dt>" + esc(item.term) + "</dt><dd>" + rich(item.meaning) + "</dd></div>"
+                );
+              })
+              .join("");
+          }
+        });
+
+        document.addEventListener("keydown", function (event) {
+          if (event.key === "Escape" && state.selected) {
+            state.selected = null;
+            applySelection();
+          }
+        });
+
+        var resizeTimer = null;
+        window.addEventListener("resize", function () {
+          window.clearTimeout(resizeTimer);
+          resizeTimer = window.setTimeout(drawLines, 120);
+        });
+
+        var sectionObserver = null;
+        function observeSections() {
+          if (!("IntersectionObserver" in window)) return;
+          if (sectionObserver) sectionObserver.disconnect();
+          sectionObserver = new IntersectionObserver(
+            function (entries) {
+              entries.forEach(function (entry) {
+                if (!entry.isIntersecting) return;
+                document.querySelectorAll("[data-section]").forEach(function (link) {
+                  link.setAttribute(
+                    "aria-current",
+                    String(link.dataset.section === entry.target.id),
+                  );
+                });
+              });
+            },
+            { rootMargin: "-30% 0px -60% 0px" },
+          );
+          SECTION_IDS.forEach(function (id) {
+            var node = document.getElementById(id);
+            if (node) sectionObserver.observe(node);
+          });
+        }
+
+        /* ---------- start ---------- */
+        var storedTheme = readStored("schemacraft.docs.theme");
+        applyTheme(storedTheme || "system");
+        var storedLang = readStored("schemacraft.docs.lang");
+        var browserLang =
+          (navigator.language || "en").toLowerCase().indexOf("es") === 0 ? "es" : "en";
+        setLang(storedLang || browserLang);
+
+        fetch("model.json", { cache: "no-cache" })
+          .then(function (response) {
+            if (!response.ok) throw new Error(String(response.status));
+            return response.json();
+          })
+          .then(function (model) {
+            state.model = model;
+            render();
+          })
+          .catch(function () {
+            document.getElementById("main").innerHTML =
+              '<p class="callout">' + esc(t("loadError")) + "</p>";
+          });
+      })();
+    </script>
+  </body>
+</html>

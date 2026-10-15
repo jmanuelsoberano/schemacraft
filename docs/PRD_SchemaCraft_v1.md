@@ -34,7 +34,7 @@ Permite conectarse a una base de datos mediante autenticación mixta, extraer me
   - Soporte de layouts automáticos mediante librerías de grafos de alta calidad (ej. ELK.js / Dagre / D3 / SvelteFlow o ReactFlow).
   - Interactividad: Zoom semántico, pan infinito, minimap interactivo y selección múltiple.
 - **Forma de Distribución**:
-  - **Ejecutable Portable Autónomo (`schemacraft.exe`)**: Un solo archivo ejecutable sin requerir instaladores ni instalación de runtimes externos.
+  - **Ejecutable Portable Autónomo (`schemacraft.exe`)**: Un solo archivo ejecutable sin requerir instaladores. Usa el runtime Evergreen de Microsoft Edge WebView2, incluido en Windows 11 y en Windows 10 actualizado; si falta, la aplicación lo detecta al arrancar y ofrece la página de descarga.
   - **Instalador MSI/NSIS ligero**: Generado opcionalmente para empaquetado formal del sistema operativo.
 
 ---
@@ -168,3 +168,4 @@ Se prohíben expresamente exportaciones en múltiples páginas cortadas que requ
 
 - **2026-10-13**: Se añade el requisito no funcional 4 (Experiencia de Usuario) y su criterio de aceptación, acordados al cierre del Paso 1 de construcción.
 - **2026-10-13**: Se añaden el historial de conexiones recientes (3.1) y los proyectos recientes (3.6), acordados al planificar el Paso 3.
+- **2026-10-15**: Se precisa en 2.1 que el ejecutable portable usa el runtime WebView2 de Windows, como ya hace la versión 1.0.0.
