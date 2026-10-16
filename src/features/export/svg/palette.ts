@@ -13,6 +13,7 @@ export interface DiagramPalette {
   border: string;
   borderStrong: string;
   text: string;
+  textSecondary: string;
   textMuted: string;
   accent: string;
   accentSubtle: string;
@@ -29,6 +30,7 @@ export const DIAGRAM_PALETTES: Record<ExportTheme, DiagramPalette> = {
     border: "#dcdee3",
     borderStrong: "#c8cad3",
     text: "#1a1c26",
+    textSecondary: "#525561",
     textMuted: "#777a85",
     accent: "#5d5ddd",
     accentSubtle: "#e6eaff",
@@ -43,6 +45,7 @@ export const DIAGRAM_PALETTES: Record<ExportTheme, DiagramPalette> = {
     border: "#2c2d34",
     borderStrong: "#40424a",
     text: "#e3e4ea",
+    textSecondary: "#a2a4ac",
     textMuted: "#787a83",
     accent: "#7075ef",
     accentSubtle: "#272a4b",

@@ -26,6 +26,7 @@ export type ActionId =
   | "view.commandPalette"
   | "view.toggleSidebar"
   | "view.searchEntities"
+  | "view.accessReport"
   | "help.about";
 
 /**

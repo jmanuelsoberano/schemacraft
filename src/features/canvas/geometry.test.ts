@@ -97,6 +97,33 @@ describe("describeEntities", () => {
     expect(entities.get("sales.RecentOrders")?.kind).toBe("view");
     expect(entityKey({ schema: "a", name: "b" })).toBe("a.b");
   });
+
+  it("keeps the badge of a key to a table the login cannot see", () => {
+    const entities = describeEntities({
+      ...snapshot,
+      foreignKeysToInvisibleTables: [
+        {
+          name: "FK_Orders_Regions",
+          referencingTable: { schema: "sales", name: "Orders" },
+          columns: ["PlacedAt"],
+          onDelete: "noAction",
+          onUpdate: "noAction",
+          isEnabled: true,
+        },
+      ],
+    });
+    const orders = entities.get("sales.Orders");
+    if (orders === undefined) {
+      throw new Error("fixture entity expected");
+    }
+
+    expect([...orders.foreignKeyColumns]).toEqual(["CustomerId", "PlacedAt"]);
+    expect(rowsFor(orders, "keys", false).map((row) => `${row.column.name}:${row.role}`)).toEqual([
+      "OrderId:primary",
+      "CustomerId:foreign",
+      "PlacedAt:foreign",
+    ]);
+  });
 });
 
 describe("rowsFor", () => {

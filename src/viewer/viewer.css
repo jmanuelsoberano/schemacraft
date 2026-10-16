@@ -64,6 +64,20 @@ body {
   height: 100%;
 }
 
+.sc-app.sc-has-note {
+  grid-template-rows: 48px auto 1fr 28px;
+}
+
+/* One line under the bar when the schema was read with partial access. */
+.sc-note {
+  margin: 0;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--sc-border);
+  background: var(--sc-sunken);
+  color: var(--sc-text-secondary);
+  font-size: 12px;
+}
+
 .sc-bar {
   display: flex;
   gap: 12px;

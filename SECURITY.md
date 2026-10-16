@@ -18,7 +18,10 @@ problem is confirmed.
 - Connection passwords live in memory for the session. With "Remember password" ticked they are
   stored in the Windows Credential Manager, never in any file written by SchemaCraft.
 - `.scraft` project files contain the schema snapshot and the connection without its password.
-  Treat them as you would treat a database diagram: they describe your tables.
+  Since 1.1 the snapshot also records what the login could see: its permissions in that
+  database and the name of its database user. Treat project files as you would treat a database
+  diagram: they describe your tables. Exports carry neither the connection nor the permissions,
+  only the visible diagram and, for a partial read, a note saying so.
 - Connections to SQL Server are always encrypted, and the server certificate is validated unless
   you explicitly tick "Trust the server certificate" for that connection.
 - SchemaCraft only talks to the SQL Server you point it at. It sends no telemetry and contacts no

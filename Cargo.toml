@@ -29,7 +29,9 @@ thiserror = "2.0"
 tiberius = { version = "0.13", features = ["sql-browser-tokio"] }
 tokio = { version = "1.53", features = ["rt-multi-thread", "net", "time", "macros", "sync"] }
 tokio-util = { version = "0.7", features = ["compat"] }
-ts-rs = { version = "12.0", features = ["serde-compat", "chrono-impl"] }
+# ts-rs prints a pseudo-warning on every build for serde keys it does not model, such as the
+# `#[serde(other)]` fallback of `model::Definition`; the contracts check guards the output.
+ts-rs = { version = "12.0", features = ["serde-compat", "chrono-impl", "no-serde-warnings"] }
 tauri = { version = "2.12", features = [] }
 tauri-build = { version = "2.7", features = [] }
 tauri-plugin-dialog = "2"

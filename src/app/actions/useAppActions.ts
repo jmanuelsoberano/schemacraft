@@ -18,6 +18,7 @@ import {
   Save,
   SaveAll,
   Search,
+  ShieldHalf,
   Undo2,
   Workflow,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import { useMemo } from "react";
 
 import { focusEntitiesSearch } from "@/app/shell/entitiesSearch";
 import { useAboutStore } from "@/features/about/aboutStore";
+import { useAccessReportStore } from "@/features/access/accessReportStore";
 import {
   applyLastLayout,
   applyLayout,
@@ -53,11 +55,13 @@ export function useAppActions(): AppActions {
   const openExportDialog = useExportStore((state) => state.open);
   const refreshFromDatabase = useConnectionStore((state) => state.refresh);
   const hasProject = useProjectStore((state) => state.project !== null);
+  const isReadOnly = useProjectStore((state) => state.project?.isReadOnly ?? false);
   const guardUnsavedChanges = useProjectStore((state) => state.guardUnsavedChanges);
   const openProject = useProjectStore((state) => state.openProject);
   const saveProject = useProjectStore((state) => state.saveProject);
   const saveProjectAs = useProjectStore((state) => state.saveProjectAs);
   const openAbout = useAboutStore((state) => state.open);
+  const openAccessReport = useAccessReportStore((state) => state.open);
   const canUndo = useProjectStore((state) => state.history.past.length > 0);
   const canRedo = useProjectStore((state) => state.history.future.length > 0);
   const hasHidden = useProjectStore(
@@ -70,11 +74,19 @@ export function useAppActions(): AppActions {
   const selectedKeys = useCanvasUiStore((state) => state.selectedKeys);
   const togglePalette = usePaletteStore((state) => state.toggle);
   const canLayout = hasProject && !isLayoutRunning;
+  // A project a newer version wrote is shown but never written: saving would drop what this
+  // version does not understand, and a refresh would replace it.
+  const canWriteProject = hasProject && !isReadOnly;
 
   return useMemo(() => {
     const layoutUnavailableReason: MessageKey = hasProject
       ? "action.unavailable.layoutRunning"
       : "action.unavailable.noProject";
+    const writeUnavailableReason: MessageKey | undefined = canWriteProject
+      ? undefined
+      : hasProject
+        ? "action.unavailable.readOnly"
+        : "action.unavailable.noProject";
     const byId: ActionsById = {
       "project.connect": {
         id: "project.connect",
@@ -102,8 +114,8 @@ export function useAppActions(): AppActions {
         labelKey: "action.saveProject",
         icon: Save,
         shortcut: { mod: true, key: "s" },
-        isAvailable: hasProject,
-        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
+        isAvailable: canWriteProject,
+        unavailableReason: writeUnavailableReason,
         run: () => {
           void saveProject();
         },
@@ -113,8 +125,8 @@ export function useAppActions(): AppActions {
         labelKey: "action.saveProjectAs",
         icon: SaveAll,
         shortcut: { mod: true, shift: true, key: "s" },
-        isAvailable: hasProject,
-        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
+        isAvailable: canWriteProject,
+        unavailableReason: writeUnavailableReason,
         run: () => {
           void saveProjectAs();
         },
@@ -124,8 +136,8 @@ export function useAppActions(): AppActions {
         labelKey: "action.refreshFromDatabase",
         icon: RefreshCw,
         shortcut: { key: "F5" },
-        isAvailable: hasProject,
-        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
+        isAvailable: canWriteProject,
+        unavailableReason: writeUnavailableReason,
         run: () => {
           void refreshFromDatabase();
         },
@@ -279,6 +291,16 @@ export function useAppActions(): AppActions {
         unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
         run: focusEntitiesSearch,
       },
+      // Available with full access too: the report then says that the whole schema was read.
+      "view.accessReport": {
+        id: "view.accessReport",
+        labelKey: "action.accessReport",
+        icon: ShieldHalf,
+        shortcut: { mod: true, shift: true, key: "a" },
+        isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
+        run: openAccessReport,
+      },
       "view.toggleSidebar": {
         id: "view.toggleSidebar",
         labelKey: "action.toggleSidebar",
@@ -304,11 +326,13 @@ export function useAppActions(): AppActions {
     openExportDialog,
     refreshFromDatabase,
     hasProject,
+    canWriteProject,
     guardUnsavedChanges,
     openProject,
     saveProject,
     saveProjectAs,
     openAbout,
+    openAccessReport,
     canUndo,
     canRedo,
     hasHidden,

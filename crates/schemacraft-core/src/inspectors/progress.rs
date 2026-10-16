@@ -1,13 +1,16 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-/// Phase of an inspection. Catalog stages run concurrently, so they may complete in any order.
+/// Phase of an inspection. The access check and the catalog stages run concurrently, so they
+/// may complete in any order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "inspectors/")]
 pub enum InspectionStage {
     /// Opening connections and identifying the server.
     Connecting,
+    /// Reading what the login is allowed to see, so the snapshot can say what it may lack.
+    CheckingAccess,
     /// Reading tables and views.
     ReadingObjects,
     /// Reading columns, types and defaults.
@@ -52,7 +55,8 @@ impl InspectionProgress {
 
 /// Receives progress updates from an inspection. Implementations must return quickly.
 pub trait ProgressReporter: Send + Sync {
-    /// Called once per stage transition and once per completed catalog query.
+    /// Called when connecting and assembling start, when the access check finishes, when a
+    /// catalog query that carries a count finishes, and once at completion.
     fn report(&self, progress: InspectionProgress);
 }
 

@@ -1,10 +1,21 @@
-import { Columns3, Database, Eye, EyeOff, Search, SearchX, Table2 } from "lucide-react";
+import {
+  Columns3,
+  Database,
+  DatabaseZap,
+  Eye,
+  EyeOff,
+  Search,
+  SearchX,
+  Table2,
+} from "lucide-react";
 import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 
 import { withHidden } from "@/features/canvas/canvasState";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { entityKey } from "@/features/canvas/geometry";
 import { useProjectStore } from "@/features/project/projectStore";
+import { emptySchemaReason, listsEveryObject } from "@/features/schema/coverage";
 import {
   countEntities,
   filterEntityGroups,
@@ -17,13 +28,23 @@ import { classNames } from "@/shared/ui/classNames";
 import styles from "./EntitiesSidebar.module.css";
 import { ENTITIES_SEARCH_INPUT_ID } from "./entitiesSearch";
 
+interface EntitiesSidebarProps {
+  /**
+   * Notice shown above the search field, such as the partial-access bar. Passed in, so the
+   * panel stays independent of the features that raise notices.
+   */
+  notice?: ReactNode;
+}
+
 /**
  * Lists the tables and views of the open project, grouped by schema and searchable. Clicking an
- * entity centres it on the canvas; the eye toggles its visibility.
+ * entity centres it on the canvas; the eye toggles its visibility. When the login could not see
+ * every object, the list ends with a note saying that others may exist.
  */
-export function EntitiesSidebar() {
+export function EntitiesSidebar({ notice }: EntitiesSidebarProps) {
   const { t, tCount, locale } = useI18n();
   const snapshot = useProjectStore((state) => state.project?.content.snapshot ?? null);
+  const inspection = useProjectStore((state) => state.project?.content.inspection ?? null);
   const nodeStates = useProjectStore((state) => state.project?.content.canvas.nodes ?? null);
   const updateCanvas = useProjectStore((state) => state.updateCanvas);
   const focusEntity = useCanvasUiStore((state) => state.focusEntity);
@@ -41,6 +62,9 @@ export function EntitiesSidebar() {
     [nodeStates],
   );
   const totalCount = countEntities(groups);
+  const emptyReason =
+    snapshot === null || inspection === null ? null : emptySchemaReason(snapshot, inspection);
+  const showsNotVisibleFooter = snapshot !== null && !listsEveryObject(snapshot);
   const selected = useMemo(() => new Set(selectedKeys), [selectedKeys]);
 
   const toggleVisibility = (key: string) => {
@@ -58,6 +82,7 @@ export function EntitiesSidebar() {
             : totalCount.toLocaleString(locale)}
         </span>
       </div>
+      {notice}
       <label className={styles.search}>
         <Search className={styles.searchIcon} aria-hidden="true" />
         <input
@@ -79,6 +104,18 @@ export function EntitiesSidebar() {
             icon={Database}
             title={t("sidebar.empty.title")}
             description={t("sidebar.empty.description")}
+          />
+        ) : emptyReason !== null ? (
+          <EmptyState
+            icon={DatabaseZap}
+            title={
+              emptyReason === "notVisible"
+                ? t("sidebar.empty.notVisible.title")
+                : t("sidebar.empty.database.title")
+            }
+            description={t(`sidebar.empty.${emptyReason}.description`, {
+              database: snapshot.databaseName,
+            })}
           />
         ) : visibleGroups.length === 0 ? (
           <EmptyState icon={SearchX} title={t("sidebar.search.noMatches", { query })} />
@@ -164,6 +201,9 @@ export function EntitiesSidebar() {
             })}
           </ul>
         )}
+        {showsNotVisibleFooter && emptyReason === null ? (
+          <p className={styles.footer}>{t("sidebar.footer.notVisible")}</p>
+        ) : null}
       </div>
     </div>
   );

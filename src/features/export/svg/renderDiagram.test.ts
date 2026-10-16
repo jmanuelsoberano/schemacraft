@@ -165,13 +165,13 @@ describe("renderDiagramSvg", () => {
   });
 
   it("sizes the document from the node boxes plus padding and the self-loop reach", () => {
-    const extent = measureDiagram({ snapshot, canvas }, "keys", 48);
+    const extent = measureDiagram({ snapshot, canvas }, "keys", { padding: 48 });
     // Nodes span x 100..740 (Orders at 500 + 240) plus the loop of Employees, y 100..438.
     expect(extent.width).toBe(740 - 100 + 44 + 4 + 48 * 2);
     expect(extent.height).toBe(400 + 38 - 100 + 48 * 2);
-    const full = measureDiagram({ snapshot, canvas }, "full", 48);
+    const full = measureDiagram({ snapshot, canvas }, "full", { padding: 48 });
     expect(full.height).toBeGreaterThan(extent.height);
-    const compact = measureDiagram({ snapshot, canvas }, "compact", 48);
+    const compact = measureDiagram({ snapshot, canvas }, "compact", { padding: 48 });
     expect(compact.height).toBeLessThan(full.height);
     expect(compact.height).toBeLessThanOrEqual(extent.height);
   });
@@ -217,6 +217,58 @@ describe("renderDiagramSvg", () => {
     expect(bare.svg).not.toContain('class="sc-background"');
     expect(bare.svg).toContain("<style>@font-face{font-family:Inter}");
     expect(bare.svg).toContain("<desc>Exported</desc>");
+  });
+
+  it("sets a footnote under the diagram, bottom left, and makes room for it", () => {
+    const options = { detailLevel: "keys" as const, theme: "light" as const };
+    const plain = renderDiagramSvg({ snapshot, canvas }, options);
+    const noted = renderDiagramSvg(
+      { snapshot, canvas },
+      { ...options, footnote: "Partial capture & <more>" },
+    );
+
+    expect(plain.svg).not.toContain("sc-footnote");
+    expect(noted.width).toBe(plain.width);
+    // The nodes end 338 below the top padding; the line sits 16 below them and is 16 high.
+    expect(noted.height).toBe(plain.height + 32);
+    expect(noted.svg).toContain(
+      '<text class="sc-footnote" x="48" y="413.85">Partial capture &amp; &lt;more&gt;</text>',
+    );
+    expect(noted.svg).toContain(".sc-footnote{");
+    expect(noted.svg.endsWith("</text>\n</svg>")).toBe(true);
+  });
+
+  it("widens a narrow diagram to fit its footnote, the same whether measured or drawn", () => {
+    const onlyCustomers = {
+      snapshot,
+      canvas: {
+        ...canvas,
+        nodes: canvas.nodes.map((node) =>
+          node.name.name === "Customers" ? node : { ...node, isHidden: true },
+        ),
+      },
+    };
+    const footnote =
+      "Partial capture: some tables, views or expressions weren't visible to the login that read the schema.";
+
+    const measured = measureDiagram(onlyCustomers, "keys", { footnote });
+    const drawn = renderDiagramSvg(onlyCustomers, {
+      detailLevel: "keys",
+      theme: "dark",
+      footnote,
+      measureText: (text) => text.length,
+    });
+
+    expect(measured.width).toBe(
+      Math.ceil(estimateTextWidth(footnote, { family: "sans", size: 11, weight: 400 }) + 96),
+    );
+    expect(measured.width).toBeGreaterThan(240 + 96);
+    expect({ width: drawn.width, height: drawn.height }).toEqual({
+      width: measured.width,
+      height: measured.height,
+    });
+    expect(drawn.svg).toContain(".sc-footnote{font-family:");
+    expect(drawn.svg).toContain("fill:#a2a4ac}");
   });
 
   it("renders an empty canvas as an empty document", () => {

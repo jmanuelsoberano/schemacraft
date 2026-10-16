@@ -4,6 +4,8 @@ import type { CSSProperties } from "react";
 import { useAppActions } from "@/app/actions/useAppActions";
 import { useKeyboardShortcuts } from "@/app/actions/useKeyboardShortcuts";
 import { AboutDialog } from "@/features/about/AboutDialog";
+import { AccessBar } from "@/features/access/AccessBar";
+import { AccessReportDialog } from "@/features/access/AccessReportDialog";
 import { CanvasContextMenu } from "@/features/canvas/CanvasContextMenu";
 import { ConnectionDialog } from "@/features/connection/ConnectionDialog";
 import { ExportDialog } from "@/features/export/ExportDialog";
@@ -20,6 +22,7 @@ import { EntitiesSidebar } from "./EntitiesSidebar";
 import { SidebarResizer } from "./SidebarResizer";
 import { StatusBar } from "./StatusBar";
 import { TopBar } from "./TopBar";
+import { focusEntitiesSearch } from "./entitiesSearch";
 import { useDesktopShellGuards } from "./useDesktopShellGuards";
 
 /** Three-region layout: top bar, resizable entities panel beside the canvas, status bar. */
@@ -44,16 +47,25 @@ export function AppShell() {
         className={classNames(styles.sidebar, !isSidebarOpen && styles.sidebarCollapsed)}
         inert={!isSidebarOpen}
       >
-        <EntitiesSidebar />
+        <EntitiesSidebar
+          notice={
+            <AccessBar
+              onShowDetails={actions.byId["view.accessReport"].run}
+              // The close button disappears with the bar; the search field is the next stop.
+              onDismissed={focusEntitiesSearch}
+            />
+          }
+        />
         <SidebarResizer />
       </aside>
       <main className={styles.canvas}>
         <DiagramCanvas actions={actions.byId} />
       </main>
-      <StatusBar />
+      <StatusBar actions={actions.byId} />
       <ConnectionDialog />
       <UnsavedChangesDialog />
       <AboutDialog />
+      <AccessReportDialog />
       <ExportDialog />
       <CommandPalette actions={actions} />
       <CanvasContextMenu />

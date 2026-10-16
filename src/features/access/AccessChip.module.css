@@ -1,0 +1,30 @@
+/* The border uses the muted text colour, which keeps 3:1 against the status bar in both themes. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 var(--space-2) 0 6px;
+  border: 1px solid var(--color-text-muted);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.chip:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.icon {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}

@@ -1,7 +1,14 @@
+import { ShieldQuestionMark, Sparkles } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { describeSnapshotFact } from "@/features/access/snapshotFacts";
 import { describeColumn, formatDataType } from "@/features/schema/dataType";
+import type { DefaultLabels } from "@/features/schema/dataType";
+import { definitionText, isUnknownDefinition } from "@/features/schema/definition";
 import type {
+  AvailableFact,
+  CarriedFact,
   ChangeCounts,
   ChangeKind,
   CheckConstraint,
@@ -9,27 +16,34 @@ import type {
   Column,
   ColumnChange,
   ColumnProperty,
+  Definition,
   ForeignKey,
   ForeignKeyChange,
   ForeignKeyProperty,
+  ForeignKeyToInvisibleTable,
+  ForeignKeyToInvisibleTableChange,
   Index,
   IndexChange,
   PrimaryKey,
   QualifiedName,
   SchemaDiff,
+  SchemaSnapshot,
   TableChange,
   ViewChange,
 } from "@/shared/contracts";
+import { formatDate } from "@/shared/i18n/formatDate";
 import { useI18n } from "@/shared/i18n/useI18n";
 import type { Translator } from "@/shared/i18n/useI18n";
 import { Alert } from "@/shared/ui/Alert";
 import { classNames } from "@/shared/ui/classNames";
 
 import styles from "./ReviewChangesPanel.module.css";
-import { countChanges } from "./reviewChanges";
+import { countChanges, isUpToDate } from "./reviewChanges";
 
 interface ReviewChangesPanelProps {
   diff: SchemaDiff;
+  /** The fresh snapshot the review compares against the project. */
+  capture: SchemaSnapshot;
 }
 
 const BADGE_CLASS: Record<ChangeKind, string | undefined> = {
@@ -52,8 +66,23 @@ function describeIndex(index: Index, t: Translator["t"]): string {
   return `${index.name} (${index.columns.join(", ")}) · ${kind}${clustered}`;
 }
 
-function describeCheckConstraint(constraint: CheckConstraint): string {
-  return `${constraint.name} ${constraint.expression}`;
+function describeDefinition(definition: Definition, t: Translator["t"]): string {
+  return (
+    definitionText(definition) ??
+    t(isUnknownDefinition(definition) ? "definition.notRecorded" : "definition.notAvailable")
+  );
+}
+
+/**
+ * Names a CHECK and its expression, and says when it is disabled, so a change of the enabled
+ * state alone never reads as identical before and after. A 1.0 project does not record the
+ * state (`isEnabled` is null), and then nothing is said about it.
+ */
+function describeCheckConstraint(constraint: CheckConstraint, t: Translator["t"]): string {
+  const expression = describeDefinition(constraint.expression, t);
+  return constraint.isEnabled === false
+    ? t("review.checkConstraint.disabled", { name: constraint.name, expression })
+    : `${constraint.name} ${expression}`;
 }
 
 function describeForeignKey(key: ForeignKey): string {
@@ -61,6 +90,20 @@ function describeForeignKey(key: ForeignKey): string {
     .map((pair) => `${pair.referencingColumn} → ${pair.referencedColumn}`)
     .join(", ");
   return `${qualified(key.referencingTable)} → ${qualified(key.referencedTable)} (${pairs})`;
+}
+
+function describeKeyToInvisibleTable(key: ForeignKeyToInvisibleTable, t: Translator["t"]): string {
+  return t("review.foreignKey.invisibleTable", {
+    table: qualified(key.referencingTable),
+    columns: key.columns.join(", "),
+  });
+}
+
+function defaultLabels(t: Translator["t"]): DefaultLabels {
+  return {
+    notAvailable: t("definition.default.notAvailable"),
+    notRecorded: t("definition.default.notRecorded"),
+  };
 }
 
 function yesNo(value: boolean, t: Translator["t"]): string {
@@ -78,15 +121,38 @@ function columnPropertyValues(
       return [formatDataType(before.dataType), formatDataType(after.dataType)];
     case "nullability":
       return [yesNo(before.isNullable, t), yesNo(after.isNullable, t)];
-    case "defaultExpression":
-      return [
-        before.defaultExpression ?? t("review.value.none"),
-        after.defaultExpression ?? t("review.value.none"),
-      ];
+    case "defaultExpression": {
+      const describe = (column: Column) =>
+        column.defaultExpression === null
+          ? t("review.value.none")
+          : describeDefinition(column.defaultExpression, t);
+      return [describe(before), describe(after)];
+    }
     case "identity":
       return [yesNo(before.isIdentity, t), yesNo(after.isIdentity, t)];
     case "computed":
       return [yesNo(before.isComputed, t), yesNo(after.isComputed, t)];
+  }
+}
+
+function keyToInvisibleTablePropertyValues(
+  property: ForeignKeyProperty,
+  before: ForeignKeyToInvisibleTable,
+  after: ForeignKeyToInvisibleTable,
+  t: Translator["t"],
+): [string, string] {
+  switch (property) {
+    // The referenced table of such a key is never known, so the diff never reports it.
+    case "referencedTable":
+      return [t("review.value.none"), t("review.value.none")];
+    case "columns":
+      return [before.columns.join(", "), after.columns.join(", ")];
+    case "onDelete":
+      return [t(`referentialAction.${before.onDelete}`), t(`referentialAction.${after.onDelete}`)];
+    case "onUpdate":
+      return [t(`referentialAction.${before.onUpdate}`), t(`referentialAction.${after.onUpdate}`)];
+    case "enabled":
+      return [yesNo(before.isEnabled, t), yesNo(after.isEnabled, t)];
   }
 }
 
@@ -160,13 +226,13 @@ function ColumnDetails({ changes }: { changes: readonly ColumnChange[] }) {
           case "added":
             return (
               <Detail key={change.column.name} kind="added" label={change.column.name}>
-                {describeColumn(change.column)}
+                {describeColumn(change.column, defaultLabels(t))}
               </Detail>
             );
           case "removed":
             return (
               <Detail key={change.column.name} kind="removed" label={change.column.name}>
-                {describeColumn(change.column)}
+                {describeColumn(change.column, defaultLabels(t))}
               </Detail>
             );
           case "changed":
@@ -229,11 +295,11 @@ function CheckConstraintDetails({ changes }: { changes: readonly CheckConstraint
           <Detail key={constraint.name} kind={change.kind} label={t("review.checkConstraint")}>
             {change.kind === "changed" ? (
               <Transition
-                before={describeCheckConstraint(change.before)}
-                after={describeCheckConstraint(constraint)}
+                before={describeCheckConstraint(change.before, t)}
+                after={describeCheckConstraint(constraint, t)}
               />
             ) : (
-              describeCheckConstraint(constraint)
+              describeCheckConstraint(constraint, t)
             )}
           </Detail>
         );
@@ -333,6 +399,41 @@ function ForeignKeyItem({ change }: { change: ForeignKeyChange }) {
   );
 }
 
+function KeyToInvisibleTableItem({ change }: { change: ForeignKeyToInvisibleTableChange }) {
+  const { t } = useI18n();
+  if (change.kind !== "changed") {
+    return (
+      <li className={styles.item}>
+        <Badge kind={change.kind} />
+        <span className={styles.name}>{change.key.name}</span>
+        <span className={styles.meta}>{describeKeyToInvisibleTable(change.key, t)}</span>
+      </li>
+    );
+  }
+  return (
+    <li className={styles.item}>
+      <Badge kind="changed" />
+      <span className={styles.name}>{change.after.name}</span>
+      <span className={styles.meta}>{describeKeyToInvisibleTable(change.after, t)}</span>
+      <ul className={styles.details}>
+        {change.properties.map((property) => {
+          const [before, after] = keyToInvisibleTablePropertyValues(
+            property,
+            change.before,
+            change.after,
+            t,
+          );
+          return (
+            <Detail key={property} kind="changed" label={t(`review.property.${property}`)}>
+              <Transition before={before} after={after} />
+            </Detail>
+          );
+        })}
+      </ul>
+    </li>
+  );
+}
+
 function SummaryChip({ label, counts }: { label: string; counts: ChangeCounts }) {
   const { tCount } = useI18n();
   const parts = [
@@ -351,22 +452,90 @@ function SummaryChip({ label, counts }: { label: string; counts: ChangeCounts })
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  /** Marks a section that lists no change, so its meaning never rests on colour alone. */
+  icon?: LucideIcon;
+  children: ReactNode;
+}) {
   return (
     <section className={styles.section}>
-      <h3 className={styles.sectionTitle}>{title}</h3>
+      <h3 className={styles.sectionTitle}>
+        {Icon ? <Icon className={styles.sectionIcon} aria-hidden="true" /> : null}
+        {title}
+      </h3>
       <ul className={styles.list}>{children}</ul>
     </section>
   );
 }
 
-/** Lists what changed in the database since the project's snapshot, before it is applied. */
-export function ReviewChangesPanel({ diff }: ReviewChangesPanelProps) {
-  const { t } = useI18n();
-  const { summary } = diff;
+/** Facts the fresh read could not check, kept with their saved value and when they were read. */
+function NotCheckedSection({ facts }: { facts: readonly CarriedFact[] }) {
+  const { t, locale } = useI18n();
+  return (
+    <Section title={t("review.section.notChecked")} icon={ShieldQuestionMark}>
+      {facts.map((entry) => (
+        <li key={JSON.stringify([entry.object, entry.fact])} className={styles.factItem}>
+          <span className={styles.name}>{qualified(entry.object)}</span>
+          <span className={styles.meta}>
+            {t("access.report.carried.entry", {
+              fact: describeSnapshotFact(entry.fact, t),
+              date: formatDate(entry.readAt, locale),
+            })}
+          </span>
+        </li>
+      ))}
+    </Section>
+  );
+}
 
-  if (countChanges(summary) === 0) {
-    return (
+/** Facts the project could not state and this read can: applied, but not changes. */
+function NowAvailableSection({ facts }: { facts: readonly AvailableFact[] }) {
+  const { t } = useI18n();
+  return (
+    <Section title={t("review.section.nowAvailable")} icon={Sparkles}>
+      {facts.map((entry) => (
+        <li key={JSON.stringify([entry.object, entry.fact])} className={styles.factItem}>
+          <span className={styles.name}>{qualified(entry.object)}</span>
+          <span className={styles.meta}>{describeSnapshotFact(entry.fact, t)}</span>
+        </li>
+      ))}
+    </Section>
+  );
+}
+
+/** What a review without any schema change still brings to the project. */
+function noChangeDescription(diff: SchemaDiff, t: Translator["t"]): string {
+  if (diff.nowAvailable.length > 0) {
+    return t("review.noChanges.nowAvailable");
+  }
+  if (diff.notChecked.length > 0) {
+    return t("review.noChanges.notChecked");
+  }
+  return t("review.noChanges.accessChanged");
+}
+
+/**
+ * Lists what changed in the database since the project's snapshot, before it is applied, and
+ * what the fresh read could not check or can now read. Nothing the login could not see is
+ * reported as removed, and a partial read never claims that the project is up to date.
+ */
+export function ReviewChangesPanel({ diff, capture }: ReviewChangesPanelProps) {
+  const { t, tCount } = useI18n();
+  const { summary } = diff;
+  const isPartialCapture = capture.access?.level === "partial";
+  const hasChanges = countChanges(summary) > 0;
+
+  if (isUpToDate(diff)) {
+    return isPartialCapture ? (
+      <Alert variant="success" title={t("review.empty.partial.title")}>
+        {t("review.empty.partial.description")}
+      </Alert>
+    ) : (
       <Alert variant="success" title={t("review.empty.title")}>
         {t("review.empty.description")}
       </Alert>
@@ -375,11 +544,25 @@ export function ReviewChangesPanel({ diff }: ReviewChangesPanelProps) {
 
   return (
     <div className={styles.panel}>
-      <div className={styles.summary}>
-        <SummaryChip label={t("review.section.tables")} counts={summary.tables} />
-        <SummaryChip label={t("review.section.views")} counts={summary.views} />
-        <SummaryChip label={t("review.section.foreignKeys")} counts={summary.foreignKeys} />
-      </div>
+      {diff.notChecked.length > 0 ? (
+        <Alert variant="info" icon={ShieldQuestionMark} title={t("review.notChecked.title")}>
+          {tCount("review.notChecked.body", diff.notChecked.length)}
+        </Alert>
+      ) : null}
+      {hasChanges ? (
+        <div className={styles.summary}>
+          <SummaryChip label={t("review.section.tables")} counts={summary.tables} />
+          <SummaryChip label={t("review.section.views")} counts={summary.views} />
+          <SummaryChip label={t("review.section.foreignKeys")} counts={summary.foreignKeys} />
+        </div>
+      ) : (
+        <Alert
+          variant="success"
+          title={isPartialCapture ? t("review.empty.partial.title") : t("review.noChanges.title")}
+        >
+          {noChangeDescription(diff, t)}
+        </Alert>
+      )}
       {diff.tables.length > 0 ? (
         <Section title={t("review.section.tables")}>
           {diff.tables.map((change) => (
@@ -394,7 +577,7 @@ export function ReviewChangesPanel({ diff }: ReviewChangesPanelProps) {
           ))}
         </Section>
       ) : null}
-      {diff.foreignKeys.length > 0 ? (
+      {diff.foreignKeys.length > 0 || diff.foreignKeysToInvisibleTables.length > 0 ? (
         <Section title={t("review.section.foreignKeys")}>
           {diff.foreignKeys.map((change) => {
             const key = change.kind === "changed" ? change.after : change.key;
@@ -405,7 +588,21 @@ export function ReviewChangesPanel({ diff }: ReviewChangesPanelProps) {
               />
             );
           })}
+          {diff.foreignKeysToInvisibleTables.map((change) => {
+            const key = change.kind === "changed" ? change.after : change.key;
+            return (
+              <KeyToInvisibleTableItem
+                key={`invisible:${qualified(key.referencingTable)}.${key.name}`}
+                change={change}
+              />
+            );
+          })}
         </Section>
+      ) : null}
+      {diff.nowAvailable.length > 0 ? <NowAvailableSection facts={diff.nowAvailable} /> : null}
+      {diff.notChecked.length > 0 ? <NotCheckedSection facts={diff.notChecked} /> : null}
+      {diff.accessChanged && hasChanges ? (
+        <p className={styles.note}>{t("review.accessChanged")}</p>
       ) : null}
     </div>
   );

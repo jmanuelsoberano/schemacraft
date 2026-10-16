@@ -5,25 +5,28 @@ use std::path::PathBuf;
 
 use schemacraft_core::diff::SchemaDiff;
 use schemacraft_core::model::SchemaSnapshot;
-use schemacraft_core::project::{self, Project, ProjectContent};
+use schemacraft_core::project::{self, OpenedProject, Project, ProjectContent};
 use tauri::AppHandle;
 
 use super::run_blocking;
 use crate::error::CommandError;
 
-/// Reads a project file. Fails with a classified error when the file is missing, damaged or
-/// written by a newer version.
+/// Reads a project file, upgrading an older format. A file of a newer format opens read-only
+/// when it allows older readers. Fails with a classified error when the file is missing,
+/// damaged or written by a newer version that older readers must not open.
 #[tauri::command]
-pub async fn read_project(path: PathBuf) -> Result<Project, CommandError> {
+pub async fn read_project(path: PathBuf) -> Result<OpenedProject, CommandError> {
     tracing::debug!(path = %path.display(), "read_project requested");
     let read_path = path.clone();
-    let project = run_blocking(move || project::read_project(&read_path)).await??;
+    let opened = run_blocking(move || project::read_project(&read_path)).await??;
     tracing::info!(
         path = %path.display(),
-        tables = project.content.snapshot.tables.len(),
+        tables = opened.project.content.snapshot.tables.len(),
+        format_version = opened.project.format_version,
+        is_read_only = opened.is_read_only,
         "project opened"
     );
-    Ok(project)
+    Ok(opened)
 }
 
 /// Writes `content` to `path`, stamping it with the current time and application version, and

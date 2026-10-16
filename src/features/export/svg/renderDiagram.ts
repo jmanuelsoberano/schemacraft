@@ -56,7 +56,15 @@ export interface RenderOptions {
   title?: string;
   /** `<desc>` of the document, for example the export date. */
   description?: string;
+  /**
+   * One line under the diagram, bottom left, such as the note that the schema was read with
+   * partial access. The document grows to make room for it.
+   */
+  footnote?: string;
 }
+
+/** What sizes the document besides the diagram, as {@link renderDiagramSvg} will draw it. */
+export type MeasureOptions = Pick<RenderOptions, "padding" | "footnote">;
 
 export interface DiagramExtent {
   /** Width in CSS pixels, padding included. */
@@ -90,12 +98,16 @@ const TYPE_MAX_WIDTH = 110;
 const PILL_HEIGHT = 16;
 const PILL_PADDING = 6;
 const CORNER_RADIUS = 10;
+/** Space between the lowest node and the footnote, and the height of the footnote line. */
+const FOOTNOTE_GAP = 16;
+const FOOTNOTE_LINE_HEIGHT = 16;
 
 const TITLE_FONT: TextFont = { family: "mono", size: 12, weight: 400 };
 const NAME_FONT: TextFont = { family: "mono", size: 12, weight: 600 };
 const COUNT_FONT: TextFont = { family: "sans", size: 10, weight: 600 };
 const COLUMN_FONT: TextFont = { family: "sans", size: 12, weight: 400 };
 const TYPE_FONT: TextFont = { family: "mono", size: 11, weight: 400 };
+const FOOTNOTE_FONT: TextFont = { family: "sans", size: 11, weight: 400 };
 
 interface PlacedEntity {
   entity: EntityDescriptor;
@@ -103,9 +115,17 @@ interface PlacedEntity {
   box: NodeBox;
 }
 
+interface PlacedFootnote {
+  text: string;
+  /** Start of the baseline. */
+  x: number;
+  y: number;
+}
+
 interface Layout {
   placed: PlacedEntity[];
   relations: ForeignKey[];
+  footnote: PlacedFootnote | null;
   extent: DiagramExtent;
 }
 
@@ -114,7 +134,12 @@ function baseline(centerY: number, size: number): number {
   return centerY + size * 0.35;
 }
 
-function layoutDiagram(input: DiagramInput, detailLevel: DetailLevel, padding: number): Layout {
+function layoutDiagram(
+  input: DiagramInput,
+  detailLevel: DetailLevel,
+  padding: number,
+  footnote: string | undefined,
+): Layout {
   const entities = describeEntities(input.snapshot);
   const states = nodeStatesByKey(input.canvas.nodes);
   const placed: PlacedEntity[] = [];
@@ -164,12 +189,29 @@ function layoutDiagram(input: DiagramInput, detailLevel: DetailLevel, padding: n
   for (const item of placed) {
     item.box = { ...item.box, x: item.box.x - minX + padding, y: item.box.y - minY + padding };
   }
+
+  let width = Math.ceil(maxX - minX + padding * 2);
+  let height = Math.ceil(maxY - minY + padding * 2);
+  let placedFootnote: PlacedFootnote | null = null;
+  if (footnote !== undefined && footnote !== "") {
+    const top = maxY - minY + padding + FOOTNOTE_GAP;
+    placedFootnote = {
+      text: footnote,
+      x: padding,
+      y: baseline(top + FOOTNOTE_LINE_HEIGHT / 2, FOOTNOTE_FONT.size),
+    };
+    // Sized with the estimate, which runs wider than the fonts for prose, so that measuring
+    // without a text measurer and drawing with one agree and the line always fits.
+    width = Math.max(width, Math.ceil(estimateTextWidth(footnote, FOOTNOTE_FONT) + padding * 2));
+    height = Math.ceil(top + FOOTNOTE_LINE_HEIGHT + padding);
+  }
   return {
     placed,
     relations,
+    footnote: placedFootnote,
     extent: {
-      width: Math.ceil(maxX - minX + padding * 2),
-      height: Math.ceil(maxY - minY + padding * 2),
+      width,
+      height,
       entityCount: placed.length,
       relationCount: relations.length,
     },
@@ -180,12 +222,13 @@ function layoutDiagram(input: DiagramInput, detailLevel: DetailLevel, padding: n
 export function measureDiagram(
   input: DiagramInput,
   detailLevel: DetailLevel,
-  padding = DEFAULT_PADDING,
+  options: MeasureOptions = {},
 ): DiagramExtent {
-  return layoutDiagram(input, detailLevel, padding).extent;
+  return layoutDiagram(input, detailLevel, options.padding ?? DEFAULT_PADDING, options.footnote)
+    .extent;
 }
 
-function styles(palette: DiagramPalette, fontFaces: string): string {
+function styles(palette: DiagramPalette, fontFaces: string, hasFootnote: boolean): string {
   const rules = [
     `.sc-background{fill:${palette.canvas}}`,
     `.sc-node-fill{fill:${palette.surfaceRaised}}`,
@@ -210,6 +253,12 @@ function styles(palette: DiagramPalette, fontFaces: string): string {
     `.sc-marker-active{fill:none;stroke:${palette.accent};stroke-width:2}`,
     `.sc-marker-fill-active{fill:${palette.canvas};stroke:${palette.accent};stroke-width:2}`,
   ];
+  // Only documents with a footnote carry its rule, so other exports stay byte for byte the same.
+  if (hasFootnote) {
+    rules.push(
+      `.sc-footnote{font-family:${SANS_FONT_STACK};font-size:11px;fill:${palette.textSecondary}}`,
+    );
+  }
   return `${fontFaces}${rules.join("")}`;
 }
 
@@ -404,7 +453,12 @@ export function renderDiagramSvg(input: DiagramInput, options: RenderOptions): R
   const padding = options.padding ?? DEFAULT_PADDING;
   const measure = options.measureText ?? estimateTextWidth;
   const palette = DIAGRAM_PALETTES[options.theme];
-  const { placed, relations, extent } = layoutDiagram(input, options.detailLevel, padding);
+  const { placed, relations, footnote, extent } = layoutDiagram(
+    input,
+    options.detailLevel,
+    padding,
+    options.footnote,
+  );
   const placedByKey = new Map(placed.map((item) => [item.entity.key, item]));
 
   const parts: string[] = [];
@@ -416,7 +470,7 @@ export function renderDiagramSvg(input: DiagramInput, options: RenderOptions): R
   if (options.description !== undefined) {
     parts.push(`<desc>${escapeXml(options.description)}</desc>`);
   }
-  parts.push(`<style>${styles(palette, options.fontFaces ?? "")}</style>`);
+  parts.push(`<style>${styles(palette, options.fontFaces ?? "", footnote !== null)}</style>`);
   parts.push(`<defs>${ICON_SYMBOLS}${markers()}</defs>`);
   if (options.background ?? true) {
     parts.push(`<rect class="sc-background" width="${extent.width}" height="${extent.height}"/>`);
@@ -431,6 +485,11 @@ export function renderDiagramSvg(input: DiagramInput, options: RenderOptions): R
     parts.push(renderEntity(item, measure, options.detailLevel));
   }
   parts.push("</g>");
+  if (footnote !== null) {
+    parts.push(
+      `<text class="sc-footnote" x="${coordinate(footnote.x)}" y="${coordinate(footnote.y)}">${escapeXml(footnote.text)}</text>`,
+    );
+  }
   parts.push("</svg>");
   return { ...extent, svg: parts.join("\n") };
 }

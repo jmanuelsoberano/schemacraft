@@ -8,7 +8,11 @@ import "./viewer.css";
 import { spreadForDetailLevel, withPositions } from "@/features/canvas/canvasState";
 import { describeEntities, entityKey } from "@/features/canvas/geometry";
 import type { EntityDescriptor } from "@/features/canvas/geometry";
-import { VIEWER_DATA_ELEMENT_ID, VIEWER_ROOT_ELEMENT_ID } from "@/features/export/html/viewerData";
+import {
+  VIEWER_DATA_ELEMENT_ID,
+  VIEWER_ROOT_ELEMENT_ID,
+  carriesAccessNote,
+} from "@/features/export/html/viewerData";
 import type { ViewerData } from "@/features/export/html/viewerData";
 import { renderDiagramSvg } from "@/features/export/svg/renderDiagram";
 import type { ExportTheme } from "@/features/export/svg/palette";
@@ -16,7 +20,7 @@ import { createCanvasMeasurer } from "@/features/export/svg/text";
 import { formatDataType } from "@/features/schema/dataType";
 import type { DetailLevel, ForeignKey } from "@/shared/contracts";
 
-import { createViewerTranslator, pluralKey } from "./messages";
+import { createViewerTranslator, describeDefinition, pluralKey } from "./messages";
 import type { ViewerTranslator } from "./messages";
 
 const MIN_ZOOM = 0.05;
@@ -182,7 +186,21 @@ class Viewer {
       h("span", { class: "sc-spacer" }),
       h("span", { class: "sc-zoom" }),
     );
-    root.replaceChildren(h("div", { class: "sc-app" }, bar, this.stage, footer));
+    // The file travels without the application, so it says itself when the login that read
+    // the schema could not see all of it.
+    const note = carriesAccessNote(data.access)
+      ? h("p", { class: "sc-note", role: "note" }, this.t("note.partial"))
+      : null;
+    root.replaceChildren(
+      h(
+        "div",
+        { class: note === null ? "sc-app" : "sc-app sc-has-note" },
+        bar,
+        note,
+        this.stage,
+        footer,
+      ),
+    );
 
     this.bindStage();
     this.bindSearch();
@@ -465,7 +483,7 @@ class Viewer {
           h(
             "div",
             { class: "sc-muted sc-mono" },
-            `${this.t("panel.default")} ${column.defaultExpression}`,
+            `${this.t("panel.default")} ${describeDefinition(column.defaultExpression, this.t)}`,
           ),
         );
       }
@@ -565,7 +583,11 @@ class Viewer {
         this.listSection(
           this.t("panel.checks"),
           table.checkConstraints.map((check) =>
-            h("li", { class: "sc-mono" }, `${check.name}: ${check.expression}`),
+            h(
+              "li",
+              { class: "sc-mono" },
+              `${check.name}: ${describeDefinition(check.expression, this.t)}`,
+            ),
           ),
         ),
       );

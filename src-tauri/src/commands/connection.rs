@@ -1,8 +1,8 @@
 //! Connecting to a database and extracting its schema.
 
 use schemacraft_core::inspectors::{
-    ConnectionSettings, InspectionOptions, InspectionProgress, ProgressReporter, ServerInformation,
-    create_inspector,
+    ConnectionSettings, DatabaseDescription, InspectionOptions, InspectionProgress,
+    ProgressReporter, ServerInformation, create_inspector,
 };
 use schemacraft_core::model::SchemaSnapshot;
 use serde::Serialize;
@@ -52,17 +52,25 @@ pub async fn list_databases(
     Ok(inspector.list_databases().await?)
 }
 
-/// User schemas of the selected database, for the schema filter.
+/// User schemas of the selected database, for the schema filter, and what the login is
+/// predicted to see there, for the access notice. Runs the access probe and reads no object.
 #[tauri::command]
-pub async fn list_schemas(
+pub async fn describe_database(
     app: AppHandle,
     settings: ConnectionSettings,
-) -> Result<Vec<String>, CommandError> {
+) -> Result<DatabaseDescription, CommandError> {
     let inspector = create_inspector(with_stored_password(&app, settings).await?)?;
-    Ok(inspector.list_schemas().await?)
+    let description = inspector.describe_database().await?;
+    tracing::debug!(
+        schemas = description.schemas.len(),
+        access = ?description.access.level,
+        "describe_database succeeded"
+    );
+    Ok(description)
 }
 
-/// Extracts the schema, streaming progress through `on_event`.
+/// Extracts the schema, streaming progress through `on_event`. `cancel_inspection` stops it
+/// at any point, connecting included.
 #[tauri::command]
 pub async fn inspect_database(
     app: AppHandle,

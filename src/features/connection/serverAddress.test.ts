@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatServerAddress, parseServerAddress } from "./serverAddress";
+import { formatServerAddress, formatTarget, parseServerAddress } from "./serverAddress";
 
 describe("parseServerAddress", () => {
   it("accepts a bare host", () => {
@@ -50,5 +50,39 @@ describe("formatServerAddress", () => {
         expect(formatServerAddress(parsed.address)).toBe(input);
       }
     }
+  });
+});
+
+// The same cases as `format_target` in crates/schemacraft-core/src/inspectors/sqlserver/settings.rs.
+describe("formatTarget", () => {
+  it("spells out the default port, as Rust does", () => {
+    expect(formatTarget({ host: "localhost", instance: null, port: null })).toBe("localhost,1433");
+    expect(formatTarget({ host: "db.example.com", instance: null, port: null })).toBe(
+      "db.example.com,1433",
+    );
+  });
+
+  it("keeps an explicit port", () => {
+    expect(formatTarget({ host: "db.example.com", instance: null, port: 14333 })).toBe(
+      "db.example.com,14333",
+    );
+  });
+
+  it("lets a named instance win over the port, and trims like Rust", () => {
+    expect(formatTarget({ host: " localhost ", instance: "SQLEXPRESS", port: null })).toBe(
+      "localhost\\SQLEXPRESS",
+    );
+    expect(formatTarget({ host: "localhost", instance: "SQLEXPRESS", port: 50123 })).toBe(
+      "localhost\\SQLEXPRESS",
+    );
+    expect(formatTarget({ host: "localhost", instance: "  ", port: null })).toBe("localhost,1433");
+  });
+
+  it("names the same server once whatever notation was typed", () => {
+    const names = ["db", "db,1433", "tcp:db,1433"].map((input) => {
+      const parsed = parseServerAddress(input);
+      return parsed.ok ? formatTarget(parsed.address) : null;
+    });
+    expect(names).toEqual(["db,1433", "db,1433", "db,1433"]);
   });
 });

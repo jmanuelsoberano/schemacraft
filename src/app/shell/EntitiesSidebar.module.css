@@ -87,6 +87,14 @@
   overflow: auto;
 }
 
+.footer {
+  margin: 0;
+  padding: var(--space-2) var(--space-4) var(--space-4);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
 .groups,
 .entities {
   margin: 0;

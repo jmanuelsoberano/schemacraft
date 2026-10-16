@@ -54,9 +54,30 @@ export function parseServerAddress(input: string): ServerAddressParse {
   return { ok: true, address: { host, instance, port } };
 }
 
-/** The address as users write it, e.g. `localhost\SQLEXPRESS` or `db.example.com,1433`. */
+/** TCP port SQL Server listens on when an address names neither a port nor an instance. */
+const DEFAULT_SQL_SERVER_PORT = 1433;
+
+/**
+ * The address as users typed it, e.g. `localhost\SQLEXPRESS` or `db.example.com,14333`. Used
+ * only to fill the Server field again; everything that names or identifies the endpoint uses
+ * {@link formatTarget}.
+ */
 export function formatServerAddress(address: ServerAddress): string {
   const instancePart = address.instance === null ? "" : `\\${address.instance}`;
   const portPart = address.port === null ? "" : `,${address.port}`;
   return `${address.host}${instancePart}${portPart}`;
+}
+
+/**
+ * Canonical name of the endpoint, identical to Rust `format_target`: `host\instance` for a
+ * named instance, whose port SQL Browser resolves, otherwise `host,port` with the default port
+ * spelled out. The status bar, the history and the credential store all name a server this way,
+ * so `db` and `db,1433` are one server everywhere.
+ */
+export function formatTarget(address: ServerAddress): string {
+  const host = address.host.trim();
+  const instance = address.instance?.trim() ?? "";
+  return instance === ""
+    ? `${host},${address.port ?? DEFAULT_SQL_SERVER_PORT}`
+    : `${host}\\${instance}`;
 }

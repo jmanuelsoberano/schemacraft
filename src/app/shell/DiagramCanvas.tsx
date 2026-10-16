@@ -15,6 +15,7 @@ import type {
   ReactFlowInstance,
   Viewport,
 } from "@xyflow/react";
+import { DatabaseZap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type { ActionsById } from "@/app/actions/action";
@@ -43,7 +44,9 @@ import type {
 import { exposeFlowInstance } from "@/app/developmentHooks";
 import { ProjectNotice } from "@/features/project/ProjectNotice";
 import { useProjectStore } from "@/features/project/projectStore";
+import { emptySchemaReason } from "@/features/schema/coverage";
 import { useI18n } from "@/shared/i18n/useI18n";
+import { EmptyState } from "@/shared/ui/EmptyState";
 import { Spinner } from "@/shared/ui/Spinner";
 
 import styles from "./DiagramCanvas.module.css";
@@ -71,8 +74,38 @@ export function DiagramCanvas({ actions }: DiagramCanvasProps) {
     <div className={styles.canvas}>
       <ProjectNotice />
       <FlowCanvas />
-      {hasProject ? null : <WelcomeOverlay actions={actions} />}
+      {hasProject ? <EmptySchemaNotice /> : <WelcomeOverlay actions={actions} />}
       <RelationMarkers />
+    </div>
+  );
+}
+
+/**
+ * Neutral note over an empty canvas when the open project holds no table or view, saying why:
+ * the database has none, the read was narrowed to none, or the login sees none.
+ */
+function EmptySchemaNotice() {
+  const { t } = useI18n();
+  const database = useProjectStore((state) => state.project?.content.snapshot.databaseName ?? "");
+  const reason = useProjectStore((state) =>
+    state.project === null
+      ? null
+      : emptySchemaReason(state.project.content.snapshot, state.project.content.inspection),
+  );
+  if (reason === null) {
+    return null;
+  }
+  return (
+    <div className={styles.emptySchema}>
+      <EmptyState
+        icon={DatabaseZap}
+        title={
+          reason === "notVisible"
+            ? t("sidebar.empty.notVisible.title")
+            : t("sidebar.empty.database.title")
+        }
+        description={t(`sidebar.empty.${reason}.description`, { database })}
+      />
     </div>
   );
 }

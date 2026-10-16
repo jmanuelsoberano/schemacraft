@@ -16,16 +16,16 @@ structure as an interactive map: layers, components, data stores, flows and how 
 ```
 schemacraft/
 ├── crates/schemacraft-core/   Rust library, free of Tauri: everything the app knows and does
-│   ├── src/model/             pure schema types (tables, columns, keys, snapshot)
-│   ├── src/inspectors/        DatabaseInspector strategy, errors, progress, SQL Server implementation
-│   ├── src/project/           .scraft documents, saved connections, canvas state
+│   ├── src/model/             pure schema types (tables, columns, keys, snapshot), access profile, carry-over
+│   ├── src/inspectors/        DatabaseInspector strategy, errors, progress, SQL Server implementation and access probe
+│   ├── src/project/           .scraft documents and their migrations, saved connections, canvas state
 │   ├── src/diff/              comparison of two snapshots behind "refresh from database"
 │   ├── src/preferences/       connection history and recent projects (per-user JSON file)
 │   ├── src/credentials/       CredentialStore strategy: Windows Credential Manager, memory
 │   ├── src/export/            SVG to PNG and PDF rendering with bundled fonts
 │   ├── src/fs.rs              atomic file writes shared by projects, preferences and exports
 │   ├── assets/fonts/          TTF fonts embedded in the exports
-│   └── tests/                 integration tests and SQL fixtures (run against a real server)
+│   └── tests/                 integration tests, SQL fixtures and low-privilege logins (run against a real server)
 ├── src-tauri/                 Rust binary: Tauri host, IPC commands, job registry, logging, configuration
 ├── src/                       React + TypeScript frontend
 │   ├── app/                   composition root: shell, actions, palette, global styles, dev hooks
@@ -35,19 +35,20 @@ schemacraft/
 │   │   └── styles/            design tokens and base styles
 │   ├── features/              one folder per product capability
 │   │   ├── about/             About dialog
+│   │   ├── access/            partial-access chip and bar, access report, GRANT script
 │   │   ├── canvas/            entity nodes, relation edges, layouts and their worker, geometry
 │   │   ├── connection/        connection dialog, history, flow store, progress, change review
 │   │   ├── export/            export dialog and store, SVG renderer, standalone HTML packaging
 │   │   ├── preferences/       mirror of the preferences file: history and recent projects
 │   │   ├── project/           open project store, open/save flows, unsaved-changes guard, undo
-│   │   └── schema/            entity list helpers and data type formatting
+│   │   └── schema/            entity list helpers, data types, expression texts and coverage
 │   ├── shared/                cross-cutting modules
 │   │   ├── brand/             logo and author credits
 │   │   ├── contracts/         TypeScript types generated from Rust (ts-rs)
 │   │   ├── errors/            title, hint and remedy for every error kind
 │   │   ├── i18n/              message catalogues and translation hook
 │   │   ├── ipc/               the only door to Tauri: commands, dialogs, window, runtime; preview backends
-│   │   ├── settings/          per-window UI settings (theme, language, sidebar)
+│   │   ├── settings/          per-window UI settings (theme, language, sidebar, closed access notices)
 │   │   └── ui/                accessible UI primitives (Radix based)
 │   └── viewer/                standalone viewer embedded in exported HTML files
 ├── assets/brand/              source artwork for the application icon
@@ -151,13 +152,15 @@ the maintained line. `bb8-tiberius` still requires tiberius 0.12, so the pool us
 small `ManageConnection` implementation in `inspectors/sqlserver/pool.rs`: it resolves named
 instances through SQL Browser, bounds the TCP connection with a timeout, runs the login
 handshake and validates idle sessions with `SELECT 1`. Pools live for one operation (test,
-listing or inspection) and are dropped afterwards, so the application never keeps idle sessions
-on a server. An inspection opens up to four sessions and runs its seven set-based catalog
-queries concurrently; the schema filter is applied while assembling, and foreign keys whose
-other end falls outside the selection are dropped. The schema picker lists only schemas that
-hold user tables or views: ownership of the fixed-role schemas (`db_datareader` and friends) is
-not reliable in real databases, and an empty schema has nothing to filter. Fallback if a
-regression appears: tiberius 0.12.3 with `bb8-tiberius`.
+listing, description or inspection) and are dropped afterwards, so the application never keeps
+idle sessions on a server. An inspection opens up to four sessions and runs the access probe
+(ADR-034) and its seven set-based catalog queries concurrently; the schema filter is applied
+while assembling. A foreign key whose referenced table is visible but outside the selection is
+dropped, because an edge needs both tables on the diagram; one whose referenced table the login
+cannot see is kept apart (ADR-034). The schema picker lists the schemas in which the access
+probe finds a table or view the login can see: ownership of the fixed-role schemas
+(`db_datareader` and friends) is not reliable in real databases, and an empty schema has nothing
+to filter. Fallback if a regression appears: tiberius 0.12.3 with `bb8-tiberius`.
 
 ### ADR-010: The portable executable relies on the WebView2 runtime
 
@@ -179,8 +182,16 @@ The connection dialog has a single Server field that accepts `host`, `host\insta
 `host,port`, a `tcp:` prefix and the `.` and `(local)` aliases, parsed by
 `features/connection/serverAddress.ts`.
 
+The field keeps the notation the user typed. Everywhere else a server has one canonical name,
+the one Rust `format_target` produces: `host\instance` for a named instance, otherwise
+`host,port` with the default port 1433 spelled out. The credential keys use it, and
+`formatTarget` in `serverAddress.ts` mirrors it for the status bar, the connection history and
+the keys of saved connections, with parity tests on the Rust cases; `formatServerAddress` only
+refills the field.
+
 Why: it is what SQL Server users already type in SSMS and connection strings. Separate host,
-instance and port fields would add a mode switch and three validations for no gain.
+instance and port fields would add a mode switch and three validations for no gain. One
+canonical name makes `db` and `db,1433` the same server in every list.
 
 ### ADR-012: Errors carry a classification, and the UI owns the remedy
 
@@ -192,34 +203,52 @@ shown only as secondary detail.
 Why: the core stays free of presentation text, the frontend never parses error strings, and
 every error states what happened and what to do next, as the UX principles require.
 
-### ADR-013: Progress over an ordered channel, cooperative cancellation
+### ADR-013: Long jobs report over an ordered channel and stop on a cancellation token
 
-`inspect_database` streams `InspectionEvent` messages through `tauri::ipc::Channel`, which
-delivers in order. The first event carries a job id; `cancel_inspection` cancels the matching
-`CancellationToken`, which the inspection checks between stages and while catalog queries run.
+Inspection and export are the long jobs, and both follow one pattern. The command registers a
+`CancellationToken` under a new job id in its `Jobs` registry (`src-tauri/src/state.rs`) and
+streams events through `tauri::ipc::Channel`, which delivers in order: first `Started { jobId }`,
+then `Progress` with the job's own payload (`InspectionProgress` or `ExportStage`).
+`cancel_inspection` and `cancel_export` cancel the token of a job id and answer `UnknownJob`
+when no such job is running. An async job races all of its work against the token:
+`SqlServerInspector::inspect` runs inside `tokio::select!` with `biased`, so opening the pool
+and the login handshake can be cancelled too, and a server that accepts the TCP connection and
+never answers is abandoned at once; dropping the unfinished work closes its sessions. A blocking
+job, such as the export on `run_blocking`, checks the token between its steps and touches the
+destination only after the last check.
 
-Why: channels are the Tauri mechanism designed for ordered, high-frequency updates, and
-cooperative cancellation never leaves a session half-way through a query.
+Why: channels are the Tauri mechanism designed for ordered, high-frequency updates, and one
+shape for every long job keeps the progress views and the Cancel buttons alike. Racing the
+token makes Cancel answer at once whatever the server does, and a blocking job that stops
+between steps never leaves a half-written file.
 
 ### ADR-014: Simulated backend for browser previews
 
 Development builds running outside the desktop runtime load a simulated connection backend
 through a dynamic import (`shared/ipc/previewConnectionBackend.ts`). Server names such as
 `auth-fail`, `cert-fail`, `down` and `slow` reproduce the classified failures; anything else
-succeeds with a small fixture schema. Production builds never include it, and inside Tauri it
-is never loaded.
+succeeds with a fixture schema that holds stored-form `CHECK` and `DEFAULT` texts, unique and
+plain indexes, a computed column, a disabled and a `SET NULL` foreign key. A server name that
+contains `partial`, `nothing` or `empty` chooses what the login sees: part of the schema, no
+table or view, or an empty database. `previewAccess.ts` follows the Rust access verdicts and the
+refresh merge of ADR-034, so the notices and the review can be checked without a server. The
+preview's recent projects include a capture with partial access, an upgraded 1.0 file and a
+file of a newer format, which opens read-only (ADR-035). Production builds never include any of
+it, and inside Tauri it is never loaded.
 
 Why: the connection flow can be designed, reviewed and screenshot in a plain browser without a
 database, in both themes and languages, which is how the UX definition of done is checked.
 
 ### ADR-015: `.scraft` is versioned, pretty JSON written atomically
 
-A project file is one JSON document: a header (`formatVersion`, `savedAt`, `savedWith`)
-followed by the content the application holds in memory, `ProjectContent`: the connection
-without its password, the inspection options, the snapshot and the canvas state. Readers parse
-the header first and refuse newer format versions with a classified error; missing fields of
-older files take defaults. Files are written to a sibling temporary file, flushed to the disk
-and renamed over the destination, so a crash or a power cut never leaves a truncated project
+A project file is one JSON document: a header (`formatVersion`, `minReaderVersion`, `savedAt`,
+`savedWith`) followed by the content the application holds in memory, `ProjectContent`: the
+connection without its password, the inspection options, the snapshot with its access profile
+and the canvas state. The header decides how a file is read before its content is interpreted:
+an older format is upgraded in memory, a newer one opens read-only when its `minReaderVersion`
+allows it and is refused with a classified error otherwise, and keys this version does not know
+survive a save (ADR-035). Files are written to a sibling temporary file, flushed to the disk and
+renamed over the destination, so a crash or a power cut never leaves a truncated project
 behind; the preferences and the exports share the same helper (`src/fs.rs`). Node states are
 stored sorted by qualified name, so saving an unchanged project twice yields the same bytes
 except for `savedAt`.
@@ -247,6 +276,27 @@ snapshot and carries the canvas state over to every surviving entity, changed or
 entities wait for a layout. A project opened from a file reconnects through the same dialog,
 prefilled from the saved connection, because the password is never on disk.
 
+What the fresh capture could not see is never a change (ADR-034). The diff compares the saved
+snapshot with the fresh one merged by `SchemaSnapshot::with_unchecked_facts_from`, so a table, a
+view, a text or a foreign key the login can no longer see is listed as not checked, with the
+moment it was last read, instead of removed or changed. Texts are compared only when both sides
+are readable (`Definition::differs_from`), a default that appears or disappears counts only when
+the side that has it knew its state (`Definition::is_known`: readable or not visible), and a
+`CHECK`'s enabled flag is compared only when both sides recorded it, and the review marks the
+side that is disabled. A key whose referenced table became invisible keeps what the fresh
+capture read of its referencing side (columns, actions and enabled flag) and takes only the
+referenced table and columns from the saved key, so a change to it is still reported; when its
+referencing columns changed, the saved key is not kept at all. Facts the saved snapshot could
+not state and the fresh one reads (a text that was not visible or not recorded, a foreign key
+whose referenced table became visible, and, next to a 1.0 file, which recorded no access, a
+bound default, a default whose text is not visible or a key to an invisible table, none of which
+1.0 could hold) are listed as now available, and a new verdict on the login's access sets
+`access_changed`. A review
+is up to date only when none of these is present either (`SchemaDiff::is_up_to_date`); otherwise
+it offers to apply, worded "Update project" when no object changed. Applying runs the same merge
+(`ProjectContent::with_refreshed_snapshot`), so the project keeps every fact the review called
+not checked and lists it in `snapshot.carriedOver`.
+
 ### ADR-017: Preferences live in one Rust-owned file in the user's configuration directory
 
 The connection history (last ten endpoints, most recent first, never a password) and the
@@ -258,9 +308,21 @@ insensitive) and by path. The Rust side applies every change and returns the who
 the frontend mirrors it in a store and never writes the file itself. A damaged file is logged
 and replaced by defaults rather than blocking start-up.
 
+The webview's localStorage holds only conveniences of the window, never a secret and never
+domain history, under two keys. `schemacraft.settings` keeps the theme, the language, whether
+the entities panel is open and its width, and the signatures of the partial-access notices the
+user closed (endpoint, database and verdicts; the 50 most recent). `schemacraft.connection`
+keeps the last connection draft with the password always blank. Each field of the settings is
+checked on its own when it is read back (`mergePersistedSettings`), so a damaged value or one
+from another version falls back to its default. Deleting `preferences.json` clears the history
+and the recent projects but neither key; clearing the WebView2 data under
+`%LOCALAPPDATA%\com.jmanuelsoberano.schemacraft` resets both keys and touches neither the
+history nor the remembered passwords.
+
 Why: a file the user can find and back up, consistent with the project format, independent of
 the webview's storage, and ready to take theme and language later. Keeping it in AppData rather
-than next to the executable keeps the portable build usable from read-only locations.
+than next to the executable keeps the portable build usable from read-only locations. What
+stays in localStorage only saves the user a click, so losing it costs nothing.
 
 ### ADR-018: Native dialogs through the Tauri plugin, preview backends behind a resolver
 
@@ -387,10 +449,11 @@ dialog, stays out of the picture.
 
 ### ADR-025: The standalone HTML is a viewer with the schema embedded, bundled by a Vite plugin
 
-The HTML export embeds the visible part of the schema as JSON (never the server, the login or the
-server version: only the database name, the objects on the diagram and their positions) together
-with a small vanilla TypeScript viewer (`src/viewer`) that draws with the renderer of ADR-023 in
-the browser: pan and zoom, the three detail levels, search, neighbour highlighting, a detail
+The HTML export embeds the visible part of the schema as JSON (never the server, the login, the
+server version or the access probe: only the database name, the objects on the diagram, their
+positions and the verdict on the login's access, ADR-034) together with a small vanilla
+TypeScript viewer (`src/viewer`) that draws with the renderer of ADR-023 in the browser: pan and
+zoom, the three detail levels, search, neighbour highlighting, a detail
 panel per table and light and dark themes. A plugin in `vite.config.ts` bundles the viewer on
 demand into a virtual module (`virtual:schemacraft-viewer`), so the application build stays one
 command and the viewer never pulls React or the application stores. Fonts are embedded as
@@ -534,6 +597,117 @@ separate job, because a job skipped through a failed dependency would count as p
 
 Why: a pull request that only touches the documentation should not wait fifteen minutes for a
 Rust build, and the required checks must still fail closed when the classification itself fails.
+
+### ADR-034: Honest access: one capability probe, and unknown is not none
+
+A login may see only part of a database, and SQL Server says so silently: the catalog views
+leave out the objects it cannot see and return `NULL` for the texts it cannot read. SchemaCraft
+1.0 showed those gaps as facts: an empty `CHECK` expression, a column without a default, no
+foreign key. Since 1.1 the application measures what the login can see and never presents a gap
+as an absence.
+
+One access probe per database (`inspectors/sqlserver/access.rs`), a single batch with two
+result sets, reads the facts: `VIEW DEFINITION`, `SELECT` and `VIEW SECURITY DEFINITION` on the
+database; the explicit `DENY` rows on `VIEW DEFINITION`, `SELECT` and `CONTROL` for the login's
+user and its roles, at the database, schema and object level (an object row only for the object
+itself, so a column `DENY` hides nothing), and none for `dbo`, which `sysadmin` members and the
+database owner enter as, since SQL Server applies no denial to it; whether any user table or
+view is visible; the
+database user when the login has one of its own; and, per schema, the two grants, a denial flag
+and whether it holds a visible table or view. `describe_database` runs it when a database is
+selected, in place of the schema listing, and every inspection runs it next to the catalog
+queries as the `CheckingAccess` stage. Pure rules in `model/access.rs` turn the facts into a
+level (`full`, `partial`, `empty`, `nothingVisible`) and a coverage per kind of fact. Only the
+object list and the `CHECK` and `DEFAULT` texts can be partial, because the columns, keys,
+indexes and foreign keys of a visible table need no further permission. A login that sees
+nothing reads as `empty` only when it could have seen everything (`VIEW DEFINITION` on the
+database and no denial); otherwise it is `nothingVisible`, since SQL Server cannot tell an empty
+database from a hidden one, so a `db_datareader` member on an empty database reads as nothing
+visible. A login with `VIEW DEFINITION` and without `VIEW SECURITY DEFINITION` cannot see its
+own denials, which then count as unknown. The profile (the facts, the scope they were judged in
+and the verdicts) is frozen in the snapshot as `SchemaSnapshot.access`, and a file without one
+says "not recorded". The prediction made at database selection and the capture can disagree,
+for instance when `OBJECT_DEFINITION` still returns a bound default to a reader.
+
+The model keeps unknown apart from none. `CHECK` and `DEFAULT` texts are a `Definition`:
+`readable { text }`, `notVisible`, `notRecorded` (an upgraded 1.0 file could not tell) or
+`unknown`, the fallback for a status written by a newer version. Whether a column has a default
+comes from `sys.columns.default_object_id`, which every login sees, and legacy bound defaults are
+read with `OBJECT_DEFINITION`. A foreign key whose referenced table the login cannot see is kept
+in `foreignKeysToInvisibleTables` with its local columns, actions and enabled flag: its columns
+keep the key badge, and no edge is drawn. A refresh that sees less keeps what it cannot check
+(ADR-016).
+
+The interface discloses in grades (`src/features/access`). Full access adds nothing. Partial
+access adds one polite line in the connection dialog; a dismissible bar above the entities list,
+remembered per endpoint, database and verdict, which moves focus to the entities search when it
+closes; a quiet chip in the status bar; and "not available" wherever a `CHECK` or `DEFAULT` text
+is shown. Lists, counts and empty states say "none" only under complete coverage, so the sidebar
+shows one muted footer instead and the status bar leaves out a count of zero. The Access report
+(`view.accessReport`, Ctrl+Shift+A) shows the coverage, the keys to invisible tables, the facts
+kept from earlier reads with their date, the permissions per schema and a copyable
+least-privilege script, `GRANT VIEW DEFINITION TO [user]`, whose comments say that on SQL Server
+2022 and later the permission also shows users, roles and permissions. SchemaCraft never runs
+it, and does not offer it when a `DENY` explains the gap, because a grant does not lift a
+denial. A login that sees nothing gets a danger notice and cannot start a read; an empty
+database gets neutral notes and empty states. An export of a partial capture says so in one
+line (a footnote in SVG, PDF and PNG, a header line in HTML) and embeds only the level, never the
+probe. The wording is "not visible to this login" and "no visible para este inicio de sesión",
+never "hidden" or "oculto", which mean hidden on the canvas. CI reads one fixture database as
+logins with each of these profiles (`tests/sqlserver_permissions.rs`).
+
+Why: SchemaCraft is used to understand a database, and a missing table, text or relationship
+that looks like an absence is a false statement the user will act on. SQL Server cannot tell
+the user, so the application must. One probe classifies every tested permission profile in one
+round trip, `VIEW DEFINITION` is the single grant that completes the schema without exposing
+data, and disclosing in grades keeps the common case, full access, free of warnings.
+
+### ADR-035: Project format 2 reads forward: two version numbers, migrations, kept unknown keys
+
+The header of a project carries two numbers, like the read and write versions of an SQLite
+file: `formatVersion`, the format the file follows, and `minReaderVersion`, the oldest format a
+reader must understand to open it. This version writes format 2 with `minReaderVersion` 2.
+`read_project` parses the JSON once and reads both before the content. A file whose
+`minReaderVersion` (by default its `formatVersion`) is above 2 is refused as
+`UnsupportedFormatVersion`; a newer format within that limit opens read-only; an older one is
+upgraded in memory. A newer file whose content this version cannot parse is refused as
+unsupported as well, never reported as damaged: a value it does not know is not damage. The
+command returns an `OpenedProject` with `isReadOnly`. A read-only project can be rearranged and
+exported, is never marked unsaved and cannot be saved, saved as or refreshed; a status-bar chip
+says so and names the version that wrote it.
+
+Upgrades live in `project/migrations.rs`, one step per format, applied to the raw JSON before
+the typed parse. They never fail and leave what they do not recognise alone, so the parser still
+reports real damage. Format 1 to 2 turns each `CHECK` and default text into a readable
+`Definition` and an empty one into `notRecorded`, and marks a missing default `notRecorded` in a
+schema that had an empty `CHECK` text, where 1.0 could not read texts; the snapshot gets no
+access profile and `CHECK` constraints no enabled flag. A 1.0 file is saved as format 2, which
+1.0 refuses with its own message.
+
+Keys this version does not know are kept at four levels, the document root, the snapshot root,
+the canvas and each node, in flattened `unknown` maps that the contracts leave out
+(`#[ts(skip)]`). The frontend carries them along, and `Project::new` drops header keys found
+among them, so the header is never written twice. Snapshot keys go when a refresh replaces the
+snapshot, and exports never embed any of them (ADR-025). `#[serde(other)]` stays in an attribute
+of its own, because ts-rs drops a serde attribute with a key it does not model, and the
+workspace enables ts-rs's `no-serde-warnings` so the fallback prints no warning on every build.
+
+The rule for adding data: a new fact inside tables, views, columns, keys, indexes or
+constraints, a new value of any persisted enum, or a changed meaning raises `formatVersion`,
+because an older version would drop or misstate it on save, and with the higher number it opens
+the file read-only instead. `minReaderVersion` rises too when an older reader would misread the
+file rather than merely miss something: a changed meaning, or a new value of a closed enum such
+as `AccessLevel`, `Completeness`, `SnapshotFact`, `IndexKind`, `ReferentialAction`,
+`DetailLevel` or `LayoutKind`, which the older parser cannot read. `Definition` is the open
+exception, since older readers show an unknown status as "not available", and a new enum may
+take the same kind of fallback. A key at one of the four kept levels that stays true whatever an
+older version does around it, such as a colour per node, needs no bump. Every bump adds a
+migration step, a fixture file of the previous format and a test that it upgrades and saves.
+
+Why: format 2 is a one-way door for 1.0 users, so the doors after it should open both ways. Two
+numbers let a later version add facts without locking 1.1 out, opening read-only keeps an older
+version from destroying what it does not understand, and migrations on raw JSON keep today's
+types free of yesterday's shapes.
 
 ## Milestones
 

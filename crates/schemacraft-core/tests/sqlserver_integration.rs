@@ -1,8 +1,5 @@
-//! Integration tests against a real SQL Server instance.
-//!
-//! They run only when `SCHEMACRAFT_TEST_MSSQL_HOST`, `SCHEMACRAFT_TEST_MSSQL_PORT`,
-//! `SCHEMACRAFT_TEST_MSSQL_USER` and `SCHEMACRAFT_TEST_MSSQL_PASSWORD` are set; otherwise every
-//! test prints a notice and passes. `scripts/dev-sqlserver.ps1` starts a suitable container.
+//! Integration tests against a real SQL Server instance, connected as a login that sees
+//! everything. `tests/common` says when they run.
 
 #![allow(
     clippy::unwrap_used,
@@ -13,28 +10,28 @@
     clippy::too_many_lines
 )]
 
-use std::collections::HashSet;
-use std::sync::{LazyLock, Mutex};
+mod common;
+
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use schemacraft_core::diff::{
     ChangeCounts, ColumnChange, ColumnProperty, ForeignKeyChange, ForeignKeyProperty, IndexChange,
     SchemaDiff, TableChange,
 };
-use schemacraft_core::inspectors::sqlserver::{
-    EncryptionMode, PasswordSource, SqlServerAuthentication, SqlServerConnectionSettings,
-};
+use schemacraft_core::inspectors::sqlserver::SqlServerConnectionSettings;
 use schemacraft_core::inspectors::{
-    ConnectionSettings, DatabaseInspector, InspectionOptions, InspectionProgress, InspectionStage,
-    InspectorError, InspectorErrorKind, ProgressReporter, SilentProgress, create_inspector,
+    InspectionOptions, InspectionProgress, InspectionStage, InspectorError, InspectorErrorKind,
+    ProgressReporter, SilentProgress,
 };
-use schemacraft_core::model::{IndexKind, QualifiedName, ReferentialAction, SchemaSnapshot};
+use schemacraft_core::model::{
+    AccessLevel, Completeness, Definition, IndexKind, QualifiedName, ReferentialAction,
+    SchemaSnapshot, UnknownFields,
+};
 use schemacraft_core::project::{CanvasState, NodeState, Point};
-use secrecy::SecretString;
-use tiberius::Client;
-use tokio::net::TcpStream;
-use tokio_util::compat::TokioAsyncWriteCompatExt;
 use tokio_util::sync::CancellationToken;
+
+use self::common::{TestServer, ensure_seeded, inspector, settings, test_server};
 
 const FIXTURE_DATABASE: &str = "SchemaCraftFixture";
 const STRESS_DATABASE: &str = "SchemaCraftStress";
@@ -45,109 +42,6 @@ const CHANGES_SCRIPT: &str = include_str!("fixtures/sqlserver/changes.sql");
 
 /// Budget for inspecting 200 tables; the product target is 3 seconds on a local network.
 const STRESS_BUDGET: Duration = Duration::from_secs(5);
-
-struct TestServer {
-    host: String,
-    port: u16,
-    user: String,
-    password: String,
-}
-
-fn test_server() -> Option<TestServer> {
-    let read = |name: &str| std::env::var(name).ok().filter(|value| !value.is_empty());
-    let Some(host) = read("SCHEMACRAFT_TEST_MSSQL_HOST") else {
-        eprintln!("skipping: SCHEMACRAFT_TEST_MSSQL_* variables are not set");
-        return None;
-    };
-    Some(TestServer {
-        host,
-        port: read("SCHEMACRAFT_TEST_MSSQL_PORT")
-            .and_then(|port| port.parse().ok())
-            .unwrap_or(1433),
-        user: read("SCHEMACRAFT_TEST_MSSQL_USER").unwrap_or_else(|| "sa".to_string()),
-        password: read("SCHEMACRAFT_TEST_MSSQL_PASSWORD").unwrap_or_default(),
-    })
-}
-
-fn settings(server: &TestServer, database: Option<&str>) -> SqlServerConnectionSettings {
-    SqlServerConnectionSettings {
-        host: server.host.clone(),
-        instance: None,
-        port: Some(server.port),
-        database: database.map(str::to_string),
-        authentication: SqlServerAuthentication::SqlLogin {
-            username: server.user.clone(),
-            password: PasswordSource::Provided {
-                value: SecretString::from(server.password.clone()),
-            },
-        },
-        encryption: EncryptionMode::Mandatory,
-        // The container presents a self-signed certificate.
-        trust_server_certificate: true,
-        connect_timeout_seconds: 10,
-    }
-}
-
-fn inspector(settings: SqlServerConnectionSettings) -> Box<dyn DatabaseInspector> {
-    create_inspector(ConnectionSettings::SqlServer(settings)).expect("settings are valid")
-}
-
-/// Splits a script on `GO` separators, the way sqlcmd does.
-fn batches(script: &str) -> Vec<String> {
-    let mut batches = Vec::new();
-    let mut current = String::new();
-    for line in script.lines() {
-        if line.trim().eq_ignore_ascii_case("GO") {
-            if !current.trim().is_empty() {
-                batches.push(std::mem::take(&mut current));
-            }
-            current.clear();
-        } else {
-            current.push_str(line);
-            current.push('\n');
-        }
-    }
-    if !current.trim().is_empty() {
-        batches.push(current);
-    }
-    batches
-}
-
-async fn run_script(server: &TestServer, script: &str) {
-    let config = settings(server, None)
-        .to_tiberius_config()
-        .expect("settings are valid");
-    let tcp = TcpStream::connect(config.get_addr())
-        .await
-        .expect("TCP connection to the test server");
-    tcp.set_nodelay(true).expect("nodelay");
-    let mut client = Client::connect(config, tcp.compat_write())
-        .await
-        .expect("login to the test server");
-
-    for batch in batches(script) {
-        client
-            .simple_query(batch.as_str())
-            .await
-            .unwrap_or_else(|error| panic!("batch failed: {error}\n{batch}"))
-            .into_results()
-            .await
-            .unwrap_or_else(|error| panic!("batch failed: {error}\n{batch}"));
-    }
-}
-
-/// Seeds each fixture database once per test run. The lock is held while the script runs, so
-/// tests that need the same database wait for it instead of connecting while it is recreated.
-static SEEDED: LazyLock<tokio::sync::Mutex<HashSet<&'static str>>> =
-    LazyLock::new(|| tokio::sync::Mutex::new(HashSet::new()));
-
-async fn ensure_seeded(server: &TestServer, database: &'static str, script: &str) {
-    let mut seeded = SEEDED.lock().await;
-    if !seeded.contains(database) {
-        run_script(server, script).await;
-        seeded.insert(database);
-    }
-}
 
 #[derive(Default)]
 struct RecordingProgress {
@@ -264,12 +158,26 @@ async fn lists_databases_and_schemas() {
     );
     assert!(!databases.iter().any(|name| name == "master"));
 
-    let schemas = inspector(settings(&server, Some(FIXTURE_DATABASE)))
-        .list_schemas()
+    let description = inspector(settings(&server, Some(FIXTURE_DATABASE)))
+        .describe_database()
         .await
-        .expect("schemas");
+        .expect("database description");
     // `staging` is empty and `db_datareader` is owned by dbo in the fixture; neither is offered.
-    assert_eq!(schemas, ["dbo", "hr", "sales"]);
+    assert_eq!(description.schemas, ["dbo", "hr", "sales"]);
+    let access = &description.access;
+    assert_eq!(access.level, AccessLevel::Full);
+    assert_eq!(access.coverage.objects, Completeness::Complete);
+    assert_eq!(access.coverage.definitions, Completeness::Complete);
+    assert_eq!(access.probe.explicit_denials, Some(0));
+    assert_eq!(access.probe.database_user.as_deref(), Some("dbo"));
+    // The empty schema is still judged: an object there would have been visible.
+    assert!(
+        access
+            .probe
+            .schemas
+            .iter()
+            .any(|schema| schema.name == "staging" && !schema.has_visible_objects)
+    );
 }
 
 #[tokio::test]
@@ -285,6 +193,10 @@ async fn inspects_tables_columns_and_types() {
             .unwrap_or_default()
             .starts_with("Microsoft SQL Server")
     );
+    let access = snapshot.access.as_ref().expect("an access profile");
+    assert_eq!(access.level, AccessLevel::Full);
+    assert_eq!(access.counts.definitions_not_visible, 0);
+    assert_eq!(snapshot.foreign_keys_to_invisible_tables, []);
     let table_names: Vec<String> = snapshot
         .tables
         .iter()
@@ -325,11 +237,17 @@ async fn inspects_tables_columns_and_types() {
     assert!(customers.columns[0].is_identity);
     assert!(customers.columns[3].is_nullable);
     assert_eq!(
-        customers.columns[4].default_expression.as_deref(),
+        customers.columns[4]
+            .default_expression
+            .as_ref()
+            .and_then(Definition::text),
         Some("(sysutcdatetime())")
     );
     assert_eq!(
-        customers.columns[5].default_expression.as_deref(),
+        customers.columns[5]
+            .default_expression
+            .as_ref()
+            .and_then(Definition::text),
         Some("((1))")
     );
 
@@ -416,7 +334,8 @@ async fn inspects_tables_columns_and_types() {
             .column("ShipmentId")
             .expect("id")
             .default_expression
-            .as_deref(),
+            .as_ref()
+            .and_then(Definition::text),
         Some("(newid())")
     );
     assert_eq!(
@@ -479,7 +398,11 @@ async fn inspects_keys_indexes_and_constraints() {
         lines.primary_key.as_ref().expect("composite key").columns,
         ["OrderId", "LineNumber"]
     );
-    assert_eq!(lines.check_constraints[0].expression, "([Quantity]>(0))");
+    assert_eq!(
+        lines.check_constraints[0].expression,
+        Definition::readable("([Quantity]>(0))")
+    );
+    assert_eq!(lines.check_constraints[0].is_enabled, Some(true));
 }
 
 #[tokio::test]
@@ -605,6 +528,12 @@ async fn reports_progress_in_order_of_completion() {
         .find(|update| update.stage == InspectionStage::ReadingObjects)
         .expect("objects stage");
     assert_eq!(objects.count, Some(8));
+    assert!(
+        updates
+            .iter()
+            .any(|update| update.stage == InspectionStage::CheckingAccess),
+        "{updates:?}"
+    );
 }
 
 #[tokio::test]
@@ -657,6 +586,7 @@ fn placed(schema: &str, name: &str) -> NodeState {
         position: Point { x: 10.0, y: 20.0 },
         is_collapsed: false,
         is_hidden: false,
+        unknown: UnknownFields::new(),
     }
 }
 
@@ -676,6 +606,10 @@ async fn refresh_reports_the_differences_and_keeps_surviving_positions() {
 
     let diff = SchemaDiff::between(&previous, &current);
 
+    // Both captures see everything, so nothing is kept unchecked or newly readable.
+    assert_eq!(diff.not_checked, []);
+    assert_eq!(diff.now_available, []);
+    assert!(!diff.access_changed);
     assert_eq!(
         diff.summary.tables,
         ChangeCounts {

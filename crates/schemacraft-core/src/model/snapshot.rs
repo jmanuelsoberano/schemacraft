@@ -4,7 +4,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use super::{ForeignKey, QualifiedName, Table, View};
+use super::{
+    AccessProfile, CarriedFact, ForeignKey, ForeignKeyToInvisibleTable, QualifiedName, Table,
+    UnknownFields, View,
+};
 
 /// Point-in-time picture of a database schema as extracted by an inspector.
 ///
@@ -20,12 +23,29 @@ pub struct SchemaSnapshot {
     pub server_version: Option<String>,
     /// Moment the extraction finished, in UTC.
     pub extracted_at: DateTime<Utc>,
+    /// What the login that made the extraction could see; `None` when it was not recorded,
+    /// as in files written by SchemaCraft 1.0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub access: Option<AccessProfile>,
     /// Base tables.
     pub tables: Vec<Table>,
     /// Views.
     pub views: Vec<View>,
     /// Foreign keys between tables.
     pub foreign_keys: Vec<ForeignKey>,
+    /// Foreign keys from a table of the snapshot to a table the login cannot see. They are
+    /// kept apart because their referenced side is unknown.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub foreign_keys_to_invisible_tables: Vec<ForeignKeyToInvisibleTable>,
+    /// Facts kept from an earlier snapshot because this extraction could not check them, with
+    /// the moment each was last read. See [`SchemaSnapshot::with_unchecked_facts_from`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub carried_over: Vec<CarriedFact>,
+    /// Keys written by a newer version, kept as they are.
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub unknown: UnknownFields,
 }
 
 impl SchemaSnapshot {
@@ -63,10 +83,16 @@ impl SchemaSnapshot {
             .filter(move |key| &key.referenced_table == table)
     }
 
-    /// Whether `column_name` of `table` takes part in any outgoing foreign key.
+    /// Whether `column_name` of `table` takes part in any outgoing foreign key, including one
+    /// to a table the login cannot see.
     pub fn is_foreign_key_column(&self, table: &QualifiedName, column_name: &str) -> bool {
         self.foreign_keys_from(table)
             .any(|key| key.references_from_column(column_name))
+            || self
+                .foreign_keys_to_invisible_tables
+                .iter()
+                .filter(|key| &key.referencing_table == table)
+                .any(|key| key.columns.iter().any(|column| column == column_name))
     }
 }
 
@@ -80,14 +106,41 @@ mod tests {
     )]
 
     use super::SchemaSnapshot;
-    use crate::model::QualifiedName;
-    use crate::model::test_fixtures::sample_snapshot;
+    use crate::model::test_fixtures::{reader_snapshot, sample_snapshot};
+    use crate::model::{CarriedFact, QualifiedName, SnapshotFact};
 
     #[test]
     fn survives_a_json_round_trip() {
         let snapshot = sample_snapshot();
         let json = serde_json::to_string_pretty(&snapshot).expect("snapshot serialises");
         let restored: SchemaSnapshot = serde_json::from_str(&json).expect("snapshot deserialises");
+        assert_eq!(restored, snapshot);
+    }
+
+    #[test]
+    fn keeps_access_facts_and_unknown_keys_through_a_round_trip() {
+        let mut snapshot = reader_snapshot();
+        snapshot.carried_over.push(CarriedFact {
+            object: QualifiedName::new("dbo", "Customers"),
+            fact: SnapshotFact::Table,
+            read_at: sample_snapshot().extracted_at,
+        });
+        snapshot.unknown.insert(
+            "lineage".to_string(),
+            serde_json::json!({ "capturedBy": "a newer version", "steps": [1, 2.5, null] }),
+        );
+
+        let json = serde_json::to_value(&snapshot).expect("snapshot serialises");
+        assert_eq!(json["access"]["level"], "partial");
+        assert_eq!(
+            json["foreignKeysToInvisibleTables"][0]["name"],
+            "FK_Orders_Customers"
+        );
+        assert_eq!(json["carriedOver"][0]["fact"]["kind"], "table");
+        assert_eq!(json["lineage"]["steps"][1], 2.5);
+        assert!(json.get("unknown").is_none());
+
+        let restored: SchemaSnapshot = serde_json::from_value(json).expect("snapshot deserialises");
         assert_eq!(restored, snapshot);
     }
 
@@ -99,6 +152,22 @@ mod tests {
         let first_column = &json["tables"][0]["columns"][0];
         assert!(first_column.get("ordinalPosition").is_some());
         assert!(first_column.get("isNullable").is_some());
+        // Empty lists of the access facts are left out, so 1.0 readers see a familiar shape.
+        assert!(json.get("foreignKeysToInvisibleTables").is_none());
+        assert!(json.get("carriedOver").is_none());
+    }
+
+    #[test]
+    fn older_snapshots_have_no_access_profile() {
+        let mut json = serde_json::to_value(sample_snapshot()).expect("snapshot serialises");
+        let object = json.as_object_mut().expect("an object");
+        object.remove("access");
+
+        let restored: SchemaSnapshot = serde_json::from_value(json).expect("snapshot deserialises");
+        assert_eq!(restored.access, None);
+        assert_eq!(restored.foreign_keys_to_invisible_tables, []);
+        assert_eq!(restored.carried_over, []);
+        assert!(restored.unknown.is_empty());
     }
 
     #[test]
@@ -127,6 +196,11 @@ mod tests {
         assert_eq!(incoming, ["FK_Orders_Customers"]);
         assert!(snapshot.is_foreign_key_column(&orders, "CustomerId"));
         assert!(!snapshot.is_foreign_key_column(&orders, "OrderId"));
+
+        let reader = reader_snapshot();
+        assert_eq!(reader.foreign_keys_from(&orders).count(), 0);
+        assert!(reader.is_foreign_key_column(&orders, "CustomerId"));
+        assert!(!reader.is_foreign_key_column(&orders, "OrderId"));
     }
 
     #[test]

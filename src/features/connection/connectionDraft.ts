@@ -5,7 +5,7 @@ import type {
   PasswordSource,
 } from "@/shared/contracts";
 
-import { parseServerAddress } from "./serverAddress";
+import { formatTarget, parseServerAddress } from "./serverAddress";
 
 export type AuthenticationMode = "integrated" | "sqlLogin";
 
@@ -47,7 +47,12 @@ export type DraftValidationError =
   { field: "server"; reason: "empty" | "invalidPort" } | { field: "username"; reason: "empty" };
 
 export type DraftToSettings =
-  | { ok: true; settings: ConnectionSettings; target: string }
+  | {
+      ok: true;
+      settings: ConnectionSettings;
+      /** Canonical server name, spelled as Rust and the history spell it. */
+      target: string;
+    }
   | { ok: false; error: DraftValidationError };
 
 /** Validates the draft and builds the settings sent to the Rust side. */
@@ -79,9 +84,7 @@ export function draftToSettings(
     connectTimeoutSeconds: DEFAULT_CONNECT_TIMEOUT_SECONDS,
   };
 
-  const instancePart = address.instance === null ? "" : `\\${address.instance}`;
-  const portPart = address.port === null ? "" : `,${address.port}`;
-  return { ok: true, settings, target: `${address.host}${instancePart}${portPart}` };
+  return { ok: true, settings, target: formatTarget(address) };
 }
 
 /** A typed password wins; an empty field falls back to the remembered one when there is one. */

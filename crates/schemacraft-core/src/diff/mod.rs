@@ -6,10 +6,19 @@
 //! deterministic and free of guesses. Column order is not compared: reordering columns changes
 //! nothing in a diagram. Every list is sorted by name, so the same two snapshots always produce
 //! the same diff.
+//!
+//! What the fresh extraction could not see is never a change. The comparison runs against the
+//! fresh snapshot merged with the facts it could not check
+//! ([`SchemaSnapshot::with_unchecked_facts_from`]), the same merge a refresh applies, so the
+//! review and the refreshed project agree. Kept facts are listed apart, and so are the facts
+//! the saved snapshot could not state and the fresh one reads. A saved snapshot that recorded
+//! no access, as in a 1.0 file, could not hold bound defaults, defaults whose text was not
+//! visible or keys to invisible tables, so their appearance next to it is no change either.
 
 mod entities;
 mod foreign_keys;
 mod pairing;
+mod visibility;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -18,11 +27,14 @@ pub use entities::{
     CheckConstraintChange, ColumnChange, ColumnProperty, IndexChange, PrimaryKeyChange,
     TableChange, ViewChange,
 };
-pub use foreign_keys::{ForeignKeyChange, ForeignKeyProperty};
+pub use foreign_keys::{ForeignKeyChange, ForeignKeyProperty, ForeignKeyToInvisibleTableChange};
+pub use visibility::AvailableFact;
+use visibility::Baseline;
 
-use crate::model::SchemaSnapshot;
+use crate::model::{CarriedFact, SchemaSnapshot};
 
-/// Everything that differs between two snapshots.
+/// Everything that differs between two snapshots, and what the fresh one could or could not
+/// check.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "diff/")]
@@ -33,33 +45,99 @@ pub struct SchemaDiff {
     pub views: Vec<ViewChange>,
     /// Foreign keys that appeared, disappeared or changed, by referencing table and name.
     pub foreign_keys: Vec<ForeignKeyChange>,
-    /// Counts per object kind, for the review dialog header.
+    /// Foreign keys to tables the login cannot see that appeared, disappeared or changed, by
+    /// referencing table and name. A key whose referenced table became visible, or one a saved
+    /// snapshot without an access profile could not hold, is listed in `now_available` instead.
+    pub foreign_keys_to_invisible_tables: Vec<ForeignKeyToInvisibleTableChange>,
+    /// Counts per object kind, for the review dialog header. Foreign key counts include the
+    /// keys to invisible tables.
     pub summary: DiffSummary,
+    /// Facts kept from the saved snapshot because the fresh extraction could not check them,
+    /// with the moment each was last read. They are neither removed nor changed.
+    pub not_checked: Vec<CarriedFact>,
+    /// Facts the saved snapshot could not state and the fresh extraction reads, such as a text
+    /// that became readable or, next to a 1.0 file, a bound default. They are not changes of
+    /// the database.
+    pub now_available: Vec<AvailableFact>,
+    /// Whether the fresh extraction reached another verdict on what its login sees, including
+    /// a first verdict for a snapshot that recorded none.
+    pub access_changed: bool,
 }
 
 impl SchemaDiff {
     /// Compares `previous` (the saved snapshot) with `current` (the fresh one).
     pub fn between(previous: &SchemaSnapshot, current: &SchemaSnapshot) -> Self {
-        let tables = entities::diff_tables(&previous.tables, &current.tables);
-        let views = entities::diff_views(&previous.views, &current.views);
-        let foreign_keys =
-            foreign_keys::diff_foreign_keys(&previous.foreign_keys, &current.foreign_keys);
+        let merged = current.clone().with_unchecked_facts_from(previous);
+        let baseline = Baseline::of(previous);
+        let keys_with_visible_target = foreign_keys::keys_whose_target_became_visible(
+            &previous.foreign_keys_to_invisible_tables,
+            &merged.foreign_keys,
+        );
+        let keys_unrecorded_before = foreign_keys::keys_unrecorded_before(
+            previous,
+            &merged.foreign_keys_to_invisible_tables,
+        );
+
+        let tables = entities::diff_tables(&previous.tables, &merged.tables, baseline);
+        let views = entities::diff_views(&previous.views, &merged.views, baseline);
+        let foreign_keys = foreign_keys::diff_foreign_keys(
+            &previous.foreign_keys,
+            &merged.foreign_keys,
+            &keys_with_visible_target,
+        );
+        let foreign_keys_to_invisible_tables = foreign_keys::diff_foreign_keys_to_invisible_tables(
+            &previous.foreign_keys_to_invisible_tables,
+            &merged.foreign_keys_to_invisible_tables,
+            &keys_with_visible_target,
+            &keys_unrecorded_before,
+        );
         let summary = DiffSummary {
             tables: ChangeCounts::of(tables.iter().map(TableChange::kind)),
             views: ChangeCounts::of(views.iter().map(ViewChange::kind)),
-            foreign_keys: ChangeCounts::of(foreign_keys.iter().map(ForeignKeyChange::kind)),
+            foreign_keys: ChangeCounts::of(
+                foreign_keys.iter().map(ForeignKeyChange::kind).chain(
+                    foreign_keys_to_invisible_tables
+                        .iter()
+                        .map(ForeignKeyToInvisibleTableChange::kind),
+                ),
+            ),
         };
+        let now_available = visibility::facts_now_available(
+            previous,
+            &merged,
+            &keys_with_visible_target,
+            &keys_unrecorded_before,
+        );
+        let access_changed = visibility::access_changed(previous, &merged);
+
         Self {
             tables,
             views,
             foreign_keys,
+            foreign_keys_to_invisible_tables,
             summary,
+            not_checked: merged.carried_over,
+            now_available,
+            access_changed,
         }
     }
 
-    /// Whether the snapshots describe the same schema.
+    /// Whether the snapshots describe the same schema, as far as the fresh one could check.
     pub fn is_empty(&self) -> bool {
-        self.tables.is_empty() && self.views.is_empty() && self.foreign_keys.is_empty()
+        self.tables.is_empty()
+            && self.views.is_empty()
+            && self.foreign_keys.is_empty()
+            && self.foreign_keys_to_invisible_tables.is_empty()
+    }
+
+    /// Whether a review has nothing to report: the same schema, nothing the fresh extraction
+    /// could not check, nothing newly readable and the same verdict on access. A refresh that
+    /// is not up to date has something to show even when [`Self::is_empty`] holds.
+    pub fn is_up_to_date(&self) -> bool {
+        self.is_empty()
+            && self.not_checked.is_empty()
+            && self.now_available.is_empty()
+            && !self.access_changed
     }
 }
 
@@ -129,11 +207,26 @@ impl DiffSummary {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::panic
+    )]
 
-    use super::{ChangeKind, SchemaDiff, TableChange};
-    use crate::model::test_fixtures::sample_snapshot;
-    use crate::model::{Column, QualifiedName, SqlDataType, Table};
+    use chrono::Duration;
+
+    use super::{
+        AvailableFact, ChangeKind, ForeignKeyChange, ForeignKeyProperty,
+        ForeignKeyToInvisibleTableChange, SchemaDiff, TableChange,
+    };
+    use crate::model::test_fixtures::{
+        reader_snapshot, sample_snapshot, schema_reader_profile, with_access,
+    };
+    use crate::model::{
+        AccessCounts, Column, Definition, ForeignKeyToInvisibleTable, QualifiedName,
+        ReferentialAction, SchemaSnapshot, SnapshotFact, SqlDataType, Table,
+    };
 
     fn table(schema: &str, name: &str, columns: Vec<Column>) -> Table {
         Table {
@@ -157,11 +250,343 @@ mod tests {
         }
     }
 
+    /// The sample read a day later by `db_datareader`: every table, no text.
+    fn datareader_snapshot() -> SchemaSnapshot {
+        let mut snapshot = sample_snapshot();
+        snapshot.extracted_at += Duration::days(1);
+        for table in &mut snapshot.tables {
+            for column in &mut table.columns {
+                if column.default_expression.is_some() {
+                    column.default_expression = Some(Definition::NotVisible);
+                }
+            }
+            for constraint in &mut table.check_constraints {
+                constraint.expression = Definition::NotVisible;
+            }
+        }
+        let counts = AccessCounts::of(&snapshot);
+        with_access(snapshot, schema_reader_profile(&["dbo", "sales"], counts))
+    }
+
+    fn hidden_texts() -> Vec<(QualifiedName, SnapshotFact)> {
+        vec![
+            (
+                QualifiedName::new("dbo", "Customers"),
+                SnapshotFact::CheckConstraint {
+                    name: "CK_Customers_Name".to_string(),
+                },
+            ),
+            (
+                QualifiedName::new("sales", "Orders"),
+                SnapshotFact::ColumnDefault {
+                    column: "PlacedAt".to_string(),
+                },
+            ),
+        ]
+    }
+
+    fn not_checked(diff: &SchemaDiff) -> Vec<(QualifiedName, SnapshotFact)> {
+        diff.not_checked
+            .iter()
+            .map(|carried| (carried.object.clone(), carried.fact.clone()))
+            .collect()
+    }
+
+    fn now_available(diff: &SchemaDiff) -> Vec<(QualifiedName, SnapshotFact)> {
+        diff.now_available
+            .iter()
+            .map(|AvailableFact { object, fact }| (object.clone(), fact.clone()))
+            .collect()
+    }
+
+    /// A change made to the referencing side of a key the capture read as a key to an invisible
+    /// table, and the property the diff is expected to report for it.
+    type ReferencingSideChange = (fn(&mut ForeignKeyToInvisibleTable), ForeignKeyProperty);
+
     #[test]
     fn identical_snapshots_produce_an_empty_diff() {
         let diff = SchemaDiff::between(&sample_snapshot(), &sample_snapshot());
         assert!(diff.is_empty());
+        assert!(diff.is_up_to_date());
         assert_eq!(diff.summary.total(), 0);
+    }
+
+    #[test]
+    fn a_login_that_cannot_read_texts_changes_nothing_and_lists_them_as_not_checked() {
+        let previous = sample_snapshot();
+        let diff = SchemaDiff::between(&previous, &datareader_snapshot());
+
+        assert!(diff.is_empty());
+        assert_eq!(diff.summary.total(), 0);
+        assert_eq!(not_checked(&diff), hidden_texts());
+        assert!(
+            diff.not_checked
+                .iter()
+                .all(|carried| carried.read_at == previous.extracted_at)
+        );
+        assert_eq!(diff.now_available, []);
+        assert!(diff.access_changed);
+        assert!(!diff.is_up_to_date());
+    }
+
+    #[test]
+    fn a_login_that_reads_texts_again_changes_nothing_and_lists_them_as_available() {
+        let diff = SchemaDiff::between(&datareader_snapshot(), &sample_snapshot());
+
+        assert!(diff.is_empty());
+        assert_eq!(now_available(&diff), hidden_texts());
+        assert_eq!(diff.not_checked, []);
+        assert!(diff.access_changed);
+    }
+
+    #[test]
+    fn a_table_the_login_cannot_vouch_for_is_not_checked_rather_than_removed() {
+        let diff = SchemaDiff::between(&sample_snapshot(), &reader_snapshot());
+
+        assert!(diff.is_empty(), "{diff:?}");
+        let facts = not_checked(&diff);
+        let customers = QualifiedName::new("dbo", "Customers");
+        let orders = QualifiedName::new("sales", "Orders");
+        assert!(facts.contains(&(customers, SnapshotFact::Table)));
+        // The key now points to a table the login cannot see; it is kept, not removed.
+        assert!(facts.contains(&(
+            orders,
+            SnapshotFact::ForeignKey {
+                name: "FK_Orders_Customers".to_string()
+            }
+        )));
+    }
+
+    #[test]
+    fn objects_left_out_of_the_new_selection_are_removed_even_when_unseen() {
+        let mut current = reader_snapshot();
+        current.views.clear();
+        let profile = current.access.as_mut().unwrap();
+        profile.scope.schemas = vec!["sales".to_string()];
+        profile.scope.include_views = false;
+
+        let diff = SchemaDiff::between(&sample_snapshot(), &current);
+
+        let removed: Vec<String> = diff
+            .tables
+            .iter()
+            .filter(|change| change.kind() == ChangeKind::Removed)
+            .map(|change| change.name().to_string())
+            .collect();
+        assert_eq!(removed, ["dbo.Customers"]);
+        assert_eq!(diff.summary.views.removed, 1);
+        assert!(
+            !not_checked(&diff)
+                .iter()
+                .any(|(_, fact)| matches!(fact, SnapshotFact::Table | SnapshotFact::View))
+        );
+    }
+
+    #[test]
+    fn a_key_whose_table_became_visible_is_available_rather_than_added() {
+        let diff = SchemaDiff::between(&reader_snapshot(), &sample_snapshot());
+
+        assert_eq!(diff.summary.tables.added, 1);
+        assert_eq!(diff.summary.foreign_keys.total(), 0);
+        assert_eq!(diff.foreign_keys, []);
+        assert_eq!(diff.foreign_keys_to_invisible_tables, []);
+        assert_eq!(
+            now_available(&diff),
+            [
+                (
+                    QualifiedName::new("sales", "Orders"),
+                    SnapshotFact::ColumnDefault {
+                        column: "PlacedAt".to_string()
+                    }
+                ),
+                (
+                    QualifiedName::new("sales", "Orders"),
+                    SnapshotFact::ForeignKey {
+                        name: "FK_Orders_Customers".to_string()
+                    }
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn keys_to_invisible_tables_that_appear_or_go_are_changes() {
+        let with_key = reader_snapshot();
+        let mut without_key = reader_snapshot();
+        without_key.foreign_keys_to_invisible_tables.clear();
+
+        let added = SchemaDiff::between(&without_key, &with_key);
+        assert!(matches!(
+            added.foreign_keys_to_invisible_tables.as_slice(),
+            [ForeignKeyToInvisibleTableChange::Added { key }] if key.name == "FK_Orders_Customers"
+        ));
+        assert_eq!(added.summary.foreign_keys.added, 1);
+        assert!(!added.is_empty());
+
+        let removed = SchemaDiff::between(&with_key, &without_key);
+        assert!(matches!(
+            removed.foreign_keys_to_invisible_tables.as_slice(),
+            [ForeignKeyToInvisibleTableChange::Removed { .. }]
+        ));
+        assert_eq!(removed.summary.foreign_keys.removed, 1);
+    }
+
+    #[test]
+    fn a_format_1_project_refreshed_with_the_same_schema_changes_nothing() {
+        // What the upgrade of a 1.0 file makes of the sample: no access profile, the CHECK text
+        // and its state not recorded, and the missing defaults of its schema unknown.
+        let mut upgraded = sample_snapshot();
+        upgraded.access = None;
+        let customers = &mut upgraded.tables[0];
+        customers.check_constraints[0].expression = Definition::NotRecorded;
+        customers.check_constraints[0].is_enabled = None;
+        for column in &mut customers.columns {
+            column.default_expression = Some(Definition::NotRecorded);
+        }
+
+        let diff = SchemaDiff::between(&upgraded, &sample_snapshot());
+
+        assert!(diff.is_empty(), "{diff:?}");
+        assert!(diff.access_changed);
+        assert_eq!(
+            now_available(&diff),
+            [(
+                QualifiedName::new("dbo", "Customers"),
+                SnapshotFact::CheckConstraint {
+                    name: "CK_Customers_Name".to_string()
+                }
+            )]
+        );
+        assert!(!diff.is_up_to_date());
+    }
+
+    #[test]
+    fn a_format_1_project_refreshed_by_the_same_reader_changes_nothing() {
+        // A reader of sales, with a default bound by sp_bindefault that it can read.
+        let mut current = reader_snapshot();
+        let orders = QualifiedName::new("sales", "Orders");
+        current.tables[0]
+            .columns
+            .iter_mut()
+            .find(|column| column.name == "Total")
+            .unwrap()
+            .default_expression = Some(Definition::readable("0"));
+        // What 1.0 saved for the same login: no default whose text it could not read, no bound
+        // default, no key to the table it could not see, and no access profile.
+        let mut upgraded = current.clone();
+        upgraded.access = None;
+        upgraded.foreign_keys_to_invisible_tables.clear();
+        for column in &mut upgraded.tables[0].columns {
+            column.default_expression = None;
+        }
+
+        let diff = SchemaDiff::between(&upgraded, &current);
+
+        assert!(diff.is_empty(), "{diff:?}");
+        assert_eq!(diff.summary.total(), 0);
+        assert_eq!(diff.not_checked, []);
+        assert_eq!(
+            now_available(&diff),
+            [
+                (
+                    orders.clone(),
+                    SnapshotFact::ColumnDefault {
+                        column: "Total".to_string()
+                    }
+                ),
+                (
+                    orders,
+                    SnapshotFact::ForeignKey {
+                        name: "FK_Orders_Customers".to_string()
+                    }
+                ),
+            ]
+        );
+        assert!(diff.access_changed);
+    }
+
+    #[test]
+    fn defaults_and_keys_that_appear_next_to_a_recorded_capture_are_changes() {
+        let mut current = reader_snapshot();
+        current.tables[0]
+            .columns
+            .iter_mut()
+            .find(|column| column.name == "Total")
+            .unwrap()
+            .default_expression = Some(Definition::readable("0"));
+        let mut previous = current.clone();
+        previous.foreign_keys_to_invisible_tables.clear();
+        for column in &mut previous.tables[0].columns {
+            column.default_expression = None;
+        }
+
+        let diff = SchemaDiff::between(&previous, &current);
+
+        assert_eq!(diff.summary.tables.changed, 1);
+        assert_eq!(diff.summary.foreign_keys.added, 1);
+        assert_eq!(diff.now_available, []);
+    }
+
+    #[test]
+    fn a_key_that_changed_while_its_target_became_invisible_is_reported() {
+        let previous = sample_snapshot();
+        let saved = previous.foreign_keys[0].clone();
+        let changes: [ReferencingSideChange; 2] = [
+            (
+                |key| key.on_delete = ReferentialAction::Cascade,
+                ForeignKeyProperty::OnDelete,
+            ),
+            (|key| key.is_enabled = false, ForeignKeyProperty::Enabled),
+        ];
+
+        for (change, property) in changes {
+            let mut current = reader_snapshot();
+            change(&mut current.foreign_keys_to_invisible_tables[0]);
+
+            let diff = SchemaDiff::between(&previous, &current);
+
+            let [
+                ForeignKeyChange::Changed {
+                    before,
+                    after,
+                    properties,
+                },
+            ] = diff.foreign_keys.as_slice()
+            else {
+                panic!("expected one changed key, got {diff:?}");
+            };
+            assert_eq!(properties, &[property]);
+            assert_eq!(before, &saved);
+            assert_eq!(after.referenced_table, saved.referenced_table);
+            assert_eq!(after.column_pairs, saved.column_pairs);
+            assert_eq!(diff.foreign_keys_to_invisible_tables, []);
+            assert_eq!(diff.summary.foreign_keys.changed, 1);
+            // The referenced side still could not be checked.
+            assert!(not_checked(&diff).contains(&(
+                QualifiedName::new("sales", "Orders"),
+                SnapshotFact::ForeignKey {
+                    name: "FK_Orders_Customers".to_string()
+                }
+            )));
+        }
+    }
+
+    #[test]
+    fn a_key_whose_columns_changed_while_its_target_became_invisible_is_replaced() {
+        let mut current = reader_snapshot();
+        current.foreign_keys_to_invisible_tables[0].columns = vec!["OrderId".to_string()];
+
+        let diff = SchemaDiff::between(&sample_snapshot(), &current);
+
+        assert!(matches!(
+            diff.foreign_keys.as_slice(),
+            [ForeignKeyChange::Removed { key }] if key.name == "FK_Orders_Customers"
+        ));
+        assert!(matches!(
+            diff.foreign_keys_to_invisible_tables.as_slice(),
+            [ForeignKeyToInvisibleTableChange::Added { key }] if key.columns == ["OrderId"]
+        ));
+        assert_eq!(diff.summary.foreign_keys.total(), 2);
     }
 
     #[test]
@@ -223,5 +648,15 @@ mod tests {
         assert_eq!(json["tables"][0]["columnCount"], 1);
         assert_eq!(json["summary"]["tables"]["added"], 1);
         assert_eq!(json["summary"]["foreignKeys"]["changed"], 0);
+        assert_eq!(json["foreignKeysToInvisibleTables"], serde_json::json!([]));
+        assert_eq!(json["notChecked"], serde_json::json!([]));
+        assert_eq!(json["nowAvailable"], serde_json::json!([]));
+        assert_eq!(json["accessChanged"], false);
+
+        let weaker =
+            serde_json::to_value(SchemaDiff::between(&previous, &reader_snapshot())).unwrap();
+        assert_eq!(weaker["notChecked"][0]["fact"]["kind"], "table");
+        assert_eq!(weaker["notChecked"][0]["readAt"], "2026-10-13T15:30:00Z");
+        assert_eq!(weaker["accessChanged"], true);
     }
 }

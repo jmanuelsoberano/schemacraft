@@ -41,7 +41,13 @@ describe("draftToSettings", () => {
         password: { source: "provided", value: "secret" },
       });
       expect(result.settings.port).toBe(14333);
+      expect(result.target).toBe("db,14333");
     }
+  });
+
+  it("names a server without a port the way Rust does", () => {
+    const result = draftToSettings({ ...emptyConnectionDraft, server: "db.example.com" });
+    expect(result.ok && result.target).toBe("db.example.com,1433");
   });
 
   it("uses the remembered password when the field is empty", () => {

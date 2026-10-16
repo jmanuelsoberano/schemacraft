@@ -39,7 +39,7 @@ Permite conectarse a una base de datos mediante autenticación mixta, extraer me
 
 ---
 
-## 3. Alcance Funcional de la Versión 1.0 (MVP)
+## 3. Alcance Funcional de la Versión 1.0 (MVP) y Ampliaciones
 
 ### 3.1 Conector Prioritario: Microsoft SQL Server
 - **Modos de Autenticación Soportados**:
@@ -117,6 +117,23 @@ Se prohíben expresamente exportaciones en múltiples páginas cortadas que requ
 4. **PNG en Ultra-Alta Resolución (1x, 2x, 4x)**:
    - Exportación rasterizada nítida para presentaciones o documentación.
 
+### 3.8 Ampliaciones de la Versión 1.1
+Lo que la versión 1.1 añade al alcance de las secciones 3.1 a 3.7, ya publicadas en la versión 1.0.0.
+
+- **Acceso Parcial Explicado (amplía 3.1 y 3.2)**:
+  - Al elegir la base de datos, SchemaCraft comprueba qué puede ver el inicio de sesión, con una sola consulta de permisos, y lo indica antes de leer el esquema.
+  - Muestra todo lo que el inicio de sesión puede leer. Las expresiones `CHECK` y `DEFAULT` que no puede leer se marcan como "no disponible", nunca como vacías o inexistentes, y las llaves foráneas hacia tablas no visibles para este inicio de sesión se conservan.
+  - Con acceso completo no añade nada a la interfaz. Con acceso parcial muestra un indicador discreto en la barra de estado, un aviso descartable sobre la lista de entidades y un informe de acceso con lo que se leyó, lo que falta y por qué.
+  - El informe ofrece copiar un script de mínimo privilegio (`GRANT VIEW DEFINITION`) para que un DBA lo ejecute; SchemaCraft nunca lo ejecuta. El script advierte que, desde SQL Server 2022, ese permiso también deja ver usuarios, roles y permisos, y no se ofrece cuando un `DENY` explícito explica lo que falta.
+  - Si el inicio de sesión no ve ninguna tabla ni vista, lo explica y no permite leer el esquema. Una base de datos vacía, con permisos completos, sí se lee y muestra un estado vacío neutral.
+  - Las exportaciones de una lectura parcial lo indican en una línea.
+- **Formato `.scraft` 2 (amplía 3.6)**:
+  - El archivo registra qué podía ver el inicio de sesión que leyó el esquema, incluido el nombre del usuario de base de datos, que nunca pasa a las exportaciones.
+  - Los proyectos de la versión 1.0 se abren y se convierten al guardarlos; un proyecto guardado con la versión 1.1 necesita la 1.1 o posterior.
+  - El encabezado indica también la versión mínima de lector (`minReaderVersion`). Un proyecto guardado por una versión más nueva se abre en solo lectura cuando esa versión lo permite (se puede reorganizar y exportar, pero no guardar ni actualizar) y se rechaza con un mensaje claro en caso contrario.
+  - Los datos que esta versión no entiende se conservan al guardar.
+- **Actualización con Menos Permisos (amplía 3.6)**: actualizar desde la base de datos con un inicio de sesión que ve menos nunca presenta como eliminado lo que no puede ver: lo conserva, lo marca como no comprobado con la fecha en que se leyó y lo muestra en la revisión. Lo que se vuelve legible, por ejemplo después de conceder `VIEW DEFINITION`, también aparece en la revisión y se guarda al aplicarla.
+
 ---
 
 ## 4. Requisitos No Funcionales y Calidad de Código
@@ -169,3 +186,4 @@ Se prohíben expresamente exportaciones en múltiples páginas cortadas que requ
 - **2026-10-13**: Se añade el requisito no funcional 4 (Experiencia de Usuario) y su criterio de aceptación, acordados al cierre del Paso 1 de construcción.
 - **2026-10-13**: Se añaden el historial de conexiones recientes (3.1) y los proyectos recientes (3.6), acordados al planificar el Paso 3.
 - **2026-10-15**: Se precisa en 2.1 que el ejecutable portable usa el runtime WebView2 de Windows, como ya hace la versión 1.0.0.
+- **2026-10-15**: Se crea la sección 3.8 para las ampliaciones de la versión 1.1 y se añade su primera parte: el acceso parcial explicado (comprobación de permisos, informe de acceso) y el formato `.scraft` 2 con lectura compatible hacia adelante.

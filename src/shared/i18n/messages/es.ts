@@ -27,6 +27,7 @@ export const spanishMessages: MessageCatalog = {
   "action.about": "Acerca de SchemaCraft",
   "action.exportPdf": "Exportar diagrama como PDF",
   "action.searchEntities": "Buscar entidades",
+  "action.accessReport": "Mostrar informe de acceso",
 
   "credits.developedBy": "Desarrollado por {name}",
   "about.title": "Acerca de SchemaCraft",
@@ -67,6 +68,8 @@ export const spanishMessages: MessageCatalog = {
   "export.warning.tooLarge":
     "A {scale}x la imagen mediría {width} × {height} px; el límite es {limit} px por lado. Elige una escala menor.",
   "export.warning.empty": "No hay nada visible en el lienzo, así que no hay nada que exportar.",
+  "export.note.partial":
+    "Captura parcial: algunas tablas, vistas o expresiones no eran visibles para el inicio de sesión que leyó el esquema.",
   "export.action.export": "Exportar",
   "export.action.cancel": "Cancelar",
   "export.action.close": "Cerrar",
@@ -90,6 +93,8 @@ export const spanishMessages: MessageCatalog = {
   "action.unavailable.nothingHidden": "No hay tablas ocultas en el diagrama",
   "action.unavailable.nothingToUndo": "No hay nada que deshacer",
   "action.unavailable.nothingToRedo": "No hay nada que rehacer",
+  "action.unavailable.readOnly":
+    "Lo guardó un SchemaCraft más reciente, así que el proyecto es de solo lectura",
 
   "menu.theme": "Tema",
   "theme.system": "Sistema",
@@ -115,6 +120,14 @@ export const spanishMessages: MessageCatalog = {
   "sidebar.empty.title": "Aún no hay entidades",
   "sidebar.empty.description":
     "Conéctate a una base de datos o abre un proyecto .scraft para listar sus tablas aquí.",
+  "sidebar.empty.database.title": "No hay tablas ni vistas",
+  "sidebar.empty.database.description": "{database} todavía no tiene tablas ni vistas.",
+  "sidebar.empty.selection.description":
+    "Los esquemas y opciones elegidos para {database} no incluyen tablas ni vistas.",
+  "sidebar.empty.notVisible.title": "Ninguna tabla ni vista visible para este inicio de sesión",
+  "sidebar.empty.notVisible.description": "Puede haber otras en {database}.",
+  "sidebar.footer.notVisible":
+    "Puede haber otras tablas o vistas no visibles para este inicio de sesión.",
 
   "entity.table": "Tabla",
   "entity.view": "Vista",
@@ -208,6 +221,7 @@ export const spanishMessages: MessageCatalog = {
     "Las consultas al catálogo corren en paralelo, así que las etapas pueden terminar en cualquier orden.",
   "connection.progress.cancelling": "Cancelando…",
   "connection.stage.connecting": "Conectando",
+  "connection.stage.checkingAccess": "Permisos de este inicio de sesión",
   "connection.stage.readingObjects": "Tablas y vistas",
   "connection.stage.readingColumns": "Columnas y tipos",
   "connection.stage.readingIndexes": "Claves e índices",
@@ -269,6 +283,9 @@ export const spanishMessages: MessageCatalog = {
   "project.notice.openFailed": "No se pudo abrir el proyecto",
   "project.notice.saveFailed": "No se pudo guardar el proyecto",
   "project.notice.dismiss": "Cerrar",
+  "project.readOnly": "Solo lectura",
+  "project.readOnly.description":
+    "Guardado con {generator} en un formato más reciente. Puedes reorganizar el diagrama, pero esta versión no puede guardar ni actualizar el proyecto.",
 
   "welcome.recent.title": "Proyectos recientes",
   "welcome.recent.open": "Abrir {name}",
@@ -287,6 +304,26 @@ export const spanishMessages: MessageCatalog = {
     "No se aplica nada hasta que confirmes. Las posiciones de las tablas sin cambios se conservan.",
   "review.empty.title": "El proyecto está al día",
   "review.empty.description": "El esquema de la base de datos coincide con el proyecto.",
+  "review.empty.partial.title": "No hay cambios en lo que este inicio de sesión puede leer",
+  "review.empty.partial.description":
+    "No se pudieron comparar las tablas, vistas o expresiones no visibles para este inicio de sesión.",
+  "review.noChanges.title": "No hay cambios en el esquema",
+  "review.noChanges.nowAvailable":
+    "Algunos detalles ya se pueden leer. Actualiza el proyecto para conservarlos.",
+  "review.noChanges.notChecked":
+    "Actualiza el proyecto para registrar esta lectura; lo que no se pudo comprobar conserva su valor guardado.",
+  "review.noChanges.accessChanged":
+    "Actualiza el proyecto para registrar lo que ve este inicio de sesión.",
+  "review.notChecked.title": "No se pudo comprobar todo",
+  "review.notChecked.body.one":
+    "{count} elemento no es visible para este inicio de sesión, así que no se comprobó y conserva su valor guardado.",
+  "review.notChecked.body.other":
+    "{count} elementos no son visibles para este inicio de sesión, así que no se comprobaron y conservan sus valores guardados.",
+  "review.section.notChecked": "Sin comprobar",
+  "review.section.nowAvailable": "Ahora disponible",
+  "review.accessChanged": "Esta actualización también registra lo que ve este inicio de sesión.",
+  "review.foreignKey.invisibleTable":
+    "{table} ({columns}) → una tabla no visible para este inicio de sesión",
   "review.summary.added.one": "{count} nueva",
   "review.summary.added.other": "{count} nuevas",
   "review.summary.removed.one": "{count} eliminada",
@@ -304,6 +341,7 @@ export const spanishMessages: MessageCatalog = {
   "review.primaryKey": "Clave primaria",
   "review.index": "Índice",
   "review.checkConstraint": "Check",
+  "review.checkConstraint.disabled": "{name} {expression} (deshabilitada)",
   "review.property.dataType": "Tipo",
   "review.property.nullability": "Nulable",
   "review.property.defaultExpression": "Valor por defecto",
@@ -318,6 +356,7 @@ export const spanishMessages: MessageCatalog = {
   "review.value.no": "no",
   "review.value.none": "ninguno",
   "review.action.apply": "Aplicar cambios",
+  "review.action.update": "Actualizar proyecto",
   "review.action.discard": "Descartar",
   "review.action.close": "Cerrar",
   "review.status.applying": "Aplicando…",
@@ -330,6 +369,10 @@ export const spanishMessages: MessageCatalog = {
   "indexKind.uniqueIndex": "índice único",
   "indexKind.nonUnique": "índice",
   "indexKind.clustered": "agrupado",
+  "definition.notAvailable": "no disponible",
+  "definition.notRecorded": "no registrado",
+  "definition.default.notAvailable": "DEFAULT (no disponible)",
+  "definition.default.notRecorded": "(valor por defecto no registrado)",
 
   "error.project.notFound.title": "No se encontró el archivo del proyecto",
   "error.project.notFound.hint":
@@ -384,4 +427,94 @@ export const spanishMessages: MessageCatalog = {
   "error.export.cancelled.hint": "No se escribió nada.",
   "error.invalidArgument.title": "Eso no se puede hacer",
   "error.invalidArgument.hint": "La aplicación pidió algo imposible. Por favor, repórtalo.",
+
+  "access.chip": "Acceso parcial",
+  "access.chip.label": "Acceso parcial. Mostrar el informe de acceso.",
+  "access.bar.title": "Parte del esquema no es visible",
+  "access.bar.dismiss": "Cerrar el aviso de acceso",
+  "access.action.details": "Detalles",
+  "access.action.copyGrant": "Copiar script GRANT",
+  "access.action.copied": "Copiado",
+  "access.action.copyFailed": "No se pudo copiar",
+  "access.cause.nothingVisible.noGrant":
+    "Este inicio de sesión no tiene permisos sobre ninguna tabla ni vista. Pide VIEW DEFINITION a tu DBA.",
+  "access.cause.nothingVisible.hidden":
+    "Este inicio de sesión no ve ninguna tabla ni vista. Puede que la base de datos esté vacía o que un DENY explícito impida verlas; consúltalo con tu DBA.",
+  "access.cause.empty": "La base de datos no tiene tablas ni vistas.",
+  "access.cause.denied.one":
+    "{count} DENY explícito limita lo que puede ver este inicio de sesión.",
+  "access.cause.denied.other":
+    "{count} DENY explícitos limitan lo que puede ver este inicio de sesión.",
+  "access.cause.denialsUnknown":
+    "Este inicio de sesión no puede ver sus propias reglas DENY, así que puede haber tablas o vistas no visibles para él.",
+  "access.cause.noDefinitions":
+    "Este inicio de sesión no tiene VIEW DEFINITION, así que las expresiones CHECK y DEFAULT no son visibles.",
+  "access.cause.someSchemas":
+    "Sin VIEW DEFINITION sobre {schemas}, sus expresiones CHECK y DEFAULT no son visibles.",
+  "access.cause.someDefinitions":
+    "Algunas expresiones CHECK y DEFAULT no son visibles para este inicio de sesión.",
+  "access.cause.someObjects":
+    "Puede haber otras tablas o vistas no visibles para este inicio de sesión.",
+  "access.notice.partial.title": "Acceso parcial a {database}",
+  "access.notice.partial.readAnyway.definitions":
+    "Se lee todo lo visible; las expresiones que no lo son se marcan como no disponibles.",
+  "access.notice.partial.readAnyway.objects":
+    "Se lee todo lo visible; las tablas y vistas que no lo son quedan fuera del diagrama.",
+  "access.notice.partial.readAnyway.both":
+    "Se lee todo lo visible; las tablas y vistas que no lo son quedan fuera del diagrama, y las expresiones que no lo son se marcan como no disponibles.",
+  "access.notice.empty.title": "{database} no tiene tablas ni vistas",
+  "access.notice.empty.description":
+    "Este inicio de sesión puede ver todos los objetos y todavía no hay ninguno. La lectura dará un diagrama vacío.",
+  "access.none.title": "No hay nada que leer con este inicio de sesión en {database}",
+  "access.script.header":
+    "SchemaCraft: acceso de solo lectura al esquema de {database} para {principal}.",
+  "access.script.readOnly": "VIEW DEFINITION no da acceso a los datos ni permite cambios.",
+  "access.script.sqlServer2022":
+    "En SQL Server 2022 y posteriores también muestra usuarios, roles y permisos.",
+  "access.script.replace":
+    "Sustituye {placeholder} por el usuario de base de datos de este inicio de sesión.",
+  "access.script.placeholder": "<usuario de base de datos>",
+  "access.fact.table": "Tabla",
+  "access.fact.view": "Vista",
+  "access.fact.columnDefault": "Valor por defecto de {column}",
+  "access.fact.checkConstraint": "Check {name}",
+  "access.fact.foreignKey": "Relación {name}",
+  "access.state.complete": "Completo",
+  "access.state.partial": "Parcial",
+  "access.state.notAvailable": "No disponible",
+  "access.report.title": "Informe de acceso de {database}",
+  "access.report.description": "Lo que este inicio de sesión pudo leer el {date}.",
+  "access.report.description.notRecorded": "Esquema leído el {date}.",
+  "access.report.notRecorded":
+    "Este proyecto se guardó antes de que SchemaCraft registrara el acceso. Actualiza desde la base de datos para comprobarlo.",
+  "access.report.full": "Este inicio de sesión leyó todo el esquema.",
+  "access.report.empty":
+    "Este inicio de sesión podía ver todos los objetos y la base de datos no tenía tablas ni vistas.",
+  "access.report.partial": "Este inicio de sesión no pudo leer todo el esquema.",
+  "access.report.nothingVisible": "Este inicio de sesión no pudo ver ninguna tabla ni vista.",
+  "access.report.section.coverage": "Lo que se leyó",
+  "access.report.objects": "Tablas y vistas",
+  "access.report.objects.partial":
+    "{objects}; puede haber otras no visibles para este inicio de sesión",
+  "access.report.definitions": "Expresiones CHECK y DEFAULT",
+  "access.report.definitions.count": "{readable} de {total} disponibles",
+  "access.report.definitions.none": "Ninguna en lo que se leyó",
+  "access.report.invisibleKeys.one":
+    "{count} relación con una tabla no visible para este inicio de sesión",
+  "access.report.invisibleKeys.other":
+    "{count} relaciones con tablas no visibles para este inicio de sesión",
+  "access.report.carried.one": "{count} dato conservado de una lectura anterior",
+  "access.report.carried.other": "{count} datos conservados de una lectura anterior",
+  "access.report.carried.hint":
+    "Este inicio de sesión no pudo comprobarlos, así que conservan los valores leídos antes.",
+  "access.report.carried.entry": "{fact} · lectura del {date}",
+  "access.report.section.schemas": "Permisos",
+  "access.report.schemas.name": "Esquema",
+  "access.report.schemas.database": "Toda la base de datos",
+  "access.report.schemas.unknown": "desconocido",
+  "access.report.section.fix": "Qué se puede hacer",
+  "access.report.fix":
+    "Para leerlo todo, tu DBA puede ejecutar este script. SchemaCraft solo lo copia y nunca lo ejecuta.",
+  "access.report.dbaOnly":
+    "Puede que un GRANT no sirva aquí. Tu DBA puede revisar los permisos de este inicio de sesión.",
 };

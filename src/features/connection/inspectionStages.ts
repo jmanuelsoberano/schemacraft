@@ -8,6 +8,7 @@ export type DisplayedStage = Exclude<InspectionStage, "completed">;
 /** Stages shown to the user, in the order they are listed. `completed` is not displayed. */
 export const DISPLAYED_STAGES: readonly DisplayedStage[] = [
   "connecting",
+  "checkingAccess",
   "readingObjects",
   "readingColumns",
   "readingIndexes",
@@ -17,6 +18,7 @@ export const DISPLAYED_STAGES: readonly DisplayedStage[] = [
 ];
 
 const CATALOG_STAGES: readonly InspectionStage[] = [
+  "checkingAccess",
   "readingObjects",
   "readingColumns",
   "readingIndexes",
@@ -28,7 +30,8 @@ export type StageStatus = "pending" | "active" | "done";
 
 /**
  * Derives what to show for a stage. The backend reports `connecting` and `assembling` when they
- * start and every catalog stage when it finishes, so completion is inferred from later stages.
+ * start, and the access check and every catalog stage when they finish, so completion is
+ * inferred from later stages.
  */
 export function stageStatus(progress: StageProgress, stage: InspectionStage): StageStatus {
   const reported = (candidate: InspectionStage) => progress[candidate] !== undefined;
@@ -44,6 +47,7 @@ export function stageStatus(progress: StageProgress, stage: InspectionStage): St
       return reported("assembling") ? "active" : "pending";
     case "completed":
       return reported("completed") ? "done" : "pending";
+    case "checkingAccess":
     case "readingObjects":
     case "readingColumns":
     case "readingIndexes":

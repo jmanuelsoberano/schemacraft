@@ -3,17 +3,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   ConnectionSettings,
+  OpenedProject,
   Project,
   ProjectContent,
   SchemaSnapshot,
 } from "@/shared/contracts";
+import {
+  withCollapsed,
+  withHidden,
+  withLayout,
+  withPositions,
+} from "@/features/canvas/canvasState";
 import { OperationError } from "@/shared/ipc/operationError";
 
 const projectBackend = vi.hoisted(() => ({
   pickProjectToOpen: vi.fn<(labels: FileDialogLabels) => Promise<string | null>>(),
   pickProjectToSave:
     vi.fn<(labels: FileDialogLabels, suggested: string) => Promise<string | null>>(),
-  readProject: vi.fn<(path: string) => Promise<Project>>(),
+  readProject: vi.fn<(path: string) => Promise<OpenedProject>>(),
   writeProject: vi.fn<(path: string, content: ProjectContent) => Promise<Project>>(),
   computeSchemaDiff: vi.fn(),
   refreshProjectContent: vi.fn(),
@@ -81,7 +88,8 @@ const emptyPreferences = { formatVersion: 1, recentConnections: [], recentProjec
 
 function savedFile(): Project {
   return {
-    formatVersion: 1,
+    formatVersion: 2,
+    minReaderVersion: 2,
     savedAt: "2026-10-13T18:30:00Z",
     savedWith: "SchemaCraft 0.1.0",
     connection: {
@@ -98,6 +106,37 @@ function savedFile(): Project {
     snapshot,
     canvas: { detailLevel: "full", layout: "manual", viewport: { x: 0, y: 0, zoom: 1 }, nodes: [] },
   };
+}
+
+function openedFile(): OpenedProject {
+  return { project: savedFile(), isReadOnly: false };
+}
+
+/** A file a newer version wrote, which this one opens read-only. */
+function newerFile(): OpenedProject {
+  return {
+    project: { ...savedFile(), formatVersion: 3, savedWith: "SchemaCraft 1.3.0" },
+    isReadOnly: true,
+  };
+}
+
+async function open(opened: OpenedProject, path: string): Promise<void> {
+  projectBackend.readProject.mockResolvedValue(opened);
+  useProjectStore.getState().openProject(path);
+  await vi.waitFor(() => {
+    expect(useProjectStore.getState().project?.path).toBe(path);
+  });
+}
+
+/** What the Rust side answers to a save: the content under a fresh header. */
+function writtenAs(content: ProjectContent): Promise<Project> {
+  return Promise.resolve({
+    formatVersion: 2,
+    minReaderVersion: 2,
+    savedAt: "2026-10-15T20:00:00Z",
+    savedWith: "SchemaCraft 1.1.0",
+    ...content,
+  });
 }
 
 beforeEach(() => {
@@ -195,7 +234,7 @@ describe("saving", () => {
 describe("opening", () => {
   it("reads the chosen file into a clean project without live settings", async () => {
     projectBackend.pickProjectToOpen.mockResolvedValue("C:\\work\\northwind.scraft");
-    projectBackend.readProject.mockResolvedValue(savedFile());
+    projectBackend.readProject.mockResolvedValue(openedFile());
 
     useProjectStore.getState().openProject();
     await vi.waitFor(() => {
@@ -228,7 +267,7 @@ describe("opening", () => {
   it("asks before discarding unsaved changes", async () => {
     useProjectStore.getState().loadFromInspection(snapshot, settings, inspection);
     useProjectStore.getState().setDetailLevel("compact");
-    projectBackend.readProject.mockResolvedValue(savedFile());
+    projectBackend.readProject.mockResolvedValue(openedFile());
 
     useProjectStore.getState().openProject("C:\\work\\other.scraft");
     expect(useProjectStore.getState().pendingDiscard).not.toBeNull();
@@ -272,5 +311,120 @@ describe("changes", () => {
     expect(project?.isDirty).toBe(true);
     expect(project?.content.snapshot.tables).toEqual([]);
     expect(project?.liveSettings?.trustServerCertificate).toBe(false);
+  });
+});
+
+describe("a read-only project", () => {
+  const key = "dbo.Customers";
+
+  it("can be rearranged but is never marked unsaved", async () => {
+    await open(newerFile(), "C:\\work\\next.scraft");
+    const opened = useProjectStore.getState().project;
+    expect(opened?.isReadOnly).toBe(true);
+    expect(opened?.savedWith).toBe("SchemaCraft 1.3.0");
+
+    useProjectStore
+      .getState()
+      .updateCanvas((canvas) => withPositions(canvas, new Map([[key, { x: 300, y: 40 }]])));
+    useProjectStore.getState().updateCanvas((canvas) => withCollapsed(canvas, [key], true));
+    useProjectStore.getState().setDetailLevel("compact");
+    expect(useProjectStore.getState().project?.content.canvas.nodes[0]?.position).toEqual({
+      x: 300,
+      y: 40,
+    });
+    expect(useProjectStore.getState().project?.isDirty).toBe(false);
+
+    useProjectStore.getState().undo();
+    expect(useProjectStore.getState().project?.content.canvas.nodes[0]?.isCollapsed).toBe(false);
+    expect(useProjectStore.getState().project?.isDirty).toBe(false);
+    useProjectStore.getState().redo();
+    expect(useProjectStore.getState().project?.content.canvas.nodes[0]?.isCollapsed).toBe(true);
+    expect(useProjectStore.getState().project?.isDirty).toBe(false);
+
+    const content = useProjectStore.getState().project?.content;
+    if (content === undefined) {
+      throw new Error("project expected");
+    }
+    useProjectStore.getState().applyRefreshedContent(content, settings);
+    expect(useProjectStore.getState().project?.isDirty).toBe(false);
+  });
+
+  it("is never written, and leaving it asks nothing", async () => {
+    await open(newerFile(), "C:\\work\\next.scraft");
+    useProjectStore.getState().updateCanvas((canvas) => withHidden(canvas, [key], true));
+
+    await useProjectStore.getState().saveProject();
+    await useProjectStore.getState().saveProjectAs();
+    expect(projectBackend.pickProjectToSave).not.toHaveBeenCalled();
+    expect(projectBackend.writeProject).not.toHaveBeenCalled();
+
+    projectBackend.readProject.mockResolvedValue(openedFile());
+    useProjectStore.getState().openProject("C:\\work\\other.scraft");
+    expect(useProjectStore.getState().pendingDiscard).toBeNull();
+    await vi.waitFor(() => {
+      expect(useProjectStore.getState().project?.isReadOnly).toBe(false);
+    });
+  });
+});
+
+describe("keys this version does not know", () => {
+  it("survive dragging, hiding, collapsing, layouts, undo and saving", async () => {
+    const file = savedFile();
+    const customers = { schema: "dbo", name: "Customers" };
+    await open(
+      {
+        project: {
+          ...file,
+          ...{ annotations: [{ entity: customers, text: "Monthly partitions" }] },
+          snapshot: { ...file.snapshot, ...{ routines: [{ name: "usp_PlaceOrder" }] } },
+          canvas: {
+            ...file.canvas,
+            ...{ gridSize: 16 },
+            nodes: [
+              {
+                name: customers,
+                position: { x: 0, y: 0 },
+                isCollapsed: false,
+                isHidden: false,
+                ...{ color: "teal" },
+              },
+            ],
+          },
+        },
+        isReadOnly: false,
+      },
+      "C:\\work\\extras.scraft",
+    );
+    const key = "dbo.Customers";
+    const { updateCanvas } = useProjectStore.getState();
+    updateCanvas((canvas) => withPositions(canvas, new Map([[key, { x: 120, y: 80 }]])));
+    updateCanvas((canvas) => withHidden(canvas, [key], true));
+    updateCanvas((canvas) => withHidden(canvas, [key], false));
+    updateCanvas((canvas) => withCollapsed(canvas, [key], true));
+    updateCanvas((canvas) => withLayout(canvas, new Map([[key, { x: 10, y: 20 }]]), "layered"));
+    useProjectStore.getState().setDetailLevel("compact");
+    useProjectStore.getState().undo();
+    useProjectStore.getState().redo();
+    projectBackend.writeProject.mockImplementation((_path, content) => writtenAs(content));
+
+    await useProjectStore.getState().saveProject();
+
+    const written = projectBackend.writeProject.mock.calls[0]?.[1];
+    const expected = {
+      annotations: [{ entity: customers, text: "Monthly partitions" }],
+      snapshot: { routines: [{ name: "usp_PlaceOrder" }] },
+      canvas: {
+        gridSize: 16,
+        layout: "layered",
+        nodes: [{ position: { x: 10, y: 20 }, isCollapsed: true, isHidden: false, color: "teal" }],
+      },
+    };
+    expect(written).toMatchObject(expected);
+    for (const header of ["formatVersion", "minReaderVersion", "savedAt", "savedWith"]) {
+      expect(written).not.toHaveProperty(header);
+    }
+    // The saved document keeps them too, for the next save.
+    expect(useProjectStore.getState().project?.content).toMatchObject(expected);
+    expect(useProjectStore.getState().project?.content).not.toHaveProperty("savedWith");
   });
 });

@@ -4,6 +4,7 @@ use ts_rs::TS;
 use super::InspectorError;
 use super::sqlserver::SqlServerConnectionSettings;
 use crate::credentials::{CredentialKey, CredentialStore};
+use crate::model::{AccessProbe, AccessProfile, CaptureScope};
 
 /// Everything needed to reach a database, tagged by engine so the right inspector is chosen.
 ///
@@ -71,6 +72,44 @@ impl InspectionOptions {
     }
 }
 
+impl From<&InspectionOptions> for CaptureScope {
+    /// The scope an access profile records for a capture made with these options.
+    fn from(options: &InspectionOptions) -> Self {
+        Self {
+            schemas: options.schemas.clone(),
+            include_views: options.include_views,
+        }
+    }
+}
+
+/// What the connection dialog learns about a database once it is selected, before anything is
+/// read: the schemas to offer in the filter and what the login is predicted to see.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "inspectors/")]
+pub struct DatabaseDescription {
+    /// User schemas holding at least one table or view the login can see, in name order.
+    pub schemas: Vec<String>,
+    /// Access predicted for a capture of the whole database.
+    pub access: AccessProfile,
+}
+
+impl DatabaseDescription {
+    /// Describes a database from the access facts of the login.
+    pub fn from_probe(probe: AccessProbe) -> Self {
+        let schemas = probe
+            .schemas
+            .iter()
+            .filter(|schema| schema.has_visible_objects)
+            .map(|schema| schema.name.clone())
+            .collect();
+        Self {
+            schemas,
+            access: AccessProfile::predicted(probe),
+        }
+    }
+}
+
 /// Identity of the server behind a successful connection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -90,7 +129,37 @@ pub struct ServerInformation {
 
 #[cfg(test)]
 mod tests {
-    use super::InspectionOptions;
+    use super::{DatabaseDescription, InspectionOptions};
+    use crate::model::{AccessLevel, AccessProbe, SchemaAccess};
+
+    #[test]
+    fn a_description_offers_only_schemas_with_visible_objects() {
+        let schema = |name: &str, has_visible_objects| SchemaAccess {
+            name: name.to_string(),
+            can_read_definitions: false,
+            can_read_data: true,
+            is_denied: false,
+            has_visible_objects,
+        };
+        let probe = AccessProbe {
+            can_read_definitions: false,
+            can_read_data: true,
+            explicit_denials: Some(0),
+            sees_objects: true,
+            schemas: vec![
+                schema("dbo", true),
+                schema("sales", true),
+                schema("staging", false),
+            ],
+            database_user: Some("reporting".to_string()),
+        };
+
+        let description = DatabaseDescription::from_probe(probe);
+
+        assert_eq!(description.schemas, ["dbo", "sales"]);
+        assert_eq!(description.access.level, AccessLevel::Partial);
+        assert_eq!(description.access.probe.schemas.len(), 3);
+    }
 
     #[test]
     fn empty_schema_filter_includes_everything() {

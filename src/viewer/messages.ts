@@ -1,3 +1,5 @@
+import { definitionText, isUnknownDefinition } from "@/features/schema/definition";
+import type { Definition } from "@/shared/contracts";
 import type { Locale } from "@/shared/i18n/locales";
 
 /** The viewer's own small catalogue; it must not pull the application's stores. */
@@ -18,6 +20,8 @@ const ENGLISH = {
   "summary.relations.one": "{count} relation",
   "summary.relations.other": "{count} relations",
   "footer.exported": "Exported {date} with {generator}",
+  "note.partial":
+    "Partial capture: some tables, views or expressions weren't visible to the login that read the schema.",
   "panel.table": "Table",
   "panel.view": "View",
   "panel.columns": "Columns",
@@ -38,6 +42,8 @@ const ENGLISH = {
   "panel.default": "default",
   "panel.disabled": "disabled",
   "panel.none": "None",
+  "panel.notAvailable": "not available",
+  "panel.notRecorded": "not recorded",
 } as const;
 
 export type ViewerMessageKey = keyof typeof ENGLISH;
@@ -59,6 +65,8 @@ const SPANISH: Record<ViewerMessageKey, string> = {
   "summary.relations.one": "{count} relación",
   "summary.relations.other": "{count} relaciones",
   "footer.exported": "Exportado el {date} con {generator}",
+  "note.partial":
+    "Captura parcial: algunas tablas, vistas o expresiones no eran visibles para el inicio de sesión que leyó el esquema.",
   "panel.table": "Tabla",
   "panel.view": "Vista",
   "panel.columns": "Columnas",
@@ -79,6 +87,8 @@ const SPANISH: Record<ViewerMessageKey, string> = {
   "panel.default": "predeterminado",
   "panel.disabled": "deshabilitada",
   "panel.none": "Ninguna",
+  "panel.notAvailable": "no disponible",
+  "panel.notRecorded": "no registrado",
 };
 
 const CATALOGUES: Record<Locale, Record<ViewerMessageKey, string>> = {
@@ -98,6 +108,14 @@ export function createViewerTranslator(locale: Locale): ViewerTranslator {
     catalogue[key].replaceAll(/\{(\w+)\}/gu, (match, name: string) =>
       name in parameters ? String(parameters[name]) : match,
     );
+}
+
+/** The text of a `CHECK` or `DEFAULT` expression, or why it is missing, e.g. "not available". */
+export function describeDefinition(definition: Definition, t: ViewerTranslator): string {
+  return (
+    definitionText(definition) ??
+    t(isUnknownDefinition(definition) ? "panel.notRecorded" : "panel.notAvailable")
+  );
 }
 
 /** Plural-aware key for a count, e.g. `summary.tables.one` or `summary.tables.other`. */

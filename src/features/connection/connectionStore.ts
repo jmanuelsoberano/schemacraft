@@ -5,6 +5,7 @@ import { usePreferencesStore } from "@/features/preferences/preferencesStore";
 import { useProjectStore } from "@/features/project/projectStore";
 import { toSavedConnection } from "@/features/project/savedConnection";
 import type {
+  AccessProfile,
   ConnectionSettings,
   InspectionEvent,
   InspectionOptions,
@@ -30,6 +31,17 @@ export interface TestedConnection {
   databases: string[];
   /** Schemas of the selected database; empty until a database is chosen. */
   schemas: string[];
+  /**
+   * What the login is predicted to see in the selected database, from the access probe;
+   * `null` until a database is chosen.
+   */
+  access: AccessProfile | null;
+}
+
+/** A read that stopped because the login sees no table or view, so there was nothing to show. */
+export interface BlockedInspection {
+  database: string;
+  access: AccessProfile;
 }
 
 /** Stages reported so far; the value is the object count, or `null` for stages without one. */
@@ -72,6 +84,11 @@ interface ConnectionState {
   review: PendingReview | null;
   failure: ConnectionFailure | null;
   validation: DraftValidationError | null;
+  /**
+   * Set when a read found that the login sees nothing. No project is created or reviewed, and
+   * reading again is not offered until the connection or the database changes.
+   */
+  blockedInspection: BlockedInspection | null;
   openDialog: () => void;
   closeDialog: () => void;
   updateDraft: (patch: Partial<ConnectionDraft>) => void;
@@ -90,6 +107,20 @@ interface ConnectionState {
 }
 
 const CONNECTION_STORAGE_KEY = "schemacraft.connection";
+
+/**
+ * Whether "Read schema" may run: a database is chosen, and the login is not known to see
+ * nothing there, as predicted when the database was selected or found by the last read.
+ */
+export function canReadSchema(
+  state: Pick<ConnectionState, "draft" | "tested" | "blockedInspection">,
+): boolean {
+  return (
+    state.draft.database !== null &&
+    state.tested?.access?.level !== "nothingVisible" &&
+    state.blockedInspection === null
+  );
+}
 
 /** Draft fields that do not invalidate a successful test when they change. */
 const FIELDS_KEPT_AFTER_TEST: ReadonlySet<keyof ConnectionDraft> = new Set([
@@ -144,6 +175,7 @@ export const useConnectionStore = create<ConnectionState>()(
         set({
           phase: "inspecting",
           failure: null,
+          blockedInspection: null,
           inspection: { jobId: null, database, stages: {}, isCancelling: false },
         });
 
@@ -169,6 +201,16 @@ export const useConnectionStore = create<ConnectionState>()(
           const snapshot = await backend.inspectDatabase(settings, options, handleEvent);
           if (rememberFromForm) {
             await syncRememberedPassword(settings);
+          }
+          // An empty diagram, or a review that removes everything, would state a falsehood:
+          // the login simply sees nothing. Stop here and say so.
+          if (snapshot.access?.level === "nothingVisible") {
+            set({
+              phase: "idle",
+              inspection: null,
+              blockedInspection: { database, access: snapshot.access },
+            });
+            return;
           }
           const project = useProjectStore.getState().project;
 
@@ -208,9 +250,16 @@ export const useConnectionStore = create<ConnectionState>()(
         review: null,
         failure: null,
         validation: null,
+        blockedInspection: null,
 
         openDialog: () => {
-          set({ isDialogOpen: true, mode: "connect", failure: null, validation: null });
+          set({
+            isDialogOpen: true,
+            mode: "connect",
+            failure: null,
+            validation: null,
+            blockedInspection: null,
+          });
         },
 
         closeDialog: () => {
@@ -222,18 +271,29 @@ export const useConnectionStore = create<ConnectionState>()(
             get().discardReview();
             return;
           }
-          set({ isDialogOpen: false, mode: "connect", failure: null, validation: null });
+          set({
+            isDialogOpen: false,
+            mode: "connect",
+            failure: null,
+            validation: null,
+            blockedInspection: null,
+          });
         },
 
         updateDraft: (patch) => {
           const invalidatesTest = Object.keys(patch).some(
             (field) => !FIELDS_KEPT_AFTER_TEST.has(field as keyof ConnectionDraft),
           );
+          // The verdict covers the whole database: other schemas, the views option or remembering
+          // the password would read the same nothing, so only another connection or database
+          // lifts it.
+          const unblocks = invalidatesTest || "database" in patch;
           set((state) => ({
             draft: { ...state.draft, ...patch },
             tested: invalidatesTest ? null : state.tested,
             failure: null,
             validation: null,
+            blockedInspection: unblocks ? null : state.blockedInspection,
           }));
         },
 
@@ -243,6 +303,7 @@ export const useConnectionStore = create<ConnectionState>()(
             tested: null,
             failure: null,
             validation: null,
+            blockedInspection: null,
           });
           void markStoredPassword(connection);
         },
@@ -254,13 +315,19 @@ export const useConnectionStore = create<ConnectionState>()(
             set({ validation: built.error });
             return;
           }
-          set({ phase: "testing", failure: null, validation: null, tested: null });
+          set({
+            phase: "testing",
+            failure: null,
+            validation: null,
+            tested: null,
+            blockedInspection: null,
+          });
 
           try {
             const backend = await getConnectionBackend();
             const server = await backend.testConnection(built.settings);
             const databases = await backend.listDatabases(built.settings);
-            set({ phase: "idle", tested: { server, databases, schemas: [] } });
+            set({ phase: "idle", tested: { server, databases, schemas: [], access: null } });
 
             const preferred =
               draft.database !== null && databases.includes(draft.database)
@@ -280,7 +347,12 @@ export const useConnectionStore = create<ConnectionState>()(
 
         selectDatabase: async (database) => {
           const { draft, tested } = get();
-          set({ draft: { ...draft, database, schemas: [] }, failure: null });
+          set({
+            draft: { ...draft, database, schemas: [] },
+            tested: tested === null ? null : { ...tested, schemas: [], access: null },
+            failure: null,
+            blockedInspection: null,
+          });
           if (tested === null) {
             return;
           }
@@ -293,10 +365,10 @@ export const useConnectionStore = create<ConnectionState>()(
 
           try {
             const backend = await getConnectionBackend();
-            const schemas = await backend.listSchemas(built.settings);
+            const { schemas, access } = await backend.describeDatabase(built.settings);
             set((state) => ({
               phase: "idle",
-              tested: state.tested === null ? null : { ...state.tested, schemas },
+              tested: state.tested === null ? null : { ...state.tested, schemas, access },
             }));
           } catch (caught: unknown) {
             set({ phase: "idle", failure: { error: toOperationError(caught), retry: "test" } });
@@ -323,14 +395,22 @@ export const useConnectionStore = create<ConnectionState>()(
 
         refresh: async () => {
           const project = useProjectStore.getState().project;
-          if (project === null || get().phase !== "idle") {
+          // A newer version wrote a read-only project; a snapshot read by this one would
+          // replace facts it does not understand.
+          if (project === null || project.isReadOnly || get().phase !== "idle") {
             return;
           }
           const database =
             project.content.connection.database ?? project.content.snapshot.databaseName;
 
           if (project.liveSettings !== null) {
-            set({ isDialogOpen: true, mode: "refresh", failure: null, validation: null });
+            set({
+              isDialogOpen: true,
+              mode: "refresh",
+              failure: null,
+              validation: null,
+              blockedInspection: null,
+            });
             await runInspection(project.liveSettings, project.content.inspection, database, false);
             return;
           }
@@ -343,6 +423,7 @@ export const useConnectionStore = create<ConnectionState>()(
             mode: "refresh",
             failure: null,
             validation: null,
+            blockedInspection: null,
             tested: null,
             draft: savedConnectionToDraft(connection, inspection),
           });

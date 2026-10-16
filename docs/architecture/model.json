@@ -4,7 +4,7 @@
       "get_app_info",
       "test_connection",
       "list_databases",
-      "list_schemas",
+      "describe_database",
       "inspect_database",
       "cancel_inspection",
       "read_project",
@@ -24,6 +24,7 @@
     ],
     "featureFolders": [
       "about",
+      "access",
       "canvas",
       "connection",
       "export",
@@ -47,7 +48,7 @@
       "preferencesBackend.ts",
       "projectBackend.ts"
     ],
-    "adrCount": 33
+    "adrCount": 35
   },
   "en": {
     "overview": {
@@ -85,10 +86,11 @@
             "id": "app-shell",
             "name": "AppShell and regions",
             "path": "src/app/shell",
-            "responsibility": "Lays out TopBar, EntitiesSidebar with SidebarResizer, DiagramCanvas and StatusBar. TopBar shows LayoutMenu; DiagramCanvas shows WelcomeOverlay and ProjectNotice. Mounts ConnectionDialog, ExportDialog, AboutDialog, CommandPalette, UnsavedChangesDialog and CanvasContextMenu once. Runs useKeyboardShortcuts, useDesktopShellGuards and useProjectWindow (window title, close guard). Calls preferencesStore.load() on mount.",
+            "responsibility": "Lays out TopBar, EntitiesSidebar with SidebarResizer, DiagramCanvas and StatusBar. TopBar shows LayoutMenu; DiagramCanvas shows WelcomeOverlay and ProjectNotice. Mounts ConnectionDialog, ExportDialog, AboutDialog, AccessReportDialog, CommandPalette, UnsavedChangesDialog and CanvasContextMenu once. Passes the AccessBar into the sidebar's notice slot, so the sidebar never imports features/access; the sidebar shows one muted footer while the object list may be incomplete and a neutral state for an empty schema. StatusBar adds the access chip and the read-only chip, and leaves out a count of zero under partial coverage. Runs useKeyboardShortcuts, useDesktopShellGuards and useProjectWindow (window title, close guard). Calls preferencesStore.load() on mount.",
             "patterns": [
               "Dialogs read their own open flag from a store",
-              "Props carry only the action registry"
+              "Props carry only the action registry",
+              "Notice slot instead of a feature import"
             ]
           },
           {
@@ -102,7 +104,7 @@
             "id": "diagram-canvas",
             "name": "DiagramCanvas",
             "path": "src/app/shell/DiagramCanvas.tsx",
-            "responsibility": "The one React Flow instance. Derives nodes and edges from projectStore and writes drags, collapse and viewport back through updateCanvas. When loadToken changes it lays out a fresh project (no path, never saved, not dirty, layout manual); otherwise it restores the saved viewport or fits the view. Shows WelcomeOverlay while no project is open and ProjectNotice when opening or saving fails.",
+            "responsibility": "The one React Flow instance. Derives nodes and edges from projectStore and writes drags, collapse and viewport back through updateCanvas. When loadToken changes it lays out a fresh project (no path, never saved, not dirty, layout manual); otherwise it restores the saved viewport or fits the view. Shows WelcomeOverlay while no project is open and ProjectNotice when opening or saving fails. With a project open but no table or view, it shows a neutral empty state whose reason (an empty database, the schema selection, nothing visible to this login) comes from emptySchemaReason in schema/coverage.ts.",
             "patterns": ["Request counters (fitRequest, focusRequest) drive imperative view calls"]
           },
           {
@@ -116,7 +118,7 @@
             "id": "action-registry",
             "name": "Action registry and shortcuts",
             "path": "src/app/actions",
-            "responsibility": "22 AppActions (id, labelKey, icon, shortcut, isAvailable, unavailableReason, run) built in useAppActions.ts. A disabled action says why in its tooltip: no project, a layout running, nothing hidden, nothing to undo or redo. useKeyboardShortcuts.ts routes keys in the capture phase; the first match wins. The toolbar, the menus, the welcome screen and the command palette all read this registry.",
+            "responsibility": "23 AppActions (id, labelKey, icon, shortcut, isAvailable, unavailableReason, run) built in useAppActions.ts. A disabled action says why in its tooltip: no project, a layout running, nothing hidden, nothing to undo or redo, or a read-only project (Save, Save as and Refresh). view.accessReport (Ctrl+Shift+A) opens the Access report whenever a project is open. useKeyboardShortcuts.ts routes keys in the capture phase; the first match wins. The toolbar, the menus, the welcome screen and the command palette all read this registry.",
             "patterns": ["Command / single registry (ADR-008)", "Platform-neutral mod key"]
           },
           {
@@ -151,7 +153,7 @@
             "id": "dev-hooks",
             "name": "Development hooks",
             "path": "src/app/developmentHooks.ts",
-            "responsibility": "DEV builds only: exposes the stores and the React Flow instance on window.__schemacraft so scripts over CDP can drive the app.",
+            "responsibility": "DEV builds only: exposes the stores, the access report store included, and the React Flow instance on window.__schemacraft so scripts over CDP can drive the app.",
             "patterns": ["DEV-only debug surface"]
           }
         ]
@@ -172,7 +174,7 @@
             "id": "shared-ipc",
             "name": "IPC backends and resolver",
             "path": "src/shared/ipc",
-            "responsibility": "The only folder that imports the Tauri API. One typed backend per area (connection, project, preferences, credentials, export), each with a Tauri, an unavailable and a DEV-only preview implementation picked by createBackendResolver. Every command goes through invokeCommand, which normalises rejections with toOperationError. nativeWindow.ts wraps the window (theme, title, close guard, destroy), runtime.ts tells whether the page runs in the desktop app, and appInfo.ts with useAppInfo wraps get_app_info.",
+            "responsibility": "The only folder that imports the Tauri API. One typed backend per area (connection, project, preferences, credentials, export), each with a Tauri, an unavailable and a DEV-only preview implementation picked by createBackendResolver. Every command goes through invokeCommand, which normalises rejections with toOperationError. nativeWindow.ts wraps the window (theme, title, close guard, destroy), runtime.ts tells whether the page runs in the desktop app, and appInfo.ts with useAppInfo wraps get_app_info. previewAccess.ts follows the Rust access verdicts and the refresh merge for the preview backends, whose server names choose what the login sees (ADR-014).",
             "patterns": [
               "Ports and adapters",
               "Lazy resolver (ADR-014, ADR-018)",
@@ -190,21 +192,21 @@
             "id": "shared-i18n",
             "name": "Internationalisation",
             "path": "src/shared/i18n",
-            "responsibility": "en.ts is the reference catalogue; es.ts is typed as MessageCatalog. useI18n() and translate(locale, key). catalogs.test.ts checks keys, empty messages and placeholders.",
+            "responsibility": "en.ts is the reference catalogue; es.ts is typed as MessageCatalog. useI18n() and translate(locale, key). catalogs.test.ts checks keys, empty messages and placeholders. formatDate.ts formats the UTC timestamps Rust sends in the current language.",
             "patterns": ["Typed message catalogues (ADR-007)"]
           },
           {
             "id": "shared-settings",
             "name": "Settings store",
             "path": "src/shared/settings",
-            "responsibility": "Theme preference, locale, sidebar open and width, persisted in localStorage 'schemacraft.settings'. useThemeSynchronization sets data-theme and the native window theme.",
+            "responsibility": "Theme preference, locale, sidebar open and width, and the signatures of the partial-access notices the user closed (50 at most, most recent first), persisted in localStorage 'schemacraft.settings'. mergePersistedSettings checks every stored field and falls back to its default. useThemeSynchronization sets data-theme and the native window theme.",
             "patterns": ["zustand persist with partialize and validating merge"]
           },
           {
             "id": "shared-ui",
             "name": "UI primitives",
             "path": "src/shared/ui",
-            "responsibility": "Accessible primitives built on Radix: Button, IconButton, Dialog, Select, SegmentedControl, RadioMenu, Tooltip and more. No '@/' imports; all text comes in through props.",
+            "responsibility": "Accessible primitives built on Radix: Button, IconButton, Dialog, Select, SegmentedControl, RadioMenu, Tooltip, Alert (optionally announced politely, with an icon and a dismiss button) and more. No '@/' imports; all text comes in through props.",
             "patterns": ["Pure presentational components"]
           },
           {
@@ -227,7 +229,7 @@
             "id": "feature-connection",
             "name": "connection",
             "path": "src/features/connection",
-            "responsibility": "Connection dialog: form, recent connections, test, database and schema pick, inspection with progress and cancel, refresh with diff review, remembered passwords, and the 'Trust the certificate and retry' remedy. connectionStore.ts is a phase machine (idle, testing, loadingSchemas, inspecting, reviewing, applying). fromSavedConnection.ts turns a saved connection back into a draft, live settings, a description and a history key. The draft persists in localStorage 'schemacraft.connection' without the password.",
+            "responsibility": "Connection dialog: form, recent connections, test, database and schema pick, inspection with progress and cancel, refresh with diff review, remembered passwords, and the 'Trust the certificate and retry' remedy. Choosing a database calls describeDatabase: the schemas to offer and the predicted access, which AccessCheckNotice shows at the end of the database section (a danger notice, with 'Read schema' disabled, when the login sees nothing). A read that finds nothing visible is blocked (blockedInspection) and creates no project. A review is up to date only when isUpToDate says so; ReviewChangesPanel also lists keys to invisible tables, not-checked facts with the date they were read and facts now available. connectionStore.ts is a phase machine (idle, testing, loadingSchemas, inspecting, reviewing, applying) and never refreshes a read-only project. fromSavedConnection.ts turns a saved connection back into a draft, live settings, a description and a history key, naming the server with formatTarget, the mirror of Rust format_target (ADR-011). The draft persists in localStorage 'schemacraft.connection' without the password.",
             "patterns": [
               "Store as controller",
               "Phase + failure instead of booleans",
@@ -238,8 +240,12 @@
             "id": "feature-project",
             "name": "project",
             "path": "src/features/project",
-            "responsibility": "The open project: open, save, save as, undo and redo, unsaved-changes guard. projectStore.ts is the Memento caretaker (HISTORY_LIMIT 100) and runs ensurePlaced on every open, inspection and refresh. savedConnection.ts turns connection settings into the SavedConnection a project records, so project never imports connection. The window title and the close guard live in useProjectWindow.",
-            "patterns": ["Memento caretaker (ADR-021)", "Guarded action (pendingDiscard)"]
+            "responsibility": "The open project: open, save, save as, undo and redo, unsaved-changes guard. projectStore.ts is the Memento caretaker (HISTORY_LIMIT 100) and runs ensurePlaced on every open, inspection and refresh. Opening reads an OpenedProject: a read-only project (a newer format, ADR-035) can be rearranged but is never marked unsaved and never saved, and savedWith names its writer. contentOf keeps the unknown root keys and drops the header keys. savedConnection.ts turns connection settings into the SavedConnection a project records, so project never imports connection. The window title and the close guard live in useProjectWindow.",
+            "patterns": [
+              "Memento caretaker (ADR-021)",
+              "Guarded action (pendingDiscard)",
+              "Read-only open (ADR-035)"
+            ]
           },
           {
             "id": "project-window",
@@ -266,7 +272,7 @@
             "id": "feature-canvas",
             "name": "canvas",
             "path": "src/features/canvas",
-            "responsibility": "Diagram state transforms (canvasState.ts), geometry, edges, nodes, context menu, transient UI store (canvasUiStore.ts), canvas commands (canvasActions.ts) and layouts/ (layered with ELK in a worker, organic with d3-force, radial). The saved diagram state lives in projectStore; canvas commands change it through updateCanvas.",
+            "responsibility": "Diagram state transforms (canvasState.ts), geometry, edges, nodes, context menu, transient UI store (canvasUiStore.ts), canvas commands (canvasActions.ts) and layouts/ (layered with ELK in a worker, organic with d3-force, radial). The saved diagram state lives in projectStore; canvas commands change it through updateCanvas. describeEntities counts the columns of keys to invisible tables as key columns, so they keep the key badge without an edge.",
             "patterns": [
               "Pure transforms applied via updateCanvas",
               "Strategy as tagged union + exhaustive switch (ADR-022)",
@@ -291,8 +297,12 @@
             "id": "feature-export",
             "name": "export",
             "path": "src/features/export",
-            "responsibility": "Export dialog and store. ExportSpecificationBuilder validates choices. svg/renderDiagram.ts draws the SVG; html/ builds the standalone page; fontFaces.ts supplies the fonts that are measured and embedded. Only the document string goes to Rust.",
-            "patterns": ["Builder", "TS draws, Rust writes (ADR-023, ADR-024)"]
+            "responsibility": "Export dialog and store. ExportSpecificationBuilder validates choices. svg/renderDiagram.ts draws the SVG; html/ builds the standalone page; fontFaces.ts supplies the fonts that are measured and embedded. visibleProjection is an allowlist: the visible tables, views and keys, the keys to invisible tables of visible tables and the access level, never the probe, the carriedOver list or unknown keys (the kept objects themselves are exported like any other). A partial capture adds a one-line note: a footnote in SVG, PDF and PNG (RenderOptions.footnote, included in the measured size) and a header line in the HTML viewer. Only the document string goes to Rust.",
+            "patterns": [
+              "Builder",
+              "TS draws, Rust writes (ADR-023, ADR-024)",
+              "Allowlist of what leaves the app"
+            ]
           },
           {
             "id": "export-font-faces",
@@ -316,10 +326,21 @@
             "patterns": ["Visibility store per dialog"]
           },
           {
+            "id": "feature-access",
+            "name": "access",
+            "path": "src/features/access",
+            "responsibility": "Graded disclosure of partial access (ADR-034). accessCause.ts orders the causes (nothing visible for lack of a grant or behind a possible DENY, an empty database, explicit DENYs, denials the login cannot see, no VIEW DEFINITION on the database or on some schemas, objects that may be missing) and says whether a GRANT helps; grantScript.ts writes the least-privilege GRANT VIEW DEFINITION script with comments in the user's language and the SQL Server 2022 disclosure; accessNotice.ts decides when the chip and the bar show and signs a notice by endpoint, database and verdicts. AccessChip (status bar), AccessBar (dismissible, above the entities list) and AccessReportDialog (view.accessReport, Ctrl+Shift+A) read snapshot.access of the open project; accessReportStore holds the dialog's open flag. CopyScriptButton copies the script; SchemaCraft never runs it. AccessCheckNotice lives in features/connection and uses these pure helpers, so the dependency points one way.",
+            "patterns": [
+              "Graded disclosure",
+              "Pure rules, thin components",
+              "Visibility store per dialog"
+            ]
+          },
+          {
             "id": "feature-schema",
             "name": "schema",
             "path": "src/features/schema",
-            "responsibility": "Pure helpers over SchemaSnapshot: formatDataType and describeColumn (dataType.ts), groupEntitiesBySchema, filterEntityGroups and countEntities (entities.ts). No store. Depends only on contracts, so the viewer bundle can import it.",
+            "responsibility": "Pure helpers over SchemaSnapshot: formatDataType and describeColumn (dataType.ts), which prints 'DEFAULT (not available)' or '(default not recorded)' instead of dropping a default it cannot read; groupEntitiesBySchema, filterEntityGroups and countEntities (entities.ts); definitionText and isUnknownDefinition (definition.ts), the only readers of the raw Definition statuses; objectsCoverage, definitionsCoverage, listsEveryObject, emptySchemaReason and the export-safe AccessSummary (coverage.ts); quoteIdentifier (sqlIdentifiers.ts). No store. Depends only on contracts, so the viewer bundle can import it.",
             "patterns": ["Leaf module, safe for the viewer bundle"]
           }
         ]
@@ -335,7 +356,7 @@
             "id": "viewer-app",
             "name": "Viewer",
             "path": "src/viewer/main.ts",
-            "responsibility": "Reads the embedded JSON, draws with renderDiagramSvg and offers pan and zoom, three detail levels, search, neighbour highlight, detail panel and theme toggle. Imports canvasState and geometry from canvas, formatDataType from schema and the renderer from export, but no React and no stores. Own EN/ES catalogue in messages.ts.",
+            "responsibility": "Reads the embedded JSON, draws with renderDiagramSvg and offers pan and zoom, three detail levels, search, neighbour highlight, detail panel and theme toggle. A text it cannot show reads 'not available' or 'not recorded' (describeDefinition), and an export of a partial capture shows a note line under the header bar. Imports canvasState and geometry from canvas, formatDataType and the definition readers from schema and the renderer from export, but no React and no stores. Own EN/ES catalogue in messages.ts.",
             "patterns": ["Reuses the app renderer (ADR-025)"]
           },
           {
@@ -445,14 +466,14 @@
             "id": "cmd-connection",
             "name": "commands/connection.rs",
             "path": "src-tauri/src/commands/connection.rs",
-            "responsibility": "Async. test_connection, list_databases, list_schemas and inspect_database each resolve a stored password through run_blocking, call create_inspector, then one inspector method. A typed password arrives inside ConnectionSettings on every call. inspect_database streams progress; cancel_inspection (sync) cancels by jobId.",
+            "responsibility": "Async. test_connection, list_databases, describe_database and inspect_database each resolve a stored password through run_blocking, call create_inspector, then one inspector method. describe_database runs the access probe and returns a DatabaseDescription: the schemas with visible tables or views and the predicted access, reading no object. A typed password arrives inside ConnectionSettings on every call. inspect_database streams progress; cancel_inspection (sync) cancels by jobId at any point, connecting included.",
             "patterns": ["Adapter (ChannelProgress implements ProgressReporter)"]
           },
           {
             "id": "cmd-project",
             "name": "commands/project.rs",
             "path": "src-tauri/src/commands/project.rs",
-            "responsibility": "Async. read_project and write_project (stamps savedAt and savedWith) do their file IO through run_blocking, and so do compute_schema_diff and refresh_project_content, which handle whole snapshots.",
+            "responsibility": "Async. read_project returns an OpenedProject (the project, upgraded when older, and isReadOnly) and write_project stamps savedAt and savedWith; both do their file IO through run_blocking, and so do compute_schema_diff and refresh_project_content, which handle whole snapshots.",
             "patterns": ["Thin command"]
           },
           {
@@ -481,7 +502,7 @@
       {
         "id": "core",
         "name": "Rust core",
-        "summary": "schemacraft-core: framework-free library with seven public modules. About 6.5k lines and 90 unit tests.",
+        "summary": "schemacraft-core: framework-free library with seven public modules. About 10.5k lines and 160 unit tests.",
         "path": "crates/schemacraft-core/src",
         "technologies": [
           "Rust 1.99.0 (edition 2024)",
@@ -501,14 +522,18 @@
             "id": "core-model",
             "name": "model",
             "path": "crates/schemacraft-core/src/model",
-            "responsibility": "Pure schema types: SchemaSnapshot, Table, View, Column, SqlDataType, PrimaryKey, Index, CheckConstraint, ForeignKey, QualifiedName. Foreign keys live on the snapshot because they are the graph edges.",
-            "patterns": ["Value objects", "Identity by qualified name"]
+            "responsibility": "Pure schema types: SchemaSnapshot, Table, View, Column, SqlDataType, PrimaryKey, Index, CheckConstraint, ForeignKey, QualifiedName. Foreign keys live on the snapshot because they are the graph edges; ForeignKeyToInvisibleTable holds the ones whose referenced table the login cannot see. Definition (readable, notVisible, notRecorded, unknown) carries CHECK and DEFAULT texts. access.rs holds AccessProbe and AccessProfile with the pure level and coverage rules; carry_over.rs holds SnapshotFact, CarriedFact and SchemaSnapshot::with_unchecked_facts_from, the merge a refresh applies. The snapshot keeps keys from newer versions in a flattened unknown map.",
+            "patterns": [
+              "Value objects",
+              "Identity by qualified name",
+              "Unknown is not none (ADR-034)"
+            ]
           },
           {
             "id": "core-inspectors",
             "name": "inspectors",
             "path": "crates/schemacraft-core/src/inspectors",
-            "responsibility": "DatabaseInspector trait (test_connection, list_databases, list_schemas, inspect), create_inspector factory, ConnectionSettings, InspectionOptions, ProgressReporter and InspectorError with 13 variants.",
+            "responsibility": "DatabaseInspector trait (test_connection, list_databases, describe_database, inspect), create_inspector factory, ConnectionSettings, InspectionOptions, DatabaseDescription, ProgressReporter with the CheckingAccess stage, and InspectorError with 13 variants. inspect can be cancelled at any point, connecting included.",
             "patterns": [
               "Strategy (PRD 4.3)",
               "Factory",
@@ -520,7 +545,7 @@
             "id": "core-sqlserver",
             "name": "inspectors/sqlserver",
             "path": "crates/schemacraft-core/src/inspectors/sqlserver",
-            "responsibility": "SQL Server strategy. settings.rs builds the tiberius Config, pool.rs is a bb8 manager opened per operation (1 or 4 sessions), catalog.rs holds the named sys.* queries, assembly.rs builds the snapshot purely, data_types.rs holds type rules, errors.rs maps driver errors (a TLS failure becomes UntrustedCertificate).",
+            "responsibility": "SQL Server strategy. settings.rs builds the tiberius Config, pool.rs is a bb8 manager opened per operation (1 or 4 sessions), access.rs holds the access probe (one batch, two result sets; no denial is counted for dbo) that describe_database and every inspection run, catalog.rs holds the named sys.* queries, assembly.rs builds the snapshot purely (unreadable texts become NotVisible, keys to invisible tables are kept apart), bound_defaults.rs reads legacy bound defaults, data_types.rs holds type rules, errors.rs maps driver errors (a TLS failure becomes UntrustedCertificate). inspect races the cancellation token with tokio::select! (biased), connecting included.",
             "patterns": [
               "Concrete Strategy",
               "Per-operation pool (ADR-009)",
@@ -532,25 +557,30 @@
             "id": "core-diff",
             "name": "diff",
             "path": "crates/schemacraft-core/src/diff",
-            "responsibility": "SchemaDiff::between(previous, current). Pairs tables and views by qualified name, foreign keys by (referencing table, name), columns, indexes and checks by name. Sorted output. No rename detection.",
-            "patterns": ["Key-based pairing", "Tagged-union change records (ADR-016)"]
+            "responsibility": "SchemaDiff::between(previous, current) compares the saved snapshot with the fresh one merged with what it could not check (with_unchecked_facts_from), so what the login cannot see is listed in not_checked, never as removed. Pairs tables and views by qualified name, foreign keys and keys to invisible tables by (referencing table, name), columns, indexes and checks by name; texts differ only when both are readable. Also now_available, access_changed and is_up_to_date. Sorted output. No rename detection.",
+            "patterns": [
+              "Key-based pairing",
+              "Tagged-union change records (ADR-016)",
+              "Unchecked facts are never changes"
+            ]
           },
           {
             "id": "core-project",
             "name": "project",
             "path": "crates/schemacraft-core/src/project",
-            "responsibility": ".scraft document (FORMAT_VERSION 1), read and written by file.rs with the fs helpers; ProjectContent, SavedConnection without password, CanvasState (the Memento) with normalisation and retaining_entities_of.",
+            "responsibility": ".scraft document (FORMAT_VERSION 2, MIN_READER_VERSION 2), read and written by file.rs with the fs helpers. A newer file opens read-only when its minReaderVersion allows it and is refused otherwise; an older one is upgraded by migrations.rs on the raw JSON; unknown keys at the root, the snapshot, the canvas and each node are kept (ADR-035). ProjectContent (with_refreshed_snapshot applies the carry-over merge), SavedConnection without password, CanvasState (the Memento) with normalisation and retaining_entities_of.",
             "patterns": [
               "Memento",
               "Header + flattened content",
-              "Byte-stable files (apart from savedAt)"
+              "Byte-stable files (apart from savedAt)",
+              "Forward-compatible reader (ADR-035)"
             ]
           },
           {
             "id": "core-file-io",
             "name": "fs.rs",
             "path": "crates/schemacraft-core/src/fs.rs",
-            "responsibility": "Crate-private helpers that project, preferences and export share: read_bytes tells a missing file apart, format_version reads the header of a versioned document, and write_json_atomically and write_bytes_atomically write a sibling .tmp, flush it with sync_all and rename it over the destination.",
+            "responsibility": "Crate-private helpers that project, preferences and export share: read_bytes tells a missing file apart, format_version reads the header of the preferences document (project files read their two version numbers themselves), and write_json_atomically and write_bytes_atomically write a sibling .tmp, flush it with sync_all and rename it over the destination.",
             "patterns": ["Atomic replace", "Header-first parse"]
           },
           {
@@ -596,7 +626,7 @@
             "id": "ext-sqlserver",
             "name": "SQL Server (read-only)",
             "path": "crates/schemacraft-core/src/inspectors/sqlserver/catalog.rs",
-            "responsibility": "The only database the app talks to. Only its catalog is read. TLS mandatory by default without trusting the certificate. Sessions show program_name 'SchemaCraft' and close after each operation.",
+            "responsibility": "The only database the app talks to. Only its catalog is read, with the permissions of the user's login: what that login cannot see is recorded as not visible, never as absent (ADR-034). TLS mandatory by default without trusting the certificate. Sessions show program_name 'SchemaCraft' and close after each operation.",
             "patterns": ["Read-only introspection"]
           },
           {
@@ -624,7 +654,7 @@
             "id": "ext-localstorage",
             "name": "WebView2 localStorage",
             "path": "src/shared/settings/settingsStore.ts",
-            "responsibility": "Two keys: 'schemacraft.settings' and 'schemacraft.connection'. The second blanks the password but keeps server, login, database, schemas, encryption and trustServerCertificate. Both live in the WebView2 profile under %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft, and deleting preferences.json clears neither.",
+            "responsibility": "Two keys: 'schemacraft.settings' (theme, language, the entities panel and the closed access notices) and 'schemacraft.connection' (the last draft: the password blank, but server, login, database, schemas, encryption and trustServerCertificate kept). Both live in the WebView2 profile under %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft. Neither holds a secret; deleting preferences.json clears neither, and clearing the WebView2 data resets both (ADR-017).",
             "patterns": ["Per-window UI conveniences only"]
           }
         ]
@@ -649,7 +679,7 @@
             "id": "ci",
             "name": "CI workflow",
             "path": ".github/workflows/ci.yml",
-            "responsibility": "On every pull request each job first runs scripts/ci-changes.sh. Windows job: prettier, eslint, tsc, vitest and npm run docs:check always; when code changed, also cargo fmt, clippy -D warnings, cargo test, the contracts check, tauri build --no-bundle with the ci profile, WebView2 when the runner lacks it and the smoke test, uploading the exe and the screenshots. Linux job: SQL Server integration tests against mssql/server:2022-latest when the core changed. Pushes to main run everything and keep the cache warm (ADR-033).",
+            "responsibility": "On every pull request each job first runs scripts/ci-changes.sh. Windows job: prettier, eslint, tsc, vitest and npm run docs:check always; when code changed, also cargo fmt, clippy -D warnings, cargo test, the contracts check, tauri build --no-bundle with the ci profile, WebView2 when the runner lacks it and the smoke test, uploading the exe and the screenshots. Linux job: the SQL Server integration tests, sqlserver_integration and sqlserver_permissions, against mssql/server:2022-latest when the core changed. Pushes to main run everything and keep the cache warm (ADR-033).",
             "patterns": ["Required checks", "Change-based filtering that fails closed"]
           },
           {
@@ -684,7 +714,7 @@
             "id": "integration-tests",
             "name": "SQL Server integration tests",
             "path": "crates/schemacraft-core/tests",
-            "responsibility": "sqlserver_integration.rs creates databases from fixtures/sqlserver/fixture.sql, changes.sql and stress_200_tables.sql, then checks connection errors (the untrusted certificate included), inspection, progress, cancellation and refresh against a real server. The stress test must read 200 tables within 5 s (STRESS_BUDGET; the product target is 3 s). Every test is skipped when SCHEMACRAFT_TEST_MSSQL_HOST is not set.",
+            "responsibility": "sqlserver_integration.rs creates databases from fixtures/sqlserver/fixture.sql, changes.sql and stress_200_tables.sql, then checks connection errors (the untrusted certificate included), describe_database, inspection, progress, cancellation and refresh against a real server. sqlserver_permissions.rs seeds permissions.sql (the fixture schema, an empty database and a database with denials made to public) and creates nine low-privilege logins with permission_logins.sql (db_owner, db_datareader, VIEW DEFINITION only, reader plus a schema's VIEW DEFINITION, two tables, CONNECT only, two schema-DENY variants and a column DENY) with a password made up for the run, then checks every access verdict, hidden text and refresh rule, and that a denial to public never reaches dbo. tests/common holds the shared helpers. The stress test must read 200 tables within 5 s (STRESS_BUDGET; the product target is 3 s). Every test is skipped when SCHEMACRAFT_TEST_MSSQL_HOST is not set.",
             "patterns": ["Gated by environment variables", "Performance budget as a test"]
           },
           {
@@ -954,7 +984,7 @@
         "id": "shared-settings-to-ext-localstorage",
         "from": "shared-settings",
         "to": "ext-localstorage",
-        "label": "'schemacraft.settings'",
+        "label": "'schemacraft.settings' (UI conveniences, closed access notices)",
         "kind": "file"
       },
       {
@@ -1157,14 +1187,14 @@
         "id": "cmd-connection-to-core-inspectors",
         "from": "cmd-connection",
         "to": "core-inspectors",
-        "label": "create_inspector, inspect",
+        "label": "create_inspector, describe_database, inspect",
         "kind": "call"
       },
       {
         "id": "cmd-project-to-core-project",
         "from": "cmd-project",
         "to": "core-project",
-        "label": "read/write, with_refreshed_snapshot",
+        "label": "read (OpenedProject), write, with_refreshed_snapshot",
         "kind": "call"
       },
       {
@@ -1227,14 +1257,14 @@
         "id": "core-sqlserver-to-ext-sqlserver",
         "from": "core-sqlserver",
         "to": "ext-sqlserver",
-        "label": "TDS + TLS, read-only sys.* SELECTs",
+        "label": "TDS + TLS, read-only sys.* SELECTs and the access probe",
         "kind": "network"
       },
       {
         "id": "core-diff-to-core-model",
         "from": "core-diff",
         "to": "core-model",
-        "label": "compares snapshots",
+        "label": "compares snapshots merged by with_unchecked_facts_from",
         "kind": "call"
       },
       {
@@ -1255,7 +1285,7 @@
         "id": "core-project-to-core-file-io",
         "from": "core-project",
         "to": "core-file-io",
-        "label": "read_bytes, format_version, write_json_atomically",
+        "label": "read_bytes, write_json_atomically",
         "kind": "call"
       },
       {
@@ -1409,7 +1439,7 @@
         "id": "app-shell-to-feature-schema",
         "from": "app-shell",
         "to": "feature-schema",
-        "label": "EntitiesSidebar: groupEntitiesBySchema",
+        "label": "EntitiesSidebar: groupEntitiesBySchema; coverage for the footer, empty states and status bar counts",
         "kind": "call"
       },
       {
@@ -1556,7 +1586,7 @@
         "id": "viewer-app-to-feature-schema",
         "from": "viewer-app",
         "to": "feature-schema",
-        "label": "formatDataType",
+        "label": "formatDataType, definition readers",
         "kind": "call"
       },
       {
@@ -1577,7 +1607,7 @@
         "id": "ci-to-integration-tests",
         "from": "ci",
         "to": "integration-tests",
-        "label": "Linux job with a SQL Server 2022 service",
+        "label": "Linux job with a SQL Server 2022 service, both test binaries",
         "kind": "build"
       },
       {
@@ -1598,7 +1628,7 @@
         "id": "integration-tests-to-ext-sqlserver",
         "from": "integration-tests",
         "to": "ext-sqlserver",
-        "label": "seeds the fixture databases",
+        "label": "seeds the fixture databases and the low-privilege logins",
         "kind": "network"
       },
       {
@@ -1640,14 +1670,14 @@
         "id": "feature-connection-to-feature-schema",
         "from": "feature-connection",
         "to": "feature-schema",
-        "label": "describeColumn, formatDataType (ReviewChangesPanel)",
+        "label": "describeColumn, formatDataType, definition readers (ReviewChangesPanel)",
         "kind": "call"
       },
       {
         "id": "feature-export-to-feature-schema",
         "from": "feature-export",
         "to": "feature-schema",
-        "label": "formatDataType (renderDiagram)",
+        "label": "formatDataType (renderDiagram), AccessSummary (viewerData)",
         "kind": "call"
       },
       {
@@ -1712,16 +1742,58 @@
         "to": "shared-errors",
         "label": "describeOperationError",
         "kind": "call"
+      },
+      {
+        "id": "app-shell-to-feature-access",
+        "from": "app-shell",
+        "to": "feature-access",
+        "label": "AccessReportDialog, AccessBar in the sidebar's notice slot, AccessChip in the status bar",
+        "kind": "call"
+      },
+      {
+        "id": "action-registry-to-feature-access",
+        "from": "action-registry",
+        "to": "feature-access",
+        "label": "view.accessReport (Ctrl+Shift+A)",
+        "kind": "call"
+      },
+      {
+        "id": "feature-connection-to-feature-access",
+        "from": "feature-connection",
+        "to": "feature-access",
+        "label": "AccessCheckNotice and the review: causes, GRANT script, fact names",
+        "kind": "call"
+      },
+      {
+        "id": "feature-access-to-feature-project",
+        "from": "feature-access",
+        "to": "feature-project",
+        "label": "snapshot.access of the open project",
+        "kind": "call"
+      },
+      {
+        "id": "feature-access-to-feature-schema",
+        "from": "feature-access",
+        "to": "feature-schema",
+        "label": "quoteIdentifier for the GRANT script",
+        "kind": "call"
+      },
+      {
+        "id": "feature-access-to-shared-settings",
+        "from": "feature-access",
+        "to": "shared-settings",
+        "label": "dismissedAccessNotices",
+        "kind": "call"
       }
     ],
     "dataStores": [
       {
         "name": ".scraft project file",
         "location": "Any path the user picks in the Save dialog",
-        "format": "Pretty JSON, camelCase, trailing newline, formatVersion 1",
+        "format": "Pretty JSON, camelCase, trailing newline, formatVersion 2 with minReaderVersion 2",
         "owner": "Rust core: crates/schemacraft-core/src/project",
-        "contents": "Header (formatVersion, savedAt, savedWith) plus the connection without password (trustServerCertificate included), inspection options, schema snapshot and canvas state (detail level, layout, viewport, node positions, collapsed and hidden flags).",
-        "notes": "Written atomically. Newer versions are refused. Missing fields from older files take serde defaults. No migration code exists yet. Saving the same content twice gives the same bytes apart from savedAt (and savedWith after an upgrade); nodes are sorted by qualified name."
+        "contents": "Header (formatVersion, minReaderVersion, savedAt, savedWith) plus the connection without password (trustServerCertificate included), inspection options, the schema snapshot with its access profile (the permission facts, the database user name and the verdicts) and the facts kept from earlier reads, and canvas state (detail level, layout, viewport, node positions, collapsed and hidden flags).",
+        "notes": "Written atomically. A format 1 file (SchemaCraft 1.0) is upgraded in memory by migrations.rs and saved as format 2, which 1.0 cannot open. A newer file opens read-only when its minReaderVersion is 2 or less and is refused otherwise. Unknown keys at the root, the snapshot, the canvas and each node are kept and written back. The database user name stays in the file and never reaches an export. Saving the same content twice gives the same bytes apart from savedAt (and savedWith after an upgrade); nodes are sorted by qualified name."
       },
       {
         "name": "preferences.json",
@@ -1744,8 +1816,8 @@
         "location": "WebView2 profile under %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft",
         "format": "JSON, zustand persist version 1",
         "owner": "Frontend: src/shared/settings/settingsStore.ts",
-        "contents": "Theme preference, locale, sidebar open and sidebar width.",
-        "notes": "UI convenience only. Deleting preferences.json does not clear it."
+        "contents": "Theme preference, locale, sidebar open and sidebar width, and the signatures of the partial-access notices the user closed (endpoint, database, level and coverage; up to 50, most recent first).",
+        "notes": "UI convenience only, never a secret. mergePersistedSettings checks each field when it is read back and falls back to the default. Deleting preferences.json does not clear it; clearing the WebView2 data resets the theme, language and panel, and closed access notices show again (ADR-017)."
       },
       {
         "name": "localStorage 'schemacraft.connection'",
@@ -1753,15 +1825,15 @@
         "format": "JSON, zustand persist version 1",
         "owner": "Frontend: src/features/connection/connectionStore.ts",
         "contents": "The last connection draft: server, authentication mode, login, remember-password flags, database, schemas, includeViews, encryption and trustServerCertificate.",
-        "notes": "partialize forces the password to ''; everything else stays after the app closes. README.md says deleting preferences.json clears the history, but this key survives it. A trustServerCertificate = true chosen once is still set in the next session. No doc lists this key yet."
+        "notes": "partialize forces the password to ''; everything else stays after the app closes, so a trustServerCertificate = true chosen once is still set in the next session. Deleting preferences.json clears the history but not this draft; clearing the WebView2 data empties the form. ADR-017 and the README list both keys."
       },
       {
         "name": "Export files",
         "location": "Any path the user picks",
         "format": "SVG, HTML, PNG or PDF",
         "owner": "TypeScript builds the document (src/features/export); Rust writes it (crates/schemacraft-core/src/export)",
-        "contents": "The visible diagram. HTML embeds the visible data as JSON plus the viewer code.",
-        "notes": "Written atomically. HTML drops hidden tables, the connection and the server version."
+        "contents": "The visible diagram. HTML embeds the visible data as JSON plus the viewer code. A partial capture adds a one-line note: a footnote in SVG, PDF and PNG, a header line in HTML.",
+        "notes": "Written atomically. HTML drops hidden tables, the connection, the server version, the access probe and the database user, the carriedOver list and unknown keys; of the access profile it embeds only the level. Tables, texts and keys kept from an earlier read are exported like any other object on the diagram."
       },
       {
         "name": "Session memory (not saved)",
@@ -1776,8 +1848,8 @@
         "location": "The user's server",
         "format": "sys.* catalog views",
         "owner": "The user's server",
-        "contents": "Tables, views, columns, keys, indexes, checks and foreign keys.",
-        "notes": "Read-only source. SchemaCraft never writes to it and keeps no session open."
+        "contents": "Tables, views, columns, keys, indexes, checks and foreign keys, and the login's permissions (the access probe).",
+        "notes": "Read-only source. SchemaCraft never writes to it and keeps no session open. What the login cannot see is recorded as not visible, never as absent."
       },
       {
         "name": "Logs",
@@ -1801,8 +1873,8 @@
           },
           {
             "actor": "connectionStore",
-            "action": "Tests the connection and lists databases and schemas",
-            "detail": "draftToSettings builds ConnectionSettings; invoke test_connection, list_databases, list_schemas. A typed password travels inside ConnectionSettings on each of these calls; an empty field with a remembered password sends {source:'stored'}."
+            "action": "Tests the connection, lists databases and describes the chosen one",
+            "detail": "draftToSettings builds ConnectionSettings; invoke test_connection, list_databases, then describe_database once a database is chosen: the schemas with visible tables or views and the predicted access, which AccessCheckNotice shows (nothing for full access, one line for partial access, a blocking notice when the login sees nothing). A typed password travels inside ConnectionSettings on each of these calls; an empty field with a remembered password sends {source:'stored'}."
           },
           {
             "actor": "cmd-connection",
@@ -1817,7 +1889,7 @@
           {
             "actor": "SqlServerInspector",
             "action": "Reads the catalog",
-            "detail": "Opens a pool of up to 4 sessions and reads the server information; this connect phase does not watch the cancel token. Then 7 set-based sys.* queries run with tokio::try_join! inside tokio::select!, progress is reported, and assemble_snapshot builds the SchemaSnapshot. The pool is dropped."
+            "detail": "The whole job races the cancel token in tokio::select! (biased), connecting included. It opens a pool of up to 4 sessions and reads the server information. Then the access probe (stage CheckingAccess) and 7 set-based sys.* queries run together with tokio::try_join!, progress is reported, and assemble_snapshot builds the SchemaSnapshot with its access profile, NotVisible texts and keys to invisible tables. The pool is dropped."
           },
           {
             "actor": "connectionStore",
@@ -1825,9 +1897,14 @@
             "detail": "syncRememberedPassword applies the 'Remember password' box: remember_password when it is ticked and a password was typed, forget_password when it was cleared for a stored one."
           },
           {
+            "actor": "connectionStore",
+            "action": "Stops when nothing is visible",
+            "detail": "A snapshot whose access level is nothingVisible is not loaded: no project and no history entry. The dialog stays open with the blocking notice (blockedInspection) until the draft changes."
+          },
+          {
             "actor": "projectStore",
             "action": "Creates the open project",
-            "detail": "loadFromInspection: ensurePlaced, path null, liveSettings in memory, history cleared, loadToken + 1."
+            "detail": "loadFromInspection: ensurePlaced, path null, liveSettings in memory, history cleared, loadToken + 1. A partial capture shows the access chip in the status bar and the access bar above the entities."
           },
           {
             "actor": "connectionStore",
@@ -1933,7 +2010,7 @@
           {
             "actor": "cmd-project + core project",
             "action": "Stamps and writes",
-            "detail": "Project::from_content sets formatVersion 1, savedAt (now) and savedWith and normalises the canvas (nodes sorted by name); write_json_atomically writes <file name>.tmp, e.g. northwind.scraft.tmp, then renames it."
+            "detail": "Project::from_content sets formatVersion 2, minReaderVersion 2, savedAt (now) and savedWith, drops header keys found in the content and normalises the canvas (nodes sorted by name); unknown keys are written back. write_json_atomically writes <file name>.tmp, e.g. northwind.scraft.tmp, then renames it."
           },
           {
             "actor": "projectStore",
@@ -1948,12 +2025,12 @@
           {
             "actor": "core project/file.rs",
             "action": "Reads with a version gate",
-            "detail": "Parses the header first, refuses formatVersion > 1, then parses the whole document. Errors: NotFound, Read, NotAProject, UnsupportedFormatVersion."
+            "detail": "Parses the JSON once and reads formatVersion and minReaderVersion first: a minReaderVersion above 2 is refused, a newer formatVersion opens read-only, format 1 is upgraded by migrations.rs; then the typed parse, which keeps unknown keys. A newer file that does not parse is UnsupportedFormatVersion. Errors: NotFound, Read, NotAProject, UnsupportedFormatVersion. Returns OpenedProject."
           },
           {
             "actor": "projectStore",
             "action": "Shows the project",
-            "detail": "ensurePlaced, liveSettings null, history cleared, loadToken + 1, saved viewport restored. No database contact. On notFound the path leaves the recents; every failure shows in ProjectNotice."
+            "detail": "ensurePlaced, isReadOnly and savedWith from OpenedProject, liveSettings null, history cleared, loadToken + 1, saved viewport restored. No database contact. A read-only project shows the Read-only chip; Save, Save as and Refresh are unavailable and edits never mark it unsaved. On notFound the path leaves the recents; every failure shows in ProjectNotice."
           }
         ]
       },
@@ -2002,7 +2079,7 @@
           {
             "actor": "User",
             "action": "Presses F5",
-            "detail": "connectionStore.refresh opens the dialog in mode 'refresh'."
+            "detail": "connectionStore.refresh opens the dialog in mode 'refresh'. A read-only project is never refreshed."
           },
           {
             "actor": "connectionStore",
@@ -2017,17 +2094,17 @@
           {
             "actor": "cmd-project + core diff",
             "action": "Computes the differences",
-            "detail": "compute_schema_diff -> SchemaDiff::between; phase 'reviewing'."
+            "detail": "compute_schema_diff -> SchemaDiff::between, which compares against the fresh snapshot merged with what it could not check (with_unchecked_facts_from); phase 'reviewing'."
           },
           {
             "actor": "User",
             "action": "Reviews in ReviewChangesPanel",
-            "detail": "Added, removed and changed tables, views and relations. Discard changes nothing."
+            "detail": "Added, removed and changed tables, views, relations and keys to invisible tables; facts not checked, with the date they were read; facts now available; a change in what the login sees. A review with none of these offers only Close and says the project is up to date, or, under a partial capture, 'No changes in what this login can read'. Otherwise Apply is offered, worded 'Update project' when no object changed. Discard changes nothing."
           },
           {
             "actor": "cmd-project + core project",
             "action": "Applies",
-            "detail": "refresh_project_content -> with_refreshed_snapshot keeps canvas state of surviving entities."
+            "detail": "refresh_project_content -> with_refreshed_snapshot applies the same merge, so the project keeps every fact the review listed as not checked (in snapshot.carriedOver), then keeps canvas state of surviving entities."
           },
           {
             "actor": "projectStore",
@@ -2054,7 +2131,7 @@
           {
             "actor": "exportStore",
             "action": "Builds the document",
-            "detail": "Waits until document.fonts has the four static faces, so text is measured with them. renderDiagramSvg for SVG, PNG and PDF; for HTML, buildStandalonePage with visibleProjection and virtual:schemacraft-viewer. With embedFonts (SVG and HTML) the WOFF2 faces are inlined as base64."
+            "detail": "Waits until document.fonts has the four static faces, so text is measured with them. renderDiagramSvg for SVG, PNG and PDF; for HTML, buildStandalonePage with the visibleProjection allowlist and virtual:schemacraft-viewer. A partial capture adds its one-line note. With embedFonts (SVG and HTML) the WOFF2 faces are inlined as base64."
           },
           {
             "actor": "cmd-export",
@@ -2123,23 +2200,23 @@
         "streamsEvents": false
       },
       {
-        "name": "list_schemas",
-        "purpose": "Lists schemas that hold tables or views.",
+        "name": "describe_database",
+        "purpose": "Runs the access probe: schemas with visible tables or views and the predicted access (DatabaseDescription).",
         "streamsEvents": false
       },
       {
         "name": "inspect_database",
-        "purpose": "Reads the catalog and returns a SchemaSnapshot.",
+        "purpose": "Reads the catalog and the login's access and returns a SchemaSnapshot.",
         "streamsEvents": true
       },
       {
         "name": "cancel_inspection",
-        "purpose": "Cancels a running inspection by jobId.",
+        "purpose": "Cancels a running inspection by jobId, connecting included.",
         "streamsEvents": false
       },
       {
         "name": "read_project",
-        "purpose": "Reads and validates a .scraft file.",
+        "purpose": "Reads a .scraft file; upgrades an older format and opens a newer one read-only when allowed (OpenedProject).",
         "streamsEvents": false
       },
       {
@@ -2276,8 +2353,8 @@
       },
       {
         "name": "Long-running job",
-        "where": "src-tauri/src/state.rs, commands/connection.rs, commands/export.rs",
-        "why": "Jobs registry, Channel with Started{jobId} first, cancel_* command (ADR-013)."
+        "where": "src-tauri/src/state.rs, commands/connection.rs, commands/export.rs, crates/schemacraft-core/src/inspectors/sqlserver/mod.rs",
+        "why": "Jobs registry, Channel with Started{jobId} first, cancel_* command. Async jobs race the token, connecting included; blocking jobs check it between steps (ADR-013)."
       },
       {
         "name": "Atomic write",
@@ -2338,6 +2415,21 @@
         "name": "Blocking work off the main thread",
         "where": "src-tauri/src/commands/mod.rs",
         "why": "run_blocking moves file, keyring and heavy work to the blocking pool, so no command freezes the window (ADR-032)."
+      },
+      {
+        "name": "Graded disclosure",
+        "where": "src/features/access, src/features/schema/coverage.ts",
+        "why": "Full access adds nothing; partial access gets a chip, a dismissible bar and 'not available' where the user looks, and nothing is called absent unless coverage is complete (ADR-034)."
+      },
+      {
+        "name": "Carry-over on refresh",
+        "where": "crates/schemacraft-core/src/model/carry_over.rs",
+        "why": "A login that sees less removes nothing: unchecked facts are kept and listed as not checked, the same in the review and in the project (ADR-016, ADR-034)."
+      },
+      {
+        "name": "Forward-compatible reader",
+        "where": "crates/schemacraft-core/src/project/file.rs, project/migrations.rs",
+        "why": "formatVersion and minReaderVersion decide between upgrade, read-only and refusal, and unknown keys survive a save (ADR-035)."
       }
     ],
     "recipes": {
@@ -2434,7 +2526,7 @@
             },
             {
               "layer": "core model",
-              "step": "Add the field as Option or Vec with #[serde(default)] so old .scraft files still open. Derive serde camelCase and TS, add /// docs, update sample_snapshot.",
+              "step": "Add the field as Option or Vec with #[serde(default)] so old .scraft files still open. If a login may lack the right to read it, keep 'not visible' apart from 'none' (a Definition, or an Option documented as such) and decide how AccessCounts and the coverage count it. Derive serde camelCase and TS, add /// docs, update sample_snapshot and reader_snapshot.",
               "files": [
                 "crates/schemacraft-core/src/model/column.rs",
                 "crates/schemacraft-core/src/model/table.rs",
@@ -2453,7 +2545,7 @@
             },
             {
               "layer": "core diff",
-              "step": "Decide if a change shows in the review: a ColumnProperty, a new list on TableChange::Changed, or a ForeignKeyProperty.",
+              "step": "Decide if a change shows in the review: a ColumnProperty, a new list on TableChange::Changed, or a ForeignKeyProperty. Compare texts only when both are readable (differs_from), and decide what with_unchecked_facts_from keeps when the fresh capture cannot see the data.",
               "files": [
                 "crates/schemacraft-core/src/diff/entities.rs",
                 "crates/schemacraft-core/src/diff/foreign_keys.rs"
@@ -2461,9 +2553,10 @@
             },
             {
               "layer": "core project",
-              "step": "Keep FORMAT_VERSION 1 for additive fields, test that a document without the field loads, and update sample_project_content.",
+              "step": "A new per-entity fact raises FORMAT_VERSION, with a step in migrations.rs and a fixture file of the previous format; a new value of a closed enum also raises MIN_READER_VERSION (ADR-035). Test that the older file upgrades and saves, and update sample_project_content.",
               "files": [
                 "crates/schemacraft-core/src/project/document.rs",
+                "crates/schemacraft-core/src/project/migrations.rs",
                 "crates/schemacraft-core/src/project/test_fixtures.rs"
               ]
             },
@@ -2479,7 +2572,7 @@
             },
             {
               "layer": "Preview and fixtures",
-              "step": "Add the data to previewSnapshot, sampleProject and fabricatedDiff, and to every test literal of Table or Column.",
+              "step": "Add the data to previewSnapshot, sampleProject and fabricatedChanges, and to every test literal of Table or Column.",
               "files": [
                 "src/shared/ipc/previewConnectionBackend.ts",
                 "src/shared/ipc/previewProjectBackend.ts"
@@ -2487,7 +2580,7 @@
             },
             {
               "layer": "UI and exports",
-              "step": "Show it in EntityNode.tsx and ReviewChangesPanel.tsx, draw it in renderDiagram.ts and the viewer. Decide whether visibleProjection strips it from HTML.",
+              "step": "Show it in EntityNode.tsx and ReviewChangesPanel.tsx, draw it in renderDiagram.ts and the viewer, with 'not available' when the capture could not read it. visibleProjection is an allowlist: the data reaches HTML only if it is added there on purpose.",
               "files": [
                 "src/features/canvas/EntityNode.tsx",
                 "src/features/connection/ReviewChangesPanel.tsx",
@@ -2498,18 +2591,20 @@
             },
             {
               "layer": "Integration tests",
-              "step": "Start a local server with scripts/dev-sqlserver.ps1 start and load its env. Seed fixture.sql and changes.sql and assert in sqlserver_integration.rs. Keep the 200-table test (stress_200_tables.sql) under 5 s.",
+              "step": "Start a local server with scripts/dev-sqlserver.ps1 start and load its env. Seed fixture.sql and changes.sql and assert in sqlserver_integration.rs, and add the data to permissions.sql with an assertion per affected login in sqlserver_permissions.rs. Keep the 200-table test (stress_200_tables.sql) under 5 s.",
               "files": [
                 "crates/schemacraft-core/tests/fixtures/sqlserver/fixture.sql",
                 "crates/schemacraft-core/tests/fixtures/sqlserver/changes.sql",
                 "crates/schemacraft-core/tests/fixtures/sqlserver/stress_200_tables.sql",
+                "crates/schemacraft-core/tests/fixtures/sqlserver/permissions.sql",
                 "crates/schemacraft-core/tests/sqlserver_integration.rs",
+                "crates/schemacraft-core/tests/sqlserver_permissions.rs",
                 "scripts/dev-sqlserver.ps1"
               ]
             },
             {
               "layer": "Docs",
-              "step": "Update ADR-009 (query count), ADR-016 or ADR-015 if their rules change, README, ux-principles.md, CHANGELOG and this page's model.",
+              "step": "Update ADR-009 (query count), ADR-034 if visibility rules change, ADR-016 or ADR-035 if their rules change, README, ux-principles.md, CHANGELOG and this page's model.",
               "files": ["docs/architecture.md", "docs/architecture/model.json"]
             }
           ]
@@ -2602,7 +2697,7 @@
           "steps": [
             {
               "layer": "core",
-              "step": "Add the field to NodeState or CanvasState with #[serde(default)]; check normalized() and retaining_entities_of; test defaults and a round trip that is byte-stable apart from savedAt.",
+              "step": "Add the field to NodeState or CanvasState with #[serde(default)]; check normalized() and retaining_entities_of; test defaults and a round trip that is byte-stable apart from savedAt. Older versions keep it as an unknown key; raise FORMAT_VERSION only if it depends on content they could change (ADR-035).",
               "files": [
                 "crates/schemacraft-core/src/project/canvas.rs",
                 "crates/schemacraft-core/src/project/document.rs"
@@ -2722,19 +2817,19 @@
         },
         {
           "concern": ".scraft versioning",
-          "touches": "FORMAT_VERSION 1; additive fields with #[serde(default)]; a breaking change needs a bump, a migration and ADR-015."
+          "touches": "FORMAT_VERSION 2 and MIN_READER_VERSION 2; upgrades on the raw JSON in migrations.rs; newer files open read-only; unknown keys kept at the root, the snapshot, the canvas and each node. When to raise each number is in ADR-035."
         },
         {
           "concern": "Refresh diff",
-          "touches": "crates/schemacraft-core/src/diff, ReviewChangesPanel.tsx, refreshPlacement.ts, fabricatedDiff in the preview backend."
+          "touches": "crates/schemacraft-core/src/diff and model/carry_over.rs (not checked, now available, access changed), ReviewChangesPanel.tsx with isUpToDate, refreshPlacement.ts, withUncheckedFacts and fabricatedChanges in the preview backends."
         },
         {
           "concern": "Export parity and privacy",
-          "touches": "Shared geometry; markers and colours are copied in two places; visibleProjection decides what reaches HTML."
+          "touches": "Shared geometry; markers and colours are copied in two places; visibleProjection is an allowlist that decides what reaches HTML (never the probe, the database user, the carriedOver list or unknown keys; the kept objects themselves go out like any other); a partial capture carries one note line."
         },
         {
           "concern": "Preview backends",
-          "touches": "Keep previewSnapshot, sampleProject and fabricatedDiff current in src/shared/ipc."
+          "touches": "Keep previewSnapshot, the access scenarios (server names with partial, nothing or empty), the sample projects, previewAccess.ts and fabricatedChanges current in src/shared/ipc."
         },
         {
           "concern": "Errors",
@@ -2742,11 +2837,11 @@
         },
         {
           "concern": "Progress and cancel",
-          "touches": "Jobs, Channel, Started{jobId} first, cancel_* returning UnknownJob."
+          "touches": "Jobs, Channel, Started{jobId} first, cancel_* returning UnknownJob; async jobs race the token, connecting included (ADR-013)."
         },
         {
           "concern": "Security and data placement",
-          "touches": "No app database; four persistence places; passwords as SecretString and never in files, but a typed one crosses IPC on every connection call; the connection draft keeps trustServerCertificate; strict CSP (devCsp only for tauri dev) and capabilities."
+          "touches": "No app database; four persistence places; passwords as SecretString and never in files, but a typed one crosses IPC on every connection call; the connection draft keeps trustServerCertificate; .scraft stores the database user name, which exports never embed; strict CSP (devCsp only for tauri dev) and capabilities."
         },
         {
           "concern": "Module boundaries",
@@ -2763,6 +2858,10 @@
         {
           "concern": "Fonts",
           "touches": "main.tsx loads the static @fontsource faces that the exporter measures; fontFaces.ts embeds them in SVG and HTML; scripts/prepare-fonts.mjs turns the same faces into the TTFs in crates/schemacraft-core/assets/fonts for PNG and PDF. Bump the packages, run the script and commit the TTFs together."
+        },
+        {
+          "concern": "Partial access",
+          "touches": "A login may see part of a database (ADR-034). Whatever lists or counts schema facts asks src/features/schema/coverage.ts before it says 'none', and an unreadable text reads 'not available'. The server side is covered by the logins in sqlserver_permissions.rs; the browser preview reproduces it with a server name that contains partial."
         }
       ],
       "definitionOfDone": [
@@ -2771,7 +2870,8 @@
         "cargo fmt --check, clippy -D warnings and cargo test --workspace pass; no unwrap, expect or panic in production code.",
         "Contracts regenerated and committed.",
         "Unit tests beside new pure modules; catalog or diff changes have SQL Server integration tests.",
-        "Older .scraft files still open.",
+        "Older .scraft files still open, and newer ones open read-only (ADR-035).",
+        "Data features checked with a login that sees part of the schema: 'not available' instead of empty, nothing called absent.",
         "en.ts and es.ts complete.",
         "UX definition of done: action with tooltip and shortcut, loading/empty/error states, both themes, both languages, keyboard only, WCAG AA.",
         "Export parity checked and no private data leaks into HTML.",
@@ -2819,6 +2919,10 @@
         "rule": "Stateful features own one zustand store; schema is a pure helper module; async state is a phase plus a failure; canvas edits go only through projectStore.updateCanvas."
       },
       {
+        "topic": "Unknown is not none",
+        "rule": "A fact the login could not read is recorded as such (Definition notVisible, foreignKeysToInvisibleTables, partial coverage) and shown as 'not available'; a list says 'none' only under complete coverage. Wording: 'not visible to this login', never 'hidden', which means hidden on the canvas (ADR-034)."
+      },
+      {
         "topic": "i18n",
         "rule": "All user text in en.ts and es.ts; plurals with .one/.other and tCount; no string concatenation."
       },
@@ -2844,7 +2948,7 @@
       }
     ],
     "conformance": {
-      "verdict": "The architecture holds. The core has no Tauri dependency, commands are thin and keep blocking work off the main thread, errors are typed end to end, contracts are generated and checked, ESLint enforces the frontend layers, only src/shared/ipc talks to Tauri, and the viewer pulls in no React or stores. Builder and Memento are implemented as the ADRs say. The three major deviations are fixed, with most minor ones. The eleven still open are consistency problems, not structural breaks; ten are planned for v1.1, where the views, the inspector and the access probe touch the same code, and one stays in the backlog. Fixed entries stay below, marked fixed.",
+      "verdict": "The architecture holds. The core has no Tauri dependency, commands are thin and keep blocking work off the main thread, errors are typed end to end, contracts are generated and checked, ESLint enforces the frontend layers, only src/shared/ipc talks to Tauri, and the viewer pulls in no React or stores. Builder and Memento are implemented as the ADRs say. The three major deviations are fixed, with most minor ones. The eight still open are consistency problems, not structural breaks; seven are planned for v1.1, where the views and the inspector touch the same code, and one stays in the backlog. Fixed entries stay below, marked fixed.",
       "deviations": [
         {
           "what": "Disabled action buttons always say 'Available in an upcoming milestone', even when the cause is a runtime condition.",
@@ -2968,16 +3072,16 @@
         {
           "what": "Persisted state is split between preferences.json and localStorage. The 'schemacraft.connection' key is undocumented, keeps the last server, login, database and trustServerCertificate, and survives deleting preferences.json, which README.md says clears the history.",
           "where": "src/shared/settings/settingsStore.ts:34, src/features/connection/connectionStore.ts:95, README.md:175-177",
-          "fix": "Planned for v1.1: Record in ADR-017: Rust file for domain history, localStorage only for UI conveniences, never secrets. List both keys in the README and say what deleting each one clears.",
+          "fix": "Fixed: ADR-017 records the rule: preferences.json for domain history, localStorage only for conveniences of the window, never secrets. The README lists both keys and what clearing each one resets, and mergePersistedSettings checks every stored field.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Inspection and export use different progress and cancellation shapes; the connect phase is not cancellable; export checks cancel once; ADR-013 and progress.rs:55 overstate.",
           "where": "crates/schemacraft-core/src/inspectors/sqlserver/mod.rs:95-122, export/mod.rs:104",
-          "fix": "Planned for v1.1: Race the connect phase against the token; document one long-job pattern; fix the wording.",
+          "fix": "Fixed: inspect races the whole job against the token with tokio::select! (biased), connecting included, and a test against a server that never answers covers it. ADR-013 states one long-job pattern for inspection and export, and the progress.rs docs no longer promise more than the code does.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Adding an engine touches more than the inspectors doc says: SavedConnection, CredentialKey, model notions and frontend conversions are SQL Server specific.",
@@ -2989,9 +3093,9 @@
         {
           "what": "Server-address formatting differs: Rust appends ',1433', TypeScript does not.",
           "where": "inspectors/sqlserver/settings.rs:232-238 vs src/features/connection/serverAddress.ts:58-62",
-          "fix": "Planned for v1.1: Treat the Rust format as canonical and align the TS one.",
+          "fix": "Fixed: formatTarget in serverAddress.ts mirrors Rust format_target, with parity tests on the Rust cases; the status bar, the history and the saved-connection keys use it (ADR-011).",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Commands handle threading three ways and no ADR covers it. Sync commands (compute_schema_diff, refresh_project_content, preferences, credentials) run on the main thread, so a large diff or a slow keyring call blocks the UI; read_project and write_project do blocking IO on the async runtime; only export_diagram uses spawn_blocking.",
@@ -3038,7 +3142,7 @@
         {
           "what": "connectionStore, exportStore, preferencesStore and canvasActions have no unit tests.",
           "where": "src/features/*",
-          "fix": "Planned for v1.1: Follow projectStore.test.ts, mocking the backends.",
+          "fix": "Planned for v1.1: Follow projectStore.test.ts, mocking the backends. connectionStore and preferencesStore are covered now (connectionStore.test.ts, preferencesStore.test.ts); exportStore and canvasActions remain.",
           "severity": "minor",
           "status": "open"
         },
@@ -3085,7 +3189,7 @@
         "The page carries one manifest, at the top level of model.json and shared by both languages. CI checks it against the code with scripts/check-architecture-page.mjs (npm run docs:check).",
         "New command: add it to manifest.commands and to the commands table in both languages.",
         "New feature folder, core module or IPC backend: add it to the manifest, the layer list and the diagram edges.",
-        "New decision: add an ADR (ADR-034 is next), raise manifest.adrCount and link the ADR from the pattern or recipe it changes.",
+        "New decision: add an ADR (ADR-036 is next), raise manifest.adrCount and link the ADR from the pattern or recipe it changes.",
         "Scope change: update both PRD copies (docs/ and 02_Docs/), add a dated line to section 6, commit as docs(prd), only with the user's approval.",
         "Fixed deviation: mark it fixed in the same PR. New known deviation: add it with a severity and status open.",
         "New data store or localStorage key: add a row to the data table.",
@@ -3111,7 +3215,7 @@
       {
         "id": "scraft",
         "term": ".scraft",
-        "meaning": "A SchemaCraft project file: pretty JSON with the connection (no password), snapshot and canvas state."
+        "meaning": "A SchemaCraft project file: pretty JSON with a version header, the connection (no password), snapshot and canvas state."
       },
       {
         "id": "snapshot",
@@ -3221,7 +3325,7 @@
       {
         "id": "visible-projection",
         "term": "visibleProjection",
-        "meaning": "The privacy filter that keeps only visible data in an HTML export."
+        "meaning": "The allowlist that keeps only visible data in an HTML export: no access probe, carriedOver list or unknown keys. Objects kept from an earlier read are exported like any other on the diagram."
       },
       {
         "id": "adr",
@@ -3272,6 +3376,31 @@
         "id": "static-font-faces",
         "term": "Static font faces",
         "meaning": "Inter and JetBrains Mono at 400 and 600 from @fontsource. The exporter measures and embeds them, and the core bundles the same faces as TTF."
+      },
+      {
+        "id": "access-profile",
+        "term": "Access profile (AccessProfile)",
+        "meaning": "What the login of a capture could see, frozen in the snapshot: the probe's permission facts, the scope, a level (full, partial, empty, nothingVisible) and a coverage for objects and for CHECK and DEFAULT texts. Missing in 1.0 files, which read 'not recorded'."
+      },
+      {
+        "id": "not-visible",
+        "term": "Not visible",
+        "meaning": "A fact that exists but the login cannot read, such as a CHECK text without VIEW DEFINITION or a table outside its permissions. Shown as 'not available', never as absent."
+      },
+      {
+        "id": "not-checked",
+        "term": "Not checked",
+        "meaning": "A saved fact a refresh could not see and therefore kept, with the moment it was last read (CarriedFact in snapshot.carriedOver). Never counted as removed or changed."
+      },
+      {
+        "id": "read-only-project",
+        "term": "Read-only project",
+        "meaning": "A project of a newer format that this version may show: it can be rearranged and exported, but not saved or refreshed, and is never marked unsaved."
+      },
+      {
+        "id": "min-reader-version",
+        "term": "minReaderVersion",
+        "meaning": "Header field of .scraft: the oldest format a reader must understand to open the file. A reader at least that new but older than formatVersion opens it read-only."
       }
     ]
   },
@@ -3311,10 +3440,11 @@
             "id": "app-shell",
             "name": "AppShell y regiones",
             "path": "src/app/shell",
-            "responsibility": "Distribuye TopBar, EntitiesSidebar con SidebarResizer, DiagramCanvas y StatusBar. TopBar muestra LayoutMenu; DiagramCanvas muestra WelcomeOverlay y ProjectNotice. Monta una vez ConnectionDialog, ExportDialog, AboutDialog, CommandPalette, UnsavedChangesDialog y CanvasContextMenu. Ejecuta useKeyboardShortcuts, useDesktopShellGuards y useProjectWindow (título de la ventana, protección al cerrar). Llama a preferencesStore.load() al montar.",
+            "responsibility": "Distribuye TopBar, EntitiesSidebar con SidebarResizer, DiagramCanvas y StatusBar. TopBar muestra LayoutMenu; DiagramCanvas muestra WelcomeOverlay y ProjectNotice. Monta una vez ConnectionDialog, ExportDialog, AboutDialog, AccessReportDialog, CommandPalette, UnsavedChangesDialog y CanvasContextMenu. Pasa el AccessBar por la ranura notice del panel de entidades, así el panel nunca importa features/access; el panel muestra un pie atenuado mientras la lista de objetos puede estar incompleta y un estado neutral para un esquema vacío. StatusBar agrega el chip de acceso y el de solo lectura, y omite un conteo de cero con cobertura parcial. Ejecuta useKeyboardShortcuts, useDesktopShellGuards y useProjectWindow (título de la ventana, protección al cerrar). Llama a preferencesStore.load() al montar.",
             "patterns": [
               "Cada diálogo lee su bandera de apertura de un store",
-              "Los props solo llevan el registro de acciones"
+              "Los props solo llevan el registro de acciones",
+              "Ranura notice en vez de importar una funcionalidad"
             ]
           },
           {
@@ -3328,7 +3458,7 @@
             "id": "diagram-canvas",
             "name": "DiagramCanvas",
             "path": "src/app/shell/DiagramCanvas.tsx",
-            "responsibility": "La única instancia de React Flow. Deriva nodos y aristas de projectStore y escribe arrastres, colapsos y viewport con updateCanvas. Cuando cambia loadToken distribuye un proyecto nuevo (sin ruta, nunca guardado, sin cambios, distribución manual); si no, restaura el viewport guardado o ajusta la vista. Muestra WelcomeOverlay mientras no hay proyecto abierto y ProjectNotice cuando falla abrir o guardar.",
+            "responsibility": "La única instancia de React Flow. Deriva nodos y aristas de projectStore y escribe arrastres, colapsos y viewport con updateCanvas. Cuando cambia loadToken distribuye un proyecto nuevo (sin ruta, nunca guardado, sin cambios, distribución manual); si no, restaura el viewport guardado o ajusta la vista. Muestra WelcomeOverlay mientras no hay proyecto abierto y ProjectNotice cuando falla abrir o guardar. Con un proyecto abierto sin tablas ni vistas muestra un estado vacío neutral, cuyo motivo (una base de datos vacía, la selección de esquemas, nada visible para este inicio de sesión) viene de emptySchemaReason en schema/coverage.ts.",
             "patterns": [
               "Contadores de petición (fitRequest, focusRequest) disparan llamadas imperativas"
             ]
@@ -3344,7 +3474,7 @@
             "id": "action-registry",
             "name": "Registro de acciones y atajos",
             "path": "src/app/actions",
-            "responsibility": "22 AppActions (id, labelKey, icono, atajo, isAvailable, unavailableReason, run) construidas en useAppActions.ts. Una acción deshabilitada dice por qué en su tooltip: no hay proyecto, se está calculando una disposición, no hay nada oculto, nada que deshacer o rehacer. useKeyboardShortcuts.ts dirige las teclas en fase de captura; gana la primera coincidencia. La barra superior, los menús, la pantalla de bienvenida y la paleta de comandos leen este registro.",
+            "responsibility": "23 AppActions (id, labelKey, icono, atajo, isAvailable, unavailableReason, run) construidas en useAppActions.ts. Una acción deshabilitada dice por qué en su tooltip: no hay proyecto, se está calculando una disposición, no hay nada oculto, nada que deshacer o rehacer, o el proyecto es de solo lectura (Guardar, Guardar como y Actualizar). view.accessReport (Ctrl+Shift+A) abre el informe de acceso siempre que hay un proyecto abierto. useKeyboardShortcuts.ts dirige las teclas en fase de captura; gana la primera coincidencia. La barra superior, los menús, la pantalla de bienvenida y la paleta de comandos leen este registro.",
             "patterns": [
               "Command / registro único (ADR-008)",
               "Tecla mod independiente de plataforma"
@@ -3382,7 +3512,7 @@
             "id": "dev-hooks",
             "name": "Hooks de desarrollo",
             "path": "src/app/developmentHooks.ts",
-            "responsibility": "Solo en compilaciones DEV: expone los stores y la instancia de React Flow en window.__schemacraft para que scripts por CDP manejen la app.",
+            "responsibility": "Solo en compilaciones DEV: expone los stores, incluido el del informe de acceso, y la instancia de React Flow en window.__schemacraft para que scripts por CDP manejen la app.",
             "patterns": ["Superficie de depuración solo DEV"]
           }
         ]
@@ -3403,7 +3533,7 @@
             "id": "shared-ipc",
             "name": "Backends IPC y resolver",
             "path": "src/shared/ipc",
-            "responsibility": "La única carpeta que importa la API de Tauri. Un backend tipado por área (connection, project, preferences, credentials, export), cada uno con implementación Tauri, unavailable y preview (solo DEV), elegidas por createBackendResolver. Todo comando pasa por invokeCommand, que normaliza los rechazos con toOperationError. nativeWindow.ts envuelve la ventana (tema, título, protección al cerrar, destroy), runtime.ts indica si la página corre en la aplicación de escritorio, y appInfo.ts con useAppInfo envuelve get_app_info.",
+            "responsibility": "La única carpeta que importa la API de Tauri. Un backend tipado por área (connection, project, preferences, credentials, export), cada uno con implementación Tauri, unavailable y preview (solo DEV), elegidas por createBackendResolver. Todo comando pasa por invokeCommand, que normaliza los rechazos con toOperationError. nativeWindow.ts envuelve la ventana (tema, título, protección al cerrar, destroy), runtime.ts indica si la página corre en la aplicación de escritorio, y appInfo.ts con useAppInfo envuelve get_app_info. previewAccess.ts sigue los veredictos de acceso de Rust y la fusión de la actualización para los backends preview, cuyos nombres de servidor eligen qué ve el inicio de sesión (ADR-014).",
             "patterns": [
               "Puertos y adaptadores",
               "Resolver perezoso (ADR-014, ADR-018)",
@@ -3421,21 +3551,21 @@
             "id": "shared-i18n",
             "name": "Internacionalización",
             "path": "src/shared/i18n",
-            "responsibility": "en.ts es el catálogo de referencia; es.ts está tipado como MessageCatalog. useI18n() y translate(locale, key). catalogs.test.ts revisa claves, mensajes vacíos y placeholders.",
+            "responsibility": "en.ts es el catálogo de referencia; es.ts está tipado como MessageCatalog. useI18n() y translate(locale, key). catalogs.test.ts revisa claves, mensajes vacíos y placeholders. formatDate.ts da formato, en el idioma actual, a las marcas de tiempo UTC que envía Rust.",
             "patterns": ["Catálogos de mensajes tipados (ADR-007)"]
           },
           {
             "id": "shared-settings",
             "name": "Store de ajustes",
             "path": "src/shared/settings",
-            "responsibility": "Preferencia de tema, idioma, panel de entidades abierto y su ancho, persistidos en localStorage 'schemacraft.settings'. useThemeSynchronization fija data-theme y el tema nativo de la ventana.",
+            "responsibility": "Preferencia de tema, idioma, panel de entidades abierto y su ancho, y las firmas de los avisos de acceso parcial que el usuario cerró (50 como máximo, los más recientes primero), persistidos en localStorage 'schemacraft.settings'. mergePersistedSettings revisa cada campo guardado y vuelve a su valor por defecto si no es válido. useThemeSynchronization fija data-theme y el tema nativo de la ventana.",
             "patterns": ["zustand persist con partialize y merge que valida"]
           },
           {
             "id": "shared-ui",
             "name": "Primitivas de la interfaz",
             "path": "src/shared/ui",
-            "responsibility": "Primitivas accesibles sobre Radix: Button, IconButton, Dialog, Select, SegmentedControl, RadioMenu, Tooltip y más. Sin imports '@/'; todo el texto llega por props.",
+            "responsibility": "Primitivas accesibles sobre Radix: Button, IconButton, Dialog, Select, SegmentedControl, RadioMenu, Tooltip, Alert (que puede anunciarse con aria-live polite y llevar icono y botón para descartar) y más. Sin imports '@/'; todo el texto llega por props.",
             "patterns": ["Componentes puramente de presentación"]
           },
           {
@@ -3458,7 +3588,7 @@
             "id": "feature-connection",
             "name": "connection",
             "path": "src/features/connection",
-            "responsibility": "Diálogo de conexión: formulario, conexiones recientes, prueba, elección de base de datos y esquemas, inspección con progreso y cancelación, actualización con revisión de diferencias, contraseñas recordadas y el remedio 'Confiar en el certificado y reintentar'. connectionStore.ts es una máquina de fases (idle, testing, loadingSchemas, inspecting, reviewing, applying). fromSavedConnection.ts convierte una conexión guardada en borrador, ajustes vivos, descripción y clave del historial. El borrador persiste en localStorage 'schemacraft.connection' sin la contraseña.",
+            "responsibility": "Diálogo de conexión: formulario, conexiones recientes, prueba, elección de base de datos y esquemas, inspección con progreso y cancelación, actualización con revisión de diferencias, contraseñas recordadas y el remedio 'Confiar en el certificado y reintentar'. Al elegir una base de datos llama a describeDatabase: los esquemas que se ofrecen y el acceso previsto, que AccessCheckNotice muestra al final de la sección de base de datos (un aviso de peligro, con 'Leer esquema' deshabilitado, cuando el inicio de sesión no ve nada). Una lectura que no encuentra nada visible se bloquea (blockedInspection) y no crea proyecto. Una revisión está al día solo cuando isUpToDate lo dice; ReviewChangesPanel también lista las llaves hacia tablas no visibles, los hechos no comprobados con la fecha en que se leyeron y los hechos ahora disponibles. connectionStore.ts es una máquina de fases (idle, testing, loadingSchemas, inspecting, reviewing, applying) y nunca actualiza un proyecto de solo lectura. fromSavedConnection.ts convierte una conexión guardada en borrador, ajustes vivos, descripción y clave del historial, y nombra el servidor con formatTarget, el espejo de format_target de Rust (ADR-011). El borrador persiste en localStorage 'schemacraft.connection' sin la contraseña.",
             "patterns": [
               "Store como controlador",
               "Fase + fallo en vez de booleanos",
@@ -3469,8 +3599,12 @@
             "id": "feature-project",
             "name": "project",
             "path": "src/features/project",
-            "responsibility": "El proyecto abierto: abrir, guardar, guardar como, deshacer y rehacer, aviso de cambios sin guardar. projectStore.ts es el caretaker del Memento (HISTORY_LIMIT 100) y aplica ensurePlaced en cada apertura, inspección y actualización. savedConnection.ts convierte los ajustes de conexión en la SavedConnection que registra un proyecto, así project nunca importa connection. El título de la ventana y la protección al cerrar viven en useProjectWindow.",
-            "patterns": ["Caretaker del Memento (ADR-021)", "Acción protegida (pendingDiscard)"]
+            "responsibility": "El proyecto abierto: abrir, guardar, guardar como, deshacer y rehacer, aviso de cambios sin guardar. projectStore.ts es el caretaker del Memento (HISTORY_LIMIT 100) y aplica ensurePlaced en cada apertura, inspección y actualización. Abrir lee un OpenedProject: un proyecto de solo lectura (un formato más nuevo, ADR-035) se puede reorganizar, pero nunca se marca con cambios sin guardar ni se guarda, y savedWith nombra a quien lo escribió. contentOf conserva las claves desconocidas de la raíz y quita las del encabezado. savedConnection.ts convierte los ajustes de conexión en la SavedConnection que registra un proyecto, así project nunca importa connection. El título de la ventana y la protección al cerrar viven en useProjectWindow.",
+            "patterns": [
+              "Caretaker del Memento (ADR-021)",
+              "Acción protegida (pendingDiscard)",
+              "Apertura en solo lectura (ADR-035)"
+            ]
           },
           {
             "id": "project-window",
@@ -3497,7 +3631,7 @@
             "id": "feature-canvas",
             "name": "canvas",
             "path": "src/features/canvas",
-            "responsibility": "Transformaciones del estado del diagrama (canvasState.ts), geometría, aristas, nodos, menú contextual, store de estado transitorio de la interfaz (canvasUiStore.ts), comandos del lienzo (canvasActions.ts) y layouts/ (jerárquica con ELK en un worker, orgánica con d3-force, radial). El estado guardado del diagrama vive en projectStore; los comandos del lienzo lo cambian con updateCanvas.",
+            "responsibility": "Transformaciones del estado del diagrama (canvasState.ts), geometría, aristas, nodos, menú contextual, store de estado transitorio de la interfaz (canvasUiStore.ts), comandos del lienzo (canvasActions.ts) y layouts/ (jerárquica con ELK en un worker, orgánica con d3-force, radial). El estado guardado del diagrama vive en projectStore; los comandos del lienzo lo cambian con updateCanvas. describeEntities cuenta las columnas de las llaves hacia tablas no visibles como columnas de llave, así conservan su distintivo de llave sin dibujar arista.",
             "patterns": [
               "Transformaciones puras aplicadas con updateCanvas",
               "Strategy como unión etiquetada + switch exhaustivo (ADR-022)",
@@ -3522,8 +3656,12 @@
             "id": "feature-export",
             "name": "export",
             "path": "src/features/export",
-            "responsibility": "Diálogo y store de exportación. ExportSpecificationBuilder valida las opciones. svg/renderDiagram.ts dibuja el SVG; html/ arma la página autónoma; fontFaces.ts aporta las fuentes que se miden e incrustan. Solo la cadena del documento va a Rust.",
-            "patterns": ["Builder", "TS dibuja, Rust escribe (ADR-023, ADR-024)"]
+            "responsibility": "Diálogo y store de exportación. ExportSpecificationBuilder valida las opciones. svg/renderDiagram.ts dibuja el SVG; html/ arma la página autónoma; fontFaces.ts aporta las fuentes que se miden e incrustan. visibleProjection es una lista de permitidos: las tablas, vistas y llaves visibles, las llaves hacia tablas no visibles de las tablas visibles y el nivel de acceso, nunca el sondeo, la lista carriedOver ni las claves desconocidas (los objetos conservados en sí se exportan como cualquier otro). Una lectura parcial agrega una nota de una línea: una nota al pie en SVG, PDF y PNG (RenderOptions.footnote, incluida en el tamaño medido) y una línea bajo el encabezado del visor HTML. Solo la cadena del documento va a Rust.",
+            "patterns": [
+              "Builder",
+              "TS dibuja, Rust escribe (ADR-023, ADR-024)",
+              "Lista de permitidos de lo que sale de la app"
+            ]
           },
           {
             "id": "export-font-faces",
@@ -3547,10 +3685,21 @@
             "patterns": ["Store de visibilidad por diálogo"]
           },
           {
+            "id": "feature-access",
+            "name": "access",
+            "path": "src/features/access",
+            "responsibility": "Divulgación graduada del acceso parcial (ADR-034). accessCause.ts ordena las causas (nada visible por falta de permiso o tras un posible DENY, una base de datos vacía, DENY explícitos, denegaciones que el inicio de sesión no puede ver, sin VIEW DEFINITION en la base de datos o en algunos esquemas, objetos que pueden faltar) y dice si un GRANT ayuda; grantScript.ts escribe el script de mínimo privilegio GRANT VIEW DEFINITION con comentarios en el idioma del usuario y el aviso de SQL Server 2022; accessNotice.ts decide cuándo aparecen el chip y la barra y firma cada aviso por servidor, base de datos y veredictos. AccessChip (barra de estado), AccessBar (descartable, sobre la lista de entidades) y AccessReportDialog (view.accessReport, Ctrl+Shift+A) leen snapshot.access del proyecto abierto; accessReportStore guarda la bandera de apertura del diálogo. CopyScriptButton copia el script; SchemaCraft nunca lo ejecuta. AccessCheckNotice vive en features/connection y usa estos helpers puros, así la dependencia va en un solo sentido.",
+            "patterns": [
+              "Divulgación graduada",
+              "Reglas puras, componentes delgados",
+              "Store de visibilidad por diálogo"
+            ]
+          },
+          {
             "id": "feature-schema",
             "name": "schema",
             "path": "src/features/schema",
-            "responsibility": "Helpers puros sobre SchemaSnapshot: formatDataType y describeColumn (dataType.ts), groupEntitiesBySchema, filterEntityGroups y countEntities (entities.ts). Sin store. Depende solo de los contratos, así el bundle del visor puede importarlo.",
+            "responsibility": "Helpers puros sobre SchemaSnapshot: formatDataType y describeColumn (dataType.ts), que escribe 'DEFAULT (no disponible)' o '(valor por defecto no registrado)' en vez de omitir un valor por defecto que no puede leer; groupEntitiesBySchema, filterEntityGroups y countEntities (entities.ts); definitionText e isUnknownDefinition (definition.ts), los únicos lectores de los estados crudos de Definition; objectsCoverage, definitionsCoverage, listsEveryObject, emptySchemaReason y el AccessSummary que se puede exportar (coverage.ts); quoteIdentifier (sqlIdentifiers.ts). Sin store. Depende solo de los contratos, así el bundle del visor puede importarlo.",
             "patterns": ["Módulo hoja, seguro para el bundle del visor"]
           }
         ]
@@ -3566,7 +3715,7 @@
             "id": "viewer-app",
             "name": "Visor",
             "path": "src/viewer/main.ts",
-            "responsibility": "Lee el JSON incrustado, dibuja con renderDiagramSvg y ofrece desplazamiento y zoom, tres niveles de detalle, búsqueda, resaltado de vecinos, panel de detalle y cambio de tema. Importa canvasState y geometry de canvas, formatDataType de schema y el renderizador de export, pero nada de React ni de stores. Catálogo EN/ES propio en messages.ts.",
+            "responsibility": "Lee el JSON incrustado, dibuja con renderDiagramSvg y ofrece desplazamiento y zoom, tres niveles de detalle, búsqueda, resaltado de vecinos, panel de detalle y cambio de tema. Un texto que no puede mostrar dice 'no disponible' o 'no registrado' (describeDefinition), y la exportación de una lectura parcial muestra una línea de nota bajo la barra del encabezado. Importa canvasState y geometry de canvas, formatDataType y los lectores de definiciones de schema y el renderizador de export, pero nada de React ni de stores. Catálogo EN/ES propio en messages.ts.",
             "patterns": ["Reutiliza el renderizador de la app (ADR-025)"]
           },
           {
@@ -3679,14 +3828,14 @@
             "id": "cmd-connection",
             "name": "commands/connection.rs",
             "path": "src-tauri/src/commands/connection.rs",
-            "responsibility": "Async. test_connection, list_databases, list_schemas e inspect_database resuelven una contraseña guardada mediante run_blocking, llaman a create_inspector y luego a un método del inspector. Una contraseña tecleada llega dentro de ConnectionSettings en cada llamada. inspect_database transmite progreso; cancel_inspection (síncrono) cancela por jobId.",
+            "responsibility": "Async. test_connection, list_databases, describe_database e inspect_database resuelven una contraseña guardada mediante run_blocking, llaman a create_inspector y luego a un método del inspector. describe_database corre el sondeo de acceso y devuelve un DatabaseDescription: los esquemas con tablas o vistas visibles y el acceso previsto, sin leer ningún objeto. Una contraseña tecleada llega dentro de ConnectionSettings en cada llamada. inspect_database transmite progreso; cancel_inspection (síncrono) cancela por jobId en cualquier momento, también al conectar.",
             "patterns": ["Adaptador (ChannelProgress implementa ProgressReporter)"]
           },
           {
             "id": "cmd-project",
             "name": "commands/project.rs",
             "path": "src-tauri/src/commands/project.rs",
-            "responsibility": "Async. read_project y write_project (registra savedAt y savedWith) hacen su IO de archivos mediante run_blocking, igual que compute_schema_diff y refresh_project_content, que manejan snapshots completos.",
+            "responsibility": "Async. read_project devuelve un OpenedProject (el proyecto, actualizado si era más viejo, e isReadOnly) y write_project registra savedAt y savedWith; ambos hacen su IO de archivos mediante run_blocking, igual que compute_schema_diff y refresh_project_content, que manejan snapshots completos.",
             "patterns": ["Comando delgado"]
           },
           {
@@ -3715,7 +3864,7 @@
       {
         "id": "core",
         "name": "Core en Rust",
-        "summary": "schemacraft-core: biblioteca sin framework con siete módulos públicos. Unas 6.5 mil líneas y 90 pruebas unitarias.",
+        "summary": "schemacraft-core: biblioteca sin framework con siete módulos públicos. Unas 10.5 mil líneas y 160 pruebas unitarias.",
         "path": "crates/schemacraft-core/src",
         "technologies": [
           "Rust 1.99.0 (edition 2024)",
@@ -3735,14 +3884,18 @@
             "id": "core-model",
             "name": "model",
             "path": "crates/schemacraft-core/src/model",
-            "responsibility": "Tipos puros del esquema: SchemaSnapshot, Table, View, Column, SqlDataType, PrimaryKey, Index, CheckConstraint, ForeignKey, QualifiedName. Las llaves foráneas viven en el snapshot porque son las aristas del grafo.",
-            "patterns": ["Objetos de valor", "Identidad por nombre calificado"]
+            "responsibility": "Tipos puros del esquema: SchemaSnapshot, Table, View, Column, SqlDataType, PrimaryKey, Index, CheckConstraint, ForeignKey, QualifiedName. Las llaves foráneas viven en el snapshot porque son las aristas del grafo; ForeignKeyToInvisibleTable guarda las que apuntan a una tabla que el inicio de sesión no ve. Definition (readable, notVisible, notRecorded, unknown) lleva los textos de CHECK y DEFAULT. access.rs tiene AccessProbe y AccessProfile con las reglas puras de nivel y cobertura; carry_over.rs tiene SnapshotFact, CarriedFact y SchemaSnapshot::with_unchecked_facts_from, la fusión que aplica una actualización. El snapshot guarda las claves de versiones más nuevas en un mapa unknown aplanado.",
+            "patterns": [
+              "Objetos de valor",
+              "Identidad por nombre calificado",
+              "Desconocido no es inexistente (ADR-034)"
+            ]
           },
           {
             "id": "core-inspectors",
             "name": "inspectors",
             "path": "crates/schemacraft-core/src/inspectors",
-            "responsibility": "Trait DatabaseInspector (test_connection, list_databases, list_schemas, inspect), fábrica create_inspector, ConnectionSettings, InspectionOptions, ProgressReporter e InspectorError con 13 variantes.",
+            "responsibility": "Trait DatabaseInspector (test_connection, list_databases, describe_database, inspect), fábrica create_inspector, ConnectionSettings, InspectionOptions, DatabaseDescription, ProgressReporter con la etapa CheckingAccess e InspectorError con 13 variantes. inspect se puede cancelar en cualquier momento, también al conectar.",
             "patterns": [
               "Strategy (PRD 4.3)",
               "Factory",
@@ -3754,7 +3907,7 @@
             "id": "core-sqlserver",
             "name": "inspectors/sqlserver",
             "path": "crates/schemacraft-core/src/inspectors/sqlserver",
-            "responsibility": "Estrategia de SQL Server. settings.rs arma la Config de tiberius, pool.rs es un manager de bb8 abierto por operación (1 o 4 sesiones), catalog.rs tiene las consultas sys.* con nombre, assembly.rs arma el snapshot de forma pura, data_types.rs tiene las reglas de tipos y errors.rs traduce errores del driver (un fallo de TLS se vuelve UntrustedCertificate).",
+            "responsibility": "Estrategia de SQL Server. settings.rs arma la Config de tiberius, pool.rs es un manager de bb8 abierto por operación (1 o 4 sesiones), access.rs tiene el sondeo de acceso (un lote, dos conjuntos de resultados; para dbo no se cuenta ningún DENY) que corren describe_database y cada inspección, catalog.rs tiene las consultas sys.* con nombre, assembly.rs arma el snapshot de forma pura (los textos ilegibles quedan como NotVisible y las llaves hacia tablas no visibles van aparte), bound_defaults.rs lee los valores por defecto enlazados heredados, data_types.rs tiene las reglas de tipos y errors.rs traduce errores del driver (un fallo de TLS se vuelve UntrustedCertificate). inspect compite con el token de cancelación en tokio::select! (biased), también al conectar.",
             "patterns": [
               "Strategy concreta",
               "Pool por operación (ADR-009)",
@@ -3766,28 +3919,30 @@
             "id": "core-diff",
             "name": "diff",
             "path": "crates/schemacraft-core/src/diff",
-            "responsibility": "SchemaDiff::between(previous, current). Empareja tablas y vistas por nombre calificado, llaves foráneas por (tabla que referencia, nombre), columnas, índices y checks por nombre. Salida ordenada. Sin detección de renombres.",
+            "responsibility": "SchemaDiff::between(previous, current) compara el snapshot guardado con el fresco fusionado con lo que no pudo comprobar (with_unchecked_facts_from), así lo que el inicio de sesión no ve queda en not_checked y nunca como eliminado. Empareja tablas y vistas por nombre calificado, llaves foráneas y llaves hacia tablas no visibles por (tabla que referencia, nombre), columnas, índices y checks por nombre; los textos solo difieren cuando ambos son legibles. También now_available, access_changed e is_up_to_date. Salida ordenada. Sin detección de renombres.",
             "patterns": [
               "Emparejamiento por clave",
-              "Registros de cambio como unión etiquetada (ADR-016)"
+              "Registros de cambio como unión etiquetada (ADR-016)",
+              "Lo no comprobado nunca es un cambio"
             ]
           },
           {
             "id": "core-project",
             "name": "project",
             "path": "crates/schemacraft-core/src/project",
-            "responsibility": "Documento .scraft (FORMAT_VERSION 1), que file.rs lee y escribe con los helpers de fs; ProjectContent, SavedConnection sin contraseña, CanvasState (el Memento) con normalización y retaining_entities_of.",
+            "responsibility": "Documento .scraft (FORMAT_VERSION 2, MIN_READER_VERSION 2), que file.rs lee y escribe con los helpers de fs. Un archivo más nuevo se abre en solo lectura si su minReaderVersion lo permite y se rechaza si no; uno más viejo se actualiza con migrations.rs sobre el JSON crudo; las claves desconocidas de la raíz, el snapshot, el lienzo y cada nodo se conservan (ADR-035). ProjectContent (with_refreshed_snapshot aplica la fusión de lo conservado), SavedConnection sin contraseña, CanvasState (el Memento) con normalización y retaining_entities_of.",
             "patterns": [
               "Memento",
               "Encabezado + contenido aplanado",
-              "Archivos estables byte a byte (salvo savedAt)"
+              "Archivos estables byte a byte (salvo savedAt)",
+              "Lector compatible hacia adelante (ADR-035)"
             ]
           },
           {
             "id": "core-file-io",
             "name": "fs.rs",
             "path": "crates/schemacraft-core/src/fs.rs",
-            "responsibility": "Helpers privados del crate que comparten project, preferences y export: read_bytes distingue un archivo ausente, format_version lee el encabezado de un documento versionado, y write_json_atomically y write_bytes_atomically escriben un .tmp hermano, lo vuelcan al disco con sync_all y lo renombran sobre el destino.",
+            "responsibility": "Helpers privados del crate que comparten project, preferences y export: read_bytes distingue un archivo ausente, format_version lee el encabezado del documento de preferencias (los proyectos leen ellos mismos sus dos números de versión), y write_json_atomically y write_bytes_atomically escriben un .tmp hermano, lo vuelcan al disco con sync_all y lo renombran sobre el destino.",
             "patterns": ["Reemplazo atómico", "Lectura del encabezado primero"]
           },
           {
@@ -3833,7 +3988,7 @@
             "id": "ext-sqlserver",
             "name": "SQL Server (solo lectura)",
             "path": "crates/schemacraft-core/src/inspectors/sqlserver/catalog.rs",
-            "responsibility": "La única base de datos con la que habla la app. Solo se lee su catálogo. TLS obligatorio por defecto sin confiar en el certificado. Las sesiones muestran program_name 'SchemaCraft' y se cierran al terminar cada operación.",
+            "responsibility": "La única base de datos con la que habla la app. Solo se lee su catálogo, con los permisos del inicio de sesión del usuario: lo que ese inicio de sesión no ve se registra como no visible, nunca como inexistente (ADR-034). TLS obligatorio por defecto sin confiar en el certificado. Las sesiones muestran program_name 'SchemaCraft' y se cierran al terminar cada operación.",
             "patterns": ["Introspección de solo lectura"]
           },
           {
@@ -3861,7 +4016,7 @@
             "id": "ext-localstorage",
             "name": "localStorage de WebView2",
             "path": "src/shared/settings/settingsStore.ts",
-            "responsibility": "Dos claves: 'schemacraft.settings' y 'schemacraft.connection'. La segunda vacía la contraseña pero conserva servidor, inicio de sesión, base de datos, esquemas, cifrado y trustServerCertificate. Ambas viven en el perfil de WebView2 bajo %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft, y borrar preferences.json no limpia ninguna.",
+            "responsibility": "Dos claves: 'schemacraft.settings' (tema, idioma, el panel de entidades y los avisos de acceso cerrados) y 'schemacraft.connection' (el último borrador: la contraseña vacía, pero servidor, inicio de sesión, base de datos, esquemas, cifrado y trustServerCertificate se conservan). Ambas viven en el perfil de WebView2 bajo %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft. Ninguna guarda secretos; borrar preferences.json no limpia ninguna, y borrar los datos de WebView2 restablece ambas (ADR-017).",
             "patterns": ["Solo comodidades de la interfaz por ventana"]
           }
         ]
@@ -3886,7 +4041,7 @@
             "id": "ci",
             "name": "Workflow de CI",
             "path": ".github/workflows/ci.yml",
-            "responsibility": "En cada pull request, cada job corre primero scripts/ci-changes.sh. Job de Windows: prettier, eslint, tsc, vitest y npm run docs:check siempre; si cambió código, además cargo fmt, clippy -D warnings, cargo test, la revisión de contratos, tauri build --no-bundle con el perfil ci, WebView2 si el runner no lo tiene y la prueba de humo, y sube el exe y las capturas. Job de Linux: pruebas de integración con mssql/server:2022-latest si cambió el core. Los push a main corren todo y mantienen la caché caliente (ADR-033).",
+            "responsibility": "En cada pull request, cada job corre primero scripts/ci-changes.sh. Job de Windows: prettier, eslint, tsc, vitest y npm run docs:check siempre; si cambió código, además cargo fmt, clippy -D warnings, cargo test, la revisión de contratos, tauri build --no-bundle con el perfil ci, WebView2 si el runner no lo tiene y la prueba de humo, y sube el exe y las capturas. Job de Linux: las pruebas de integración con SQL Server, sqlserver_integration y sqlserver_permissions, contra mssql/server:2022-latest si cambió el core. Los push a main corren todo y mantienen la caché caliente (ADR-033).",
             "patterns": ["Checks obligatorios", "Filtrado según el cambio, que falla cerrado"]
           },
           {
@@ -3921,7 +4076,7 @@
             "id": "integration-tests",
             "name": "Pruebas de integración con SQL Server",
             "path": "crates/schemacraft-core/tests",
-            "responsibility": "sqlserver_integration.rs crea bases de datos a partir de fixtures/sqlserver/fixture.sql, changes.sql y stress_200_tables.sql y luego prueba contra un servidor real los errores de conexión (incluido el certificado no confiable), la inspección, el progreso, la cancelación y la actualización. La prueba de carga debe leer 200 tablas en menos de 5 s (STRESS_BUDGET; la meta del producto es 3 s). Todas se omiten si SCHEMACRAFT_TEST_MSSQL_HOST no está definida.",
+            "responsibility": "sqlserver_integration.rs crea bases de datos a partir de fixtures/sqlserver/fixture.sql, changes.sql y stress_200_tables.sql y luego prueba contra un servidor real los errores de conexión (incluido el certificado no confiable), describe_database, la inspección, el progreso, la cancelación y la actualización. sqlserver_permissions.rs siembra permissions.sql (el esquema de prueba, una base de datos vacía y una con DENY hechos a public) y crea con permission_logins.sql nueve inicios de sesión con pocos permisos (db_owner, db_datareader, solo VIEW DEFINITION, lector más el VIEW DEFINITION de un esquema, dos tablas, solo CONNECT, dos variantes de DENY sobre un esquema y un DENY sobre una columna) con una contraseña inventada para la corrida, y luego revisa cada veredicto de acceso, cada texto no visible y cada regla de la actualización, y que un DENY a public nunca alcanza a dbo. tests/common tiene los helpers compartidos. La prueba de carga debe leer 200 tablas en menos de 5 s (STRESS_BUDGET; la meta del producto es 3 s). Todas se omiten si SCHEMACRAFT_TEST_MSSQL_HOST no está definida.",
             "patterns": [
               "Controladas por variables de entorno",
               "Presupuesto de rendimiento como prueba"
@@ -4198,7 +4353,7 @@
         "id": "shared-settings-to-ext-localstorage",
         "from": "shared-settings",
         "to": "ext-localstorage",
-        "label": "'schemacraft.settings'",
+        "label": "'schemacraft.settings' (comodidades de la interfaz, avisos de acceso cerrados)",
         "kind": "file"
       },
       {
@@ -4401,14 +4556,14 @@
         "id": "cmd-connection-to-core-inspectors",
         "from": "cmd-connection",
         "to": "core-inspectors",
-        "label": "create_inspector, inspect",
+        "label": "create_inspector, describe_database, inspect",
         "kind": "call"
       },
       {
         "id": "cmd-project-to-core-project",
         "from": "cmd-project",
         "to": "core-project",
-        "label": "leer/escribir, with_refreshed_snapshot",
+        "label": "leer (OpenedProject), escribir, with_refreshed_snapshot",
         "kind": "call"
       },
       {
@@ -4471,14 +4626,14 @@
         "id": "core-sqlserver-to-ext-sqlserver",
         "from": "core-sqlserver",
         "to": "ext-sqlserver",
-        "label": "TDS + TLS, SELECT de solo lectura sobre sys.*",
+        "label": "TDS + TLS, SELECT de solo lectura sobre sys.* y el sondeo de acceso",
         "kind": "network"
       },
       {
         "id": "core-diff-to-core-model",
         "from": "core-diff",
         "to": "core-model",
-        "label": "compara snapshots",
+        "label": "compara snapshots fusionados con with_unchecked_facts_from",
         "kind": "call"
       },
       {
@@ -4499,7 +4654,7 @@
         "id": "core-project-to-core-file-io",
         "from": "core-project",
         "to": "core-file-io",
-        "label": "read_bytes, format_version, write_json_atomically",
+        "label": "read_bytes, write_json_atomically",
         "kind": "call"
       },
       {
@@ -4653,7 +4808,7 @@
         "id": "app-shell-to-feature-schema",
         "from": "app-shell",
         "to": "feature-schema",
-        "label": "EntitiesSidebar: groupEntitiesBySchema",
+        "label": "EntitiesSidebar: groupEntitiesBySchema; cobertura para el pie, los estados vacíos y los conteos de la barra de estado",
         "kind": "call"
       },
       {
@@ -4800,7 +4955,7 @@
         "id": "viewer-app-to-feature-schema",
         "from": "viewer-app",
         "to": "feature-schema",
-        "label": "formatDataType",
+        "label": "formatDataType, lectores de definiciones",
         "kind": "call"
       },
       {
@@ -4821,7 +4976,7 @@
         "id": "ci-to-integration-tests",
         "from": "ci",
         "to": "integration-tests",
-        "label": "job de Linux con un servicio SQL Server 2022",
+        "label": "job de Linux con un servicio SQL Server 2022, ambos binarios de prueba",
         "kind": "build"
       },
       {
@@ -4842,7 +4997,7 @@
         "id": "integration-tests-to-ext-sqlserver",
         "from": "integration-tests",
         "to": "ext-sqlserver",
-        "label": "crea las bases de datos de prueba",
+        "label": "crea las bases de datos de prueba y los inicios de sesión con pocos permisos",
         "kind": "network"
       },
       {
@@ -4884,14 +5039,14 @@
         "id": "feature-connection-to-feature-schema",
         "from": "feature-connection",
         "to": "feature-schema",
-        "label": "describeColumn, formatDataType (ReviewChangesPanel)",
+        "label": "describeColumn, formatDataType, lectores de definiciones (ReviewChangesPanel)",
         "kind": "call"
       },
       {
         "id": "feature-export-to-feature-schema",
         "from": "feature-export",
         "to": "feature-schema",
-        "label": "formatDataType (renderDiagram)",
+        "label": "formatDataType (renderDiagram), AccessSummary (viewerData)",
         "kind": "call"
       },
       {
@@ -4956,16 +5111,58 @@
         "to": "shared-errors",
         "label": "describeOperationError",
         "kind": "call"
+      },
+      {
+        "id": "app-shell-to-feature-access",
+        "from": "app-shell",
+        "to": "feature-access",
+        "label": "AccessReportDialog, AccessBar en la ranura notice del panel, AccessChip en la barra de estado",
+        "kind": "call"
+      },
+      {
+        "id": "action-registry-to-feature-access",
+        "from": "action-registry",
+        "to": "feature-access",
+        "label": "view.accessReport (Ctrl+Shift+A)",
+        "kind": "call"
+      },
+      {
+        "id": "feature-connection-to-feature-access",
+        "from": "feature-connection",
+        "to": "feature-access",
+        "label": "AccessCheckNotice y la revisión: causas, script GRANT, nombres de hechos",
+        "kind": "call"
+      },
+      {
+        "id": "feature-access-to-feature-project",
+        "from": "feature-access",
+        "to": "feature-project",
+        "label": "snapshot.access del proyecto abierto",
+        "kind": "call"
+      },
+      {
+        "id": "feature-access-to-feature-schema",
+        "from": "feature-access",
+        "to": "feature-schema",
+        "label": "quoteIdentifier para el script GRANT",
+        "kind": "call"
+      },
+      {
+        "id": "feature-access-to-shared-settings",
+        "from": "feature-access",
+        "to": "shared-settings",
+        "label": "dismissedAccessNotices",
+        "kind": "call"
       }
     ],
     "dataStores": [
       {
         "name": "Archivo de proyecto .scraft",
         "location": "Cualquier ruta que el usuario elija en el diálogo Guardar",
-        "format": "JSON con sangría, camelCase, salto de línea final, formatVersion 1",
+        "format": "JSON con sangría, camelCase, salto de línea final, formatVersion 2 con minReaderVersion 2",
         "owner": "Core en Rust: crates/schemacraft-core/src/project",
-        "contents": "Encabezado (formatVersion, savedAt, savedWith) más la conexión sin contraseña (con trustServerCertificate), opciones de inspección, snapshot del esquema y estado del lienzo (nivel de detalle, distribución, viewport, posiciones, banderas de colapsado y oculto).",
-        "notes": "Se escribe de forma atómica. Se rechazan versiones más nuevas. Los campos que faltan en archivos viejos toman valores por defecto de serde. Aún no hay código de migración. Guardar dos veces el mismo contenido da los mismos bytes salvo savedAt (y savedWith tras una actualización de la app); los nodos se ordenan por nombre calificado."
+        "contents": "Encabezado (formatVersion, minReaderVersion, savedAt, savedWith) más la conexión sin contraseña (con trustServerCertificate), opciones de inspección, el snapshot del esquema con su perfil de acceso (los hechos de permisos, el nombre del usuario de base de datos y los veredictos) y los hechos conservados de lecturas anteriores, y el estado del lienzo (nivel de detalle, distribución, viewport, posiciones, banderas de colapsado y oculto).",
+        "notes": "Se escribe de forma atómica. Un archivo de formato 1 (SchemaCraft 1.0) se actualiza en memoria con migrations.rs y se guarda como formato 2, que la 1.0 no puede abrir. Un archivo más nuevo se abre en solo lectura si su minReaderVersion es 2 o menor y se rechaza si no. Las claves desconocidas de la raíz, el snapshot, el lienzo y cada nodo se conservan y se vuelven a escribir. El nombre del usuario de base de datos se queda en el archivo y nunca llega a una exportación. Guardar dos veces el mismo contenido da los mismos bytes salvo savedAt (y savedWith tras una actualización de la app); los nodos se ordenan por nombre calificado."
       },
       {
         "name": "preferences.json",
@@ -4988,8 +5185,8 @@
         "location": "Perfil de WebView2 bajo %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft",
         "format": "JSON, zustand persist versión 1",
         "owner": "Frontend: src/shared/settings/settingsStore.ts",
-        "contents": "Preferencia de tema, idioma, panel de entidades abierto y su ancho.",
-        "notes": "Solo comodidad de la interfaz. Borrar preferences.json no lo limpia."
+        "contents": "Preferencia de tema, idioma, panel de entidades abierto y su ancho, y las firmas de los avisos de acceso parcial que el usuario cerró (servidor, base de datos, nivel y cobertura; hasta 50, los más recientes primero).",
+        "notes": "Solo comodidad de la interfaz, nunca un secreto. mergePersistedSettings revisa cada campo al leerlo y vuelve al valor por defecto si no es válido. Borrar preferences.json no lo limpia; borrar los datos de WebView2 restablece el tema, el idioma y el panel, y los avisos de acceso cerrados vuelven a aparecer (ADR-017)."
       },
       {
         "name": "localStorage 'schemacraft.connection'",
@@ -4997,15 +5194,15 @@
         "format": "JSON, zustand persist versión 1",
         "owner": "Frontend: src/features/connection/connectionStore.ts",
         "contents": "El último borrador de conexión: servidor, modo de autenticación, inicio de sesión, banderas de recordar contraseña, base de datos, esquemas, includeViews, cifrado y trustServerCertificate.",
-        "notes": "partialize fuerza la contraseña a ''; todo lo demás queda al cerrar la app. README.md dice que borrar preferences.json limpia el historial, pero esta clave sobrevive. Un trustServerCertificate = true elegido una vez sigue activo en la siguiente sesión. Ningún documento lista esta clave todavía."
+        "notes": "partialize fuerza la contraseña a ''; todo lo demás queda al cerrar la app, así que un trustServerCertificate = true elegido una vez sigue activo en la siguiente sesión. Borrar preferences.json limpia el historial pero no este borrador; borrar los datos de WebView2 vacía el formulario. ADR-017 y el README listan ambas claves."
       },
       {
         "name": "Archivos exportados",
         "location": "Cualquier ruta que el usuario elija",
         "format": "SVG, HTML, PNG o PDF",
         "owner": "TypeScript arma el documento (src/features/export); Rust lo escribe (crates/schemacraft-core/src/export)",
-        "contents": "El diagrama visible. El HTML incrusta los datos visibles como JSON más el código del visor.",
-        "notes": "Se escriben de forma atómica. El HTML omite tablas ocultas, la conexión y la versión del servidor."
+        "contents": "El diagrama visible. El HTML incrusta los datos visibles como JSON más el código del visor. Una lectura parcial agrega una nota de una línea: al pie en SVG, PDF y PNG, bajo el encabezado en HTML.",
+        "notes": "Se escriben de forma atómica. El HTML omite tablas ocultas, la conexión, la versión del servidor, el sondeo de acceso y el usuario de base de datos, la lista carriedOver y las claves desconocidas; del perfil de acceso solo incrusta el nivel. Las tablas, textos y llaves conservados de una lectura anterior se exportan como cualquier otro objeto del diagrama."
       },
       {
         "name": "Memoria de la sesión (no se guarda)",
@@ -5020,8 +5217,8 @@
         "location": "El servidor del usuario",
         "format": "Vistas de catálogo sys.*",
         "owner": "El servidor del usuario",
-        "contents": "Tablas, vistas, columnas, llaves, índices, checks y llaves foráneas.",
-        "notes": "Fuente de solo lectura. SchemaCraft nunca escribe en él ni deja sesiones abiertas."
+        "contents": "Tablas, vistas, columnas, llaves, índices, checks y llaves foráneas, y los permisos del inicio de sesión (el sondeo de acceso).",
+        "notes": "Fuente de solo lectura. SchemaCraft nunca escribe en él ni deja sesiones abiertas. Lo que el inicio de sesión no ve se registra como no visible, nunca como inexistente."
       },
       {
         "name": "Logs",
@@ -5045,8 +5242,8 @@
           },
           {
             "actor": "connectionStore",
-            "action": "Prueba la conexión y lista bases de datos y esquemas",
-            "detail": "draftToSettings arma ConnectionSettings; invoke test_connection, list_databases, list_schemas. Una contraseña tecleada viaja dentro de ConnectionSettings en cada una de estas llamadas; un campo vacío con contraseña recordada envía {source:'stored'}."
+            "action": "Prueba la conexión, lista bases de datos y describe la elegida",
+            "detail": "draftToSettings arma ConnectionSettings; invoke test_connection, list_databases y, al elegir una base de datos, describe_database: los esquemas con tablas o vistas visibles y el acceso previsto, que AccessCheckNotice muestra (nada con acceso completo, una línea con acceso parcial, un aviso que bloquea cuando el inicio de sesión no ve nada). Una contraseña tecleada viaja dentro de ConnectionSettings en cada una de estas llamadas; un campo vacío con contraseña recordada envía {source:'stored'}."
           },
           {
             "actor": "cmd-connection",
@@ -5061,7 +5258,7 @@
           {
             "actor": "SqlServerInspector",
             "action": "Lee el catálogo",
-            "detail": "Abre un pool de hasta 4 sesiones y lee la información del servidor; esta fase de conexión no atiende el token de cancelación. Luego corren 7 consultas sys.* por conjuntos con tokio::try_join! dentro de tokio::select!, se reporta el progreso y assemble_snapshot arma el SchemaSnapshot. El pool se descarta."
+            "detail": "Todo el trabajo compite con el token de cancelación en tokio::select! (biased), también al conectar. Abre un pool de hasta 4 sesiones y lee la información del servidor. Luego el sondeo de acceso (etapa CheckingAccess) y 7 consultas sys.* por conjuntos corren juntos con tokio::try_join!, se reporta el progreso y assemble_snapshot arma el SchemaSnapshot con su perfil de acceso, los textos NotVisible y las llaves hacia tablas no visibles. El pool se descarta."
           },
           {
             "actor": "connectionStore",
@@ -5069,9 +5266,14 @@
             "detail": "syncRememberedPassword aplica la casilla 'Recordar contraseña': remember_password si está marcada y se tecleó una contraseña, forget_password si se desmarcó para una guardada."
           },
           {
+            "actor": "connectionStore",
+            "action": "Se detiene si no hay nada visible",
+            "detail": "Un snapshot cuyo nivel de acceso es nothingVisible no se carga: no hay proyecto ni entrada en el historial. El diálogo sigue abierto con el aviso que bloquea (blockedInspection) hasta que cambie el borrador."
+          },
+          {
             "actor": "projectStore",
             "action": "Crea el proyecto abierto",
-            "detail": "loadFromInspection: ensurePlaced, path null, liveSettings en memoria, historial vacío, loadToken + 1."
+            "detail": "loadFromInspection: ensurePlaced, path null, liveSettings en memoria, historial vacío, loadToken + 1. Una lectura parcial muestra el chip de acceso en la barra de estado y la barra de acceso sobre las entidades."
           },
           {
             "actor": "connectionStore",
@@ -5177,7 +5379,7 @@
           {
             "actor": "cmd-project + core project",
             "action": "Registra la fecha y escribe",
-            "detail": "Project::from_content fija formatVersion 1, savedAt (ahora) y savedWith y normaliza el lienzo (nodos ordenados por nombre); write_json_atomically escribe <nombre de archivo>.tmp, por ejemplo northwind.scraft.tmp, y luego lo renombra."
+            "detail": "Project::from_content fija formatVersion 2, minReaderVersion 2, savedAt (ahora) y savedWith, quita las claves de encabezado que encuentre en el contenido y normaliza el lienzo (nodos ordenados por nombre); las claves desconocidas se vuelven a escribir. write_json_atomically escribe <nombre de archivo>.tmp, por ejemplo northwind.scraft.tmp, y luego lo renombra."
           },
           {
             "actor": "projectStore",
@@ -5192,12 +5394,12 @@
           {
             "actor": "core project/file.rs",
             "action": "Lee con control de versión",
-            "detail": "Lee primero el encabezado, rechaza formatVersion > 1 y luego lee el documento completo. Errores: NotFound, Read, NotAProject, UnsupportedFormatVersion."
+            "detail": "Lee el JSON una vez y primero formatVersion y minReaderVersion: un minReaderVersion mayor que 2 se rechaza, un formatVersion más nuevo se abre en solo lectura y el formato 1 se actualiza con migrations.rs; luego viene la lectura tipada, que conserva las claves desconocidas. Un archivo más nuevo que no se puede leer es UnsupportedFormatVersion. Errores: NotFound, Read, NotAProject, UnsupportedFormatVersion. Devuelve OpenedProject."
           },
           {
             "actor": "projectStore",
             "action": "Muestra el proyecto",
-            "detail": "ensurePlaced, liveSettings null, historial vacío, loadToken + 1, se restaura el viewport guardado. Sin contacto con la base de datos. Con notFound la ruta sale de los recientes; todo fallo se muestra en ProjectNotice."
+            "detail": "ensurePlaced, isReadOnly y savedWith desde OpenedProject, liveSettings null, historial vacío, loadToken + 1, se restaura el viewport guardado. Sin contacto con la base de datos. Un proyecto de solo lectura muestra el chip Solo lectura; Guardar, Guardar como y Actualizar no están disponibles y editar nunca lo marca con cambios sin guardar. Con notFound la ruta sale de los recientes; todo fallo se muestra en ProjectNotice."
           }
         ]
       },
@@ -5246,7 +5448,7 @@
           {
             "actor": "Usuario",
             "action": "Pulsa F5",
-            "detail": "connectionStore.refresh abre el diálogo en modo 'refresh'."
+            "detail": "connectionStore.refresh abre el diálogo en modo 'refresh'. Un proyecto de solo lectura nunca se actualiza."
           },
           {
             "actor": "connectionStore",
@@ -5261,17 +5463,17 @@
           {
             "actor": "cmd-project + core diff",
             "action": "Calcula las diferencias",
-            "detail": "compute_schema_diff -> SchemaDiff::between; fase 'reviewing'."
+            "detail": "compute_schema_diff -> SchemaDiff::between, que compara contra el snapshot fresco fusionado con lo que no pudo comprobar (with_unchecked_facts_from); fase 'reviewing'."
           },
           {
             "actor": "Usuario",
             "action": "Revisa en ReviewChangesPanel",
-            "detail": "Tablas, vistas y relaciones agregadas, eliminadas y cambiadas. Descartar no cambia nada."
+            "detail": "Tablas, vistas, relaciones y llaves hacia tablas no visibles agregadas, eliminadas y cambiadas; hechos no comprobados, con la fecha en que se leyeron; hechos ahora disponibles; un cambio en lo que ve el inicio de sesión. Una revisión sin nada de esto ofrece solo Cerrar y dice que el proyecto está al día o, con una lectura parcial, 'No hay cambios en lo que este inicio de sesión puede leer'. Si no, ofrece aplicar, con el texto 'Actualizar proyecto' cuando ningún objeto cambió. Descartar no cambia nada."
           },
           {
             "actor": "cmd-project + core project",
             "action": "Aplica",
-            "detail": "refresh_project_content -> with_refreshed_snapshot conserva el estado del lienzo de las entidades que siguen."
+            "detail": "refresh_project_content -> with_refreshed_snapshot aplica la misma fusión, así el proyecto conserva cada hecho que la revisión listó como no comprobado (en snapshot.carriedOver), y luego conserva el estado del lienzo de las entidades que siguen."
           },
           {
             "actor": "projectStore",
@@ -5298,7 +5500,7 @@
           {
             "actor": "exportStore",
             "action": "Arma el documento",
-            "detail": "Espera a que document.fonts tenga las cuatro fuentes estáticas, para medir el texto con ellas. renderDiagramSvg para SVG, PNG y PDF; para HTML, buildStandalonePage con visibleProjection y virtual:schemacraft-viewer. Con embedFonts (SVG y HTML) las fuentes WOFF2 se incrustan en base64."
+            "detail": "Espera a que document.fonts tenga las cuatro fuentes estáticas, para medir el texto con ellas. renderDiagramSvg para SVG, PNG y PDF; para HTML, buildStandalonePage con la lista de permitidos de visibleProjection y virtual:schemacraft-viewer. Una lectura parcial agrega su nota de una línea. Con embedFonts (SVG y HTML) las fuentes WOFF2 se incrustan en base64."
           },
           {
             "actor": "cmd-export",
@@ -5367,23 +5569,23 @@
         "streamsEvents": false
       },
       {
-        "name": "list_schemas",
-        "purpose": "Lista los esquemas que tienen tablas o vistas.",
+        "name": "describe_database",
+        "purpose": "Corre el sondeo de acceso: esquemas con tablas o vistas visibles y el acceso previsto (DatabaseDescription).",
         "streamsEvents": false
       },
       {
         "name": "inspect_database",
-        "purpose": "Lee el catálogo y devuelve un SchemaSnapshot.",
+        "purpose": "Lee el catálogo y el acceso del inicio de sesión y devuelve un SchemaSnapshot.",
         "streamsEvents": true
       },
       {
         "name": "cancel_inspection",
-        "purpose": "Cancela una inspección en curso por jobId.",
+        "purpose": "Cancela una inspección en curso por jobId, también al conectar.",
         "streamsEvents": false
       },
       {
         "name": "read_project",
-        "purpose": "Lee y valida un archivo .scraft.",
+        "purpose": "Lee un archivo .scraft; actualiza un formato más viejo y abre uno más nuevo en solo lectura si lo permite (OpenedProject).",
         "streamsEvents": false
       },
       {
@@ -5520,8 +5722,8 @@
       },
       {
         "name": "Trabajo largo",
-        "where": "src-tauri/src/state.rs, commands/connection.rs, commands/export.rs",
-        "why": "Registro Jobs, Channel con Started{jobId} primero, comando cancel_* (ADR-013)."
+        "where": "src-tauri/src/state.rs, commands/connection.rs, commands/export.rs, crates/schemacraft-core/src/inspectors/sqlserver/mod.rs",
+        "why": "Registro Jobs, Channel con Started{jobId} primero, comando cancel_*. Los trabajos async compiten con el token, también al conectar; los bloqueantes lo revisan entre pasos (ADR-013)."
       },
       {
         "name": "Escritura atómica",
@@ -5582,6 +5784,21 @@
         "name": "Trabajo bloqueante fuera del hilo principal",
         "where": "src-tauri/src/commands/mod.rs",
         "why": "run_blocking lleva el trabajo con archivos, el keyring y el trabajo pesado al pool bloqueante, así ningún comando congela la ventana (ADR-032)."
+      },
+      {
+        "name": "Divulgación graduada",
+        "where": "src/features/access, src/features/schema/coverage.ts",
+        "why": "El acceso completo no agrega nada; el parcial tiene un chip, una barra descartable y 'no disponible' donde el usuario mira, y nada se da por inexistente si la cobertura no es completa (ADR-034)."
+      },
+      {
+        "name": "Conservar al actualizar",
+        "where": "crates/schemacraft-core/src/model/carry_over.rs",
+        "why": "Un inicio de sesión que ve menos no elimina nada: los hechos no comprobados se conservan y se listan como no comprobados, igual en la revisión que en el proyecto (ADR-016, ADR-034)."
+      },
+      {
+        "name": "Lector compatible hacia adelante",
+        "where": "crates/schemacraft-core/src/project/file.rs, project/migrations.rs",
+        "why": "formatVersion y minReaderVersion deciden entre actualizar, abrir en solo lectura y rechazar, y las claves desconocidas sobreviven a un guardado (ADR-035)."
       }
     ],
     "recipes": {
@@ -5678,7 +5895,7 @@
             },
             {
               "layer": "core model",
-              "step": "Agrega el campo como Option o Vec con #[serde(default)] para que los .scraft viejos abran. Deriva serde camelCase y TS, documenta con ///, actualiza sample_snapshot.",
+              "step": "Agrega el campo como Option o Vec con #[serde(default)] para que los .scraft viejos abran. Si a un inicio de sesión le puede faltar el permiso para leerlo, separa 'no visible' de 'no hay' (un Definition, o un Option documentado así) y decide cómo lo cuentan AccessCounts y la cobertura. Deriva serde camelCase y TS, documenta con ///, actualiza sample_snapshot y reader_snapshot.",
               "files": [
                 "crates/schemacraft-core/src/model/column.rs",
                 "crates/schemacraft-core/src/model/table.rs",
@@ -5697,7 +5914,7 @@
             },
             {
               "layer": "core diff",
-              "step": "Decide si el cambio aparece en la revisión: un ColumnProperty, una lista nueva en TableChange::Changed o un ForeignKeyProperty.",
+              "step": "Decide si el cambio aparece en la revisión: un ColumnProperty, una lista nueva en TableChange::Changed o un ForeignKeyProperty. Compara textos solo cuando ambos son legibles (differs_from) y decide qué conserva with_unchecked_facts_from cuando la lectura fresca no ve el dato.",
               "files": [
                 "crates/schemacraft-core/src/diff/entities.rs",
                 "crates/schemacraft-core/src/diff/foreign_keys.rs"
@@ -5705,9 +5922,10 @@
             },
             {
               "layer": "core project",
-              "step": "Mantén FORMAT_VERSION 1 para campos aditivos, prueba que un documento sin el campo carga y actualiza sample_project_content.",
+              "step": "Un hecho nuevo por entidad sube FORMAT_VERSION, con un paso en migrations.rs y un archivo de prueba del formato anterior; un valor nuevo de un enum cerrado sube también MIN_READER_VERSION (ADR-035). Prueba que el archivo viejo se actualiza y se guarda, y actualiza sample_project_content.",
               "files": [
                 "crates/schemacraft-core/src/project/document.rs",
+                "crates/schemacraft-core/src/project/migrations.rs",
                 "crates/schemacraft-core/src/project/test_fixtures.rs"
               ]
             },
@@ -5723,7 +5941,7 @@
             },
             {
               "layer": "Preview y fixtures",
-              "step": "Agrega el dato a previewSnapshot, sampleProject y fabricatedDiff, y a cada literal de Table o Column en las pruebas.",
+              "step": "Agrega el dato a previewSnapshot, sampleProject y fabricatedChanges, y a cada literal de Table o Column en las pruebas.",
               "files": [
                 "src/shared/ipc/previewConnectionBackend.ts",
                 "src/shared/ipc/previewProjectBackend.ts"
@@ -5731,7 +5949,7 @@
             },
             {
               "layer": "Interfaz y exportaciones",
-              "step": "Muéstralo en EntityNode.tsx y ReviewChangesPanel.tsx, dibújalo en renderDiagram.ts y en el visor. Decide si visibleProjection lo quita del HTML.",
+              "step": "Muéstralo en EntityNode.tsx y ReviewChangesPanel.tsx, dibújalo en renderDiagram.ts y en el visor, con 'no disponible' cuando la lectura no pudo leerlo. visibleProjection es una lista de permitidos: el dato llega al HTML solo si se agrega ahí a propósito.",
               "files": [
                 "src/features/canvas/EntityNode.tsx",
                 "src/features/connection/ReviewChangesPanel.tsx",
@@ -5742,18 +5960,20 @@
             },
             {
               "layer": "Pruebas de integración",
-              "step": "Levanta un servidor local con scripts/dev-sqlserver.ps1 start y carga sus variables con env. Siembra fixture.sql y changes.sql y verifica en sqlserver_integration.rs. La prueba de 200 tablas (stress_200_tables.sql) debe seguir bajo 5 s.",
+              "step": "Levanta un servidor local con scripts/dev-sqlserver.ps1 start y carga sus variables con env. Siembra fixture.sql y changes.sql y verifica en sqlserver_integration.rs, y agrega el dato a permissions.sql con una verificación por cada inicio de sesión afectado en sqlserver_permissions.rs. La prueba de 200 tablas (stress_200_tables.sql) debe seguir bajo 5 s.",
               "files": [
                 "crates/schemacraft-core/tests/fixtures/sqlserver/fixture.sql",
                 "crates/schemacraft-core/tests/fixtures/sqlserver/changes.sql",
                 "crates/schemacraft-core/tests/fixtures/sqlserver/stress_200_tables.sql",
+                "crates/schemacraft-core/tests/fixtures/sqlserver/permissions.sql",
                 "crates/schemacraft-core/tests/sqlserver_integration.rs",
+                "crates/schemacraft-core/tests/sqlserver_permissions.rs",
                 "scripts/dev-sqlserver.ps1"
               ]
             },
             {
               "layer": "Documentación",
-              "step": "Actualiza ADR-009 (número de consultas), ADR-016 o ADR-015 si cambian sus reglas, README, ux-principles.md, CHANGELOG y el modelo de esta página.",
+              "step": "Actualiza ADR-009 (número de consultas), ADR-034 si cambian las reglas de visibilidad, ADR-016 o ADR-035 si cambian sus reglas, README, ux-principles.md, CHANGELOG y el modelo de esta página.",
               "files": ["docs/architecture.md", "docs/architecture/model.json"]
             }
           ]
@@ -5846,7 +6066,7 @@
           "steps": [
             {
               "layer": "core",
-              "step": "Agrega el campo a NodeState o CanvasState con #[serde(default)]; revisa normalized() y retaining_entities_of; prueba los valores por defecto y una ida y vuelta estable byte a byte salvo savedAt.",
+              "step": "Agrega el campo a NodeState o CanvasState con #[serde(default)]; revisa normalized() y retaining_entities_of; prueba los valores por defecto y una ida y vuelta estable byte a byte salvo savedAt. Las versiones anteriores lo conservan como clave desconocida; sube FORMAT_VERSION solo si depende de contenido que ellas podrían cambiar (ADR-035).",
               "files": [
                 "crates/schemacraft-core/src/project/canvas.rs",
                 "crates/schemacraft-core/src/project/document.rs"
@@ -5966,19 +6186,19 @@
         },
         {
           "concern": "Versionado de .scraft",
-          "touches": "FORMAT_VERSION 1; campos aditivos con #[serde(default)]; un cambio que rompe necesita subir versión, una migración y ADR-015."
+          "touches": "FORMAT_VERSION 2 y MIN_READER_VERSION 2; actualizaciones sobre el JSON crudo en migrations.rs; los archivos más nuevos se abren en solo lectura; las claves desconocidas se conservan en la raíz, el snapshot, el lienzo y cada nodo. Cuándo subir cada número está en ADR-035."
         },
         {
           "concern": "Diferencias al actualizar",
-          "touches": "crates/schemacraft-core/src/diff, ReviewChangesPanel.tsx, refreshPlacement.ts, fabricatedDiff en el backend preview."
+          "touches": "crates/schemacraft-core/src/diff y model/carry_over.rs (no comprobado, ahora disponible, cambio de acceso), ReviewChangesPanel.tsx con isUpToDate, refreshPlacement.ts, withUncheckedFacts y fabricatedChanges en los backends preview."
         },
         {
           "concern": "Paridad y privacidad de exportación",
-          "touches": "Geometría compartida; marcadores y colores están copiados en dos lugares; visibleProjection decide qué llega al HTML."
+          "touches": "Geometría compartida; marcadores y colores están copiados en dos lugares; visibleProjection es una lista de permitidos que decide qué llega al HTML (nunca el sondeo, el usuario de base de datos, la lista carriedOver ni las claves desconocidas; los objetos conservados en sí salen como cualquier otro); una lectura parcial lleva una línea de nota."
         },
         {
           "concern": "Backends preview",
-          "touches": "Mantén al día previewSnapshot, sampleProject y fabricatedDiff en src/shared/ipc."
+          "touches": "Mantén al día previewSnapshot, los escenarios de acceso (nombres de servidor con partial, nothing o empty), los proyectos de muestra, previewAccess.ts y fabricatedChanges en src/shared/ipc."
         },
         {
           "concern": "Errores",
@@ -5986,11 +6206,11 @@
         },
         {
           "concern": "Progreso y cancelación",
-          "touches": "Jobs, Channel, Started{jobId} primero, cancel_* que devuelve UnknownJob."
+          "touches": "Jobs, Channel, Started{jobId} primero, cancel_* que devuelve UnknownJob; los trabajos async compiten con el token, también al conectar (ADR-013)."
         },
         {
           "concern": "Seguridad y ubicación de datos",
-          "touches": "Sin base de datos propia; cuatro lugares de persistencia; contraseñas como SecretString y nunca en archivos, aunque una tecleada cruza el IPC en cada llamada de conexión; el borrador de conexión conserva trustServerCertificate; CSP estricta (devCsp solo para tauri dev) y capabilities."
+          "touches": "Sin base de datos propia; cuatro lugares de persistencia; contraseñas como SecretString y nunca en archivos, aunque una tecleada cruza el IPC en cada llamada de conexión; el borrador de conexión conserva trustServerCertificate; el .scraft guarda el nombre del usuario de base de datos, que las exportaciones nunca incrustan; CSP estricta (devCsp solo para tauri dev) y capabilities."
         },
         {
           "concern": "Fronteras de módulos",
@@ -6007,6 +6227,10 @@
         {
           "concern": "Fuentes",
           "touches": "main.tsx carga las fuentes estáticas de @fontsource que mide el exportador; fontFaces.ts las incrusta en SVG y HTML; scripts/prepare-fonts.mjs convierte esas mismas fuentes en los TTF de crates/schemacraft-core/assets/fonts para PNG y PDF. Actualiza los paquetes, ejecuta el script y haz commit de los TTF juntos."
+        },
+        {
+          "concern": "Acceso parcial",
+          "touches": "Un inicio de sesión puede ver solo parte de una base de datos (ADR-034). Todo lo que lista o cuenta hechos del esquema consulta src/features/schema/coverage.ts antes de decir 'ninguno', y un texto ilegible dice 'no disponible'. Del lado del servidor lo cubren los inicios de sesión de sqlserver_permissions.rs; el preview del navegador lo reproduce con un nombre de servidor que contenga partial."
         }
       ],
       "definitionOfDone": [
@@ -6015,7 +6239,8 @@
         "Pasan cargo fmt --check, clippy -D warnings y cargo test --workspace; sin unwrap, expect ni panic en código de producción.",
         "Contratos regenerados y en el commit.",
         "Pruebas unitarias junto a cada módulo puro nuevo; cambios de catálogo o diff con pruebas de integración en SQL Server.",
-        "Los .scraft viejos siguen abriendo.",
+        "Los .scraft viejos siguen abriendo, y los más nuevos se abren en solo lectura (ADR-035).",
+        "Funcionalidades de datos revisadas con un inicio de sesión que ve parte del esquema: 'no disponible' en vez de vacío y nada dado por inexistente.",
         "en.ts y es.ts completos.",
         "Definición de terminado de UX: acción con tooltip y atajo, estados de carga, vacío y error, ambos temas, ambos idiomas, solo teclado, WCAG AA.",
         "Paridad de exportación revisada y sin fuga de datos privados al HTML.",
@@ -6063,6 +6288,10 @@
         "rule": "Cada funcionalidad con estado tiene un store de zustand; schema es un módulo de helpers puros; el estado asíncrono es una fase más un fallo; los cambios al lienzo solo pasan por projectStore.updateCanvas."
       },
       {
+        "topic": "Desconocido no es inexistente",
+        "rule": "Un hecho que el inicio de sesión no pudo leer se registra como tal (Definition notVisible, foreignKeysToInvisibleTables, cobertura parcial) y se muestra como 'no disponible'; una lista dice 'ninguno' solo con cobertura completa. Redacción: 'no visible para este inicio de sesión', nunca 'oculto', que significa oculto en el lienzo (ADR-034)."
+      },
+      {
         "topic": "i18n",
         "rule": "Todo texto de usuario en en.ts y es.ts; plurales con .one/.other y tCount; sin concatenar cadenas."
       },
@@ -6088,7 +6317,7 @@
       }
     ],
     "conformance": {
-      "verdict": "La arquitectura se sostiene. El core no depende de Tauri, los comandos son delgados y mantienen el trabajo bloqueante fuera del hilo principal, los errores están tipados de punta a punta, los contratos se generan y se revisan, ESLint exige las capas del frontend, solo src/shared/ipc habla con Tauri y el visor no trae React ni stores. Builder y Memento están implementados como dicen los ADRs. Las tres desviaciones mayores están corregidas, junto con la mayoría de las menores. Las once que siguen abiertas son problemas de consistencia, no rupturas estructurales; diez están planeadas para v1.1, donde las vistas, el inspector y el sondeo de acceso tocan el mismo código, y una queda pendiente sin fecha. Las corregidas siguen abajo, marcadas como corregidas.",
+      "verdict": "La arquitectura se sostiene. El core no depende de Tauri, los comandos son delgados y mantienen el trabajo bloqueante fuera del hilo principal, los errores están tipados de punta a punta, los contratos se generan y se revisan, ESLint exige las capas del frontend, solo src/shared/ipc habla con Tauri y el visor no trae React ni stores. Builder y Memento están implementados como dicen los ADRs. Las tres desviaciones mayores están corregidas, junto con la mayoría de las menores. Las ocho que siguen abiertas son problemas de consistencia, no rupturas estructurales; siete están planeadas para v1.1, donde las vistas y el inspector tocan el mismo código, y una queda pendiente sin fecha. Las corregidas siguen abajo, marcadas como corregidas.",
       "deviations": [
         {
           "what": "Los botones de acción deshabilitados siempre dicen 'Available in an upcoming milestone', aunque la causa sea una condición en tiempo de ejecución.",
@@ -6212,16 +6441,16 @@
         {
           "what": "El estado persistido está dividido entre preferences.json y localStorage. La clave 'schemacraft.connection' no está documentada, conserva el último servidor, inicio de sesión, base de datos y trustServerCertificate, y sobrevive a borrar preferences.json, aunque README.md dice que eso limpia el historial.",
           "where": "src/shared/settings/settingsStore.ts:34, src/features/connection/connectionStore.ts:95, README.md:175-177",
-          "fix": "Planeado para v1.1: Anotar en ADR-017: archivo Rust para el historial del dominio, localStorage solo para comodidades de la interfaz, nunca secretos. Listar ambas claves en el README y decir qué limpia borrar cada una.",
+          "fix": "Corregido: ADR-017 anota la regla: preferences.json para el historial del dominio, localStorage solo para comodidades de la ventana, nunca secretos. El README lista ambas claves y qué restablece borrar cada una, y mergePersistedSettings revisa cada campo guardado.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Inspección y exportación usan formas distintas de progreso y cancelación; la fase de conexión no se puede cancelar; la exportación revisa la cancelación una vez; ADR-013 y progress.rs:55 prometen de más.",
           "where": "crates/schemacraft-core/src/inspectors/sqlserver/mod.rs:95-122, export/mod.rs:104",
-          "fix": "Planeado para v1.1: Correr la fase de conexión contra el token; documentar un solo patrón de trabajo largo; corregir la redacción.",
+          "fix": "Corregido: inspect hace competir todo el trabajo con el token en tokio::select! (biased), también al conectar, y lo cubre una prueba contra un servidor que nunca responde. ADR-013 describe un solo patrón de trabajo largo para inspección y exportación, y la documentación de progress.rs ya no promete más de lo que hace el código.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Agregar un motor toca más de lo que dice el doc de inspectors: SavedConnection, CredentialKey, nociones del modelo y conversiones del frontend son específicas de SQL Server.",
@@ -6233,9 +6462,9 @@
         {
           "what": "El formato de dirección del servidor difiere: Rust agrega ',1433' y TypeScript no.",
           "where": "inspectors/sqlserver/settings.rs:232-238 vs src/features/connection/serverAddress.ts:58-62",
-          "fix": "Planeado para v1.1: Tomar el formato de Rust como canónico y alinear el de TS.",
+          "fix": "Corregido: formatTarget en serverAddress.ts es el espejo de format_target de Rust, con pruebas de paridad sobre los casos de Rust; lo usan la barra de estado, el historial y las claves de las conexiones guardadas (ADR-011).",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Los comandos manejan los hilos de tres formas y ningún ADR lo cubre. Los síncronos (compute_schema_diff, refresh_project_content, preferencias, credenciales) corren en el hilo principal, así que un diff grande o una llamada lenta al keyring bloquea la interfaz; read_project y write_project hacen IO bloqueante en el runtime asíncrono; solo export_diagram usa spawn_blocking.",
@@ -6282,7 +6511,7 @@
         {
           "what": "connectionStore, exportStore, preferencesStore y canvasActions no tienen pruebas unitarias.",
           "where": "src/features/*",
-          "fix": "Planeado para v1.1: Seguir projectStore.test.ts, simulando los backends.",
+          "fix": "Planeado para v1.1: Seguir projectStore.test.ts, simulando los backends. connectionStore y preferencesStore ya tienen pruebas (connectionStore.test.ts, preferencesStore.test.ts); faltan exportStore y canvasActions.",
           "severity": "minor",
           "status": "open"
         },
@@ -6329,7 +6558,7 @@
         "La página lleva un solo manifiesto, en el nivel superior de model.json y compartido por ambos idiomas. CI lo compara con el código con scripts/check-architecture-page.mjs (npm run docs:check).",
         "Comando nuevo: agrégalo a manifest.commands y a la tabla de comandos en ambos idiomas.",
         "Carpeta de funcionalidad, módulo del core o backend IPC nuevo: agrégalo al manifiesto, a la lista de capas y a las aristas del diagrama.",
-        "Decisión nueva: agrega un ADR (el siguiente es ADR-034), sube manifest.adrCount y enlaza el ADR desde el patrón o la receta que cambia.",
+        "Decisión nueva: agrega un ADR (el siguiente es ADR-036), sube manifest.adrCount y enlaza el ADR desde el patrón o la receta que cambia.",
         "Cambio de alcance: actualiza ambas copias del PRD (docs/ y 02_Docs/), agrega una línea fechada en la sección 6 y haz commit como docs(prd), solo con aprobación del usuario.",
         "Desviación corregida: márcala como corregida en el mismo PR. Desviación conocida nueva: agrégala con su severidad y estado open.",
         "Almacén de datos o clave de localStorage nueva: agrega una fila a la tabla de datos.",
@@ -6355,7 +6584,7 @@
       {
         "id": "scraft",
         "term": ".scraft",
-        "meaning": "Archivo de proyecto de SchemaCraft: JSON con la conexión (sin contraseña), el snapshot y el estado del lienzo."
+        "meaning": "Archivo de proyecto de SchemaCraft: JSON con un encabezado de versión, la conexión (sin contraseña), el snapshot y el estado del lienzo."
       },
       {
         "id": "snapshot",
@@ -6465,7 +6694,7 @@
       {
         "id": "visible-projection",
         "term": "visibleProjection",
-        "meaning": "El filtro de privacidad que deja solo los datos visibles en una exportación HTML."
+        "meaning": "La lista de permitidos que deja solo los datos visibles en una exportación HTML: sin sondeo de acceso, lista carriedOver ni claves desconocidas. Los objetos conservados de una lectura anterior se exportan como cualquier otro del diagrama."
       },
       {
         "id": "adr",
@@ -6516,6 +6745,31 @@
         "id": "static-font-faces",
         "term": "Fuentes estáticas",
         "meaning": "Inter y JetBrains Mono en 400 y 600, de @fontsource. El exportador las mide e incrusta, y el core incluye las mismas como TTF."
+      },
+      {
+        "id": "access-profile",
+        "term": "Perfil de acceso (AccessProfile)",
+        "meaning": "Lo que podía ver el inicio de sesión de una lectura, congelado en el snapshot: los hechos de permisos del sondeo, el alcance, un nivel (full, partial, empty, nothingVisible) y una cobertura de objetos y de textos CHECK y DEFAULT. Los archivos de la 1.0 no lo tienen y dicen 'no registrado'."
+      },
+      {
+        "id": "not-visible",
+        "term": "No visible",
+        "meaning": "Un hecho que existe pero que el inicio de sesión no puede leer, como el texto de un CHECK sin VIEW DEFINITION o una tabla fuera de sus permisos. Se muestra como 'no disponible', nunca como inexistente."
+      },
+      {
+        "id": "not-checked",
+        "term": "No comprobado",
+        "meaning": "Un hecho guardado que una actualización no pudo ver y por eso conservó, con el momento en que se leyó por última vez (CarriedFact en snapshot.carriedOver). Nunca cuenta como eliminado ni cambiado."
+      },
+      {
+        "id": "read-only-project",
+        "term": "Proyecto de solo lectura",
+        "meaning": "Un proyecto de un formato más nuevo que esta versión puede mostrar: se puede reorganizar y exportar, pero no guardar ni actualizar, y nunca se marca con cambios sin guardar."
+      },
+      {
+        "id": "min-reader-version",
+        "term": "minReaderVersion",
+        "meaning": "Campo del encabezado de .scraft: el formato más viejo que un lector debe entender para abrir el archivo. Un lector al menos así de nuevo, pero más viejo que formatVersion, lo abre en solo lectura."
       }
     ]
   }

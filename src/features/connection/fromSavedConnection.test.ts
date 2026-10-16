@@ -54,4 +54,14 @@ describe("savedConnectionToDraft", () => {
       "localhost\\sqlexpress|shop|<windows>",
     );
   });
+
+  it("names a server without an instance by host and port, defaulting to 1433", () => {
+    const tcp: SavedConnection = { ...saved, host: "DB.example.com", instance: null };
+    expect(describeSavedConnection(tcp).target).toBe("DB.example.com,1433");
+    expect(describeSavedConnection({ ...tcp, port: 14333 }).target).toBe("DB.example.com,14333");
+    // `db` and `db,1433` are the same endpoint, so the history keeps one entry for both.
+    expect(savedConnectionKey(tcp)).toBe(savedConnectionKey({ ...tcp, port: 1433 }));
+    // The Server field is refilled with what was typed, not with the canonical name.
+    expect(savedConnectionToDraft(tcp).server).toBe("DB.example.com");
+  });
 });

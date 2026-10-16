@@ -12,6 +12,9 @@ the same diagram, and renders fast, interactive diagrams with high-fidelity sing
 - **Reverse engineering of SQL Server.** Tables, views, columns and types, primary and foreign
   keys, indexes and check constraints, with SQL Server or Windows Authentication over encrypted
   connections.
+- **Honest with limited logins.** A login that sees only part of a database gets everything it
+  can read, with what it cannot read marked as not available, never as missing, and an access
+  report that names the cause and the one grant that would complete the schema.
 - **Portable projects.** A `.scraft` file keeps the schema and the diagram, reopens without a
   database and refreshes from it with a reviewed diff that keeps your layout.
 - **Interactive diagrams.** Entity cards at three detail levels, crow's foot relationships,
@@ -150,37 +153,94 @@ unless the `SCHEMACRAFT_TEST_MSSQL_*` variables are set. With Docker Desktop run
 ```
 
 ```powershell
-cargo test -p schemacraft-core --test sqlserver_integration -- --nocapture
+cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions -- --nocapture
 ```
 
-The tests seed two databases on the container: a fixture covering keys, indexes, constraints,
-alias types and views, and a 200-table database used to check the extraction time budget.
-Windows Authentication cannot run in the Linux container; it is validated manually against a
-Windows instance.
+`sqlserver_integration` seeds two databases on the container: a fixture covering keys, indexes,
+constraints, alias types and views, and a 200-table database used to check the extraction time
+budget. `sqlserver_permissions` seeds a database of its own plus an empty one and reads them as
+low-privilege logins: `db_owner`, `db_datareader`, `VIEW DEFINITION` only, a reader with the
+`VIEW DEFINITION` of one schema, `SELECT` on two tables, `CONNECT` only, two variants of a
+schema `DENY` and a column `DENY`. It creates these server logins itself, with the
+`schemacraft_` prefix and a password made up for each run, so run it only against a disposable
+server such as this container. Windows Authentication cannot run in the Linux container; it is
+validated manually against a Windows instance.
 
 ## Browser preview
 
 `npm run dev` serves the frontend alone. Outside the desktop runtime simulated backends take
 the place of the Rust commands, so the flows can be reviewed in a browser: use `localhost` to
-connect, or `auth-fail`, `cert-fail`, `down` and `slow` as server names to see each failure.
+connect, or `auth-fail`, `cert-fail`, `down` and `slow` as server names to see each failure. A
+server name that contains `partial`, `nothing` or `empty` (for example `partial.example.com`)
+connects as a login that sees part of the schema, no table or view, or an empty database.
 Projects are kept in memory (open returns the last saved project or a sample), the history is
-seeded with two connections, and refresh shows a fabricated review with every kind of change.
+seeded with two connections, and the recent projects include samples read with full and with
+partial access, an upgraded 1.0 file and a file from a newer version, which opens read-only.
+Refresh shows a fabricated review with every kind of change, or, when the login sees more or
+less than before, what appeared, what disappeared and what could not be checked.
 
 ## Project files and preferences
 
-A `.scraft` file is pretty-printed JSON: a header with the format version and the save time,
-the connection without its password, the inspection options, the full snapshot and the diagram
-state. It reopens without a database; refresh reconnects through the connection dialog and
-shows the differences before applying them, keeping the positions of surviving tables.
+A `.scraft` file is pretty-printed JSON: a header with the format version, the oldest format a
+reader needs (`minReaderVersion`) and the save time, the connection without its password, the
+inspection options, the full snapshot and the diagram state. The snapshot also records what the
+login that read it could see: its permissions in that database, including the name of its
+database user, and the list of facts kept from an earlier read that it could not check. Exports
+leave out both records; the tables, views, texts and relationships kept from an earlier read are
+drawn and embedded like any other object on the diagram, without a mark. A project reopens
+without a database; refresh reconnects through the connection dialog and shows the differences
+before applying them, keeping the positions of surviving tables.
+
+SchemaCraft 1.1 saves projects in format 2. It opens 1.0 projects and converts them when they
+are saved, after which SchemaCraft 1.0 can no longer open them. A project saved by a newer
+version opens read-only when that version allows it: it can be rearranged and exported, but not
+saved or refreshed. Data this version does not understand is kept as it is when a project is
+saved.
 
 Recent connections (never passwords) and recent projects are stored in `preferences.json`
 inside the per-user configuration directory, `%APPDATA%\com.jmanuelsoberano.schemacraft` on
-Windows. Delete the file to clear the history.
+Windows. Delete the file to clear the history and the recent projects.
+
+The interface also keeps two conveniences in the WebView2 local storage, under
+`%LOCALAPPDATA%\com.jmanuelsoberano.schemacraft`; neither holds a secret:
+
+- `schemacraft.settings`: the theme, the language, the entities panel's state and width, and the
+  partial-access notices you closed.
+- `schemacraft.connection`: the last connection form. The password is always blank; the server,
+  login, database, schemas, encryption and certificate choice are kept.
+
+Deleting `preferences.json` clears neither. Deleting the WebView2 data in that folder, with
+SchemaCraft closed, resets both: the default theme and language return, closed notices show
+again and the connection form starts empty, while the history, the recent projects and the
+remembered passwords stay.
 
 "Remember password" keeps a SQL login's password in the Windows Credential Manager (entries named
 `sqlserver://<server>/<login>` under the `SchemaCraft` service) and never in any SchemaCraft file.
 The history and a reopened project use it without asking; untick the box and connect again to
 forget it, or remove the entry from the Credential Manager.
+
+## Logins with limited permissions
+
+SchemaCraft reads only the catalog, with the permissions of the login you connect with. When
+you choose a database it checks what that login can see and, if that is not everything, says so
+before reading anything. A login that sees part of the schema, for example a member of
+`db_datareader`, still gets
+everything it can read: `CHECK` and `DEFAULT` expressions it cannot read show as "not
+available", foreign keys to tables it cannot see are kept, and the status bar opens an access
+report with the cause and a script a DBA can run, with the database and the login's database
+user filled in:
+
+```sql
+USE [Sales];
+GRANT VIEW DEFINITION TO [reporting];
+```
+
+`VIEW DEFINITION` gives no access to data and allows no change; on SQL Server 2022 and later it
+also shows users, roles and permissions. SchemaCraft only copies the script and does not offer
+it when an explicit `DENY` is the cause, because a grant does not lift a denial. A login that
+sees no table or view at all is told so and cannot start a read. Refreshing a project with a
+login that sees less never removes what it cannot see: those items are kept and listed as not
+checked.
 
 ## Project structure
 

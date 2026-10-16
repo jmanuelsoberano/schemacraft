@@ -9,9 +9,15 @@ import type { SavedConnection } from "./SavedConnection";
  */
 export type Project = { 
 /**
- * Format the file follows; readers refuse newer formats.
+ * Format the file follows.
  */
 formatVersion: number, 
+/**
+ * Oldest format a reader must understand to open the file. A reader older than
+ * `format_version` but at least this version opens the file read-only; an older reader
+ * refuses it. SchemaCraft 1.0 did not write it; reading such a file upgrades it.
+ */
+minReaderVersion: number, 
 /**
  * Moment the file was written, in UTC.
  */

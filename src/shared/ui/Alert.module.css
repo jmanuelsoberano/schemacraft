@@ -74,6 +74,13 @@
 
 .action {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2);
   margin-top: var(--space-1);
+}
+
+.dismiss {
+  flex: none;
+  margin: -4px -4px 0 0;
 }

@@ -3,6 +3,15 @@
   inset: 0;
 }
 
+.emptySchema {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
 .layoutProgress {
   position: absolute;
   top: var(--space-4);

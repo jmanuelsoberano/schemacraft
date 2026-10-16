@@ -43,11 +43,40 @@ describe("describeColumn", () => {
     isComputed: false,
   };
 
+  const labels = {
+    notAvailable: "DEFAULT (not available)",
+    notRecorded: "(default not recorded)",
+  };
+
   it("lists nullability and attributes after the type", () => {
-    expect(describeColumn(base)).toBe("decimal(18,2) NOT NULL");
+    expect(describeColumn(base, labels)).toBe("decimal(18,2) NOT NULL");
     expect(
-      describeColumn({ ...base, isNullable: true, isIdentity: true, defaultExpression: "((0))" }),
+      describeColumn(
+        {
+          ...base,
+          isNullable: true,
+          isIdentity: true,
+          defaultExpression: { status: "readable", text: "((0))" },
+        },
+        labels,
+      ),
     ).toBe("decimal(18,2) NULL IDENTITY DEFAULT ((0))");
-    expect(describeColumn({ ...base, isComputed: true })).toBe("decimal(18,2) NOT NULL COMPUTED");
+    expect(describeColumn({ ...base, isComputed: true }, labels)).toBe(
+      "decimal(18,2) NOT NULL COMPUTED",
+    );
+  });
+
+  it("says why a default's text is missing instead of dropping it", () => {
+    expect(describeColumn({ ...base, defaultExpression: { status: "notVisible" } }, labels)).toBe(
+      "decimal(18,2) NOT NULL DEFAULT (not available)",
+    );
+    // A state written by a newer version is not readable here either.
+    expect(describeColumn({ ...base, defaultExpression: { status: "unknown" } }, labels)).toBe(
+      "decimal(18,2) NOT NULL DEFAULT (not available)",
+    );
+    // A 1.0 file did not know whether there is a default, so the keyword is not claimed.
+    expect(describeColumn({ ...base, defaultExpression: { status: "notRecorded" } }, labels)).toBe(
+      "decimal(18,2) NOT NULL (default not recorded)",
+    );
   });
 });

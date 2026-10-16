@@ -6,8 +6,32 @@ All notable changes to SchemaCraft are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Logins with limited permissions are explained instead of producing a diagram that looks
+  complete. When a database is chosen, the connection dialog says what the login can read.
+  `CHECK` and `DEFAULT` expressions it cannot read show as "not available", and foreign keys to
+  tables it cannot see are kept. A status bar indicator, a dismissible notice above the entities
+  and an access report (Ctrl+Shift+A) give the cause and a `GRANT VIEW DEFINITION` script to copy
+  for the DBA.
+- A login that sees no table or view is told so before reading; an empty database shows a
+  neutral empty state instead.
+- Exports of a diagram read with partial access carry a one-line note saying so.
+- Refreshing with a login that sees less keeps what it cannot check and lists it as not checked,
+  with the date it was read; what becomes readable, for example after a grant, is listed and
+  recorded when the review is applied.
+- A refresh reports a `CHECK` constraint that was disabled or enabled again.
+- Projects saved by a newer SchemaCraft open read-only when that version allows it: they can be
+  rearranged and exported, but not saved or refreshed.
+
 ### Changed
 
+- Projects are saved in format 2. SchemaCraft 1.1 opens and converts 1.0 projects, but a project
+  saved by 1.1 needs SchemaCraft 1.1 or later.
+- The status bar and the connection history name a server as `host,port` (1433 when no port
+  was typed) or `host\instance`, the name remembered passwords already used.
+- Reading a schema can be cancelled while it is still connecting, for example to a server that
+  accepts the connection and never answers.
 - A disabled button or menu item says why it is unavailable, for example that no project is open
   or that there is nothing to undo, instead of a generic note.
 - The file type in the open and save dialogs follows the interface language.
@@ -16,6 +40,10 @@ All notable changes to SchemaCraft are documented here. The format follows
 
 ### Fixed
 
+- With a login that cannot read definitions, `CHECK` expressions no longer appear empty, columns
+  with a default no longer appear to have none, and foreign keys to tables the login cannot see
+  are no longer dropped without a word.
+- Defaults bound with `sp_bindefault` are read instead of appearing as no default.
 - A preferences file written by a newer SchemaCraft is left untouched instead of being replaced.
 - A failed write of the preferences no longer changes the history shown until the next restart.
 - Project, preferences and export files are flushed to the disk before they replace the previous

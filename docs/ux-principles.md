@@ -69,12 +69,29 @@ the top of the dialog: one click fills the form, and each entry can be removed. 
 password" keeps a SQL login's password in the operating system store, so a history entry or a
 reopened project reconnects without typing it; the field says when a remembered password will be
 used. Passwords are never stored in project files or in the history. Errors are specific and
-actionable.
+actionable. Choosing a database also checks what the login can see there: full access adds
+nothing, partial access adds one polite line under the database section, and a login that sees
+no table or view gets a clear notice with reading disabled.
 
 ### Introspection
 
-A progress indicator names the current stage (tables, columns, keys, indexes) and the counts so
-far. The user can cancel. On completion the diagram appears already laid out.
+A progress indicator names the current stage (permissions, tables, columns, keys, indexes) and
+the counts so far. The user can cancel at any moment, even while connecting. On completion the
+diagram appears already laid out.
+
+### Reading with partial access
+
+With full access nothing extra appears. When the login sees only part of the schema, everything
+it can read is shown and the rest is marked where the user looks: a `CHECK` or `DEFAULT` it
+cannot read says "not available", a relationship to a table the login cannot see keeps the key
+badge on its columns, and one muted line under the entities list says that other tables or
+views may exist. Nothing says "none" or "0 tables" unless the list is complete. One quiet chip
+in the status bar and one dismissible bar above the entities lead to the Access report
+(Ctrl+Shift+A), which names the cause and offers a `GRANT VIEW DEFINITION` script to copy for
+the DBA. Closing the bar moves focus to the entities search, and the bar stays closed for the
+same server, database and verdict. The canvas carries no warnings. An empty database gets a
+neutral empty state. The words are "not visible to this login" and "no visible para este inicio
+de sesión"; "hidden" and "oculto" stay reserved for tables hidden on the canvas.
 
 ### Opening and saving a project
 
@@ -83,6 +100,14 @@ the project name with a dot for unsaved changes, mirrored in the window title. A
 would throw unsaved changes away (opening another project, connecting, closing the window)
 asks first, with the safe choice focused. A failed open or save is reported over the canvas
 with the cause and the next step; a recent project whose file disappeared leaves the list.
+
+### Opening a project from a newer version
+
+A project saved by a newer SchemaCraft that allows older readers opens read-only. It can be
+rearranged and exported, but nothing marks it unsaved and closing it asks nothing. A Read-only
+chip in the status bar names the version that wrote it, and Save, Save as and Refresh say in
+their tooltips why they are unavailable. A file that this version must not open is refused with
+the reason.
 
 ### Working on the canvas
 
@@ -102,6 +127,11 @@ The diff is presented before it is applied: new, changed and removed tables, vie
 keys, indexes, constraints and relationships, with before and after values. Applying it
 preserves the positions of surviving tables. A project opened from a file reconnects through
 the connection dialog, prefilled from the saved connection, so only the password is typed again.
+A login that sees less never makes anything look removed: what it could not check is kept and
+listed as not checked, with the date it was read, and what became readable is listed as now
+available. A refresh that changed no object but learned something offers "Update project"; one
+with nothing to report says the project is up to date, or, under partial access, that nothing
+changed in what this login can read.
 
 ### Exporting
 
@@ -110,7 +140,8 @@ detail level and the theme, and shows the size in pixels or millimetres with an 
 before anything is written. It exports what is visible on the canvas. A PNG scale beyond the
 renderer's limit is refused with the reason, progress names the stage and can be cancelled, and a
 finished export offers to show the file in its folder. The HTML file opens in any browser with
-pan, zoom, the three views, search and a detail panel per table.
+pan, zoom, the three views, search and a detail panel per table. A diagram read with partial
+access says so in one line, under the diagram or under the viewer's header.
 
 ## Visual language
 

@@ -36,16 +36,29 @@ export function entityKey(name: QualifiedName): string {
   return `${name.schema}.${name.name}`;
 }
 
-/** Every table and view of the snapshot, keyed by `schema.name`. */
+/**
+ * Every table and view of the snapshot, keyed by `schema.name`. A column of a foreign key to a
+ * table the login cannot see is still a foreign key column: it keeps its badge, although no
+ * relationship can be drawn for it.
+ */
 export function describeEntities(snapshot: SchemaSnapshot): Map<string, EntityDescriptor> {
   const foreignKeyColumns = new Map<string, Set<string>>();
-  for (const key of snapshot.foreignKeys) {
-    const owner = entityKey(key.referencingTable);
-    const columns = foreignKeyColumns.get(owner) ?? new Set<string>();
-    for (const pair of key.columnPairs) {
-      columns.add(pair.referencingColumn);
+  const addForeignKeyColumns = (owner: QualifiedName, names: readonly string[]) => {
+    const key = entityKey(owner);
+    const columns = foreignKeyColumns.get(key) ?? new Set<string>();
+    for (const name of names) {
+      columns.add(name);
     }
-    foreignKeyColumns.set(owner, columns);
+    foreignKeyColumns.set(key, columns);
+  };
+  for (const key of snapshot.foreignKeys) {
+    addForeignKeyColumns(
+      key.referencingTable,
+      key.columnPairs.map((pair) => pair.referencingColumn),
+    );
+  }
+  for (const key of snapshot.foreignKeysToInvisibleTables ?? []) {
+    addForeignKeyColumns(key.referencingTable, key.columns);
   }
 
   const entities = new Map<string, EntityDescriptor>();
