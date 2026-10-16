@@ -113,6 +113,89 @@ for (const edge of model.en?.edges ?? []) {
   }
 }
 
+// Every section has the shape the page renders: a changed shape fails here, not on the live page.
+// "text" is a string, ["x"] a list of x, { ... } an object with those fields (all required).
+const SHAPE = {
+  overview: { title: "text", oneLiner: "text", paragraphs: ["text"] },
+  layers: [
+    {
+      id: "text",
+      name: "text",
+      summary: "text",
+      path: "text",
+      technologies: ["text"],
+      components: [
+        { id: "text", name: "text", path: "text", responsibility: "text", patterns: ["text"] },
+      ],
+    },
+  ],
+  edges: [{ id: "text", from: "text", to: "text", label: "text", kind: "text" }],
+  dataStores: [
+    {
+      name: "text",
+      location: "text",
+      format: "text",
+      owner: "text",
+      contents: "text",
+      notes: "text",
+    },
+  ],
+  flows: [
+    {
+      id: "text",
+      name: "text",
+      summary: "text",
+      steps: [{ actor: "text", action: "text", detail: "text" }],
+    },
+  ],
+  commands: [{ name: "text", purpose: "text", streamsEvents: "flag" }],
+  patterns: [{ name: "text", where: "text", why: "text" }],
+  recipes: {
+    featureTypes: [
+      { kind: "text", example: "text", steps: [{ layer: "text", step: "text", files: ["text"] }] },
+    ],
+    crossCutting: [{ concern: "text", touches: "text" }],
+    definitionOfDone: ["text"],
+  },
+  conventions: [{ topic: "text", rule: "text" }],
+  conformance: {
+    verdict: "text",
+    deviations: [{ what: "text", where: "text", fix: "text", severity: "text", status: "text" }],
+  },
+  keepingInSync: {
+    rules: ["text"],
+    automatedCheck: { name: "text", script: "text", how: ["text"] },
+  },
+  glossary: [{ id: "text", term: "text", meaning: "text" }],
+};
+function checkShape(value, shape, where) {
+  if (shape === "text") {
+    if (typeof value !== "string") failures.push(`${where}: expected text`);
+    return;
+  }
+  if (shape === "flag") {
+    if (typeof value !== "boolean") failures.push(`${where}: expected true or false`);
+    return;
+  }
+  if (Array.isArray(shape)) {
+    if (!Array.isArray(value)) {
+      failures.push(`${where}: expected a list`);
+      return;
+    }
+    value.forEach((item, index) => checkShape(item, shape[0], `${where}[${index}]`));
+    return;
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    failures.push(`${where}: expected an object with ${Object.keys(shape).join(", ")}`);
+    return;
+  }
+  for (const [key, child] of Object.entries(shape)) {
+    if (!(key in value)) failures.push(`${where}.${key}: missing`);
+    else checkShape(value[key], child, `${where}.${key}`);
+  }
+}
+for (const language of ["en", "es"]) checkShape(model[language], SHAPE, language);
+
 // The page's own script must parse; new Function compiles it without running it.
 const page = read("docs/architecture/index.html");
 const pageScript = page.match(/<script>([\s\S]*?)<\/script>/u);
