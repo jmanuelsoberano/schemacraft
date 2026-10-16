@@ -16,7 +16,11 @@ import type {
 import { translate } from "@/shared/i18n/useI18n";
 import { toOperationError } from "@/shared/ipc/operationError";
 import type { OperationError } from "@/shared/ipc/operationError";
-import { PROJECT_FILE_EXTENSION, getProjectBackend } from "@/shared/ipc/projectBackend";
+import {
+  PROJECT_FILE_EXTENSION,
+  getProjectBackend,
+  type FileDialogLabels,
+} from "@/shared/ipc/projectBackend";
 import { useSettingsStore } from "@/shared/settings/settingsStore";
 
 import { toSavedConnection } from "./savedConnection";
@@ -101,13 +105,6 @@ export function defaultCanvasState(): CanvasState {
   return { detailLevel: "keys", layout: "manual", viewport: { x: 0, y: 0, zoom: 1 }, nodes: [] };
 }
 
-/** File name shown for a project: the file's base name, without the extension. */
-export function projectDisplayName(path: string): string {
-  const fileName = path.split(/[\\/]/).pop() ?? path;
-  const suffix = `.${PROJECT_FILE_EXTENSION}`;
-  return fileName.toLowerCase().endsWith(suffix) ? fileName.slice(0, -suffix.length) : fileName;
-}
-
 function suggestedFileName(content: ProjectContent): string {
   const base = content.snapshot.databaseName.trim() || "schema";
   return `${base}.${PROJECT_FILE_EXTENSION}`;
@@ -122,8 +119,12 @@ function contentOf(file: Project): ProjectContent {
   };
 }
 
-function dialogTitle(key: "project.dialog.open" | "project.dialog.save"): string {
-  return translate(useSettingsStore.getState().locale, key);
+function dialogLabels(key: "project.dialog.open" | "project.dialog.save"): FileDialogLabels {
+  const { locale } = useSettingsStore.getState();
+  return {
+    title: translate(locale, key),
+    fileTypeName: translate(locale, "project.dialog.fileType"),
+  };
 }
 
 export const useProjectStore = create<ProjectState>()((set, get) => {
@@ -161,7 +162,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
     let chosen = path ?? null;
     try {
       const backend = await getProjectBackend();
-      chosen ??= await backend.pickProjectToOpen(dialogTitle("project.dialog.open"));
+      chosen ??= await backend.pickProjectToOpen(dialogLabels("project.dialog.open"));
       if (chosen === null) {
         set({ phase: "idle" });
         return;
@@ -250,7 +251,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
       try {
         const backend = await getProjectBackend();
         const path = await backend.pickProjectToSave(
-          dialogTitle("project.dialog.save"),
+          dialogLabels("project.dialog.save"),
           project.path ?? suggestedFileName(project.content),
         );
         if (path !== null) {

@@ -2,7 +2,7 @@ import { FileCode, FileText, Globe, Image, Moon, Sun } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRef } from "react";
 
-import { describeOperationError } from "@/features/connection/operationErrorMessages";
+import { describeOperationError } from "@/shared/errors/describeOperationError";
 import { useProjectStore } from "@/features/project/projectStore";
 import type { DetailLevel, ExportFormat } from "@/shared/contracts";
 import { useI18n } from "@/shared/i18n/useI18n";
@@ -284,9 +284,7 @@ function FailureAlert({
   failure: NonNullable<ReturnType<typeof useExportStore.getState>["failure"]>;
 }) {
   const translator = useI18n();
-  const presentation = describeOperationError(failure, translator, {
-    authenticationMode: "sqlLogin",
-  });
+  const presentation = describeOperationError(failure, translator);
   return (
     <Alert variant="danger" title={presentation.title} detail={presentation.detail}>
       {presentation.hint}

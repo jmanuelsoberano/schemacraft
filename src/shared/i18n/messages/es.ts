@@ -85,7 +85,11 @@ export const spanishMessages: MessageCatalog = {
 
   "toolbar.connect": "Conectar",
 
-  "common.comingSoon": "Disponible en un próximo hito",
+  "action.unavailable.noProject": "Abre un proyecto o conéctate a una base de datos primero",
+  "action.unavailable.layoutRunning": "Se está calculando una disposición",
+  "action.unavailable.nothingHidden": "No hay tablas ocultas en el diagrama",
+  "action.unavailable.nothingToUndo": "No hay nada que deshacer",
+  "action.unavailable.nothingToRedo": "No hay nada que rehacer",
 
   "menu.theme": "Tema",
   "theme.system": "Sistema",
@@ -135,7 +139,6 @@ export const spanishMessages: MessageCatalog = {
   "canvas.menu.isolateTwo": "Aislar con relaciones, dos niveles",
   "canvas.menu.showAll": "Mostrar todas las entidades",
   "canvas.layout.menu": "Disposición automática",
-  "canvas.layout.needsProject": "Abre un proyecto o conéctate a una base de datos primero",
   "canvas.layout.running": "Disponiendo el diagrama…",
 
   "palette.title": "Paleta de comandos",
@@ -257,6 +260,7 @@ export const spanishMessages: MessageCatalog = {
   "project.unsavedChanges": "Cambios sin guardar",
   "project.dialog.open": "Abrir proyecto",
   "project.dialog.save": "Guardar proyecto como",
+  "project.dialog.fileType": "Proyecto de SchemaCraft",
   "project.discard.title": "¿Descartar los cambios sin guardar?",
   "project.discard.description": "{name} tiene cambios que todavía no se han guardado.",
   "project.discard.note": "Guarda el proyecto antes si quieres conservarlos.",

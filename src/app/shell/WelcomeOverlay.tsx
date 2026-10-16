@@ -2,8 +2,8 @@ import { FileText } from "lucide-react";
 
 import { ActionButton } from "@/app/actions/ActionButton";
 import type { ActionsById } from "@/app/actions/action";
-import { Logo } from "@/app/brand/Logo";
-import { DEVELOPER_NAME } from "@/app/brand/credits";
+import { Logo } from "@/shared/brand/Logo";
+import { DEVELOPER_NAME } from "@/shared/brand/credits";
 import { usePreferencesStore } from "@/features/preferences/preferencesStore";
 import { projectDirectory, projectDisplayName } from "@/features/project/projectPaths";
 import { useProjectStore } from "@/features/project/projectStore";

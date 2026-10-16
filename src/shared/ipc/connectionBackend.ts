@@ -1,4 +1,4 @@
-import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
 
 import type {
   ConnectionSettings,
@@ -8,7 +8,9 @@ import type {
   ServerInformation,
 } from "@/shared/contracts";
 
-import { ipcUnavailableError, toOperationError } from "./operationError";
+import { createBackendResolver } from "./backendResolver";
+import { invokeCommand } from "./invokeCommand";
+import { ipcUnavailableError } from "./operationError";
 
 /** Operations the connection feature needs from the Rust side. */
 export interface ConnectionBackend {
@@ -21,14 +23,6 @@ export interface ConnectionBackend {
     onEvent: (event: InspectionEvent) => void,
   ): Promise<SchemaSnapshot>;
   cancelInspection(jobId: string): Promise<void>;
-}
-
-async function invokeCommand<T>(command: string, arguments_: Record<string, unknown>): Promise<T> {
-  try {
-    return await invoke<T>(command, arguments_);
-  } catch (error: unknown) {
-    throw toOperationError(error);
-  }
 }
 
 const tauriConnectionBackend: ConnectionBackend = {
@@ -51,24 +45,11 @@ const unavailableConnectionBackend: ConnectionBackend = {
   cancelInspection: () => Promise.reject(ipcUnavailableError()),
 };
 
-let backendPromise: Promise<ConnectionBackend> | undefined;
-
-/**
- * Resolves the backend for this window: the Tauri commands inside the desktop application, a
- * simulated backend in a development browser preview, and a backend that reports the runtime
- * as unavailable anywhere else.
- */
-export function getConnectionBackend(): Promise<ConnectionBackend> {
-  backendPromise ??= resolveBackend();
-  return backendPromise;
-}
-
-function resolveBackend(): Promise<ConnectionBackend> {
-  if (isTauri()) {
-    return Promise.resolve(tauriConnectionBackend);
-  }
-  if (import.meta.env.DEV) {
-    return import("./previewConnectionBackend").then((module) => module.previewConnectionBackend);
-  }
-  return Promise.resolve(unavailableConnectionBackend);
-}
+/** Resolves the connection backend for this window (see {@link createBackendResolver}). */
+export const getConnectionBackend = createBackendResolver<ConnectionBackend>(
+  tauriConnectionBackend,
+  unavailableConnectionBackend,
+  import.meta.env.DEV
+    ? () => import("./previewConnectionBackend").then((module) => module.previewConnectionBackend)
+    : null,
+);

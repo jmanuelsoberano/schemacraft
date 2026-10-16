@@ -33,7 +33,11 @@ export function LayoutMenu({ actions }: LayoutMenuProps) {
           shortcutHint={
             autoLayout.shortcut ? formatShortcut(autoLayout.shortcut, applePlatform) : undefined
           }
-          description={autoLayout.isAvailable ? undefined : t("canvas.layout.needsProject")}
+          description={
+            autoLayout.isAvailable || autoLayout.unavailableReason === undefined
+              ? undefined
+              : t(autoLayout.unavailableReason)
+          }
           disabled={!autoLayout.isAvailable}
         />
       </DropdownMenu.Trigger>

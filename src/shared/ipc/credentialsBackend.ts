@@ -1,9 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
-
 import type { SavedConnection } from "@/shared/contracts";
 
 import { createBackendResolver } from "./backendResolver";
-import { ipcUnavailableError, toOperationError } from "./operationError";
+import { invokeCommand } from "./invokeCommand";
+import { ipcUnavailableError } from "./operationError";
 
 /**
  * Remembered passwords. The Rust side keeps them in the operating system credential store; the
@@ -14,14 +13,6 @@ export interface CredentialsBackend {
   hasStoredPassword(connection: SavedConnection): Promise<boolean>;
   rememberPassword(connection: SavedConnection, password: string): Promise<void>;
   forgetPassword(connection: SavedConnection): Promise<boolean>;
-}
-
-async function invokeCommand<T>(command: string, arguments_: Record<string, unknown>): Promise<T> {
-  try {
-    return await invoke<T>(command, arguments_);
-  } catch (error: unknown) {
-    throw toOperationError(error);
-  }
 }
 
 const tauriCredentialsBackend: CredentialsBackend = {

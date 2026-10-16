@@ -1,4 +1,4 @@
-import { isTauri } from "@tauri-apps/api/core";
+import { isDesktopRuntime } from "@/shared/ipc/runtime";
 import { useEffect } from "react";
 
 import { isEditableTarget } from "@/app/actions/useKeyboardShortcuts";
@@ -11,7 +11,7 @@ import { isEditableTarget } from "@/app/actions/useKeyboardShortcuts";
  */
 export function useDesktopShellGuards(): void {
   useEffect(() => {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
       return undefined;
     }
     const suppressContextMenu = (event: MouseEvent) => {

@@ -7,7 +7,7 @@ import { AboutDialog } from "@/features/about/AboutDialog";
 import { CanvasContextMenu } from "@/features/canvas/CanvasContextMenu";
 import { ConnectionDialog } from "@/features/connection/ConnectionDialog";
 import { ExportDialog } from "@/features/export/ExportDialog";
-import { CommandPalette } from "@/features/palette/CommandPalette";
+import { CommandPalette } from "@/app/palette/CommandPalette";
 import { usePreferencesStore } from "@/features/preferences/preferencesStore";
 import { UnsavedChangesDialog } from "@/features/project/UnsavedChangesDialog";
 import { useProjectWindow } from "@/features/project/useProjectWindow";

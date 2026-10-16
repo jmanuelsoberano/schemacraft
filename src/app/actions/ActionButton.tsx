@@ -41,7 +41,11 @@ export function ActionButton({ action, labelKey, variant, size }: ActionButtonPr
   return (
     <Tooltip
       label={t(action.labelKey)}
-      description={action.isAvailable ? undefined : t("common.comingSoon")}
+      description={
+        action.isAvailable || action.unavailableReason === undefined
+          ? undefined
+          : t(action.unavailableReason)
+      }
       shortcutHint={shortcutHint}
     >
       {action.isAvailable ? button : <span className={styles.disabledWrapper}>{button}</span>}

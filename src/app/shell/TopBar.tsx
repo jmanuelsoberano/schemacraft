@@ -4,7 +4,7 @@ import type { LucideIcon } from "lucide-react";
 import { ActionButton } from "@/app/actions/ActionButton";
 import { ActionIconButton } from "@/app/actions/ActionIconButton";
 import type { ActionsById } from "@/app/actions/action";
-import { Logo } from "@/app/brand/Logo";
+import { Logo } from "@/shared/brand/Logo";
 import { projectDisplayName } from "@/features/project/projectPaths";
 import { useProjectStore } from "@/features/project/projectStore";
 import type { DetailLevel } from "@/shared/contracts";
