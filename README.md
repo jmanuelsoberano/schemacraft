@@ -112,8 +112,9 @@ The portable binary is written to `target/release/schemacraft.exe` and the insta
 Every tag `vX.Y.Z` builds the assets listed under Download, smoke-tests the real executable and
 publishes a draft GitHub release. [docs/release-checklist.md](docs/release-checklist.md) lists
 what CI verifies and what is checked by hand before the draft is published. To cut a release: set
-the version in `package.json` and `Cargo.toml`, add the entry to `CHANGELOG.md`, commit, tag
-`vX.Y.Z` and push the tag.
+the version in `package.json` and `Cargo.toml`, add the entry to `CHANGELOG.md`, merge that
+change into `main` through a pull request, then tag the merge commit `vX.Y.Z` and push the tag;
+the release workflow refuses a tag that is not on `main`.
 
 ## Scripts
 

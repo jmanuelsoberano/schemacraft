@@ -252,14 +252,14 @@
             "id": "project-notice",
             "name": "ProjectNotice",
             "path": "src/features/project/ProjectNotice.tsx",
-            "responsibility": "Non-blocking alert over the canvas when opening or saving a project fails. DiagramCanvas renders it. It reads projectStore.failure, describes the error with describeOperationError from connection/ and clears it with dismissFailure.",
+            "responsibility": "Non-blocking alert over the canvas when opening or saving a project fails. DiagramCanvas renders it. It reads projectStore.failure, describes the error with describeOperationError from shared/errors and clears it with dismissFailure.",
             "patterns": ["Error shown where the work happens"]
           },
           {
             "id": "project-paths",
             "name": "projectPaths",
             "path": "src/features/project/projectPaths.ts",
-            "responsibility": "projectDisplayName (file name without .scraft) and projectDirectory. The window title, TopBar, WelcomeOverlay and UnsavedChangesDialog use them. projectStore.ts:105 keeps an unused copy of projectDisplayName.",
+            "responsibility": "projectDisplayName (file name without .scraft) and projectDirectory. The window title, TopBar, WelcomeOverlay and UnsavedChangesDialog use them.",
             "patterns": ["Pure path helpers"]
           },
           {
@@ -387,14 +387,14 @@
             "id": "ipc-error",
             "name": "CommandError envelope",
             "path": "src-tauri/src/error.rs",
-            "responsibility": "{kind: {type, value}, message}. One CommandErrorKind variant and one From impl per core error, plus UnknownJob and InvalidArgument, which serialise as {type} with no value.",
+            "responsibility": "{kind: {type, value}, message}. One CommandErrorKind variant and one From impl per core error, plus UnknownJob, InvalidArgument and Unexpected (a blocking task that could not be joined), which serialise as {type} with no value.",
             "patterns": ["Classification separate from message"]
           },
           {
             "id": "ipc-capabilities",
             "name": "Capabilities and plugins",
             "path": "src-tauri/capabilities/default.json",
-            "responsibility": "Seven entries, exactly what the frontend calls: core:default, core:window:allow-set-theme, core:window:allow-set-title, core:window:allow-destroy, dialog:allow-open, dialog:allow-save and opener:allow-reveal-item-in-dir. set-title and destroy serve the close guard in nativeWindow.ts. App commands need no entry. No fs plugin, so the frontend never touches files.",
+            "responsibility": "Eight entries, exactly what the frontend calls: core:default, core:window:allow-set-theme, core:window:allow-set-title, core:window:allow-destroy, dialog:allow-open, dialog:allow-save, opener:allow-reveal-item-in-dir, and opener:allow-open-url scoped to https://reactflow.dev/*, because the opener plugin's injected script opens the React Flow credit link in the browser. set-title and destroy serve the close guard in nativeWindow.ts. App commands need no entry. No fs plugin, so the frontend never touches files.",
             "patterns": ["Capability-based permissions"]
           }
         ]
@@ -445,7 +445,7 @@
             "id": "cmd-connection",
             "name": "commands/connection.rs",
             "path": "src-tauri/src/commands/connection.rs",
-            "responsibility": "Async. test_connection, list_databases, list_schemas and inspect_database each resolve a stored password, call create_inspector, then one inspector method. A typed password arrives inside ConnectionSettings on every call. inspect_database streams progress; cancel_inspection (sync) cancels by jobId.",
+            "responsibility": "Async. test_connection, list_databases, list_schemas and inspect_database each resolve a stored password through run_blocking, call create_inspector, then one inspector method. A typed password arrives inside ConnectionSettings on every call. inspect_database streams progress; cancel_inspection (sync) cancels by jobId.",
             "patterns": ["Adapter (ChannelProgress implements ProgressReporter)"]
           },
           {
@@ -1255,7 +1255,7 @@
         "id": "core-project-to-core-file-io",
         "from": "core-project",
         "to": "core-file-io",
-        "label": "read_project, write_project",
+        "label": "read_bytes, format_version, write_json_atomically",
         "kind": "call"
       },
       {
@@ -1508,13 +1508,6 @@
         "from": "project-notice",
         "to": "feature-project",
         "label": "failure, dismissFailure",
-        "kind": "call"
-      },
-      {
-        "id": "project-notice-to-feature-connection",
-        "from": "project-notice",
-        "to": "feature-connection",
-        "label": "describeOperationError",
         "kind": "call"
       },
       {
@@ -2692,7 +2685,7 @@
             },
             {
               "layer": "core persistence",
-              "step": "A SavedConnection variant and a CredentialKey constructor. Today project/connection.rs imports SQL Server types, so this is more than the inspectors doc claims.",
+              "step": "A SavedConnection variant and a CredentialKey constructor. Today project/connection.rs imports SQL Server types; the inspectors doc lists every such part.",
               "files": [
                 "crates/schemacraft-core/src/project/connection.rs",
                 "crates/schemacraft-core/src/credentials/mod.rs"
@@ -2703,6 +2696,7 @@
               "step": "Draft, form and conversions that hard-code provider 'sqlServer', plus i18n keys.",
               "files": [
                 "src/features/project/savedConnection.ts",
+                "src/features/connection/fromSavedConnection.ts",
                 "src/features/connection/connectionDraft.ts"
               ]
             }
@@ -2756,7 +2750,7 @@
         },
         {
           "concern": "Module boundaries",
-          "touches": "core never depends on Tauri; shared never imports app or features; nothing enforces it in lint yet."
+          "touches": "app -> features -> shared and the Tauri API only in shared/ipc, enforced by ESLint no-restricted-imports (ADR-031); core never depends on Tauri."
         },
         {
           "concern": "Performance",
@@ -2903,7 +2897,7 @@
         },
         {
           "what": "Entity listing, the `${schema}.${name}` key and EntityKind exist in several places.",
-          "where": "src/features/schema/entities.ts, canvas/geometry.ts, palette/CommandPalette.tsx, connection/ReviewChangesPanel.tsx, shared/ipc/previewProjectBackend.ts",
+          "where": "src/features/schema/entities.ts, canvas/geometry.ts, src/app/palette/CommandPalette.tsx, connection/ReviewChangesPanel.tsx, shared/ipc/previewProjectBackend.ts",
           "fix": "Planned for v1.1: Make features/schema the single home of entityKey and EntityKind.",
           "severity": "minor",
           "status": "open"
@@ -3037,7 +3031,7 @@
         {
           "what": "Capabilities grant more than the frontend uses: opener:default includes open-url, which nothing calls; opener:allow-reveal-item-in-dir repeats part of opener:default; dialog:default includes message, which is unused.",
           "where": "src-tauri/capabilities/default.json",
-          "fix": "Fixed: the capabilities list dialog:allow-open, dialog:allow-save and opener:allow-reveal-item-in-dir.",
+          "fix": "Fixed: the capabilities list dialog:allow-open, dialog:allow-save, opener:allow-reveal-item-in-dir, and opener:allow-open-url scoped to https://reactflow.dev/*. The audit missed that the opener plugin's injected script opens the React Flow credit link, so open-url stays, limited to that site.",
           "severity": "minor",
           "status": "fixed"
         },
@@ -3091,7 +3085,7 @@
         "The page carries one manifest, at the top level of model.json and shared by both languages. CI checks it against the code with scripts/check-architecture-page.mjs (npm run docs:check).",
         "New command: add it to manifest.commands and to the commands table in both languages.",
         "New feature folder, core module or IPC backend: add it to the manifest, the layer list and the diagram edges.",
-        "New decision: add an ADR (ADR-031 is next), raise manifest.adrCount and link the ADR from the pattern or recipe it changes.",
+        "New decision: add an ADR (ADR-034 is next), raise manifest.adrCount and link the ADR from the pattern or recipe it changes.",
         "Scope change: update both PRD copies (docs/ and 02_Docs/), add a dated line to section 6, commit as docs(prd), only with the user's approval.",
         "Fixed deviation: mark it fixed in the same PR. New known deviation: add it with a severity and status open.",
         "New data store or localStorage key: add a row to the data table.",
@@ -3489,14 +3483,14 @@
             "id": "project-notice",
             "name": "ProjectNotice",
             "path": "src/features/project/ProjectNotice.tsx",
-            "responsibility": "Aviso no bloqueante sobre el lienzo cuando falla abrir o guardar un proyecto. Lo muestra DiagramCanvas. Lee projectStore.failure, describe el error con describeOperationError de connection/ y lo descarta con dismissFailure.",
+            "responsibility": "Aviso no bloqueante sobre el lienzo cuando falla abrir o guardar un proyecto. Lo muestra DiagramCanvas. Lee projectStore.failure, describe el error con describeOperationError de shared/errors y lo descarta con dismissFailure.",
             "patterns": ["El error se muestra donde ocurre el trabajo"]
           },
           {
             "id": "project-paths",
             "name": "projectPaths",
             "path": "src/features/project/projectPaths.ts",
-            "responsibility": "projectDisplayName (nombre del archivo sin .scraft) y projectDirectory. Los usan el título de la ventana, TopBar, WelcomeOverlay y UnsavedChangesDialog. projectStore.ts:105 conserva una copia sin uso de projectDisplayName.",
+            "responsibility": "projectDisplayName (nombre del archivo sin .scraft) y projectDirectory. Los usan el título de la ventana, TopBar, WelcomeOverlay y UnsavedChangesDialog.",
             "patterns": ["Helpers puros de rutas"]
           },
           {
@@ -3624,14 +3618,14 @@
             "id": "ipc-error",
             "name": "Envoltorio CommandError",
             "path": "src-tauri/src/error.rs",
-            "responsibility": "{kind: {type, value}, message}. Una variante de CommandErrorKind y un impl From por cada error del core, más UnknownJob e InvalidArgument, que se serializan como {type} sin value.",
+            "responsibility": "{kind: {type, value}, message}. Una variante de CommandErrorKind y un impl From por cada error del core, más UnknownJob, InvalidArgument y Unexpected (una tarea bloqueante que no se pudo unir), que se serializan como {type} sin value.",
             "patterns": ["Clasificación separada del mensaje"]
           },
           {
             "id": "ipc-capabilities",
             "name": "Capabilities y plugins",
             "path": "src-tauri/capabilities/default.json",
-            "responsibility": "Siete entradas, exactamente lo que llama el frontend: core:default, core:window:allow-set-theme, core:window:allow-set-title, core:window:allow-destroy, dialog:allow-open, dialog:allow-save y opener:allow-reveal-item-in-dir. set-title y destroy sirven a la protección al cerrar de nativeWindow.ts. Los comandos de la app no necesitan entrada. No hay plugin fs, así que el frontend nunca toca archivos.",
+            "responsibility": "Ocho entradas, exactamente lo que llama el frontend: core:default, core:window:allow-set-theme, core:window:allow-set-title, core:window:allow-destroy, dialog:allow-open, dialog:allow-save, opener:allow-reveal-item-in-dir y opener:allow-open-url limitado a https://reactflow.dev/*, porque el script que inyecta el plugin opener abre en el navegador el enlace de crédito de React Flow. set-title y destroy sirven a la protección al cerrar de nativeWindow.ts. Los comandos de la app no necesitan entrada. No hay plugin fs, así que el frontend nunca toca archivos.",
             "patterns": ["Permisos basados en capabilities"]
           }
         ]
@@ -3685,7 +3679,7 @@
             "id": "cmd-connection",
             "name": "commands/connection.rs",
             "path": "src-tauri/src/commands/connection.rs",
-            "responsibility": "Async. test_connection, list_databases, list_schemas e inspect_database resuelven una contraseña guardada, llaman a create_inspector y luego a un método del inspector. Una contraseña tecleada llega dentro de ConnectionSettings en cada llamada. inspect_database transmite progreso; cancel_inspection (síncrono) cancela por jobId.",
+            "responsibility": "Async. test_connection, list_databases, list_schemas e inspect_database resuelven una contraseña guardada mediante run_blocking, llaman a create_inspector y luego a un método del inspector. Una contraseña tecleada llega dentro de ConnectionSettings en cada llamada. inspect_database transmite progreso; cancel_inspection (síncrono) cancela por jobId.",
             "patterns": ["Adaptador (ChannelProgress implementa ProgressReporter)"]
           },
           {
@@ -4505,7 +4499,7 @@
         "id": "core-project-to-core-file-io",
         "from": "core-project",
         "to": "core-file-io",
-        "label": "read_project, write_project",
+        "label": "read_bytes, format_version, write_json_atomically",
         "kind": "call"
       },
       {
@@ -4758,13 +4752,6 @@
         "from": "project-notice",
         "to": "feature-project",
         "label": "failure, dismissFailure",
-        "kind": "call"
-      },
-      {
-        "id": "project-notice-to-feature-connection",
-        "from": "project-notice",
-        "to": "feature-connection",
-        "label": "describeOperationError",
         "kind": "call"
       },
       {
@@ -5942,7 +5929,7 @@
             },
             {
               "layer": "core persistencia",
-              "step": "Una variante de SavedConnection y un constructor de CredentialKey. Hoy project/connection.rs importa tipos de SQL Server, así que es más de lo que dice el doc de inspectors.",
+              "step": "Una variante de SavedConnection y un constructor de CredentialKey. Hoy project/connection.rs importa tipos de SQL Server; el doc de inspectors enumera cada una de esas partes.",
               "files": [
                 "crates/schemacraft-core/src/project/connection.rs",
                 "crates/schemacraft-core/src/credentials/mod.rs"
@@ -5953,6 +5940,7 @@
               "step": "Borrador, formulario y conversiones que fijan provider 'sqlServer', más claves i18n.",
               "files": [
                 "src/features/project/savedConnection.ts",
+                "src/features/connection/fromSavedConnection.ts",
                 "src/features/connection/connectionDraft.ts"
               ]
             }
@@ -6006,7 +5994,7 @@
         },
         {
           "concern": "Fronteras de módulos",
-          "touches": "El core nunca depende de Tauri; shared nunca importa app ni features; ninguna regla de lint lo exige todavía."
+          "touches": "app -> features -> shared y la API de Tauri solo en shared/ipc, exigido por ESLint con no-restricted-imports (ADR-031); el core nunca depende de Tauri."
         },
         {
           "concern": "Rendimiento",
@@ -6153,7 +6141,7 @@
         },
         {
           "what": "El listado de entidades, la clave `${schema}.${name}` y EntityKind existen en varios lugares.",
-          "where": "src/features/schema/entities.ts, canvas/geometry.ts, palette/CommandPalette.tsx, connection/ReviewChangesPanel.tsx, shared/ipc/previewProjectBackend.ts",
+          "where": "src/features/schema/entities.ts, canvas/geometry.ts, src/app/palette/CommandPalette.tsx, connection/ReviewChangesPanel.tsx, shared/ipc/previewProjectBackend.ts",
           "fix": "Planeado para v1.1: Hacer de features/schema el único hogar de entityKey y EntityKind.",
           "severity": "minor",
           "status": "open"
@@ -6287,7 +6275,7 @@
         {
           "what": "Las capabilities otorgan más de lo que usa el frontend: opener:default incluye open-url, que nada llama; opener:allow-reveal-item-in-dir repite parte de opener:default; dialog:default incluye message, que no se usa.",
           "where": "src-tauri/capabilities/default.json",
-          "fix": "Corregido: las capabilities listan dialog:allow-open, dialog:allow-save y opener:allow-reveal-item-in-dir.",
+          "fix": "Corregido: las capabilities listan dialog:allow-open, dialog:allow-save, opener:allow-reveal-item-in-dir y opener:allow-open-url limitado a https://reactflow.dev/*. La auditoría pasó por alto que el script que inyecta el plugin opener abre el enlace de crédito de React Flow, así que open-url se queda, solo para ese sitio.",
           "severity": "minor",
           "status": "fixed"
         },
@@ -6341,7 +6329,7 @@
         "La página lleva un solo manifiesto, en el nivel superior de model.json y compartido por ambos idiomas. CI lo compara con el código con scripts/check-architecture-page.mjs (npm run docs:check).",
         "Comando nuevo: agrégalo a manifest.commands y a la tabla de comandos en ambos idiomas.",
         "Carpeta de funcionalidad, módulo del core o backend IPC nuevo: agrégalo al manifiesto, a la lista de capas y a las aristas del diagrama.",
-        "Decisión nueva: agrega un ADR (el siguiente es ADR-031), sube manifest.adrCount y enlaza el ADR desde el patrón o la receta que cambia.",
+        "Decisión nueva: agrega un ADR (el siguiente es ADR-034), sube manifest.adrCount y enlaza el ADR desde el patrón o la receta que cambia.",
         "Cambio de alcance: actualiza ambas copias del PRD (docs/ y 02_Docs/), agrega una línea fechada en la sección 6 y haz commit como docs(prd), solo con aprobación del usuario.",
         "Desviación corregida: márcala como corregida en el mismo PR. Desviación conocida nueva: agrégala con su severidad y estado open.",
         "Almacén de datos o clave de localStorage nueva: agrega una fila a la tabla de datos.",

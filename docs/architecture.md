@@ -509,7 +509,10 @@ Tauri runs synchronous commands on the main thread, which also drives the window
 synchronous only when it reads memory and returns at once (`get_app_info`, `read_preferences`,
 `cancel_*`). Every command that touches a file, the operating system credential store or a large
 computation is `async` and hands that work to `run_blocking` (`src-tauri/src/commands/mod.rs`),
-which runs it on the blocking thread pool and reports a crashed worker as an `unexpected` error.
+which runs it on the blocking thread pool; a task that cannot be joined is reported as an
+`unexpected` error, while a panic ends the process, since release builds abort on panic. The
+connection commands look up a remembered password the same way before they open the network
+connection.
 Commands that need the application state inside the worker take the `AppHandle` and look the
 state up there. `PreferencesStore::update` applies a change to a copy and keeps it only after the
 file holds it, and a preferences file written by a newer version is never overwritten.

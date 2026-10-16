@@ -20,7 +20,8 @@ frontend alone in a browser with simulated backends.
 
 ## Quality gates
 
-CI runs these on every pull request, and they must pass:
+CI runs these on every pull request, and they must pass. The Rust gates below run as well
+unless the change only touches `docs/` and Markdown files (ADR-033):
 
 ```bash
 npm run format:check && npm run lint && npm run typecheck && npm test && npm run docs:check
