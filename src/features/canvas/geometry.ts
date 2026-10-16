@@ -1,8 +1,17 @@
-import type { Column, DetailLevel, QualifiedName, SchemaSnapshot } from "@/shared/contracts";
+import { entityKey } from "@/features/schema/entities";
+import type { EntityKind } from "@/features/schema/entities";
+import type {
+  Column,
+  DetailLevel,
+  ForeignKey,
+  QualifiedName,
+  SchemaSnapshot,
+} from "@/shared/contracts";
 
 /**
- * Pure geometry of diagram nodes. The canvas and, later, the SVG exporter both read sizes and
- * row positions from here, so what is exported is exactly what is on screen.
+ * Pure geometry of diagram nodes. The canvas and the SVG exporter both read sizes, row positions
+ * and attachment points from here, so what is exported is exactly what is on screen. Entity
+ * identity (`entityKey`, `EntityKind`) lives in features/schema.
  */
 export const NODE_WIDTH = 240;
 export const HEADER_HEIGHT = 38;
@@ -10,8 +19,6 @@ export const ROW_HEIGHT = 22;
 export const ROWS_PADDING_BOTTOM = 6;
 /** Below this zoom factor nodes render compact whatever the chosen detail level. */
 export const COMPACT_ZOOM_THRESHOLD = 0.4;
-
-export type EntityKind = "table" | "view";
 
 export type ColumnRole = "primary" | "foreign" | "both" | "plain";
 
@@ -30,10 +37,6 @@ export interface EntityDescriptor {
 export interface ColumnRow {
   column: Column;
   role: ColumnRole;
-}
-
-export function entityKey(name: QualifiedName): string {
-  return `${name.schema}.${name.name}`;
 }
 
 /**
@@ -116,6 +119,15 @@ export function rowsFor(
     .filter((row) => detailLevel === "full" || row.role !== "plain");
 }
 
+/**
+ * Whether a node has rows to hide at a detail level, so the collapse toggle is worth showing.
+ * Nothing is collapsible at "compact"; a view at "keys" shows no rows either, because views have
+ * no keys, so it is a header-only card there.
+ */
+export function isCollapsible(entity: EntityDescriptor, detailLevel: DetailLevel): boolean {
+  return rowsFor(entity, detailLevel, false).length > 0;
+}
+
 export function nodeHeight(rowCount: number): number {
   return HEADER_HEIGHT + (rowCount === 0 ? 0 : rowCount * ROW_HEIGHT + ROWS_PADDING_BOTTOM);
 }
@@ -132,6 +144,22 @@ export function rowCenterY(rowIndex: number): number {
 export function attachmentY(rows: readonly ColumnRow[], columnName: string): number {
   const index = rows.findIndex((row) => row.column.name === columnName);
   return index === -1 ? HEADER_HEIGHT / 2 : rowCenterY(index);
+}
+
+/**
+ * Where a relationship attaches at each end, relative to the top of the referencing and the
+ * referenced node: at the first column pair of the key, through {@link attachmentY}.
+ */
+export function relationOffsets(
+  foreignKey: ForeignKey,
+  sourceRows: readonly ColumnRow[],
+  targetRows: readonly ColumnRow[],
+): [number, number] {
+  const firstPair = foreignKey.columnPairs[0];
+  return [
+    attachmentY(sourceRows, firstPair?.referencingColumn ?? ""),
+    attachmentY(targetRows, firstPair?.referencedColumn ?? ""),
+  ];
 }
 
 /** The detail level actually rendered at a zoom factor (semantic zoom). */

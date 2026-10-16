@@ -6,7 +6,7 @@
 import "./viewer.css";
 
 import { spreadForDetailLevel, withPositions } from "@/features/canvas/canvasState";
-import { describeEntities, entityKey } from "@/features/canvas/geometry";
+import { describeEntities } from "@/features/canvas/geometry";
 import type { EntityDescriptor } from "@/features/canvas/geometry";
 import {
   VIEWER_DATA_ELEMENT_ID,
@@ -18,6 +18,7 @@ import { renderDiagramSvg } from "@/features/export/svg/renderDiagram";
 import type { ExportTheme } from "@/features/export/svg/palette";
 import { createCanvasMeasurer } from "@/features/export/svg/text";
 import { formatDataType } from "@/features/schema/dataType";
+import { entityKey } from "@/features/schema/entities";
 import type { DetailLevel, ForeignKey } from "@/shared/contracts";
 
 import { createViewerTranslator, describeDefinition, pluralKey } from "./messages";
@@ -227,6 +228,7 @@ class Viewer {
       {
         detailLevel: this.detailLevel,
         theme: this.theme,
+        labels: { view: this.t("label.view") },
         background: false,
         measureText: this.measure,
       },
@@ -441,7 +443,7 @@ class Viewer {
         {},
         h(
           "div",
-          { class: "sc-panel-kind" },
+          { class: entity.kind === "view" ? "sc-panel-kind sc-panel-kind-view" : "sc-panel-kind" },
           this.t(entity.kind === "view" ? "panel.view" : "panel.table"),
         ),
         h(
@@ -684,6 +686,8 @@ class Viewer {
     }
     this.results.replaceChildren(
       ...this.resultKeys.map((key, index) => {
+        // Each result says whether it is a table or a view, as the application's palette does.
+        const isView = this.entities.get(key)?.kind === "view";
         const item = h(
           "li",
           {
@@ -691,7 +695,12 @@ class Viewer {
             role: "option",
             "aria-selected": String(index === this.activeResult),
           },
-          key,
+          h("span", { class: "sc-result-name" }, key),
+          h(
+            "span",
+            { class: isView ? "sc-result-kind sc-result-kind-view" : "sc-result-kind" },
+            this.t(isView ? "panel.view" : "panel.table"),
+          ),
         );
         item.addEventListener("mousedown", (event) => {
           event.preventDefault();

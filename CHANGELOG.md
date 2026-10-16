@@ -23,8 +23,26 @@ All notable changes to SchemaCraft are documented here. The format follows
 - A refresh reports a `CHECK` constraint that was disabled or enabled again.
 - Projects saved by a newer SchemaCraft open read-only when that version allows it: they can be
   rearranged and exported, but not saved or refreshed.
+- The entities panel groups tables and views by schema and, inside each schema, in Tables and
+  Views sections with their counts. A level that distinguishes nothing is left out, and schemas
+  and sections collapse with a chevron for the session; everything is expanded while a search is
+  active.
+- Views are unmistakable: a VIEW label (VISTA in Spanish), their own icon and colour on the
+  canvas, in the entities panel, in the minimap, in the command palette and in every export, SVG,
+  PDF, PNG and the HTML viewer included, with the label in the interface language. At the Keys
+  level a view is a compact card with its label and column count.
+- The command palette and the HTML viewer's search name the kind, Table or View, of every entity.
 
 ### Changed
+
+- "Fit diagram to view" and "Center in view" are now "Fit diagram to window" and "Center on
+  screen" ("Ajustar el diagrama a la ventana" and "Centrar en pantalla"), so that "view" only
+  means a database view; the command palette and the viewer's search say tables and views.
+- The collapse chevron shows only on cards that have rows to hide, so a view at the Keys level
+  and a table without key columns no longer offer a toggle that did nothing.
+- "Show all entities" in the context menu shows its shortcut.
+- The key badges of the HTML viewer take their colours from the application's warning tokens;
+  the dark background is a little darker than before.
 
 - Projects are saved in format 2. SchemaCraft 1.1 opens and converts 1.0 projects, but a project
   saved by 1.1 needs SchemaCraft 1.1 or later.

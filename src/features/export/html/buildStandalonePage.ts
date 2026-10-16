@@ -1,3 +1,4 @@
+import { viewerPaletteStyles } from "../svg/palette";
 import { escapeXml } from "../svg/text";
 import { VIEWER_DATA_ELEMENT_ID, VIEWER_ROOT_ELEMENT_ID } from "./viewerData";
 import type { ViewerData } from "./viewerData";
@@ -6,7 +7,7 @@ export interface StandalonePageParts {
   data: ViewerData;
   /** The bundled viewer, an immediately invoked script.*/
   viewerScript: string;
-  /** The viewer's stylesheet. */
+  /** The viewer's stylesheet; it takes its colours from the palette written before it. */
   viewerStyles: string;
   /** `@font-face` rules with embedded fonts; empty to rely on system fonts. */
   fontFaces: string;
@@ -21,8 +22,8 @@ export function embedJson(value: unknown): string {
 }
 
 /**
- * Assembles the self-contained page: the schema as JSON data, the viewer code and styles, and
- * optionally the fonts, with nothing loaded from the network.
+ * Assembles the self-contained page: the schema as JSON data, the viewer code and styles with
+ * the diagram palette they read, and optionally the fonts, with nothing loaded from the network.
  */
 export function buildStandalonePage(parts: StandalonePageParts): string {
   const { data } = parts;
@@ -36,7 +37,7 @@ export function buildStandalonePage(parts: StandalonePageParts): string {
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<meta name="generator" content="${escapeXml(data.generator)}">`,
     `<title>${title}</title>`,
-    `<style>${parts.fontFaces}${parts.viewerStyles}</style>`,
+    `<style>${parts.fontFaces}${viewerPaletteStyles()}${parts.viewerStyles}</style>`,
     "</head>",
     "<body>",
     `<div id="${VIEWER_ROOT_ELEMENT_ID}"></div>`,

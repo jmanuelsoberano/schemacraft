@@ -111,15 +111,22 @@ the reason.
 
 ### Working on the canvas
 
-The entities panel lists tables and views with instant search, column counters, a visibility
-toggle and "center in view" per entity, and the same context menu as the canvas. The canvas
-offers three detail levels (compact, keys, full; switching to a taller level moves tables apart
-so none covers another, undoably), automatic layouts (layered top-down or left-to-right, organic,
-radial around a table), free dragging, multi-select with Shift, isolation
-of a table with its neighbours one or two levels deep, hide, show all, collapse and expand, a
+The entities panel lists tables and views by schema and, inside each schema, in Tables and Views
+sections with their counts; a level that distinguishes nothing is left out (one schema, one
+kind), and schemas and sections collapse with a chevron for the session, all expanded while a
+search is active. Each entity has instant search, a column counter, a visibility toggle and
+"center on screen", and the same context menu as the canvas. Views are unmistakable: a VIEW label
+(VISTA in Spanish), their own icon and colour in the panel, on the canvas and its minimap, in the
+command palette and in every export, never a dashed border; at the Keys level a view is a compact
+card with its label and column count. The canvas offers three detail levels (compact, keys, full;
+switching to a taller level moves tables apart so none covers another, undoably), automatic
+layouts (layered top-down or left-to-right, organic, radial around a table), free dragging,
+multi-select with Shift, isolation of a table with its neighbours one or two levels deep, hide,
+show all, collapse and expand (the card chevron shows only when there are rows to hide), a
 minimap and semantic zoom (cards turn compact below 40 %). Relationships use crow's foot
 notation, attach at the key column and reveal their name and columns on hover. Every change is
-undoable (Ctrl+Z, Ctrl+Y), and the command palette (Ctrl+K) reaches every action by name.
+undoable (Ctrl+Z, Ctrl+Y), and the command palette (Ctrl+K) reaches every action by name and
+names the kind of every entity it lists.
 
 ### Refreshing from the database
 
@@ -139,9 +146,13 @@ A single dialog chooses the format (SVG, standalone HTML, single-page PDF, PNG a
 detail level and the theme, and shows the size in pixels or millimetres with an estimated weight
 before anything is written. It exports what is visible on the canvas. A PNG scale beyond the
 renderer's limit is refused with the reason, progress names the stage and can be cancelled, and a
-finished export offers to show the file in its folder. The HTML file opens in any browser with
-pan, zoom, the three views, search and a detail panel per table. A diagram read with partial
-access says so in one line, under the diagram or under the viewer's header.
+finished export offers to show the file in its folder. Every export draws views as the canvas
+does, with the label in the language the interface had when the file was written. The HTML file
+opens in any browser with pan, zoom, the three detail levels, a search that names the kind of
+each result and a detail panel per table. A diagram read with partial access says so in one
+line, under the diagram or under the viewer's header. In the interface, "view" names a database
+view and nothing else: the viewport is the window or the screen, and compact, keys and full are
+detail levels.
 
 ## Visual language
 

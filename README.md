@@ -17,9 +17,10 @@ the same diagram, and renders fast, interactive diagrams with high-fidelity sing
   report that names the cause and the one grant that would complete the schema.
 - **Portable projects.** A `.scraft` file keeps the schema and the diagram, reopens without a
   database and refreshes from it with a reviewed diff that keeps your layout.
-- **Interactive diagrams.** Entity cards at three detail levels, crow's foot relationships,
-  layered, organic and radial layouts, isolation of a table with its neighbours, undo and redo,
-  and a command palette.
+- **Interactive diagrams.** Entity cards at three detail levels, views told apart from tables by
+  label, icon and colour, an entities panel with schema and kind sections, crow's foot
+  relationships, layered, organic and radial layouts, isolation of a table with its neighbours,
+  undo and redo, and a command palette.
 - **Exports.** SVG with selectable text, a self-contained interactive HTML viewer, single-page
   PDF and PNG at 1x, 2x and 4x, all drawn by one renderer with bundled fonts.
 - **Desktop quality.** English and Spanish, light and dark themes, keyboard access throughout, a

@@ -17,7 +17,7 @@ export const englishMessages = {
   "action.layoutLayeredHorizontal": "Hierarchical, left to right",
   "action.layoutOrganic": "Organic",
   "action.layoutRadial": "Radial around the selected table",
-  "action.fitView": "Fit diagram to view",
+  "action.fitView": "Fit diagram to window",
   "action.showAll": "Show all entities",
   "action.collapseAll": "Collapse all tables",
   "action.expandAll": "Expand all tables",
@@ -115,12 +115,14 @@ export const englishMessages = {
   "viewMode.full.hint": "All columns and types",
 
   "sidebar.title": "Entities",
-  "sidebar.search": "Search tables",
+  "sidebar.search": "Search tables and views",
   "sidebar.resize": "Resize the entities panel",
+  "sidebar.section.tables": "Tables",
+  "sidebar.section.views": "Views",
   "sidebar.search.noMatches": 'No entities match "{query}"',
   "sidebar.empty.title": "No entities yet",
   "sidebar.empty.description":
-    "Connect to a database or open a .scraft project to list its tables here.",
+    "Connect to a database or open a .scraft project to list its tables and views here.",
   "sidebar.empty.database.title": "No tables or views",
   "sidebar.empty.database.description": "{database} has no tables or views yet.",
   "sidebar.empty.selection.description":
@@ -131,6 +133,7 @@ export const englishMessages = {
 
   "entity.table": "Table",
   "entity.view": "View",
+  "entity.view.label": "VIEW",
   "sidebar.center": "Center on {name}",
   "sidebar.hide": "Hide {name}",
   "sidebar.show": "Show {name}",
@@ -146,18 +149,17 @@ export const englishMessages = {
 
   "canvas.node.collapse": "Collapse",
   "canvas.node.expand": "Expand",
-  "canvas.menu.center": "Center in view",
+  "canvas.menu.center": "Center on screen",
   "canvas.menu.hide": "Hide",
   "canvas.menu.isolateOne": "Isolate with direct relationships",
   "canvas.menu.isolateTwo": "Isolate with relationships, two levels",
-  "canvas.menu.showAll": "Show all entities",
   "canvas.layout.menu": "Automatic layout",
   "canvas.layout.running": "Laying out the diagram…",
 
   "palette.title": "Command palette",
-  "palette.placeholder": "Type a command or a table name…",
+  "palette.placeholder": "Type a command, a table or a view…",
   "palette.noResults": 'Nothing matches "{query}"',
-  "palette.centerOn": "Center in view",
+  "palette.centerOn": "Center on screen",
 
   "statusBar.notConnected": "Not connected",
   "statusBar.connected": "{target} · {database}",

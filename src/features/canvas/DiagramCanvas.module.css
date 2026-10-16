@@ -12,6 +12,11 @@
   pointer-events: none;
 }
 
+/* React Flow is themed through its public properties: a view's minimap box takes the view colour. */
+.minimapView {
+  --xy-minimap-node-background-color: var(--color-view);
+}
+
 .layoutProgress {
   position: absolute;
   top: var(--space-4);

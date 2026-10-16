@@ -1,6 +1,7 @@
-import { describeEntities, entityKey } from "@/features/canvas/geometry";
+import { describeEntities } from "@/features/canvas/geometry";
 import { visibleEntityKeys } from "@/features/canvas/graph";
 import type { AccessSummary } from "@/features/schema/coverage";
+import { entityKey } from "@/features/schema/entities";
 import type { CanvasState, DetailLevel, SchemaSnapshot } from "@/shared/contracts";
 import type { Locale } from "@/shared/i18n/locales";
 

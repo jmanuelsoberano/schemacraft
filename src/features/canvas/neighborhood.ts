@@ -1,6 +1,5 @@
+import { entityKey } from "@/features/schema/entities";
 import type { SchemaSnapshot } from "@/shared/contracts";
-
-import { entityKey } from "./geometry";
 
 /**
  * Keys of `key` and every entity within `depth` relationship hops of it, in either direction.

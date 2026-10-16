@@ -158,9 +158,12 @@ async function buildDocument(
       fontFaces,
     });
   }
+  // The view label is drawn into the file, so it follows the application's language like the
+  // footnote does.
   return renderDiagramSvg(diagramForLevel(diagram, detailLevel), {
     detailLevel,
     theme,
+    labels: { view: translate(useSettingsStore.getState().locale, "entity.view.label") },
     fontFaces,
     measureText,
     description: `Exported ${exportedAt} with ${labels.generator}`,

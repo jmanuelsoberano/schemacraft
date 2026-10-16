@@ -3,6 +3,7 @@ import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { useProjectStore } from "@/features/project/projectStore";
+import { entityKey } from "@/features/schema/entities";
 import type { AccessProfile, Completeness, SchemaSnapshot } from "@/shared/contracts";
 import { formatDate, formatDateTime } from "@/shared/i18n/formatDate";
 import { useI18n } from "@/shared/i18n/useI18n";
@@ -15,7 +16,7 @@ import { CopyScriptButton } from "./CopyScriptButton";
 import { accessCauses, describeAccessCause, grantHelps } from "./accessCause";
 import { useAccessReportStore } from "./accessReportStore";
 import { grantScript } from "./grantScript";
-import { describeSnapshotFact, qualifiedName } from "./snapshotFacts";
+import { describeSnapshotFact } from "./snapshotFacts";
 
 const COMPLETENESS_ICON: Record<Completeness, LucideIcon> = {
   complete: ShieldCheck,
@@ -204,10 +205,10 @@ function InvisibleTableKeys({ snapshot }: { snapshot: SchemaSnapshot }) {
     <Section title={tCount("access.report.invisibleKeys", keys.length)}>
       <ul className={styles.list}>
         {keys.map((key) => (
-          <li key={`${qualifiedName(key.referencingTable)}.${key.name}`} className={styles.item}>
+          <li key={`${entityKey(key.referencingTable)}.${key.name}`} className={styles.item}>
             <span className={styles.itemName}>{key.name}</span>
             <span className={styles.itemMeta}>
-              {qualifiedName(key.referencingTable)} ({key.columns.join(", ")})
+              {entityKey(key.referencingTable)} ({key.columns.join(", ")})
             </span>
           </li>
         ))}
@@ -228,7 +229,7 @@ function CarriedFacts({ snapshot }: { snapshot: SchemaSnapshot }) {
       <ul className={styles.list}>
         {carried.map((entry) => (
           <li key={JSON.stringify([entry.object, entry.fact])} className={styles.item}>
-            <span className={styles.itemName}>{qualifiedName(entry.object)}</span>
+            <span className={styles.itemName}>{entityKey(entry.object)}</span>
             <span className={styles.itemMeta}>
               {t("access.report.carried.entry", {
                 fact: describeSnapshotFact(entry.fact, t),

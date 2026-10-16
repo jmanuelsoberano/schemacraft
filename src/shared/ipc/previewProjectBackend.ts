@@ -470,18 +470,17 @@ export const previewProjectBackend: ProjectBackend = {
 
   refreshProjectContent(content, snapshot): Promise<ProjectContent> {
     const merged = withUncheckedFacts(snapshot, content.snapshot);
-    const exists = new Set(
-      [...merged.tables, ...merged.views].map(
-        (entity) => `${entity.name.schema}.${entity.name.name}`,
-      ),
-    );
+    const entities = [...merged.tables, ...merged.views];
     return Promise.resolve({
       ...content,
       snapshot: merged,
       canvas: {
         ...content.canvas,
         nodes: content.canvas.nodes.filter((node) =>
-          exists.has(`${node.name.schema}.${node.name.name}`),
+          entities.some(
+            (entity) =>
+              entity.name.schema === node.name.schema && entity.name.name === node.name.name,
+          ),
         ),
       },
     });

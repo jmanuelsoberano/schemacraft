@@ -144,13 +144,23 @@ const canvas: CanvasState = {
   ],
 };
 
+/** The words drawn into the diagram, as the English application passes them. */
+const labels = { view: "VIEW" };
+
 const count = (text: string, needle: string) => text.split(needle).length - 1;
+
+/** The `<g>` of one entity, its header and rows included. */
+function entityMarkup(svg: string, key: string): string {
+  const start = svg.indexOf(`data-entity="${key}"`);
+  const end = svg.indexOf("</g>", start);
+  return start === -1 || end === -1 ? "" : svg.slice(svg.lastIndexOf("<g", start), end);
+}
 
 describe("renderDiagramSvg", () => {
   it("draws the visible entities and the relationships between them", () => {
     const rendered = renderDiagramSvg(
       { snapshot, canvas },
-      { detailLevel: "keys", theme: "light" },
+      { detailLevel: "keys", theme: "light", labels },
     );
     expect(rendered.entityCount).toBe(4);
     expect(rendered.relationCount).toBe(3);
@@ -177,21 +187,143 @@ describe("renderDiagramSvg", () => {
   });
 
   it("marks cardinality, disabled relationships and self-references", () => {
-    const { svg } = renderDiagramSvg({ snapshot, canvas }, { detailLevel: "keys", theme: "light" });
+    const { svg } = renderDiagramSvg(
+      { snapshot, canvas },
+      { detailLevel: "keys", theme: "light", labels },
+    );
     expect(svg).toContain('marker-start="url(#sc-many)" marker-end="url(#sc-one)"');
     expect(svg).toContain('marker-start="url(#sc-many-optional)"');
     expect(count(svg, 'class="sc-relation sc-relation-disabled"')).toBe(1);
     expect(svg).toMatch(
       /data-relation="hr\.Employees\.FK_Employees_Manager"[^>]* d="M [\d.]+,[\d.]+ C /u,
     );
+    // The marker ids and shapes are what the viewer's stylesheet and the canvas rely on.
+    expect(svg).toContain(
+      '<marker id="sc-many" viewBox="0 0 14 14" markerWidth="14" markerHeight="14" refX="1" refY="7" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path class="sc-marker" d="M13,7 L1,1 M13,7 L1,7 M13,7 L1,13"/></marker>',
+    );
+    expect(svg).toContain('<marker id="sc-many-optional" viewBox="0 0 22 14"');
+    expect(svg).toContain('<circle class="sc-marker-fill" cx="17" cy="7" r="3"/>');
+    expect(svg).toContain(
+      '<marker id="sc-one" viewBox="0 0 14 14" markerWidth="14" markerHeight="14" refX="13" refY="7" orient="auto" markerUnits="userSpaceOnUse"><path class="sc-marker" d="M6,1 L6,13 M1,7 L13,7"/></marker>',
+    );
+    for (const id of ["sc-many", "sc-many-optional", "sc-one"]) {
+      expect(svg).toContain(`<marker id="${id}-active"`);
+    }
+  });
+
+  it("tells a view apart by its tint, icon and label, as a header-only card at keys", () => {
+    const { svg } = renderDiagramSvg(
+      { snapshot, canvas },
+      { detailLevel: "keys", theme: "light", labels },
+    );
+    const view = entityMarkup(svg, "sales.RecentOrders");
+    const table = entityMarkup(svg, "dbo.Customers");
+
+    expect(view.startsWith('<g class="sc-entity sc-view"')).toBe(true);
+    expect(table.startsWith('<g class="sc-entity"')).toBe(true);
+    // The same 38 px box as before: the label changes nothing in the geometry.
+    expect(view).toContain('<rect class="sc-node-fill" width="240" height="38" rx="10"/>');
+    expect(view).toContain('<rect class="sc-view-header" width="240" height="38" rx="10"/>');
+    expect(view).not.toContain("sc-divider");
+    expect(view).toContain('<use href="#sc-icon-view" class="sc-icon-view-kind"');
+    expect(view).toContain('<tspan class="sc-view-schema">sales.</tspan>');
+    // The label sits one gap left of the count pill, with the title ending before it.
+    expect(view).toContain(
+      '<rect class="sc-kind-label" x="175" y="11" width="33" height="16" rx="4"/>',
+    );
+    expect(view).toContain('<text class="sc-kind-label-text" x="191.5" y="22.5">VIEW</text>');
+    expect(view).toContain('<rect class="sc-count-pill" x="214" y="11" width="18" height="16"');
+
+    // Tables keep their icon, their muted schema prefix and no label.
+    expect(table).toContain('<use href="#sc-icon-table" class="sc-icon-kind"');
+    expect(table).toContain('<tspan class="sc-title-schema">dbo.</tspan>');
+    expect(table).not.toContain("sc-kind-label");
+    expect(count(svg, 'class="sc-kind-label"')).toBe(1);
+    expect(count(svg, ">VIEW<")).toBe(1);
+
+    // The styles come from the view tokens, in each theme.
+    expect(svg).toContain(".sc-view-header{fill:#e3f6f6}");
+    expect(svg).toContain(".sc-view-schema{fill:#525561}");
+    expect(svg).toContain(".sc-kind-label{fill:#007475}");
+    expect(svg).toContain(
+      '.sc-kind-label-text{font-family:Inter, "Segoe UI", system-ui, sans-serif;font-size:10px;font-weight:600;fill:#fcfcfc;text-anchor:middle}',
+    );
+    expect(svg).toContain(".sc-icon-view-kind{stroke:#007475}");
+    const dark = renderDiagramSvg(
+      { snapshot, canvas },
+      { detailLevel: "full", theme: "dark", labels },
+    );
+    expect(dark.svg).toContain(".sc-view-header{fill:#112e2e}");
+    expect(dark.svg).toContain(".sc-view-schema{fill:#a2a4ac}");
+    expect(dark.svg).toContain(".sc-kind-label{fill:#50bfbe}");
+    expect(dark.svg).toContain("fill:#061414;text-anchor:middle}");
+    expect(dark.svg).toContain(".sc-icon-view-kind{stroke:#50bfbe}");
+    // At full detail the view shows its columns under the same header.
+    const fullView = entityMarkup(dark.svg, "sales.RecentOrders");
+    expect(fullView).toContain(">VIEW<");
+    expect(fullView).toContain(">OrderId<");
+    expect(fullView).toContain("sc-divider");
+  });
+
+  it("draws the label in the language it is given and escapes it", () => {
+    const spanish = renderDiagramSvg(
+      { snapshot, canvas },
+      { detailLevel: "keys", theme: "light", labels: { view: "VISTA" } },
+    );
+    expect(spanish.svg).toContain(">VISTA</text>");
+    expect(spanish.svg).not.toContain(">VIEW<");
+    // A longer word widens the label and pushes the title's room to the left.
+    expect(spanish.svg).toContain('<rect class="sc-kind-label" x="169" y="11" width="39"');
+
+    const odd = renderDiagramSvg(
+      { snapshot, canvas },
+      { detailLevel: "keys", theme: "light", labels: { view: "<V>" } },
+    );
+    expect(odd.svg).toContain(">&lt;V&gt;</text>");
+    expect(odd.svg).not.toContain("><V><");
+  });
+
+  it("truncates a long view name before the label instead of running under it", () => {
+    const longName = "RecentOrdersByCustomerAndRegion";
+    const input = {
+      snapshot: {
+        ...snapshot,
+        views: [{ name: { schema: "sales", name: longName }, columns: [column("OrderId", "int")] }],
+      },
+      canvas: {
+        ...canvas,
+        nodes: canvas.nodes.map((node) =>
+          node.name.name === "RecentOrders"
+            ? { ...node, name: { schema: "sales", name: longName } }
+            : node,
+        ),
+      },
+    };
+    const { svg } = renderDiagramSvg(input, { detailLevel: "keys", theme: "light", labels });
+    const view = entityMarkup(svg, `sales.${longName}`);
+    const shown = /<tspan class="sc-title-name">([^<]*)<\/tspan>/u.exec(view)?.[1] ?? "";
+    expect(shown.endsWith(ELLIPSIS)).toBe(true);
+    // Title from x 30 to the label at 175 less a gap, minus the "sales." prefix.
+    const room =
+      175 - 6 - 30 - estimateTextWidth("sales.", { family: "mono", size: 12, weight: 400 });
+    expect(estimateTextWidth(shown, { family: "mono", size: 12, weight: 600 })).toBeLessThanOrEqual(
+      room,
+    );
+    expect(view).toContain(">VIEW</text>");
   });
 
   it("shows types at full detail, keys only otherwise, and nothing when collapsed", () => {
-    const full = renderDiagramSvg({ snapshot, canvas }, { detailLevel: "full", theme: "dark" });
+    const full = renderDiagramSvg(
+      { snapshot, canvas },
+      { detailLevel: "full", theme: "dark", labels },
+    );
     expect(full.svg).toContain(">nvarchar?<");
     expect(full.svg).toContain(">Name<");
     expect(full.svg).toContain("#22242b");
-    const keys = renderDiagramSvg({ snapshot, canvas }, { detailLevel: "keys", theme: "light" });
+    const keys = renderDiagramSvg(
+      { snapshot, canvas },
+      { detailLevel: "keys", theme: "light", labels },
+    );
     expect(keys.svg).not.toContain(">Name<");
     expect(keys.svg).toContain(">CustomerId<");
     expect(keys.svg).not.toContain(">ManagerId<");
@@ -199,7 +331,7 @@ describe("renderDiagramSvg", () => {
   });
 
   it("embeds font faces, keeps the background optional and is deterministic", () => {
-    const options = { detailLevel: "keys" as const, theme: "light" as const };
+    const options = { detailLevel: "keys" as const, theme: "light" as const, labels };
     const first = renderDiagramSvg({ snapshot, canvas }, options);
     const second = renderDiagramSvg({ snapshot, canvas }, options);
     expect(first.svg).toBe(second.svg);
@@ -220,7 +352,7 @@ describe("renderDiagramSvg", () => {
   });
 
   it("sets a footnote under the diagram, bottom left, and makes room for it", () => {
-    const options = { detailLevel: "keys" as const, theme: "light" as const };
+    const options = { detailLevel: "keys" as const, theme: "light" as const, labels };
     const plain = renderDiagramSvg({ snapshot, canvas }, options);
     const noted = renderDiagramSvg(
       { snapshot, canvas },
@@ -255,6 +387,7 @@ describe("renderDiagramSvg", () => {
     const drawn = renderDiagramSvg(onlyCustomers, {
       detailLevel: "keys",
       theme: "dark",
+      labels,
       footnote,
       measureText: (text) => text.length,
     });
@@ -277,7 +410,7 @@ describe("renderDiagramSvg", () => {
         snapshot: { ...snapshot, tables: [], views: [], foreignKeys: [] },
         canvas: { ...canvas, nodes: [] },
       },
-      { detailLevel: "keys", theme: "light" },
+      { detailLevel: "keys", theme: "light", labels },
     );
     expect(empty.entityCount).toBe(0);
     expect(empty.width).toBe(96);

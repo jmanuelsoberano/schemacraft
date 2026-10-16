@@ -1,16 +1,16 @@
-import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, useInternalNode } from "@xyflow/react";
+import { BaseEdge, EdgeLabelRenderer, useInternalNode } from "@xyflow/react";
 import type { EdgeProps } from "@xyflow/react";
 import { memo } from "react";
 
 import { classNames } from "@/shared/ui/classNames";
 
 import styles from "./RelationEdge.module.css";
-import { MARKER_MANY, MARKER_MANY_OPTIONAL, MARKER_ONE } from "./RelationMarkers";
 import { useCanvasUiStore } from "./canvasUiStore";
-import { relationAnchors, selfLoopPath } from "./edgeGeometry";
+import { relationPath, startMarkerKind } from "./edgeGeometry";
 import type { NodeBox } from "./edgeGeometry";
-import { NODE_WIDTH, attachmentY, nodeHeight } from "./geometry";
+import { NODE_WIDTH, nodeHeight, relationOffsets } from "./geometry";
 import type { RelationEdge as RelationEdgeType } from "./graph";
+import { MARKER_IDS } from "./relationMarkerIds";
 
 function RelationEdgeComponent({
   id,
@@ -41,28 +41,18 @@ function RelationEdgeComponent({
     height: targetNode.measured.height ?? nodeHeight(data.targetRows.length),
   };
   const { foreignKey } = data;
-  const firstPair = foreignKey.columnPairs[0];
-  const sourceOffsetY = attachmentY(data.sourceRows, firstPair?.referencingColumn ?? "");
-  const targetOffsetY = attachmentY(data.targetRows, firstPair?.referencedColumn ?? "");
-
-  let path: string;
-  let labelX: number;
-  let labelY: number;
-  if (source === target) {
-    [path, labelX, labelY] = selfLoopPath(sourceBox, sourceOffsetY, targetOffsetY);
-  } else {
-    const [from, to] = relationAnchors(sourceBox, sourceOffsetY, targetBox, targetOffsetY);
-    [path, labelX, labelY] = getSmoothStepPath({
-      sourceX: from.x,
-      sourceY: from.y,
-      sourcePosition: from.position,
-      targetX: to.x,
-      targetY: to.y,
-      targetPosition: to.position,
-      borderRadius: 8,
-      offset: 16,
-    });
-  }
+  const [sourceOffsetY, targetOffsetY] = relationOffsets(
+    foreignKey,
+    data.sourceRows,
+    data.targetRows,
+  );
+  const [path, labelX, labelY] = relationPath(
+    sourceBox,
+    sourceOffsetY,
+    targetBox,
+    targetOffsetY,
+    source === target,
+  );
 
   const isHovered = hoveredEdgeId === id;
   const isEmphasized = selected === true || isHovered;
@@ -80,8 +70,8 @@ function RelationEdgeComponent({
           !foreignKey.isEnabled && styles.disabled,
           isEmphasized && styles.emphasized,
         )}
-        markerStart={`url(#${data.isOptional ? MARKER_MANY_OPTIONAL : MARKER_MANY})`}
-        markerEnd={`url(#${MARKER_ONE})`}
+        markerStart={`url(#${MARKER_IDS[startMarkerKind(data.isOptional)]})`}
+        markerEnd={`url(#${MARKER_IDS.one})`}
         interactionWidth={14}
       />
       <path

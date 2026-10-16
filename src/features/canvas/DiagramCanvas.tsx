@@ -17,40 +17,32 @@ import type {
 } from "@xyflow/react";
 import { DatabaseZap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import type { ReactNode } from "react";
 
-import type { ActionsById } from "@/app/actions/action";
-import { EntityNode } from "@/features/canvas/EntityNode";
-import { RelationEdge } from "@/features/canvas/RelationEdge";
-import { RelationMarkers } from "@/features/canvas/RelationMarkers";
-import { layoutFreshProject } from "@/features/canvas/canvasActions";
-import { toggleCollapsed, withPositions } from "@/features/canvas/canvasState";
-import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
-import {
-  COMPACT_ZOOM_THRESHOLD,
-  describeEntities,
-  effectiveDetailLevel,
-} from "@/features/canvas/geometry";
-import type { EntityDescriptor } from "@/features/canvas/geometry";
-import {
-  ENTITY_NODE_TYPE,
-  RELATION_EDGE_TYPE,
-  buildEntityNodes,
-  buildRelationEdges,
-} from "@/features/canvas/graph";
-import type {
-  EntityNode as EntityNodeType,
-  RelationEdge as RelationEdgeType,
-} from "@/features/canvas/graph";
-import { exposeFlowInstance } from "@/app/developmentHooks";
 import { ProjectNotice } from "@/features/project/ProjectNotice";
 import { useProjectStore } from "@/features/project/projectStore";
 import { emptySchemaReason } from "@/features/schema/coverage";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { Spinner } from "@/shared/ui/Spinner";
+import { classNames } from "@/shared/ui/classNames";
 
 import styles from "./DiagramCanvas.module.css";
-import { WelcomeOverlay } from "./WelcomeOverlay";
+import { EntityNode } from "./EntityNode";
+import { RelationEdge } from "./RelationEdge";
+import { RelationMarkers } from "./RelationMarkers";
+import { layoutFreshProject, setCollapsed } from "./canvasActions";
+import { withPositions } from "./canvasState";
+import { useCanvasUiStore } from "./canvasUiStore";
+import { COMPACT_ZOOM_THRESHOLD, describeEntities, effectiveDetailLevel } from "./geometry";
+import type { EntityDescriptor } from "./geometry";
+import {
+  ENTITY_NODE_TYPE,
+  RELATION_EDGE_TYPE,
+  buildEntityNodes,
+  buildRelationEdges,
+} from "./graph";
+import type { EntityNode as EntityNodeType, RelationEdge as RelationEdgeType } from "./graph";
 
 // Stable references keep React Flow from re-initialising on every render.
 const NODE_TYPES = { [ENTITY_NODE_TYPE]: EntityNode };
@@ -62,19 +54,28 @@ const NO_ENTITIES: ReadonlyMap<string, EntityDescriptor> = new Map();
 
 type FlowInstance = ReactFlowInstance<EntityNodeType, RelationEdgeType>;
 
+/** Receives the React Flow instance once it exists; the shell records it for scripted checks. */
+type FlowInitHandler = (instance: unknown) => void;
+
 interface DiagramCanvasProps {
-  actions: ActionsById;
+  /** Shown over the canvas while no project is open; the shell passes its welcome screen. */
+  emptyState: ReactNode;
+  onFlowInit?: FlowInitHandler;
 }
 
-/** Infinite canvas hosting the entity-relationship diagram of the open project. */
-export function DiagramCanvas({ actions }: DiagramCanvasProps) {
+/**
+ * Infinite canvas hosting the entity-relationship diagram of the open project. What sits over
+ * it while there is no project, and who learns about the React Flow instance, come from the
+ * shell as props, so the canvas depends on nothing above the features layer.
+ */
+export function DiagramCanvas({ emptyState, onFlowInit }: DiagramCanvasProps) {
   const hasProject = useProjectStore((state) => state.project !== null);
 
   return (
     <div className={styles.canvas}>
       <ProjectNotice />
-      <FlowCanvas />
-      {hasProject ? <EmptySchemaNotice /> : <WelcomeOverlay actions={actions} />}
+      <FlowCanvas onFlowInit={onFlowInit} />
+      {hasProject ? <EmptySchemaNotice /> : emptyState}
       <RelationMarkers />
     </div>
   );
@@ -114,6 +115,11 @@ function isDefaultViewport(viewport: Viewport): boolean {
   return viewport.x === 0 && viewport.y === 0 && viewport.zoom === 1;
 }
 
+/** Views keep their colour in the overview, so it tells them apart as the canvas does. */
+function minimapNodeClassName(node: EntityNodeType): string {
+  return classNames(node.data.entity.kind === "view" && styles.minimapView);
+}
+
 /** Small pill shown while a layout engine runs. */
 function LayoutProgress() {
   const { t } = useI18n();
@@ -129,11 +135,15 @@ function LayoutProgress() {
   );
 }
 
+interface FlowCanvasProps {
+  onFlowInit?: FlowInitHandler;
+}
+
 /**
  * One React Flow instance for the lifetime of the window. Nodes and edges derive from the open
  * project; a document switch restores its viewport or fits the diagram.
  */
-function FlowCanvas() {
+function FlowCanvas({ onFlowInit }: FlowCanvasProps) {
   const snapshot = useProjectStore((state) => state.project?.content.snapshot ?? null);
   const nodeStates = useProjectStore((state) => state.project?.content.canvas.nodes ?? null);
   const savedDetailLevel = useProjectStore(
@@ -236,10 +246,13 @@ function FlowCanvas() {
     );
   }, [focusRequest, setNodes]);
 
-  const handleInit = useCallback((instance: FlowInstance) => {
-    instanceRef.current = instance;
-    exposeFlowInstance(instance);
-  }, []);
+  const handleInit = useCallback(
+    (instance: FlowInstance) => {
+      instanceRef.current = instance;
+      onFlowInit?.(instance);
+    },
+    [onFlowInit],
+  );
 
   const handleNodeDragStop = useCallback<OnNodeDrag<EntityNodeType>>(
     (_event, _node, draggedNodes) => {
@@ -251,14 +264,12 @@ function FlowCanvas() {
     [clearHighlights, updateCanvas],
   );
 
-  const handleNodeClick = useCallback<NodeMouseHandler<EntityNodeType>>(
-    (event, node) => {
-      if (event.target instanceof Element && event.target.closest("[data-collapse-toggle]")) {
-        updateCanvas((canvas) => toggleCollapsed(canvas, node.id));
-      }
-    },
-    [updateCanvas],
-  );
+  // The chevron in the card header is the same command as the context menu's collapse.
+  const handleNodeClick = useCallback<NodeMouseHandler<EntityNodeType>>((event, node) => {
+    if (event.target instanceof Element && event.target.closest("[data-collapse-toggle]")) {
+      setCollapsed([node.id], !node.data.isCollapsed);
+    }
+  }, []);
 
   const handleNodeContextMenu = useCallback<NodeMouseHandler<EntityNodeType>>(
     (event, node) => {
@@ -332,7 +343,13 @@ function FlowCanvas() {
       <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} />
       <Controls showInteractive={false} position="bottom-right" />
       {nodes.length > 0 ? (
-        <MiniMap position="bottom-left" pannable zoomable nodeStrokeWidth={0} />
+        <MiniMap<EntityNodeType>
+          position="bottom-left"
+          pannable
+          zoomable
+          nodeStrokeWidth={0}
+          nodeClassName={minimapNodeClassName}
+        />
       ) : null}
       <LayoutProgress />
     </ReactFlow>

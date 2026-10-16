@@ -4,8 +4,9 @@ import type { Locale } from "@/shared/i18n/locales";
 
 /** The viewer's own small catalogue; it must not pull the application's stores. */
 const ENGLISH = {
-  "search.placeholder": "Search tables",
-  "search.empty": "No tables match",
+  "search.placeholder": "Search tables and views",
+  "search.empty": "Nothing matches",
+  "label.view": "VIEW",
   "level.compact": "Compact",
   "level.keys": "Keys",
   "level.full": "Full",
@@ -49,8 +50,9 @@ const ENGLISH = {
 export type ViewerMessageKey = keyof typeof ENGLISH;
 
 const SPANISH: Record<ViewerMessageKey, string> = {
-  "search.placeholder": "Buscar tablas",
-  "search.empty": "Ninguna tabla coincide",
+  "search.placeholder": "Buscar tablas y vistas",
+  "search.empty": "Nada coincide",
+  "label.view": "VISTA",
   "level.compact": "Compacta",
   "level.keys": "Claves",
   "level.full": "Completa",

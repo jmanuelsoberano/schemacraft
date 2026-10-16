@@ -48,7 +48,7 @@
       "preferencesBackend.ts",
       "projectBackend.ts"
     ],
-    "adrCount": 35
+    "adrCount": 37
   },
   "en": {
     "overview": {
@@ -86,11 +86,12 @@
             "id": "app-shell",
             "name": "AppShell and regions",
             "path": "src/app/shell",
-            "responsibility": "Lays out TopBar, EntitiesSidebar with SidebarResizer, DiagramCanvas and StatusBar. TopBar shows LayoutMenu; DiagramCanvas shows WelcomeOverlay and ProjectNotice. Mounts ConnectionDialog, ExportDialog, AboutDialog, AccessReportDialog, CommandPalette, UnsavedChangesDialog and CanvasContextMenu once. Passes the AccessBar into the sidebar's notice slot, so the sidebar never imports features/access; the sidebar shows one muted footer while the object list may be incomplete and a neutral state for an empty schema. StatusBar adds the access chip and the read-only chip, and leaves out a count of zero under partial coverage. Runs useKeyboardShortcuts, useDesktopShellGuards and useProjectWindow (window title, close guard). Calls preferencesStore.load() on mount.",
+            "responsibility": "Lays out TopBar, EntitiesSidebar with SidebarResizer, DiagramCanvas and StatusBar; the panel and the canvas come from features/canvas and only get placed here. TopBar shows LayoutMenu. Hands DiagramCanvas the WelcomeOverlay as emptyState and the DEV hook exposeFlowInstance as onFlowInit, and the sidebar the AccessBar through its notice slot (with focusEntitiesSearch as its onDismissed), so neither imports app/ or features/access; the sidebar shows one muted footer while the object list may be incomplete and a neutral state for an empty schema. Mounts ConnectionDialog, ExportDialog, AboutDialog, AccessReportDialog, CommandPalette, UnsavedChangesDialog and CanvasContextMenu once, giving the context menu the registry's diagram.showAll action with its shortcut. StatusBar adds the access chip and the read-only chip, and leaves out a count of zero under partial coverage. Runs useKeyboardShortcuts, useDesktopShellGuards and useProjectWindow (window title, close guard). Calls preferencesStore.load() on mount.",
             "patterns": [
               "Dialogs read their own open flag from a store",
               "Props carry only the action registry",
-              "Notice slot instead of a feature import"
+              "Notice slot instead of a feature import",
+              "Shell concerns reach the canvas as props"
             ]
           },
           {
@@ -101,17 +102,10 @@
             "patterns": ["Pointer drag with a keyboard equivalent"]
           },
           {
-            "id": "diagram-canvas",
-            "name": "DiagramCanvas",
-            "path": "src/app/shell/DiagramCanvas.tsx",
-            "responsibility": "The one React Flow instance. Derives nodes and edges from projectStore and writes drags, collapse and viewport back through updateCanvas. When loadToken changes it lays out a fresh project (no path, never saved, not dirty, layout manual); otherwise it restores the saved viewport or fits the view. Shows WelcomeOverlay while no project is open and ProjectNotice when opening or saving fails. With a project open but no table or view, it shows a neutral empty state whose reason (an empty database, the schema selection, nothing visible to this login) comes from emptySchemaReason in schema/coverage.ts.",
-            "patterns": ["Request counters (fitRequest, focusRequest) drive imperative view calls"]
-          },
-          {
             "id": "welcome-overlay",
             "name": "WelcomeOverlay",
             "path": "src/app/shell/WelcomeOverlay.tsx",
-            "responsibility": "Empty-canvas screen. DiagramCanvas shows it while no project is open. Offers Connect and Open through the action registry, lists recentProjects from preferencesStore and opens one with projectStore.openProject(path). Shows the developer credit.",
+            "responsibility": "Empty-canvas screen. AppShell passes it to DiagramCanvas as emptyState, shown while no project is open. Offers Connect and Open through the action registry, lists recentProjects from preferencesStore and opens one with projectStore.openProject(path). Shows the developer credit.",
             "patterns": ["Empty state that offers the next step"]
           },
           {
@@ -125,15 +119,8 @@
             "id": "command-palette",
             "name": "Command palette",
             "path": "src/app/palette",
-            "responsibility": "Ctrl+K palette over every registry action and every entity. paletteSearch.ts ranks results. It lives in app/ because it reads the action registry.",
+            "responsibility": "Ctrl+K palette over every registry action and every entity of the open project (listEntities from features/schema). Each entity row shows its kind: the Glasses icon and a View label in the view colour, or the table icon and Table, then schema.name and 'Center on screen'; the placeholder names commands, tables and views. paletteSearch.ts ranks results. It lives in app/ because it reads the action registry.",
             "patterns": ["Reads the action registry"]
-          },
-          {
-            "id": "entities-search",
-            "name": "entitiesSearch",
-            "path": "src/app/shell/entitiesSearch.ts",
-            "responsibility": "focusEntitiesSearch, run by the view.searchEntities action (Ctrl+F). Opens the entities panel if it is collapsed, then focuses and selects its search box on the next tick, once the panel is no longer inert.",
-            "patterns": ["Focus through a shared element id"]
           },
           {
             "id": "desktop-guards",
@@ -146,14 +133,14 @@
             "id": "design-tokens",
             "name": "Design tokens",
             "path": "src/app/styles",
-            "responsibility": "tokens.css holds every token; colours are written once with light-dark() in oklch. base.css holds the reset, focus ring, reduced motion and React Flow theming.",
+            "responsibility": "tokens.css holds every token and is the only place a colour is written: light-dark() in oklch, the semantic tones, the view tokens (--color-view, --color-view-subtle, --color-on-view). tokens.test.ts recomputes the export palette (features/export/svg/palette.ts) from the tokens through OKLab and fails on drift, and reads every CSS Module and viewer.css as text to refuse a raw hex or oklch() colour (ADR-037). base.css holds the reset, focus ring, reduced motion and React Flow theming.",
             "patterns": ["Design tokens + CSS Modules (ADR-006)"]
           },
           {
             "id": "dev-hooks",
             "name": "Development hooks",
             "path": "src/app/developmentHooks.ts",
-            "responsibility": "DEV builds only: exposes the stores, the access report store included, and the React Flow instance on window.__schemacraft so scripts over CDP can drive the app.",
+            "responsibility": "DEV builds only: exposes the stores, the access report store included, and the React Flow instance on window.__schemacraft so scripts over CDP can drive the app. AppShell passes exposeFlowInstance to DiagramCanvas as onFlowInit, so the canvas never imports this module.",
             "patterns": ["DEV-only debug surface"]
           }
         ]
@@ -272,12 +259,41 @@
             "id": "feature-canvas",
             "name": "canvas",
             "path": "src/features/canvas",
-            "responsibility": "Diagram state transforms (canvasState.ts), geometry, edges, nodes, context menu, transient UI store (canvasUiStore.ts), canvas commands (canvasActions.ts) and layouts/ (layered with ELK in a worker, organic with d3-force, radial). The saved diagram state lives in projectStore; canvas commands change it through updateCanvas. describeEntities counts the columns of keys to invisible tables as key columns, so they keep the key badge without an edge.",
+            "responsibility": "Diagram state transforms (canvasState.ts), geometry, edges, nodes, context menu, transient UI store (canvasUiStore.ts), canvas commands (canvasActions.ts), layouts/ (layered with ELK in a worker, organic with d3-force, radial) and, since 1.1, the two canvas regions the shell places: DiagramCanvas and EntitiesSidebar, with entitiesSearch.ts. The saved diagram state lives in projectStore; canvas commands change it through updateCanvas: setHidden serves the sidebar eye and the context menu, setCollapsed the card chevron. edgeGeometry.ts holds the one marker table (RELATION_MARKER_SHAPES) and relationPath, shared with the SVG renderer; relationMarkerIds.ts names the canvas markers. EntityNode draws a view with the Glasses icon, the VIEW label and the view tokens, and shows the collapse chevron only when isCollapsible finds rows to hide (ADR-036). describeEntities counts the columns of keys to invisible tables as key columns, so they keep the key badge without an edge.",
             "patterns": [
               "Pure transforms applied via updateCanvas",
               "Strategy as tagged union + exhaustive switch (ADR-022)",
-              "Geometry from data, not the DOM (ADR-020)"
+              "Geometry from data, not the DOM (ADR-020)",
+              "One home per drawing rule (ADR-037)"
             ]
+          },
+          {
+            "id": "diagram-canvas",
+            "name": "DiagramCanvas",
+            "path": "src/features/canvas/DiagramCanvas.tsx",
+            "responsibility": "The one React Flow instance. Derives nodes and edges from projectStore and writes drags and the viewport back through updateCanvas; the card chevron runs canvasActions.setCollapsed. When loadToken changes it lays out a fresh project (no path, never saved, not dirty, layout manual); otherwise it restores the saved viewport or fits the diagram to the window. What belongs to the shell arrives as props: emptyState (the welcome screen), shown while no project is open, and onFlowInit (the DEV hook), called when React Flow is ready. Shows ProjectNotice when opening or saving fails. With a project open but no table or view, it shows a neutral empty state whose reason (an empty database, the schema selection, nothing visible to this login) comes from emptySchemaReason in schema/coverage.ts. The minimap tints views with the view colour.",
+            "patterns": [
+              "Request counters (fitRequest, focusRequest) drive imperative view calls",
+              "Shell concerns arrive as props"
+            ]
+          },
+          {
+            "id": "entities-sidebar",
+            "name": "EntitiesSidebar",
+            "path": "src/features/canvas/EntitiesSidebar.tsx",
+            "responsibility": "The entities panel. groupEntities(listEntities(snapshot)) gives the schema groups and their Tables and Views sections; entityListShape, decided on the unfiltered list, says which levels to show (several schemas, both kinds), so the structure stays put while typing. Headers are buttons with aria-expanded; a schema or a section collapses for the session only, and everything is expanded, with the toggles disabled, while the search has text. Counts read 'shown / total' once something is hidden. Each row centres its entity, opens the context menu and toggles visibility through canvasActions.setHidden; views carry the Glasses icon in the view colour. Keeps the empty states (no project, the emptySchemaReason states, no matches), the single not-visible footer of ADR-034 and the notice slot; the search box id comes from entitiesSearch.ts.",
+            "patterns": [
+              "Shape decided on the unfiltered list",
+              "Session-only disclosure state",
+              "Notice slot instead of a feature import"
+            ]
+          },
+          {
+            "id": "entities-search",
+            "name": "entitiesSearch",
+            "path": "src/features/canvas/entitiesSearch.ts",
+            "responsibility": "focusEntitiesSearch, run by the view.searchEntities action (Ctrl+F). Opens the entities panel if it is collapsed, then focuses and selects its search box on the next tick, once the panel is no longer inert.",
+            "patterns": ["Focus through a shared element id"]
           },
           {
             "id": "ensure-placed",
@@ -297,7 +313,7 @@
             "id": "feature-export",
             "name": "export",
             "path": "src/features/export",
-            "responsibility": "Export dialog and store. ExportSpecificationBuilder validates choices. svg/renderDiagram.ts draws the SVG; html/ builds the standalone page; fontFaces.ts supplies the fonts that are measured and embedded. visibleProjection is an allowlist: the visible tables, views and keys, the keys to invisible tables of visible tables and the access level, never the probe, the carriedOver list or unknown keys (the kept objects themselves are exported like any other). A partial capture adds a one-line note: a footnote in SVG, PDF and PNG (RenderOptions.footnote, included in the measured size) and a header line in the HTML viewer. Only the document string goes to Rust.",
+            "responsibility": "Export dialog and store. ExportSpecificationBuilder validates choices. svg/renderDiagram.ts draws the SVG with the marker table of canvas/edgeGeometry.ts and the labels the caller passes (RenderOptions.labels: the VIEW label, which exportStore translates in the interface language); a view card gets the view tint, the Glasses symbol, the label pill and a secondary schema text, as on the canvas. svg/palette.ts is the sRGB derivation of tokens.css (PALETTE_TOKENS, checked by src/app/styles/tokens.test.ts), and viewerPaletteStyles() writes it as --sc-* custom properties that html/buildStandalonePage puts before the viewer's stylesheet. html/ builds the standalone page; fontFaces.ts supplies the fonts that are measured and embedded. visibleProjection is an allowlist: the visible tables, views and keys, the keys to invisible tables of visible tables and the access level, never the probe, the carriedOver list or unknown keys (the kept objects themselves are exported like any other). A partial capture adds a one-line note: a footnote in SVG, PDF and PNG (RenderOptions.footnote, included in the measured size) and a header line in the HTML viewer. Only the document string goes to Rust.",
             "patterns": [
               "Builder",
               "TS draws, Rust writes (ADR-023, ADR-024)",
@@ -340,8 +356,8 @@
             "id": "feature-schema",
             "name": "schema",
             "path": "src/features/schema",
-            "responsibility": "Pure helpers over SchemaSnapshot: formatDataType and describeColumn (dataType.ts), which prints 'DEFAULT (not available)' or '(default not recorded)' instead of dropping a default it cannot read; groupEntitiesBySchema, filterEntityGroups and countEntities (entities.ts); definitionText and isUnknownDefinition (definition.ts), the only readers of the raw Definition statuses; objectsCoverage, definitionsCoverage, listsEveryObject, emptySchemaReason and the export-safe AccessSummary (coverage.ts); quoteIdentifier (sqlIdentifiers.ts). No store. Depends only on contracts, so the viewer bundle can import it.",
-            "patterns": ["Leaf module, safe for the viewer bundle"]
+            "responsibility": "Pure helpers over SchemaSnapshot: formatDataType and describeColumn (dataType.ts), which prints 'DEFAULT (not available)' or '(default not recorded)' instead of dropping a default it cannot read; the one home of entity identity (entities.ts): EntityKind, ENTITY_KINDS, entityKey, listEntities, groupEntities (schemas, then Tables and Views sections), filterEntityGroups, countEntities and entityListShape; definitionText and isUnknownDefinition (definition.ts), the only readers of the raw Definition statuses; objectsCoverage, definitionsCoverage, listsEveryObject, emptySchemaReason and the export-safe AccessSummary (coverage.ts); quoteIdentifier (sqlIdentifiers.ts). No store. A leaf: ESLint lets it import only shared/ and itself, so every feature and the viewer bundle can import it (ADR-037).",
+            "patterns": ["Leaf module, enforced by lint, safe for the viewer bundle"]
           }
         ]
       },
@@ -356,7 +372,7 @@
             "id": "viewer-app",
             "name": "Viewer",
             "path": "src/viewer/main.ts",
-            "responsibility": "Reads the embedded JSON, draws with renderDiagramSvg and offers pan and zoom, three detail levels, search, neighbour highlight, detail panel and theme toggle. A text it cannot show reads 'not available' or 'not recorded' (describeDefinition), and an export of a partial capture shows a note line under the header bar. Imports canvasState and geometry from canvas, formatDataType and the definition readers from schema and the renderer from export, but no React and no stores. Own EN/ES catalogue in messages.ts.",
+            "responsibility": "Reads the embedded JSON, draws with renderDiagramSvg, passing its own label.view, and offers pan and zoom, three detail levels, a search whose results name the kind (Table or View, in the view colour), neighbour highlight, a detail panel whose kind line is coloured for views, and a theme toggle. Its colours are the --sc-* properties buildStandalonePage writes from the palette; viewer.css declares none beyond its two translucent shadows. A text it cannot show reads 'not available' or 'not recorded' (describeDefinition), and an export of a partial capture shows a note line under the header bar. Imports canvasState and geometry from canvas, entityKey, formatDataType and the definition readers from schema and the renderer from export, but no React and no stores. Own EN/ES catalogue in messages.ts, whose label.view is tested equal to the app's entity.view.label.",
             "patterns": ["Reuses the app renderer (ADR-025)"]
           },
           {
@@ -774,7 +790,7 @@
         "id": "app-shell-to-diagram-canvas",
         "from": "app-shell",
         "to": "diagram-canvas",
-        "label": "places the canvas",
+        "label": "places the canvas; WelcomeOverlay as emptyState, exposeFlowInstance as onFlowInit",
         "kind": "call"
       },
       {
@@ -844,14 +860,14 @@
         "id": "diagram-canvas-to-feature-canvas",
         "from": "diagram-canvas",
         "to": "feature-canvas",
-        "label": "nodes, edges, first layout",
+        "label": "nodes, edges, first layout, setCollapsed for the card chevron",
         "kind": "call"
       },
       {
         "id": "diagram-canvas-to-feature-project",
         "from": "diagram-canvas",
         "to": "feature-project",
-        "label": "updateCanvas (drag, collapse, viewport)",
+        "label": "updateCanvas (drag, viewport)",
         "kind": "call"
       },
       {
@@ -914,14 +930,14 @@
         "id": "feature-canvas-to-feature-schema",
         "from": "feature-canvas",
         "to": "feature-schema",
-        "label": "formatDataType (EntityNode)",
+        "label": "entityKey and EntityKind (geometry, graph, canvasState); formatDataType (EntityNode)",
         "kind": "call"
       },
       {
         "id": "feature-export-to-feature-canvas",
         "from": "feature-export",
         "to": "feature-canvas",
-        "label": "geometry, spreadForDetailLevel",
+        "label": "geometry, spreadForDetailLevel, the marker table and relationPath",
         "kind": "call"
       },
       {
@@ -1425,21 +1441,21 @@
         "id": "app-shell-to-feature-project",
         "from": "app-shell",
         "to": "feature-project",
-        "label": "UnsavedChangesDialog, TopBar setDetailLevel, sidebar and status bar read projectStore",
+        "label": "UnsavedChangesDialog, TopBar setDetailLevel, StatusBar reads projectStore",
         "kind": "call"
       },
       {
         "id": "app-shell-to-feature-canvas",
         "from": "app-shell",
         "to": "feature-canvas",
-        "label": "CanvasContextMenu; EntitiesSidebar uses withHidden and canvasUiStore",
+        "label": "CanvasContextMenu with the registry's showAll command; StatusBar reads canvasUiStore",
         "kind": "call"
       },
       {
         "id": "app-shell-to-feature-schema",
         "from": "app-shell",
         "to": "feature-schema",
-        "label": "EntitiesSidebar: groupEntitiesBySchema; coverage for the footer, empty states and status bar counts",
+        "label": "StatusBar: entityKey and coverage for its counts",
         "kind": "call"
       },
       {
@@ -1447,13 +1463,6 @@
         "from": "app-shell",
         "to": "project-paths",
         "label": "TopBar: projectDisplayName",
-        "kind": "call"
-      },
-      {
-        "id": "diagram-canvas-to-welcome-overlay",
-        "from": "diagram-canvas",
-        "to": "welcome-overlay",
-        "label": "shown while no project is open",
         "kind": "call"
       },
       {
@@ -1586,7 +1595,7 @@
         "id": "viewer-app-to-feature-schema",
         "from": "viewer-app",
         "to": "feature-schema",
-        "label": "formatDataType, definition readers",
+        "label": "entityKey, formatDataType, definition readers",
         "kind": "call"
       },
       {
@@ -1784,6 +1793,76 @@
         "to": "shared-settings",
         "label": "dismissedAccessNotices",
         "kind": "call"
+      },
+      {
+        "id": "app-shell-to-welcome-overlay",
+        "from": "app-shell",
+        "to": "welcome-overlay",
+        "label": "passed to DiagramCanvas as emptyState",
+        "kind": "call"
+      },
+      {
+        "id": "app-shell-to-entities-sidebar",
+        "from": "app-shell",
+        "to": "entities-sidebar",
+        "label": "places the panel; AccessBar in its notice slot",
+        "kind": "call"
+      },
+      {
+        "id": "app-shell-to-entities-search",
+        "from": "app-shell",
+        "to": "entities-search",
+        "label": "focusEntitiesSearch, handed to AccessBar as onDismissed",
+        "kind": "call"
+      },
+      {
+        "id": "app-shell-to-dev-hooks",
+        "from": "app-shell",
+        "to": "dev-hooks",
+        "label": "exposeFlowInstance, passed as onFlowInit (DEV)",
+        "kind": "call"
+      },
+      {
+        "id": "diagram-canvas-to-feature-schema",
+        "from": "diagram-canvas",
+        "to": "feature-schema",
+        "label": "emptySchemaReason for the empty state",
+        "kind": "call"
+      },
+      {
+        "id": "entities-sidebar-to-feature-schema",
+        "from": "entities-sidebar",
+        "to": "feature-schema",
+        "label": "listEntities, groupEntities, entityListShape; coverage for the footer and empty states",
+        "kind": "call"
+      },
+      {
+        "id": "entities-sidebar-to-feature-project",
+        "from": "entities-sidebar",
+        "to": "feature-project",
+        "label": "reads projectStore (snapshot, canvas, inspection)",
+        "kind": "call"
+      },
+      {
+        "id": "entities-sidebar-to-feature-canvas",
+        "from": "entities-sidebar",
+        "to": "feature-canvas",
+        "label": "setHidden (eye); canvasUiStore (focus, context menu)",
+        "kind": "call"
+      },
+      {
+        "id": "entities-sidebar-to-entities-search",
+        "from": "entities-sidebar",
+        "to": "entities-search",
+        "label": "ENTITIES_SEARCH_INPUT_ID",
+        "kind": "call"
+      },
+      {
+        "id": "command-palette-to-feature-schema",
+        "from": "command-palette",
+        "to": "feature-schema",
+        "label": "listEntities, EntityKind",
+        "kind": "call"
       }
     ],
     "dataStores": [
@@ -1931,7 +2010,7 @@
           {
             "actor": "DiagramCanvas",
             "action": "Shows the welcome screen",
-            "detail": "While no project is open it renders WelcomeOverlay: Connect, Open and up to 10 recent projects, each with projectDisplayName and projectDirectory."
+            "detail": "While no project is open it renders the emptyState AppShell passes it, WelcomeOverlay: Connect, Open and up to 10 recent projects, each with projectDisplayName and projectDirectory."
           },
           {
             "actor": "User",
@@ -2131,7 +2210,7 @@
           {
             "actor": "exportStore",
             "action": "Builds the document",
-            "detail": "Waits until document.fonts has the four static faces, so text is measured with them. renderDiagramSvg for SVG, PNG and PDF; for HTML, buildStandalonePage with the visibleProjection allowlist and virtual:schemacraft-viewer. A partial capture adds its one-line note. With embedFonts (SVG and HTML) the WOFF2 faces are inlined as base64."
+            "detail": "Waits until document.fonts has the four static faces, so text is measured with them. renderDiagramSvg for SVG, PNG and PDF, with the VIEW label translated in the interface language (entity.view.label); for HTML, buildStandalonePage with the visibleProjection allowlist, the palette as --sc-* custom properties (viewerPaletteStyles) and virtual:schemacraft-viewer. A partial capture adds its one-line note. With embedFonts (SVG and HTML) the WOFF2 faces are inlined as base64."
           },
           {
             "actor": "cmd-export",
@@ -2457,7 +2536,7 @@
             },
             {
               "layer": "Read state",
-              "step": "Use narrow selectors on projectStore and canvasUiStore. Reuse entityKey, describeEntities, formatDataType and groupEntitiesBySchema. Call other stores with getState().",
+              "step": "Use narrow selectors on projectStore and canvasUiStore. Reuse entityKey, EntityKind, listEntities and groupEntities (features/schema/entities.ts, the one home of entity identity), describeEntities and formatDataType. Call other stores with getState().",
               "files": [
                 "src/features/project/projectStore.ts",
                 "src/features/canvas/canvasUiStore.ts",
@@ -2468,16 +2547,16 @@
             },
             {
               "layer": "UI",
-              "step": "Build from shared/ui and lucide icons; style with tokens only.",
+              "step": "Build from shared/ui and lucide icons; style with tokens only: a new colour is a token in tokens.css first, and tokens.test.ts fails on a raw colour in a CSS Module.",
               "files": ["src/shared/ui/", "src/app/styles/tokens.css"]
             },
             {
               "layer": "Shell",
-              "step": "Mount once in AppShell, or in DiagramCanvas if it sits over the canvas (as WelcomeOverlay and ProjectNotice do). A non-modal panel must not use role=\"dialog\", because open dialogs block shortcuts.",
+              "step": "Mount once in AppShell, or in features/canvas/DiagramCanvas.tsx if it sits over the canvas (as ProjectNotice does; the welcome screen arrives through the emptyState prop). A non-modal panel must not use role=\"dialog\", because open dialogs block shortcuts.",
               "files": [
                 "src/app/shell/AppShell.tsx",
                 "src/app/shell/AppShell.module.css",
-                "src/app/shell/DiagramCanvas.tsx"
+                "src/features/canvas/DiagramCanvas.tsx"
               ]
             },
             {
@@ -2710,7 +2789,7 @@
             },
             {
               "layer": "Frontend",
-              "step": "A pure with<Thing>() and a command through updateCanvas. Update the NodeState literals in canvasState.ts (ensurePlaced) and refreshPlacement.ts, and defaultCanvasState in projectStore.ts. Show it on the canvas, in renderDiagram.ts (sRGB hex in palette.ts) and in the viewer.",
+              "step": "A pure with<Thing>() and a command through updateCanvas. Update the NodeState literals in canvasState.ts (ensurePlaced) and refreshPlacement.ts, and defaultCanvasState in projectStore.ts. Show it on the canvas, in renderDiagram.ts (a token in tokens.css plus its palette.ts entry, which tokens.test.ts checks) and in the viewer.",
               "files": [
                 "src/features/canvas/canvasState.ts",
                 "src/features/canvas/canvasActions.ts",
@@ -2801,11 +2880,11 @@
       "crossCutting": [
         {
           "concern": "Bilingual text",
-          "touches": "en.ts is the reference, es.ts typed as MessageCatalog, catalogs.test.ts. The viewer has its own src/viewer/messages.ts; the WebView2 dialog text is in src-tauri/src/main.rs."
+          "touches": "en.ts is the reference, es.ts typed as MessageCatalog, catalogs.test.ts. The viewer still has its own src/viewer/messages.ts, whose label.view is tested equal to the app's entity.view.label; the WebView2 dialog text is in src-tauri/src/main.rs."
         },
         {
           "concern": "Light and dark theme",
-          "touches": "tokens.css with light-dark(); a hand-synced sRGB copy in src/features/export/svg/palette.ts and another in src/viewer/viewer.css."
+          "touches": "tokens.css with light-dark() is the only source of colour. src/features/export/svg/palette.ts is its sRGB derivation, checked by src/app/styles/tokens.test.ts, which also refuses a raw hex or oklch() colour in any CSS Module or in viewer.css (the viewer keeps only its two translucent shadows); buildStandalonePage writes the palette into the HTML as --sc-* properties (ADR-037)."
         },
         {
           "concern": "Keyboard and action registry",
@@ -2825,7 +2904,7 @@
         },
         {
           "concern": "Export parity and privacy",
-          "touches": "Shared geometry; markers and colours are copied in two places; visibleProjection is an allowlist that decides what reaches HTML (never the probe, the database user, the carriedOver list or unknown keys; the kept objects themselves go out like any other); a partial capture carries one note line."
+          "touches": "Shared geometry, one marker and routing table (canvas/edgeGeometry.ts) and one palette; the renderer takes its labels from the caller, so a view reads VIEW or VISTA in the export's language; visibleProjection is an allowlist that decides what reaches HTML (never the probe, the database user, the carriedOver list or unknown keys; the kept objects themselves go out like any other); a partial capture carries one note line."
         },
         {
           "concern": "Preview backends",
@@ -2948,7 +3027,7 @@
       }
     ],
     "conformance": {
-      "verdict": "The architecture holds. The core has no Tauri dependency, commands are thin and keep blocking work off the main thread, errors are typed end to end, contracts are generated and checked, ESLint enforces the frontend layers, only src/shared/ipc talks to Tauri, and the viewer pulls in no React or stores. Builder and Memento are implemented as the ADRs say. The three major deviations are fixed, with most minor ones. The eight still open are consistency problems, not structural breaks; seven are planned for v1.1, where the views and the inspector touch the same code, and one stays in the backlog. Fixed entries stay below, marked fixed.",
+      "verdict": "The architecture holds. The core has no Tauri dependency, commands are thin and keep blocking work off the main thread, errors are typed end to end, contracts are generated and checked, ESLint enforces the frontend layers and keeps features/schema a leaf, only src/shared/ipc talks to Tauri, and the viewer pulls in no React or stores. Builder and Memento are implemented as the ADRs say, and each drawing rule has one home guarded by a test. The three major deviations are fixed, with most minor ones. The three still open are consistency problems, not structural breaks; two are planned for v1.1, where the inspector touches the same code, and one stays in the backlog. Fixed entries stay below, marked fixed.",
       "deviations": [
         {
           "what": "Disabled action buttons always say 'Available in an upcoming milestone', even when the cause is a runtime condition.",
@@ -3002,28 +3081,28 @@
         {
           "what": "Entity listing, the `${schema}.${name}` key and EntityKind exist in several places.",
           "where": "src/features/schema/entities.ts, canvas/geometry.ts, src/app/palette/CommandPalette.tsx, connection/ReviewChangesPanel.tsx, shared/ipc/previewProjectBackend.ts",
-          "fix": "Planned for v1.1: Make features/schema the single home of entityKey and EntityKind.",
+          "fix": "Fixed: features/schema/entities.ts is the only home of EntityKind, entityKey and the entity list (listEntities, groupEntities); geometry.ts, the palette, the review panel and the access report import them, the preview backend compares names field by field (its DEV-only fixture keeps a Map key of its own, nameKey), and ESLint keeps features/schema a leaf (ADR-037).",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Crow's foot marker paths and edge routing options are copied between the canvas and the SVG renderer.",
           "where": "src/features/canvas/RelationMarkers.tsx vs src/features/export/svg/renderDiagram.ts",
-          "fix": "Planned for v1.1: Export them from canvas/edgeGeometry.ts and use them in both.",
+          "fix": "Fixed: RELATION_MARKER_SHAPES, relationPath and startMarkerKind live in canvas/edgeGeometry.ts and relationOffsets in geometry.ts; RelationMarkers.tsx, RelationEdge.tsx and renderDiagram.ts use them, and the renderer's output was compared byte for byte (ADR-037).",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "The diagram colours exist three times (tokens.css, palette.ts, viewer.css) and some CSS modules declare their own oklch colours.",
           "where": "src/features/export/svg/palette.ts, src/viewer/viewer.css, src/shared/ui/Alert.module.css",
-          "fix": "Planned for v1.1: Feed the viewer from DIAGRAM_PALETTES; move stray colours into tokens.",
+          "fix": "Fixed: tokens.css is the one source; palette.ts is its derivation, checked by src/app/styles/tokens.test.ts, which also refuses raw colours in CSS Modules and viewer.css; buildStandalonePage hands the palette to the viewer as --sc-* properties, and the stray module colours are tokens (ADR-037).",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
-          "what": "Detail level, theme, language, context-menu items and the sidebar eye bypass the action registry; 6 actions have no shortcut.",
-          "where": "src/app/shell/TopBar.tsx, src/features/canvas/CanvasContextMenu.tsx, src/app/shell/EntitiesSidebar.tsx",
-          "fix": "Planned for v1.1: Add view.detail*, settings.theme.* and settings.language.* actions; state the exceptions in ADR-008.",
+          "what": "Detail level, theme and language bypass the action registry; 6 actions have no shortcut.",
+          "where": "src/app/shell/TopBar.tsx",
+          "fix": "Planned for v1.1: Add view.detail*, settings.theme.* and settings.language.* actions; state the exceptions in ADR-008. The entity-scoped bypasses are gone: the sidebar eye and the context menu's Hide go through canvasActions.setHidden, the card chevron through setCollapsed, and the context menu's Show all runs the registry's diagram.showAll, passed in by AppShell.",
           "severity": "minor",
           "status": "open"
         },
@@ -3051,9 +3130,9 @@
         {
           "what": "Canvas behaviour lives in the shell (DiagramCanvas, EntitiesSidebar).",
           "where": "src/app/shell/DiagramCanvas.tsx, src/app/shell/EntitiesSidebar.tsx",
-          "fix": "Planned for v1.1: Move them into features/canvas; AppShell only places them.",
+          "fix": "Fixed: DiagramCanvas, EntitiesSidebar and entitiesSearch live in src/features/canvas; AppShell places them and passes the welcome screen, the DEV hook, the access bar and the show-all command as props (ADR-031).",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Dead or duplicated exports: projectDisplayName, layoutKindOf, sameName, hasHiddenEntities.",
@@ -3142,9 +3221,9 @@
         {
           "what": "connectionStore, exportStore, preferencesStore and canvasActions have no unit tests.",
           "where": "src/features/*",
-          "fix": "Planned for v1.1: Follow projectStore.test.ts, mocking the backends. connectionStore and preferencesStore are covered now (connectionStore.test.ts, preferencesStore.test.ts); exportStore and canvasActions remain.",
+          "fix": "Fixed: connectionStore.test.ts, preferencesStore.test.ts, exportStore.test.ts and canvasActions.test.ts follow projectStore.test.ts and mock the backends.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "The PRD said the portable exe needs no external runtime; it needs WebView2.",
@@ -3189,7 +3268,7 @@
         "The page carries one manifest, at the top level of model.json and shared by both languages. CI checks it against the code with scripts/check-architecture-page.mjs (npm run docs:check).",
         "New command: add it to manifest.commands and to the commands table in both languages.",
         "New feature folder, core module or IPC backend: add it to the manifest, the layer list and the diagram edges.",
-        "New decision: add an ADR (ADR-036 is next), raise manifest.adrCount and link the ADR from the pattern or recipe it changes.",
+        "New decision: add an ADR (ADR-038 is next), raise manifest.adrCount and link the ADR from the pattern or recipe it changes.",
         "Scope change: update both PRD copies (docs/ and 02_Docs/), add a dated line to section 6, commit as docs(prd), only with the user's approval.",
         "Fixed deviation: mark it fixed in the same PR. New known deviation: add it with a severity and status open.",
         "New data store or localStorage key: add a row to the data table.",
@@ -3401,6 +3480,11 @@
         "id": "min-reader-version",
         "term": "minReaderVersion",
         "meaning": "Header field of .scraft: the oldest format a reader must understand to open the file. A reader at least that new but older than formatVersion opens it read-only."
+      },
+      {
+        "id": "entity-kind",
+        "term": "EntityKind / entityKey",
+        "meaning": "'table' or 'view', and the 'schema.name' key that identifies an entity in nodes, hidden and collapsed state and search. Both are spelled only in src/features/schema/entities.ts (ADR-037); the kind decides the Tables and Views sections and the VIEW label (ADR-036)."
       }
     ]
   },
@@ -3440,11 +3524,12 @@
             "id": "app-shell",
             "name": "AppShell y regiones",
             "path": "src/app/shell",
-            "responsibility": "Distribuye TopBar, EntitiesSidebar con SidebarResizer, DiagramCanvas y StatusBar. TopBar muestra LayoutMenu; DiagramCanvas muestra WelcomeOverlay y ProjectNotice. Monta una vez ConnectionDialog, ExportDialog, AboutDialog, AccessReportDialog, CommandPalette, UnsavedChangesDialog y CanvasContextMenu. Pasa el AccessBar por la ranura notice del panel de entidades, así el panel nunca importa features/access; el panel muestra un pie atenuado mientras la lista de objetos puede estar incompleta y un estado neutral para un esquema vacío. StatusBar agrega el chip de acceso y el de solo lectura, y omite un conteo de cero con cobertura parcial. Ejecuta useKeyboardShortcuts, useDesktopShellGuards y useProjectWindow (título de la ventana, protección al cerrar). Llama a preferencesStore.load() al montar.",
+            "responsibility": "Distribuye TopBar, EntitiesSidebar con SidebarResizer, DiagramCanvas y StatusBar; el panel y el lienzo vienen de features/canvas y aquí solo se colocan. TopBar muestra LayoutMenu. Entrega a DiagramCanvas el WelcomeOverlay como emptyState y el hook de DEV exposeFlowInstance como onFlowInit, y al panel el AccessBar por su ranura notice (con focusEntitiesSearch como su onDismissed), así ninguno importa app/ ni features/access; el panel muestra un pie atenuado mientras la lista de objetos puede estar incompleta y un estado neutral para un esquema vacío. Monta una vez ConnectionDialog, ExportDialog, AboutDialog, AccessReportDialog, CommandPalette, UnsavedChangesDialog y CanvasContextMenu, y le da al menú contextual la acción diagram.showAll del registro con su atajo. StatusBar agrega el chip de acceso y el de solo lectura, y omite un conteo de cero con cobertura parcial. Ejecuta useKeyboardShortcuts, useDesktopShellGuards y useProjectWindow (título de la ventana, protección al cerrar). Llama a preferencesStore.load() al montar.",
             "patterns": [
               "Cada diálogo lee su bandera de apertura de un store",
               "Los props solo llevan el registro de acciones",
-              "Ranura notice en vez de importar una funcionalidad"
+              "Ranura notice en vez de importar una funcionalidad",
+              "Lo que es del shell llega al lienzo por props"
             ]
           },
           {
@@ -3455,19 +3540,10 @@
             "patterns": ["Arrastre con equivalente de teclado"]
           },
           {
-            "id": "diagram-canvas",
-            "name": "DiagramCanvas",
-            "path": "src/app/shell/DiagramCanvas.tsx",
-            "responsibility": "La única instancia de React Flow. Deriva nodos y aristas de projectStore y escribe arrastres, colapsos y viewport con updateCanvas. Cuando cambia loadToken distribuye un proyecto nuevo (sin ruta, nunca guardado, sin cambios, distribución manual); si no, restaura el viewport guardado o ajusta la vista. Muestra WelcomeOverlay mientras no hay proyecto abierto y ProjectNotice cuando falla abrir o guardar. Con un proyecto abierto sin tablas ni vistas muestra un estado vacío neutral, cuyo motivo (una base de datos vacía, la selección de esquemas, nada visible para este inicio de sesión) viene de emptySchemaReason en schema/coverage.ts.",
-            "patterns": [
-              "Contadores de petición (fitRequest, focusRequest) disparan llamadas imperativas"
-            ]
-          },
-          {
             "id": "welcome-overlay",
             "name": "WelcomeOverlay",
             "path": "src/app/shell/WelcomeOverlay.tsx",
-            "responsibility": "Pantalla del lienzo vacío. DiagramCanvas la muestra mientras no hay proyecto abierto. Ofrece Conectar y Abrir a través del registro de acciones, lista recentProjects de preferencesStore y abre uno con projectStore.openProject(path). Muestra el crédito del desarrollador.",
+            "responsibility": "Pantalla del lienzo vacío. AppShell la pasa a DiagramCanvas como emptyState, y se muestra mientras no hay proyecto abierto. Ofrece Conectar y Abrir a través del registro de acciones, lista recentProjects de preferencesStore y abre uno con projectStore.openProject(path). Muestra el crédito del desarrollador.",
             "patterns": ["Estado vacío que ofrece el siguiente paso"]
           },
           {
@@ -3484,15 +3560,8 @@
             "id": "command-palette",
             "name": "Paleta de comandos",
             "path": "src/app/palette",
-            "responsibility": "Paleta Ctrl+K sobre todas las acciones del registro y todas las entidades. paletteSearch.ts ordena los resultados. Vive en app/ porque lee el registro de acciones.",
+            "responsibility": "Paleta Ctrl+K sobre todas las acciones del registro y todas las entidades del proyecto abierto (listEntities de features/schema). Cada fila de entidad muestra su tipo: el icono de gafas y la etiqueta Vista en el color de vista, o el icono de tabla y Tabla, luego esquema.nombre y 'Centrar en pantalla'; el placeholder nombra comandos, tablas y vistas. paletteSearch.ts ordena los resultados. Vive en app/ porque lee el registro de acciones.",
             "patterns": ["Lee el registro de acciones"]
-          },
-          {
-            "id": "entities-search",
-            "name": "entitiesSearch",
-            "path": "src/app/shell/entitiesSearch.ts",
-            "responsibility": "focusEntitiesSearch, que ejecuta la acción view.searchEntities (Ctrl+F). Abre el panel de entidades si está colapsado y, en el siguiente ciclo, cuando el panel ya no es inert, enfoca y selecciona su cuadro de búsqueda.",
-            "patterns": ["Foco a través de un id de elemento compartido"]
           },
           {
             "id": "desktop-guards",
@@ -3505,14 +3574,14 @@
             "id": "design-tokens",
             "name": "Tokens de diseño",
             "path": "src/app/styles",
-            "responsibility": "tokens.css contiene todos los tokens; los colores se escriben una vez con light-dark() en oklch. base.css tiene el reset, el anillo de foco, el movimiento reducido y el tema de React Flow.",
+            "responsibility": "tokens.css contiene todos los tokens y es el único lugar donde se escribe un color: light-dark() en oklch, los tonos semánticos, los tokens de vista (--color-view, --color-view-subtle, --color-on-view). tokens.test.ts recalcula la paleta de exportación (features/export/svg/palette.ts) desde los tokens a través de OKLab y falla si se desfasan, y lee cada CSS Module y viewer.css como texto para rechazar un color hex u oklch() escrito a mano (ADR-037). base.css tiene el reset, el anillo de foco, el movimiento reducido y el tema de React Flow.",
             "patterns": ["Tokens de diseño + CSS Modules (ADR-006)"]
           },
           {
             "id": "dev-hooks",
             "name": "Hooks de desarrollo",
             "path": "src/app/developmentHooks.ts",
-            "responsibility": "Solo en compilaciones DEV: expone los stores, incluido el del informe de acceso, y la instancia de React Flow en window.__schemacraft para que scripts por CDP manejen la app.",
+            "responsibility": "Solo en compilaciones DEV: expone los stores, incluido el del informe de acceso, y la instancia de React Flow en window.__schemacraft para que scripts por CDP manejen la app. AppShell pasa exposeFlowInstance a DiagramCanvas como onFlowInit, así el lienzo nunca importa este módulo.",
             "patterns": ["Superficie de depuración solo DEV"]
           }
         ]
@@ -3631,12 +3700,41 @@
             "id": "feature-canvas",
             "name": "canvas",
             "path": "src/features/canvas",
-            "responsibility": "Transformaciones del estado del diagrama (canvasState.ts), geometría, aristas, nodos, menú contextual, store de estado transitorio de la interfaz (canvasUiStore.ts), comandos del lienzo (canvasActions.ts) y layouts/ (jerárquica con ELK en un worker, orgánica con d3-force, radial). El estado guardado del diagrama vive en projectStore; los comandos del lienzo lo cambian con updateCanvas. describeEntities cuenta las columnas de las llaves hacia tablas no visibles como columnas de llave, así conservan su distintivo de llave sin dibujar arista.",
+            "responsibility": "Transformaciones del estado del diagrama (canvasState.ts), geometría, aristas, nodos, menú contextual, store de estado transitorio de la interfaz (canvasUiStore.ts), comandos del lienzo (canvasActions.ts), layouts/ (jerárquica con ELK en un worker, orgánica con d3-force, radial) y, desde 1.1, las dos regiones del lienzo que el shell coloca: DiagramCanvas y EntitiesSidebar, con entitiesSearch.ts. El estado guardado del diagrama vive en projectStore; los comandos del lienzo lo cambian con updateCanvas: setHidden atiende el ojo del panel y el menú contextual, setCollapsed el chevrón de la tarjeta. edgeGeometry.ts tiene la única tabla de marcadores (RELATION_MARKER_SHAPES) y relationPath, compartidas con el renderizador SVG; relationMarkerIds.ts nombra los marcadores del lienzo. EntityNode dibuja una vista con el icono de gafas, la etiqueta VISTA y los tokens de vista, y muestra el chevrón de plegado solo cuando isCollapsible encuentra filas que ocultar (ADR-036). describeEntities cuenta las columnas de las llaves hacia tablas no visibles como columnas de llave, así conservan su distintivo de llave sin dibujar arista.",
             "patterns": [
               "Transformaciones puras aplicadas con updateCanvas",
               "Strategy como unión etiquetada + switch exhaustivo (ADR-022)",
-              "Geometría desde datos, no del DOM (ADR-020)"
+              "Geometría desde datos, no del DOM (ADR-020)",
+              "Un solo hogar por regla de dibujo (ADR-037)"
             ]
+          },
+          {
+            "id": "diagram-canvas",
+            "name": "DiagramCanvas",
+            "path": "src/features/canvas/DiagramCanvas.tsx",
+            "responsibility": "La única instancia de React Flow. Deriva nodos y aristas de projectStore y escribe arrastres y viewport con updateCanvas; el chevrón de la tarjeta ejecuta canvasActions.setCollapsed. Cuando cambia loadToken distribuye un proyecto nuevo (sin ruta, nunca guardado, sin cambios, distribución manual); si no, restaura el viewport guardado o ajusta el diagrama a la ventana. Lo que es del shell llega por props: emptyState (la pantalla de bienvenida), que se muestra mientras no hay proyecto abierto, y onFlowInit (el hook de DEV), que se llama cuando React Flow está listo. Muestra ProjectNotice cuando falla abrir o guardar. Con un proyecto abierto sin tablas ni vistas muestra un estado vacío neutral, cuyo motivo (una base de datos vacía, la selección de esquemas, nada visible para este inicio de sesión) viene de emptySchemaReason en schema/coverage.ts. El minimapa tiñe las vistas con el color de vista.",
+            "patterns": [
+              "Contadores de petición (fitRequest, focusRequest) disparan llamadas imperativas",
+              "Lo que es del shell llega por props"
+            ]
+          },
+          {
+            "id": "entities-sidebar",
+            "name": "EntitiesSidebar",
+            "path": "src/features/canvas/EntitiesSidebar.tsx",
+            "responsibility": "El panel de entidades. groupEntities(listEntities(snapshot)) da los grupos por esquema y sus secciones Tablas y Vistas; entityListShape, decidido sobre la lista sin filtrar, dice qué niveles se muestran (varios esquemas, ambos tipos), así la estructura no cambia al escribir. Los encabezados son botones con aria-expanded; un esquema o una sección se pliega solo durante la sesión, y todo queda desplegado, con los botones deshabilitados, mientras la búsqueda tiene texto. Los conteos dicen 'visibles / total' en cuanto algo está oculto. Cada fila centra su entidad, abre el menú contextual y cambia la visibilidad con canvasActions.setHidden; las vistas llevan el icono de gafas en el color de vista. Conserva los estados vacíos (sin proyecto, los estados de emptySchemaReason, sin coincidencias), el único pie de no visible de ADR-034 y la ranura notice; el id del cuadro de búsqueda viene de entitiesSearch.ts.",
+            "patterns": [
+              "Forma decidida sobre la lista sin filtrar",
+              "Estado de plegado solo de la sesión",
+              "Ranura notice en vez de importar una funcionalidad"
+            ]
+          },
+          {
+            "id": "entities-search",
+            "name": "entitiesSearch",
+            "path": "src/features/canvas/entitiesSearch.ts",
+            "responsibility": "focusEntitiesSearch, que ejecuta la acción view.searchEntities (Ctrl+F). Abre el panel de entidades si está colapsado y, en el siguiente ciclo, cuando el panel ya no es inert, enfoca y selecciona su cuadro de búsqueda.",
+            "patterns": ["Foco a través de un id de elemento compartido"]
           },
           {
             "id": "ensure-placed",
@@ -3656,7 +3754,7 @@
             "id": "feature-export",
             "name": "export",
             "path": "src/features/export",
-            "responsibility": "Diálogo y store de exportación. ExportSpecificationBuilder valida las opciones. svg/renderDiagram.ts dibuja el SVG; html/ arma la página autónoma; fontFaces.ts aporta las fuentes que se miden e incrustan. visibleProjection es una lista de permitidos: las tablas, vistas y llaves visibles, las llaves hacia tablas no visibles de las tablas visibles y el nivel de acceso, nunca el sondeo, la lista carriedOver ni las claves desconocidas (los objetos conservados en sí se exportan como cualquier otro). Una lectura parcial agrega una nota de una línea: una nota al pie en SVG, PDF y PNG (RenderOptions.footnote, incluida en el tamaño medido) y una línea bajo el encabezado del visor HTML. Solo la cadena del documento va a Rust.",
+            "responsibility": "Diálogo y store de exportación. ExportSpecificationBuilder valida las opciones. svg/renderDiagram.ts dibuja el SVG con la tabla de marcadores de canvas/edgeGeometry.ts y las etiquetas que le pasa quien llama (RenderOptions.labels: la etiqueta VISTA, que exportStore traduce en el idioma de la interfaz); una tarjeta de vista lleva el tinte de vista, el símbolo de gafas, la pastilla con la etiqueta y el esquema en texto secundario, como en el lienzo. svg/palette.ts es la derivación sRGB de tokens.css (PALETTE_TOKENS, revisada por src/app/styles/tokens.test.ts) y viewerPaletteStyles() la escribe como propiedades --sc-* que html/buildStandalonePage pone antes de la hoja de estilos del visor. html/ arma la página autónoma; fontFaces.ts aporta las fuentes que se miden e incrustan. visibleProjection es una lista de permitidos: las tablas, vistas y llaves visibles, las llaves hacia tablas no visibles de las tablas visibles y el nivel de acceso, nunca el sondeo, la lista carriedOver ni las claves desconocidas (los objetos conservados en sí se exportan como cualquier otro). Una lectura parcial agrega una nota de una línea: una nota al pie en SVG, PDF y PNG (RenderOptions.footnote, incluida en el tamaño medido) y una línea bajo el encabezado del visor HTML. Solo la cadena del documento va a Rust.",
             "patterns": [
               "Builder",
               "TS dibuja, Rust escribe (ADR-023, ADR-024)",
@@ -3699,8 +3797,8 @@
             "id": "feature-schema",
             "name": "schema",
             "path": "src/features/schema",
-            "responsibility": "Helpers puros sobre SchemaSnapshot: formatDataType y describeColumn (dataType.ts), que escribe 'DEFAULT (no disponible)' o '(valor por defecto no registrado)' en vez de omitir un valor por defecto que no puede leer; groupEntitiesBySchema, filterEntityGroups y countEntities (entities.ts); definitionText e isUnknownDefinition (definition.ts), los únicos lectores de los estados crudos de Definition; objectsCoverage, definitionsCoverage, listsEveryObject, emptySchemaReason y el AccessSummary que se puede exportar (coverage.ts); quoteIdentifier (sqlIdentifiers.ts). Sin store. Depende solo de los contratos, así el bundle del visor puede importarlo.",
-            "patterns": ["Módulo hoja, seguro para el bundle del visor"]
+            "responsibility": "Helpers puros sobre SchemaSnapshot: formatDataType y describeColumn (dataType.ts), que escribe 'DEFAULT (no disponible)' o '(valor por defecto no registrado)' en vez de omitir un valor por defecto que no puede leer; el único hogar de la identidad de las entidades (entities.ts): EntityKind, ENTITY_KINDS, entityKey, listEntities, groupEntities (esquemas y, dentro, secciones Tablas y Vistas), filterEntityGroups, countEntities y entityListShape; definitionText e isUnknownDefinition (definition.ts), los únicos lectores de los estados crudos de Definition; objectsCoverage, definitionsCoverage, listsEveryObject, emptySchemaReason y el AccessSummary que se puede exportar (coverage.ts); quoteIdentifier (sqlIdentifiers.ts). Sin store. Es una hoja: ESLint solo le deja importar shared/ y a sí mismo, así cualquier funcionalidad y el bundle del visor pueden importarlo (ADR-037).",
+            "patterns": ["Módulo hoja, exigido por lint, seguro para el bundle del visor"]
           }
         ]
       },
@@ -3715,7 +3813,7 @@
             "id": "viewer-app",
             "name": "Visor",
             "path": "src/viewer/main.ts",
-            "responsibility": "Lee el JSON incrustado, dibuja con renderDiagramSvg y ofrece desplazamiento y zoom, tres niveles de detalle, búsqueda, resaltado de vecinos, panel de detalle y cambio de tema. Un texto que no puede mostrar dice 'no disponible' o 'no registrado' (describeDefinition), y la exportación de una lectura parcial muestra una línea de nota bajo la barra del encabezado. Importa canvasState y geometry de canvas, formatDataType y los lectores de definiciones de schema y el renderizador de export, pero nada de React ni de stores. Catálogo EN/ES propio en messages.ts.",
+            "responsibility": "Lee el JSON incrustado, dibuja con renderDiagramSvg pasándole su propio label.view y ofrece desplazamiento y zoom, tres niveles de detalle, una búsqueda cuyos resultados indican el tipo (Tabla o Vista, en el color de vista), resaltado de vecinos, un panel de detalle cuya línea de tipo se colorea en las vistas y cambio de tema. Sus colores son las propiedades --sc-* que buildStandalonePage escribe desde la paleta; viewer.css no declara ninguno más allá de sus dos sombras translúcidas. Un texto que no puede mostrar dice 'no disponible' o 'no registrado' (describeDefinition), y la exportación de una lectura parcial muestra una línea de nota bajo la barra del encabezado. Importa canvasState y geometry de canvas, entityKey, formatDataType y los lectores de definiciones de schema y el renderizador de export, pero nada de React ni de stores. Catálogo EN/ES propio en messages.ts, cuyo label.view se comprueba igual al entity.view.label de la app.",
             "patterns": ["Reutiliza el renderizador de la app (ADR-025)"]
           },
           {
@@ -4143,7 +4241,7 @@
         "id": "app-shell-to-diagram-canvas",
         "from": "app-shell",
         "to": "diagram-canvas",
-        "label": "coloca el lienzo",
+        "label": "coloca el lienzo; WelcomeOverlay como emptyState, exposeFlowInstance como onFlowInit",
         "kind": "call"
       },
       {
@@ -4213,14 +4311,14 @@
         "id": "diagram-canvas-to-feature-canvas",
         "from": "diagram-canvas",
         "to": "feature-canvas",
-        "label": "nodos, aristas, primera distribución",
+        "label": "nodos, aristas, primera distribución, setCollapsed para el chevrón de la tarjeta",
         "kind": "call"
       },
       {
         "id": "diagram-canvas-to-feature-project",
         "from": "diagram-canvas",
         "to": "feature-project",
-        "label": "updateCanvas (arrastre, colapso, viewport)",
+        "label": "updateCanvas (arrastre, viewport)",
         "kind": "call"
       },
       {
@@ -4283,14 +4381,14 @@
         "id": "feature-canvas-to-feature-schema",
         "from": "feature-canvas",
         "to": "feature-schema",
-        "label": "formatDataType (EntityNode)",
+        "label": "entityKey y EntityKind (geometry, graph, canvasState); formatDataType (EntityNode)",
         "kind": "call"
       },
       {
         "id": "feature-export-to-feature-canvas",
         "from": "feature-export",
         "to": "feature-canvas",
-        "label": "geometría, spreadForDetailLevel",
+        "label": "geometría, spreadForDetailLevel, la tabla de marcadores y relationPath",
         "kind": "call"
       },
       {
@@ -4794,21 +4892,21 @@
         "id": "app-shell-to-feature-project",
         "from": "app-shell",
         "to": "feature-project",
-        "label": "UnsavedChangesDialog, setDetailLevel en TopBar; panel y barra de estado leen projectStore",
+        "label": "UnsavedChangesDialog, setDetailLevel en TopBar; StatusBar lee projectStore",
         "kind": "call"
       },
       {
         "id": "app-shell-to-feature-canvas",
         "from": "app-shell",
         "to": "feature-canvas",
-        "label": "CanvasContextMenu; EntitiesSidebar usa withHidden y canvasUiStore",
+        "label": "CanvasContextMenu con el comando showAll del registro; StatusBar lee canvasUiStore",
         "kind": "call"
       },
       {
         "id": "app-shell-to-feature-schema",
         "from": "app-shell",
         "to": "feature-schema",
-        "label": "EntitiesSidebar: groupEntitiesBySchema; cobertura para el pie, los estados vacíos y los conteos de la barra de estado",
+        "label": "StatusBar: entityKey y cobertura para sus conteos",
         "kind": "call"
       },
       {
@@ -4816,13 +4914,6 @@
         "from": "app-shell",
         "to": "project-paths",
         "label": "TopBar: projectDisplayName",
-        "kind": "call"
-      },
-      {
-        "id": "diagram-canvas-to-welcome-overlay",
-        "from": "diagram-canvas",
-        "to": "welcome-overlay",
-        "label": "se muestra mientras no hay proyecto",
         "kind": "call"
       },
       {
@@ -4955,7 +5046,7 @@
         "id": "viewer-app-to-feature-schema",
         "from": "viewer-app",
         "to": "feature-schema",
-        "label": "formatDataType, lectores de definiciones",
+        "label": "entityKey, formatDataType, lectores de definiciones",
         "kind": "call"
       },
       {
@@ -5153,6 +5244,76 @@
         "to": "shared-settings",
         "label": "dismissedAccessNotices",
         "kind": "call"
+      },
+      {
+        "id": "app-shell-to-welcome-overlay",
+        "from": "app-shell",
+        "to": "welcome-overlay",
+        "label": "pasada a DiagramCanvas como emptyState",
+        "kind": "call"
+      },
+      {
+        "id": "app-shell-to-entities-sidebar",
+        "from": "app-shell",
+        "to": "entities-sidebar",
+        "label": "coloca el panel; AccessBar en su ranura notice",
+        "kind": "call"
+      },
+      {
+        "id": "app-shell-to-entities-search",
+        "from": "app-shell",
+        "to": "entities-search",
+        "label": "focusEntitiesSearch, entregado a AccessBar como onDismissed",
+        "kind": "call"
+      },
+      {
+        "id": "app-shell-to-dev-hooks",
+        "from": "app-shell",
+        "to": "dev-hooks",
+        "label": "exposeFlowInstance, pasado como onFlowInit (DEV)",
+        "kind": "call"
+      },
+      {
+        "id": "diagram-canvas-to-feature-schema",
+        "from": "diagram-canvas",
+        "to": "feature-schema",
+        "label": "emptySchemaReason para el estado vacío",
+        "kind": "call"
+      },
+      {
+        "id": "entities-sidebar-to-feature-schema",
+        "from": "entities-sidebar",
+        "to": "feature-schema",
+        "label": "listEntities, groupEntities, entityListShape; cobertura para el pie y los estados vacíos",
+        "kind": "call"
+      },
+      {
+        "id": "entities-sidebar-to-feature-project",
+        "from": "entities-sidebar",
+        "to": "feature-project",
+        "label": "lee projectStore (snapshot, lienzo, inspección)",
+        "kind": "call"
+      },
+      {
+        "id": "entities-sidebar-to-feature-canvas",
+        "from": "entities-sidebar",
+        "to": "feature-canvas",
+        "label": "setHidden (ojo); canvasUiStore (foco, menú contextual)",
+        "kind": "call"
+      },
+      {
+        "id": "entities-sidebar-to-entities-search",
+        "from": "entities-sidebar",
+        "to": "entities-search",
+        "label": "ENTITIES_SEARCH_INPUT_ID",
+        "kind": "call"
+      },
+      {
+        "id": "command-palette-to-feature-schema",
+        "from": "command-palette",
+        "to": "feature-schema",
+        "label": "listEntities, EntityKind",
+        "kind": "call"
       }
     ],
     "dataStores": [
@@ -5300,7 +5461,7 @@
           {
             "actor": "DiagramCanvas",
             "action": "Muestra la bienvenida",
-            "detail": "Mientras no hay proyecto abierto muestra WelcomeOverlay: Conectar, Abrir y hasta 10 proyectos recientes, cada uno con projectDisplayName y projectDirectory."
+            "detail": "Mientras no hay proyecto abierto muestra el emptyState que le pasa AppShell, WelcomeOverlay: Conectar, Abrir y hasta 10 proyectos recientes, cada uno con projectDisplayName y projectDirectory."
           },
           {
             "actor": "Usuario",
@@ -5500,7 +5661,7 @@
           {
             "actor": "exportStore",
             "action": "Arma el documento",
-            "detail": "Espera a que document.fonts tenga las cuatro fuentes estáticas, para medir el texto con ellas. renderDiagramSvg para SVG, PNG y PDF; para HTML, buildStandalonePage con la lista de permitidos de visibleProjection y virtual:schemacraft-viewer. Una lectura parcial agrega su nota de una línea. Con embedFonts (SVG y HTML) las fuentes WOFF2 se incrustan en base64."
+            "detail": "Espera a que document.fonts tenga las cuatro fuentes estáticas, para medir el texto con ellas. renderDiagramSvg para SVG, PNG y PDF, con la etiqueta VISTA traducida en el idioma de la interfaz (entity.view.label); para HTML, buildStandalonePage con la lista de permitidos de visibleProjection, la paleta como propiedades --sc-* (viewerPaletteStyles) y virtual:schemacraft-viewer. Una lectura parcial agrega su nota de una línea. Con embedFonts (SVG y HTML) las fuentes WOFF2 se incrustan en base64."
           },
           {
             "actor": "cmd-export",
@@ -5826,7 +5987,7 @@
             },
             {
               "layer": "Leer estado",
-              "step": "Usa selectores estrechos sobre projectStore y canvasUiStore. Reutiliza entityKey, describeEntities, formatDataType y groupEntitiesBySchema. Llama a otros stores con getState().",
+              "step": "Usa selectores estrechos sobre projectStore y canvasUiStore. Reutiliza entityKey, EntityKind, listEntities y groupEntities (features/schema/entities.ts, el único hogar de la identidad de las entidades), describeEntities y formatDataType. Llama a otros stores con getState().",
               "files": [
                 "src/features/project/projectStore.ts",
                 "src/features/canvas/canvasUiStore.ts",
@@ -5837,16 +5998,16 @@
             },
             {
               "layer": "Interfaz",
-              "step": "Construye con shared/ui e iconos lucide; estiliza solo con tokens.",
+              "step": "Construye con shared/ui e iconos lucide; estiliza solo con tokens: un color nuevo es primero un token en tokens.css, y tokens.test.ts falla ante un color escrito a mano en un CSS Module.",
               "files": ["src/shared/ui/", "src/app/styles/tokens.css"]
             },
             {
               "layer": "Shell",
-              "step": "Móntalo una vez en AppShell, o en DiagramCanvas si va sobre el lienzo (como WelcomeOverlay y ProjectNotice). Un panel no modal no debe usar role=\"dialog\", porque los diálogos abiertos bloquean los atajos.",
+              "step": "Móntalo una vez en AppShell, o en features/canvas/DiagramCanvas.tsx si va sobre el lienzo (como ProjectNotice; la pantalla de bienvenida llega por el prop emptyState). Un panel no modal no debe usar role=\"dialog\", porque los diálogos abiertos bloquean los atajos.",
               "files": [
                 "src/app/shell/AppShell.tsx",
                 "src/app/shell/AppShell.module.css",
-                "src/app/shell/DiagramCanvas.tsx"
+                "src/features/canvas/DiagramCanvas.tsx"
               ]
             },
             {
@@ -6079,7 +6240,7 @@
             },
             {
               "layer": "Frontend",
-              "step": "Un with<Algo>() puro y un comando vía updateCanvas. Actualiza los literales de NodeState en canvasState.ts (ensurePlaced) y refreshPlacement.ts, y defaultCanvasState en projectStore.ts. Muéstralo en el lienzo, en renderDiagram.ts (hex sRGB en palette.ts) y en el visor.",
+              "step": "Un with<Algo>() puro y un comando vía updateCanvas. Actualiza los literales de NodeState en canvasState.ts (ensurePlaced) y refreshPlacement.ts, y defaultCanvasState en projectStore.ts. Muéstralo en el lienzo, en renderDiagram.ts (un token en tokens.css más su entrada en palette.ts, que tokens.test.ts revisa) y en el visor.",
               "files": [
                 "src/features/canvas/canvasState.ts",
                 "src/features/canvas/canvasActions.ts",
@@ -6170,11 +6331,11 @@
       "crossCutting": [
         {
           "concern": "Texto bilingüe",
-          "touches": "en.ts es la referencia, es.ts tipado como MessageCatalog, catalogs.test.ts. El visor tiene su propio src/viewer/messages.ts; el texto del diálogo de WebView2 está en src-tauri/src/main.rs."
+          "touches": "en.ts es la referencia, es.ts tipado como MessageCatalog, catalogs.test.ts. El visor todavía tiene su propio src/viewer/messages.ts, cuyo label.view se comprueba igual al entity.view.label de la app; el texto del diálogo de WebView2 está en src-tauri/src/main.rs."
         },
         {
           "concern": "Tema claro y oscuro",
-          "touches": "tokens.css con light-dark(); una copia sRGB sincronizada a mano en src/features/export/svg/palette.ts y otra en src/viewer/viewer.css."
+          "touches": "tokens.css con light-dark() es la única fuente de color. src/features/export/svg/palette.ts es su derivación sRGB, revisada por src/app/styles/tokens.test.ts, que además rechaza un color hex u oklch() escrito a mano en cualquier CSS Module o en viewer.css (el visor conserva solo sus dos sombras translúcidas); buildStandalonePage escribe la paleta en el HTML como propiedades --sc-* (ADR-037)."
         },
         {
           "concern": "Teclado y registro de acciones",
@@ -6194,7 +6355,7 @@
         },
         {
           "concern": "Paridad y privacidad de exportación",
-          "touches": "Geometría compartida; marcadores y colores están copiados en dos lugares; visibleProjection es una lista de permitidos que decide qué llega al HTML (nunca el sondeo, el usuario de base de datos, la lista carriedOver ni las claves desconocidas; los objetos conservados en sí salen como cualquier otro); una lectura parcial lleva una línea de nota."
+          "touches": "Geometría compartida, una sola tabla de marcadores y ruteo (canvas/edgeGeometry.ts) y una sola paleta; el renderizador recibe sus etiquetas de quien llama, así una vista dice VIEW o VISTA en el idioma de la exportación; visibleProjection es una lista de permitidos que decide qué llega al HTML (nunca el sondeo, el usuario de base de datos, la lista carriedOver ni las claves desconocidas; los objetos conservados en sí salen como cualquier otro); una lectura parcial lleva una línea de nota."
         },
         {
           "concern": "Backends preview",
@@ -6317,7 +6478,7 @@
       }
     ],
     "conformance": {
-      "verdict": "La arquitectura se sostiene. El core no depende de Tauri, los comandos son delgados y mantienen el trabajo bloqueante fuera del hilo principal, los errores están tipados de punta a punta, los contratos se generan y se revisan, ESLint exige las capas del frontend, solo src/shared/ipc habla con Tauri y el visor no trae React ni stores. Builder y Memento están implementados como dicen los ADRs. Las tres desviaciones mayores están corregidas, junto con la mayoría de las menores. Las ocho que siguen abiertas son problemas de consistencia, no rupturas estructurales; siete están planeadas para v1.1, donde las vistas y el inspector tocan el mismo código, y una queda pendiente sin fecha. Las corregidas siguen abajo, marcadas como corregidas.",
+      "verdict": "La arquitectura se sostiene. El core no depende de Tauri, los comandos son delgados y mantienen el trabajo bloqueante fuera del hilo principal, los errores están tipados de punta a punta, los contratos se generan y se revisan, ESLint exige las capas del frontend y mantiene features/schema como hoja, solo src/shared/ipc habla con Tauri y el visor no trae React ni stores. Builder y Memento están implementados como dicen los ADRs, y cada regla de dibujo tiene un solo hogar protegido por una prueba. Las tres desviaciones mayores están corregidas, junto con la mayoría de las menores. Las tres que siguen abiertas son problemas de consistencia, no rupturas estructurales; dos están planeadas para v1.1, donde el inspector toca el mismo código, y una queda pendiente sin fecha. Las corregidas siguen abajo, marcadas como corregidas.",
       "deviations": [
         {
           "what": "Los botones de acción deshabilitados siempre dicen 'Available in an upcoming milestone', aunque la causa sea una condición en tiempo de ejecución.",
@@ -6371,28 +6532,28 @@
         {
           "what": "El listado de entidades, la clave `${schema}.${name}` y EntityKind existen en varios lugares.",
           "where": "src/features/schema/entities.ts, canvas/geometry.ts, src/app/palette/CommandPalette.tsx, connection/ReviewChangesPanel.tsx, shared/ipc/previewProjectBackend.ts",
-          "fix": "Planeado para v1.1: Hacer de features/schema el único hogar de entityKey y EntityKind.",
+          "fix": "Corregido: features/schema/entities.ts es el único hogar de EntityKind, entityKey y el listado de entidades (listEntities, groupEntities); geometry.ts, la paleta, el panel de revisión y el informe de acceso los importan, el backend preview compara nombres campo por campo (su fixture solo de DEV conserva una clave de Map propia, nameKey) y ESLint mantiene features/schema como hoja (ADR-037).",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Los trazos de la pata de gallo y las opciones de ruteo de aristas están copiados entre el lienzo y el renderizador SVG.",
           "where": "src/features/canvas/RelationMarkers.tsx vs src/features/export/svg/renderDiagram.ts",
-          "fix": "Planeado para v1.1: Exportarlos desde canvas/edgeGeometry.ts y usarlos en ambos.",
+          "fix": "Corregido: RELATION_MARKER_SHAPES, relationPath y startMarkerKind viven en canvas/edgeGeometry.ts y relationOffsets en geometry.ts; RelationMarkers.tsx, RelationEdge.tsx y renderDiagram.ts los usan, y la salida del renderizador se comparó byte a byte (ADR-037).",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Los colores del diagrama existen tres veces (tokens.css, palette.ts, viewer.css) y algunos CSS Modules declaran sus propios colores oklch.",
           "where": "src/features/export/svg/palette.ts, src/viewer/viewer.css, src/shared/ui/Alert.module.css",
-          "fix": "Planeado para v1.1: Alimentar el visor desde DIAGRAM_PALETTES; mover los colores sueltos a tokens.",
+          "fix": "Corregido: tokens.css es la única fuente; palette.ts es su derivación, revisada por src/app/styles/tokens.test.ts, que además rechaza colores escritos a mano en los CSS Modules y en viewer.css; buildStandalonePage entrega la paleta al visor como propiedades --sc-*, y los colores sueltos de los módulos ahora son tokens (ADR-037).",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
-          "what": "Nivel de detalle, tema, idioma, el menú contextual y el ojo del panel de entidades saltan el registro de acciones; 6 acciones no tienen atajo.",
-          "where": "src/app/shell/TopBar.tsx, src/features/canvas/CanvasContextMenu.tsx, src/app/shell/EntitiesSidebar.tsx",
-          "fix": "Planeado para v1.1: Agregar acciones view.detail*, settings.theme.* y settings.language.*; anotar las excepciones en ADR-008.",
+          "what": "Nivel de detalle, tema e idioma saltan el registro de acciones; 6 acciones no tienen atajo.",
+          "where": "src/app/shell/TopBar.tsx",
+          "fix": "Planeado para v1.1: Agregar acciones view.detail*, settings.theme.* y settings.language.*; anotar las excepciones en ADR-008. Los saltos por entidad ya no existen: el ojo del panel y Ocultar del menú contextual pasan por canvasActions.setHidden, el chevrón de la tarjeta por setCollapsed, y Mostrar todo del menú contextual ejecuta diagram.showAll del registro, que AppShell le pasa.",
           "severity": "minor",
           "status": "open"
         },
@@ -6420,9 +6581,9 @@
         {
           "what": "El comportamiento del lienzo vive en el shell (DiagramCanvas, EntitiesSidebar).",
           "where": "src/app/shell/DiagramCanvas.tsx, src/app/shell/EntitiesSidebar.tsx",
-          "fix": "Planeado para v1.1: Moverlos a features/canvas; AppShell solo los coloca.",
+          "fix": "Corregido: DiagramCanvas, EntitiesSidebar y entitiesSearch viven en src/features/canvas; AppShell los coloca y les pasa por props la pantalla de bienvenida, el hook de DEV, la barra de acceso y el comando de mostrar todo (ADR-031).",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Exports muertos o duplicados: projectDisplayName, layoutKindOf, sameName, hasHiddenEntities.",
@@ -6511,9 +6672,9 @@
         {
           "what": "connectionStore, exportStore, preferencesStore y canvasActions no tienen pruebas unitarias.",
           "where": "src/features/*",
-          "fix": "Planeado para v1.1: Seguir projectStore.test.ts, simulando los backends. connectionStore y preferencesStore ya tienen pruebas (connectionStore.test.ts, preferencesStore.test.ts); faltan exportStore y canvasActions.",
+          "fix": "Corregido: connectionStore.test.ts, preferencesStore.test.ts, exportStore.test.ts y canvasActions.test.ts siguen a projectStore.test.ts y simulan los backends.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "El PRD decía que el exe portable no necesita runtimes externos; necesita WebView2.",
@@ -6558,7 +6719,7 @@
         "La página lleva un solo manifiesto, en el nivel superior de model.json y compartido por ambos idiomas. CI lo compara con el código con scripts/check-architecture-page.mjs (npm run docs:check).",
         "Comando nuevo: agrégalo a manifest.commands y a la tabla de comandos en ambos idiomas.",
         "Carpeta de funcionalidad, módulo del core o backend IPC nuevo: agrégalo al manifiesto, a la lista de capas y a las aristas del diagrama.",
-        "Decisión nueva: agrega un ADR (el siguiente es ADR-036), sube manifest.adrCount y enlaza el ADR desde el patrón o la receta que cambia.",
+        "Decisión nueva: agrega un ADR (el siguiente es ADR-038), sube manifest.adrCount y enlaza el ADR desde el patrón o la receta que cambia.",
         "Cambio de alcance: actualiza ambas copias del PRD (docs/ y 02_Docs/), agrega una línea fechada en la sección 6 y haz commit como docs(prd), solo con aprobación del usuario.",
         "Desviación corregida: márcala como corregida en el mismo PR. Desviación conocida nueva: agrégala con su severidad y estado open.",
         "Almacén de datos o clave de localStorage nueva: agrega una fila a la tabla de datos.",
@@ -6770,6 +6931,11 @@
         "id": "min-reader-version",
         "term": "minReaderVersion",
         "meaning": "Campo del encabezado de .scraft: el formato más viejo que un lector debe entender para abrir el archivo. Un lector al menos así de nuevo, pero más viejo que formatVersion, lo abre en solo lectura."
+      },
+      {
+        "id": "entity-kind",
+        "term": "EntityKind / entityKey",
+        "meaning": "'table' o 'view', y la clave 'esquema.nombre' que identifica a una entidad en los nodos, en el estado de oculto y plegado y en la búsqueda. Ambos se escriben solo en src/features/schema/entities.ts (ADR-037); el tipo decide las secciones Tablas y Vistas y la etiqueta VISTA (ADR-036)."
       }
     ]
   }

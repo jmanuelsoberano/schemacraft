@@ -1,12 +1,17 @@
 import { useEffect } from "react";
 import type { CSSProperties } from "react";
 
+import { formatShortcut, isApplePlatform } from "@/app/actions/shortcut";
 import { useAppActions } from "@/app/actions/useAppActions";
 import { useKeyboardShortcuts } from "@/app/actions/useKeyboardShortcuts";
+import { exposeFlowInstance } from "@/app/developmentHooks";
 import { AboutDialog } from "@/features/about/AboutDialog";
 import { AccessBar } from "@/features/access/AccessBar";
 import { AccessReportDialog } from "@/features/access/AccessReportDialog";
 import { CanvasContextMenu } from "@/features/canvas/CanvasContextMenu";
+import { DiagramCanvas } from "@/features/canvas/DiagramCanvas";
+import { EntitiesSidebar } from "@/features/canvas/EntitiesSidebar";
+import { focusEntitiesSearch } from "@/features/canvas/entitiesSearch";
 import { ConnectionDialog } from "@/features/connection/ConnectionDialog";
 import { ExportDialog } from "@/features/export/ExportDialog";
 import { CommandPalette } from "@/app/palette/CommandPalette";
@@ -17,15 +22,18 @@ import { useSettingsStore } from "@/shared/settings/settingsStore";
 import { classNames } from "@/shared/ui/classNames";
 
 import styles from "./AppShell.module.css";
-import { DiagramCanvas } from "./DiagramCanvas";
-import { EntitiesSidebar } from "./EntitiesSidebar";
 import { SidebarResizer } from "./SidebarResizer";
 import { StatusBar } from "./StatusBar";
 import { TopBar } from "./TopBar";
-import { focusEntitiesSearch } from "./entitiesSearch";
+import { WelcomeOverlay } from "./WelcomeOverlay";
 import { useDesktopShellGuards } from "./useDesktopShellGuards";
 
-/** Three-region layout: top bar, resizable entities panel beside the canvas, status bar. */
+/**
+ * Three-region layout: top bar, resizable entities panel beside the canvas, status bar. The
+ * canvas and the panel live in features/canvas; the shell only places them and hands over what
+ * belongs to the application: the welcome screen, the development hook and the registry action
+ * the context menu repeats.
+ */
 export function AppShell() {
   const actions = useAppActions();
   const isSidebarOpen = useSettingsStore((state) => state.isSidebarOpen);
@@ -39,6 +47,7 @@ export function AppShell() {
   }, []);
 
   const shellStyle = { "--sidebar-width": `${sidebarWidth}px` } as CSSProperties;
+  const showAll = actions.byId["diagram.showAll"];
 
   return (
     <div className={styles.shell} style={shellStyle}>
@@ -59,7 +68,10 @@ export function AppShell() {
         <SidebarResizer />
       </aside>
       <main className={styles.canvas}>
-        <DiagramCanvas actions={actions.byId} />
+        <DiagramCanvas
+          emptyState={<WelcomeOverlay actions={actions.byId} />}
+          onFlowInit={exposeFlowInstance}
+        />
       </main>
       <StatusBar actions={actions.byId} />
       <ConnectionDialog />
@@ -68,7 +80,16 @@ export function AppShell() {
       <AccessReportDialog />
       <ExportDialog />
       <CommandPalette actions={actions} />
-      <CanvasContextMenu />
+      <CanvasContextMenu
+        showAll={{
+          labelKey: showAll.labelKey,
+          isAvailable: showAll.isAvailable,
+          shortcutHint: showAll.shortcut
+            ? formatShortcut(showAll.shortcut, isApplePlatform())
+            : undefined,
+          run: showAll.run,
+        }}
+      />
     </div>
   );
 }

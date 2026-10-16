@@ -15,6 +15,14 @@ describe.each(SUPPORTED_LOCALES)("%s viewer catalogue", (locale) => {
     expect(t("panel.notRecorded")).toBe(app["definition.notRecorded"]);
   });
 
+  it("marks views and searches with the application's words", () => {
+    // The SVG, PDF and PNG exports draw the application's label; the HTML viewer draws this one.
+    expect(t("label.view")).toBe(app["entity.view.label"]);
+    expect(t("panel.view")).toBe(app["entity.view"]);
+    expect(t("panel.table")).toBe(app["entity.table"]);
+    expect(t("search.placeholder")).toBe(app["sidebar.search"]);
+  });
+
   it("shows an expression text, or why it is missing", () => {
     expect(describeDefinition({ status: "readable", text: "(getdate())" }, t)).toBe("(getdate())");
     expect(describeDefinition({ status: "notVisible" }, t)).toBe(app["definition.notAvailable"]);

@@ -2,7 +2,7 @@
   position: fixed;
   inset: 0;
   z-index: 30;
-  background: light-dark(oklch(0% 0 0 / 0.2), oklch(0% 0 0 / 0.5));
+  background: var(--color-overlay-soft);
   animation: fade var(--duration-fast) var(--ease-standard);
 }
 
@@ -95,7 +95,23 @@
   color: var(--color-text-muted);
 }
 
+.viewIcon {
+  color: var(--color-view);
+}
+
+/* Table or View, written out next to the name; a view also takes the view colour. */
+.kind {
+  flex: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.kindView {
+  color: var(--color-view);
+}
+
 .hint {
+  flex: none;
   color: var(--color-text-muted);
   font-size: var(--text-xs);
 }

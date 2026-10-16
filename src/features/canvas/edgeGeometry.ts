@@ -1,5 +1,5 @@
 // The headless package, so the export renderer and the standalone viewer stay free of React.
-import { Position } from "@xyflow/system";
+import { Position, getSmoothStepPath } from "@xyflow/system";
 
 /** Axis-aligned box of a node in canvas coordinates. */
 export interface NodeBox {
@@ -20,6 +20,52 @@ export interface Anchor {
 export const SIDE_GAP = 24;
 /** How far a self-reference loops out of its node. */
 export const LOOP_REACH = 44;
+
+/** The three crow's foot ends: many, zero or many (a circle before the foot) and one. */
+export type RelationMarkerKind = "many" | "manyOptional" | "one";
+
+/** A marker drawing; every marker is {@link MARKER_HEIGHT} high and {@link MARKER_REF_Y} deep. */
+export interface RelationMarkerShape {
+  /** Width of the marker's box, in path units. */
+  width: number;
+  /** Point of the box that sits on the end of the path. */
+  refX: number;
+  orient: "auto" | "auto-start-reverse";
+  /** The strokes of the symbol. */
+  path: string;
+  /** The "zero" circle of an optional end, drawn in the canvas colour over the path. */
+  circle?: { cx: number; cy: number; r: number };
+}
+
+export const MARKER_HEIGHT = 14;
+export const MARKER_REF_Y = 7;
+
+const CROWS_FOOT = "M13,7 L1,1 M13,7 L1,7 M13,7 L1,13";
+
+/**
+ * Crow's foot notation, drawn once for the canvas, the SVG exporter and the standalone viewer.
+ * The "many" ends point into the path (`auto-start-reverse`) so the same shape serves as a
+ * start marker; the "one" bar sits at the end of the path.
+ */
+export const RELATION_MARKER_SHAPES: Readonly<Record<RelationMarkerKind, RelationMarkerShape>> = {
+  many: { width: 14, refX: 1, orient: "auto-start-reverse", path: CROWS_FOOT },
+  manyOptional: {
+    width: 22,
+    refX: 1,
+    orient: "auto-start-reverse",
+    path: CROWS_FOOT,
+    circle: { cx: 17, cy: 7, r: 3 },
+  },
+  one: { width: 14, refX: 13, orient: "auto", path: "M6,1 L6,13 M1,7 L13,7" },
+};
+
+/** The marker at the referencing end: "zero or many" when every key column accepts NULL. */
+export function startMarkerKind(isOptional: boolean): RelationMarkerKind {
+  return isOptional ? "manyOptional" : "many";
+}
+
+/** Corner radius and the room an edge keeps before it turns, the same on every surface. */
+const ROUTING = { borderRadius: 8, offset: 16 };
 
 /**
  * Attachment points of a relationship. Nodes stacked vertically connect through their facing
@@ -91,4 +137,31 @@ export function selfLoopPath(
   const reach = x + LOOP_REACH;
   const path = `M ${x},${top} C ${reach},${top} ${reach},${bottom} ${x},${bottom}`;
   return [path, reach - 4, (top + bottom) / 2];
+}
+
+/**
+ * Path of a relationship between two placed nodes and where its label sits: a loop when the
+ * table references itself, otherwise a smooth step between the anchors of the two boxes.
+ */
+export function relationPath(
+  source: NodeBox,
+  sourceOffsetY: number,
+  target: NodeBox,
+  targetOffsetY: number,
+  isSelfReference: boolean,
+): [string, number, number] {
+  if (isSelfReference) {
+    return selfLoopPath(source, sourceOffsetY, targetOffsetY);
+  }
+  const [from, to] = relationAnchors(source, sourceOffsetY, target, targetOffsetY);
+  const [path, labelX, labelY] = getSmoothStepPath({
+    sourceX: from.x,
+    sourceY: from.y,
+    sourcePosition: from.position,
+    targetX: to.x,
+    targetY: to.y,
+    targetPosition: to.position,
+    ...ROUTING,
+  });
+  return [path, labelX, labelY];
 }

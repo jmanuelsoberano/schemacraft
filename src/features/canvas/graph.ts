@@ -1,5 +1,6 @@
 import type { Edge, Node } from "@xyflow/react";
 
+import { entityKey } from "@/features/schema/entities";
 import type {
   Column,
   DetailLevel,
@@ -8,7 +9,7 @@ import type {
   SchemaSnapshot,
 } from "@/shared/contracts";
 
-import { NODE_WIDTH, entityKey, nodeHeight, rowsFor } from "./geometry";
+import { NODE_WIDTH, isCollapsible, nodeHeight, rowsFor } from "./geometry";
 import type { ColumnRow, EntityDescriptor } from "./geometry";
 
 /** What a table node renders. */
@@ -17,6 +18,8 @@ export interface EntityNodeData {
   rows: ColumnRow[];
   detailLevel: DetailLevel;
   isCollapsed: boolean;
+  /** Whether the node has rows to hide at this level; a header-only card shows no toggle. */
+  isCollapsible: boolean;
   /** Recently added by a refresh, highlighted for a moment. */
   isHighlighted: boolean;
   [key: string]: unknown;
@@ -99,6 +102,7 @@ export function buildEntityNodes(
         rows,
         detailLevel,
         isCollapsed,
+        isCollapsible: isCollapsible(entity, detailLevel),
         isHighlighted: highlighted.has(entity.key),
       },
     });

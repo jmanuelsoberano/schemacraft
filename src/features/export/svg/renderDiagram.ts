@@ -1,14 +1,22 @@
-import { getSmoothStepPath } from "@xyflow/system";
-
-import { LOOP_REACH, relationAnchors, selfLoopPath } from "@/features/canvas/edgeGeometry";
-import type { NodeBox } from "@/features/canvas/edgeGeometry";
+import {
+  LOOP_REACH,
+  MARKER_HEIGHT,
+  MARKER_REF_Y,
+  RELATION_MARKER_SHAPES,
+  relationPath,
+  startMarkerKind,
+} from "@/features/canvas/edgeGeometry";
+import type {
+  NodeBox,
+  RelationMarkerKind,
+  RelationMarkerShape,
+} from "@/features/canvas/edgeGeometry";
 import {
   HEADER_HEIGHT,
   NODE_WIDTH,
-  attachmentY,
   describeEntities,
-  entityKey,
   nodeHeight,
+  relationOffsets,
   rowCenterY,
   rowsFor,
 } from "@/features/canvas/geometry";
@@ -20,6 +28,7 @@ import {
   relationEdgeId,
 } from "@/features/canvas/graph";
 import { formatDataType } from "@/features/schema/dataType";
+import { entityKey } from "@/features/schema/entities";
 import type { CanvasState, DetailLevel, ForeignKey, SchemaSnapshot } from "@/shared/contracts";
 
 import { ICON_KEY, ICON_LINK, ICON_SYMBOLS, ICON_TABLE, ICON_VIEW } from "./icons";
@@ -41,9 +50,19 @@ export interface DiagramInput {
   canvas: CanvasState;
 }
 
+/**
+ * Translated words drawn into the diagram. The renderer has no catalogue of its own: the
+ * application passes its locale's text and the standalone viewer the one embedded with it.
+ */
+export interface DiagramLabels {
+  /** The label on a view card, "VIEW" in English. */
+  view: string;
+}
+
 export interface RenderOptions {
   detailLevel: DetailLevel;
   theme: ExportTheme;
+  labels: DiagramLabels;
   /** CSS placed before the diagram rules, typically `@font-face` declarations. */
   fontFaces?: string;
   /** Whether to paint the canvas colour behind the diagram; `true` by default. */
@@ -86,6 +105,11 @@ export const MARKER_MANY = "sc-many";
 export const MARKER_MANY_OPTIONAL = "sc-many-optional";
 export const MARKER_ONE = "sc-one";
 export const ACTIVE_SUFFIX = "-active";
+const MARKER_IDS: Readonly<Record<RelationMarkerKind, string>> = {
+  many: MARKER_MANY,
+  manyOptional: MARKER_MANY_OPTIONAL,
+  one: MARKER_ONE,
+};
 
 const HEADER_PADDING_LEFT = 10;
 const HEADER_PADDING_RIGHT = 8;
@@ -97,6 +121,10 @@ const GAP = 6;
 const TYPE_MAX_WIDTH = 110;
 const PILL_HEIGHT = 16;
 const PILL_PADDING = 6;
+/** The VIEW label: as high as the count pill, square-cornered so the two never read as one. */
+const LABEL_HEIGHT = 16;
+const LABEL_PADDING = 5;
+const LABEL_RADIUS = 4;
 const CORNER_RADIUS = 10;
 /** Space between the lowest node and the footnote, and the height of the footnote line. */
 const FOOTNOTE_GAP = 16;
@@ -233,17 +261,23 @@ function styles(palette: DiagramPalette, fontFaces: string, hasFootnote: boolean
     `.sc-background{fill:${palette.canvas}}`,
     `.sc-node-fill{fill:${palette.surfaceRaised}}`,
     `.sc-node-header{fill:${palette.surface}}`,
-    `.sc-view-header{fill:${palette.accentSubtle}}`,
+    // A view carries its own tint, icon colour and label, the same as the canvas card; the
+    // muted schema prefix falls short of AA on the tint, so it takes the secondary text colour.
+    `.sc-view-header{fill:${palette.viewSubtle}}`,
     `.sc-node-stroke{fill:none;stroke:${palette.border};stroke-width:1}`,
     `.sc-divider{stroke:${palette.border};stroke-width:1}`,
     `.sc-title{font-family:${MONO_FONT_STACK};font-size:12px;fill:${palette.text}}`,
     `.sc-title-schema{fill:${palette.textMuted}}`,
+    `.sc-view-schema{fill:${palette.textSecondary}}`,
     `.sc-title-name{font-weight:600}`,
     `.sc-count-pill{fill:${palette.surfaceSunken}}`,
     `.sc-count{font-family:${SANS_FONT_STACK};font-size:10px;font-weight:600;fill:${palette.textMuted};text-anchor:middle}`,
+    `.sc-kind-label{fill:${palette.view}}`,
+    `.sc-kind-label-text{font-family:${SANS_FONT_STACK};font-size:10px;font-weight:600;fill:${palette.onView};text-anchor:middle}`,
     `.sc-column{font-family:${SANS_FONT_STACK};font-size:12px;fill:${palette.text}}`,
     `.sc-type{font-family:${MONO_FONT_STACK};font-size:11px;fill:${palette.textMuted};text-anchor:end}`,
     `.sc-icon-kind{stroke:${palette.textMuted}}`,
+    `.sc-icon-view-kind{stroke:${palette.view}}`,
     `.sc-icon-key{stroke:${palette.warning};color:${palette.warning}}`,
     `.sc-icon-link{stroke:${palette.accentText}}`,
     `.sc-relation{fill:none;stroke:${palette.borderStrong};stroke-width:1.5}`,
@@ -262,56 +296,45 @@ function styles(palette: DiagramPalette, fontFaces: string, hasFootnote: boolean
   return `${fontFaces}${rules.join("")}`;
 }
 
-function marker(id: string, body: string, width: number, refX: number, orient: string): string {
+/** One `<marker>`; `suffix` picks the plain or the `-active` classes. */
+function marker(id: string, shape: RelationMarkerShape, suffix: string): string {
+  const circle = shape.circle
+    ? `<circle class="sc-marker-fill${suffix}" cx="${shape.circle.cx}" cy="${shape.circle.cy}" r="${shape.circle.r}"/>`
+    : "";
   return (
-    `<marker id="${id}" viewBox="0 0 ${width} 14" markerWidth="${width}" markerHeight="14" ` +
-    `refX="${refX}" refY="7" orient="${orient}" markerUnits="userSpaceOnUse">${body}</marker>`
+    `<marker id="${id}" viewBox="0 0 ${shape.width} ${MARKER_HEIGHT}" markerWidth="${shape.width}" markerHeight="${MARKER_HEIGHT}" ` +
+    `refX="${shape.refX}" refY="${MARKER_REF_Y}" orient="${shape.orient}" markerUnits="userSpaceOnUse">` +
+    `<path class="sc-marker${suffix}" d="${shape.path}"/>${circle}</marker>`
   );
 }
 
+/** The crow's foot markers of the canvas, then their accent-coloured `-active` variants. */
 function markers(): string {
-  const crowsFoot = 'd="M13,7 L1,1 M13,7 L1,7 M13,7 L1,13"';
-  const one = 'd="M6,1 L6,13 M1,7 L13,7"';
-  const circle = 'cx="17" cy="7" r="3"';
-  return [
-    marker(MARKER_MANY, `<path class="sc-marker" ${crowsFoot}/>`, 14, 1, "auto-start-reverse"),
-    marker(
-      MARKER_MANY_OPTIONAL,
-      `<path class="sc-marker" ${crowsFoot}/><circle class="sc-marker-fill" ${circle}/>`,
-      22,
-      1,
-      "auto-start-reverse",
-    ),
-    marker(MARKER_ONE, `<path class="sc-marker" ${one}/>`, 14, 13, "auto"),
-    marker(
-      MARKER_MANY + ACTIVE_SUFFIX,
-      `<path class="sc-marker-active" ${crowsFoot}/>`,
-      14,
-      1,
-      "auto-start-reverse",
-    ),
-    marker(
-      MARKER_MANY_OPTIONAL + ACTIVE_SUFFIX,
-      `<path class="sc-marker-active" ${crowsFoot}/><circle class="sc-marker-fill-active" ${circle}/>`,
-      22,
-      1,
-      "auto-start-reverse",
-    ),
-    marker(MARKER_ONE + ACTIVE_SUFFIX, `<path class="sc-marker-active" ${one}/>`, 14, 13, "auto"),
-  ].join("");
+  const kinds = Object.keys(RELATION_MARKER_SHAPES) as RelationMarkerKind[];
+  return ["", ACTIVE_SUFFIX]
+    .flatMap((suffix) =>
+      kinds.map((kind) => marker(MARKER_IDS[kind] + suffix, RELATION_MARKER_SHAPES[kind], suffix)),
+    )
+    .join("");
 }
 
 function icon(id: string, className: string, x: number, y: number, size: number): string {
   return `<use href="#${id}" class="${className}" x="${coordinate(x)}" y="${coordinate(y)}" width="${size}" height="${size}"/>`;
 }
 
-function renderEntity(item: PlacedEntity, measure: TextMeasurer, detailLevel: DetailLevel): string {
+function renderEntity(
+  item: PlacedEntity,
+  measure: TextMeasurer,
+  detailLevel: DetailLevel,
+  labels: DiagramLabels,
+): string {
   const { entity, rows, box } = item;
   const parts: string[] = [];
   const hasRows = rows.length > 0;
-  const headerClass = entity.kind === "view" ? "sc-view-header" : "sc-node-header";
+  const isView = entity.kind === "view";
+  const headerClass = isView ? "sc-view-header" : "sc-node-header";
   parts.push(
-    `<g class="sc-entity${entity.kind === "view" ? " sc-view" : ""}" data-entity="${escapeXml(entity.key)}" transform="translate(${coordinate(box.x)},${coordinate(box.y)})">`,
+    `<g class="sc-entity${isView ? " sc-view" : ""}" data-entity="${escapeXml(entity.key)}" transform="translate(${coordinate(box.x)},${coordinate(box.y)})">`,
   );
   parts.push(
     `<rect class="sc-node-fill" width="${NODE_WIDTH}" height="${coordinate(box.height)}" rx="${CORNER_RADIUS}"/>`,
@@ -328,12 +351,15 @@ function renderEntity(item: PlacedEntity, measure: TextMeasurer, detailLevel: De
     );
   }
 
-  // Header: kind icon, "schema." muted and the name in semibold, the column count in a pill.
+  // Header: kind icon, "schema." muted and the name in semibold, on a view the VIEW label, and
+  // the column count in a pill.
   const count = String(entity.columns.length);
   const pillWidth = Math.ceil(measure(count, COUNT_FONT)) + PILL_PADDING * 2;
   const pillX = NODE_WIDTH - HEADER_PADDING_RIGHT - pillWidth;
+  const labelWidth = isView ? Math.ceil(measure(labels.view, COUNT_FONT)) + LABEL_PADDING * 2 : 0;
+  const labelX = pillX - GAP - labelWidth;
   const titleX = HEADER_PADDING_LEFT + ICON_SIZE + GAP;
-  const titleMaxWidth = pillX - GAP - titleX;
+  const titleMaxWidth = (isView ? labelX : pillX) - GAP - titleX;
   const schema = `${entity.name.schema}.`;
   const schemaWidth = measure(schema, TITLE_FONT);
   let shownSchema = schema;
@@ -349,8 +375,8 @@ function renderEntity(item: PlacedEntity, measure: TextMeasurer, detailLevel: De
   }
   parts.push(
     icon(
-      entity.kind === "view" ? ICON_VIEW : ICON_TABLE,
-      "sc-icon-kind",
+      isView ? ICON_VIEW : ICON_TABLE,
+      isView ? "sc-icon-view-kind" : "sc-icon-kind",
       HEADER_PADDING_LEFT,
       (HEADER_HEIGHT - ICON_SIZE) / 2,
       ICON_SIZE,
@@ -358,9 +384,18 @@ function renderEntity(item: PlacedEntity, measure: TextMeasurer, detailLevel: De
   );
   parts.push(
     `<text class="sc-title" x="${titleX}" y="${coordinate(baseline(HEADER_HEIGHT / 2, TITLE_FONT.size))}">` +
-      `<tspan class="sc-title-schema">${escapeXml(shownSchema)}</tspan>` +
+      `<tspan class="${isView ? "sc-view-schema" : "sc-title-schema"}">${escapeXml(shownSchema)}</tspan>` +
       `<tspan class="sc-title-name">${escapeXml(shownName)}</tspan></text>`,
   );
+  if (isView) {
+    const labelY = (HEADER_HEIGHT - LABEL_HEIGHT) / 2;
+    parts.push(
+      `<rect class="sc-kind-label" x="${labelX}" y="${labelY}" width="${labelWidth}" height="${LABEL_HEIGHT}" rx="${LABEL_RADIUS}"/>`,
+    );
+    parts.push(
+      `<text class="sc-kind-label-text" x="${coordinate(labelX + labelWidth / 2)}" y="${coordinate(baseline(HEADER_HEIGHT / 2, COUNT_FONT.size))}">${escapeXml(labels.view)}</text>`,
+    );
+  }
   const pillY = (HEADER_HEIGHT - PILL_HEIGHT) / 2;
   parts.push(
     `<rect class="sc-count-pill" x="${pillX}" y="${pillY}" width="${pillWidth}" height="${PILL_HEIGHT}" rx="${PILL_HEIGHT / 2}"/>`,
@@ -414,25 +449,14 @@ function renderRelation(
   if (source === undefined || target === undefined) {
     return "";
   }
-  const firstPair = foreignKey.columnPairs[0];
-  const sourceOffsetY = attachmentY(source.rows, firstPair?.referencingColumn ?? "");
-  const targetOffsetY = attachmentY(target.rows, firstPair?.referencedColumn ?? "");
-  let path: string;
-  if (sourceKey === targetKey) {
-    [path] = selfLoopPath(source.box, sourceOffsetY, targetOffsetY);
-  } else {
-    const [from, to] = relationAnchors(source.box, sourceOffsetY, target.box, targetOffsetY);
-    [path] = getSmoothStepPath({
-      sourceX: from.x,
-      sourceY: from.y,
-      sourcePosition: from.position,
-      targetX: to.x,
-      targetY: to.y,
-      targetPosition: to.position,
-      borderRadius: 8,
-      offset: 16,
-    });
-  }
+  const [sourceOffsetY, targetOffsetY] = relationOffsets(foreignKey, source.rows, target.rows);
+  const [path] = relationPath(
+    source.box,
+    sourceOffsetY,
+    target.box,
+    targetOffsetY,
+    sourceKey === targetKey,
+  );
   const isOptional = isOptionalForeignKey(source.entity.columns, foreignKey);
   const classes = ["sc-relation", foreignKey.isEnabled ? "" : "sc-relation-disabled"]
     .filter((name) => name !== "")
@@ -440,7 +464,7 @@ function renderRelation(
   return (
     `<path class="${classes}" data-relation="${escapeXml(relationEdgeId(foreignKey))}" ` +
     `data-source="${escapeXml(sourceKey)}" data-target="${escapeXml(targetKey)}" ` +
-    `marker-start="url(#${isOptional ? MARKER_MANY_OPTIONAL : MARKER_MANY})" marker-end="url(#${MARKER_ONE})" d="${path}"/>`
+    `marker-start="url(#${MARKER_IDS[startMarkerKind(isOptional)]})" marker-end="url(#${MARKER_IDS.one})" d="${path}"/>`
   );
 }
 
@@ -482,7 +506,7 @@ export function renderDiagramSvg(input: DiagramInput, options: RenderOptions): R
   parts.push("</g>");
   parts.push('<g class="sc-entities">');
   for (const item of placed) {
-    parts.push(renderEntity(item, measure, options.detailLevel));
+    parts.push(renderEntity(item, measure, options.detailLevel, options.labels));
   }
   parts.push("</g>");
   if (footnote !== null) {

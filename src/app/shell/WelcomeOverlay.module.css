@@ -22,7 +22,7 @@
 }
 
 .logo {
-  filter: drop-shadow(0 8px 20px oklch(55% 0.19 278 / 0.35));
+  filter: drop-shadow(0 8px 20px var(--color-brand-glow));
 }
 
 .title {

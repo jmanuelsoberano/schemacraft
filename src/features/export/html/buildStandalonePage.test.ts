@@ -254,7 +254,13 @@ describe("buildStandalonePage", () => {
     });
     expect(page.startsWith('<!doctype html>\n<html lang="es" data-theme="dark">')).toBe(true);
     expect(page).toContain("<title>Shop &lt;/script&gt; · SchemaCraft</title>");
-    expect(page).toContain("<style>@font-face{font-family:Inter}body{margin:0}</style>");
+    // Fonts first, then the diagram palette for both themes, then the viewer's own rules.
+    const style = /<style>(.*?)<\/style>/su.exec(page)?.[1] ?? "";
+    expect(style.startsWith("@font-face{font-family:Inter}:root{--sc-canvas:#f6f7f9;")).toBe(true);
+    expect(style).toContain("--sc-view:#007475;");
+    expect(style).toContain(':root[data-theme="dark"]{--sc-canvas:#101117;');
+    expect(style.indexOf(':root[data-theme="dark"]')).toBeGreaterThan(style.indexOf(":root{"));
+    expect(style.endsWith("--sc-on-view:#061414;}body{margin:0}")).toBe(true);
     expect(page).toContain('<script id="schemacraft-data" type="application/json">');
     expect(page).toContain('<script>console.log("<\\/script>")</script>');
     expect(page).not.toContain('</script>")');

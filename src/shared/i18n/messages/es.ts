@@ -15,7 +15,7 @@ export const spanishMessages: MessageCatalog = {
   "action.layoutLayeredHorizontal": "Jerárquico, de izquierda a derecha",
   "action.layoutOrganic": "Orgánico",
   "action.layoutRadial": "Radial alrededor de la tabla seleccionada",
-  "action.fitView": "Ajustar el diagrama a la vista",
+  "action.fitView": "Ajustar el diagrama a la ventana",
   "action.showAll": "Mostrar todas las entidades",
   "action.collapseAll": "Contraer todas las tablas",
   "action.expandAll": "Expandir todas las tablas",
@@ -114,12 +114,14 @@ export const spanishMessages: MessageCatalog = {
   "viewMode.full.hint": "Todas las columnas y tipos",
 
   "sidebar.title": "Entidades",
-  "sidebar.search": "Buscar tablas",
+  "sidebar.search": "Buscar tablas y vistas",
   "sidebar.resize": "Cambiar el ancho del panel de entidades",
+  "sidebar.section.tables": "Tablas",
+  "sidebar.section.views": "Vistas",
   "sidebar.search.noMatches": 'Ninguna entidad coincide con "{query}"',
   "sidebar.empty.title": "Aún no hay entidades",
   "sidebar.empty.description":
-    "Conéctate a una base de datos o abre un proyecto .scraft para listar sus tablas aquí.",
+    "Conéctate a una base de datos o abre un proyecto .scraft para listar aquí sus tablas y vistas.",
   "sidebar.empty.database.title": "No hay tablas ni vistas",
   "sidebar.empty.database.description": "{database} todavía no tiene tablas ni vistas.",
   "sidebar.empty.selection.description":
@@ -131,6 +133,7 @@ export const spanishMessages: MessageCatalog = {
 
   "entity.table": "Tabla",
   "entity.view": "Vista",
+  "entity.view.label": "VISTA",
   "sidebar.center": "Centrar en {name}",
   "sidebar.hide": "Ocultar {name}",
   "sidebar.show": "Mostrar {name}",
@@ -146,18 +149,17 @@ export const spanishMessages: MessageCatalog = {
 
   "canvas.node.collapse": "Contraer",
   "canvas.node.expand": "Expandir",
-  "canvas.menu.center": "Centrar en la vista",
+  "canvas.menu.center": "Centrar en pantalla",
   "canvas.menu.hide": "Ocultar",
   "canvas.menu.isolateOne": "Aislar con sus relaciones directas",
   "canvas.menu.isolateTwo": "Aislar con relaciones, dos niveles",
-  "canvas.menu.showAll": "Mostrar todas las entidades",
   "canvas.layout.menu": "Disposición automática",
   "canvas.layout.running": "Disponiendo el diagrama…",
 
   "palette.title": "Paleta de comandos",
-  "palette.placeholder": "Escribe un comando o el nombre de una tabla…",
+  "palette.placeholder": "Escribe un comando, una tabla o una vista…",
   "palette.noResults": 'Nada coincide con "{query}"',
-  "palette.centerOn": "Centrar en la vista",
+  "palette.centerOn": "Centrar en pantalla",
 
   "statusBar.notConnected": "Sin conexión",
   "statusBar.connected": "{target} · {database}",

@@ -55,8 +55,18 @@
   border-radius: var(--radius-lg);
 }
 
+/* A view carries its own tint, icon colour and label; selection keeps the violet ring. */
 .view .header {
-  background: var(--color-accent-subtle);
+  background: var(--color-view-subtle);
+}
+
+.view .kindIcon {
+  color: var(--color-view);
+}
+
+/* The muted schema prefix falls short of AA on the view tint; the secondary text does not. */
+.view .schema {
+  color: var(--color-text-secondary);
 }
 
 .kindIcon {
@@ -64,6 +74,19 @@
   width: 14px;
   height: 14px;
   color: var(--color-text-muted);
+}
+
+/* Square corners against the round count pill, so the two badges never read as one. */
+.kindLabel {
+  flex: none;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--color-view);
+  color: var(--color-on-view);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
 }
 
 .title {

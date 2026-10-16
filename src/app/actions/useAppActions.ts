@@ -24,7 +24,6 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 
-import { focusEntitiesSearch } from "@/app/shell/entitiesSearch";
 import { useAboutStore } from "@/features/about/aboutStore";
 import { useAccessReportStore } from "@/features/access/accessReportStore";
 import {
@@ -34,6 +33,7 @@ import {
   showAllEntities,
 } from "@/features/canvas/canvasActions";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
+import { focusEntitiesSearch } from "@/features/canvas/entitiesSearch";
 import { useConnectionStore } from "@/features/connection/connectionStore";
 import { useExportStore } from "@/features/export/exportStore";
 import { useProjectStore } from "@/features/project/projectStore";

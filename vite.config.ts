@@ -113,5 +113,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
+    // A stylesheet imported as text (`?raw`) reaches the tests whole; vitest blanks CSS otherwise.
+    css: { include: [/\?raw$/u] },
   },
 });

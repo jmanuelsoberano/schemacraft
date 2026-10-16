@@ -1,36 +1,16 @@
-/* Standalone viewer: a single page with no external resources. Colours mirror the application tokens. */
+/*
+ * Standalone viewer: a single page with no external resources. Its colours are the `--sc-*`
+ * properties the exporter writes into the page from the application palette (viewerPaletteStyles),
+ * so this sheet declares none of its own apart from its two translucent shadows.
+ */
 :root {
   --sc-font-sans: Inter, "Segoe UI", system-ui, sans-serif;
   --sc-font-mono: "JetBrains Mono", Consolas, monospace;
-  --sc-canvas: #f6f7f9;
-  --sc-surface: #ffffff;
-  --sc-sunken: #f1f2f5;
-  --sc-border: #dcdee3;
-  --sc-border-strong: #c8cad3;
-  --sc-text: #1a1c26;
-  --sc-text-secondary: #525561;
-  --sc-text-muted: #777a85;
-  --sc-accent: #5d5ddd;
-  --sc-accent-subtle: #e6eaff;
-  --sc-accent-text: #443dbb;
-  --sc-warning: #dc8900;
   --sc-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   color-scheme: light;
 }
 
 :root[data-theme="dark"] {
-  --sc-canvas: #101117;
-  --sc-surface: #191a20;
-  --sc-sunken: #0d0e13;
-  --sc-border: #2c2d34;
-  --sc-border-strong: #40424a;
-  --sc-text: #e3e4ea;
-  --sc-text-secondary: #a2a4ac;
-  --sc-text-muted: #787a83;
-  --sc-accent: #7075ef;
-  --sc-accent-subtle: #272a4b;
-  --sc-accent-text: #acb6ff;
-  --sc-warning: #f4a437;
   --sc-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 }
@@ -73,7 +53,7 @@ body {
   margin: 0;
   padding: 6px 12px;
   border-bottom: 1px solid var(--sc-border);
-  background: var(--sc-sunken);
+  background: var(--sc-surface-sunken);
   color: var(--sc-text-secondary);
   font-size: 12px;
 }
@@ -159,6 +139,9 @@ body {
 }
 
 .sc-result {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
   padding: 6px 8px;
   border-radius: 4px;
   font-family: var(--sc-font-mono);
@@ -170,6 +153,27 @@ body {
 .sc-result.sc-result-active {
   background: var(--sc-accent-subtle);
   color: var(--sc-accent-text);
+}
+
+.sc-result-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The kind of each result, in the view colour for a view, as the application's palette shows it. */
+.sc-result-kind {
+  flex: none;
+  color: var(--sc-text-muted);
+  font-family: var(--sc-font-sans);
+  font-size: 11px;
+}
+
+.sc-result-kind-view,
+.sc-panel-kind-view {
+  color: var(--sc-view);
 }
 
 .sc-result-empty {
@@ -368,7 +372,7 @@ body {
   margin-left: 4px;
   padding: 0 5px;
   border-radius: 8px;
-  background: var(--sc-sunken);
+  background: var(--sc-surface-sunken);
   color: var(--sc-text-secondary);
   font-size: 10px;
   font-weight: 600;
@@ -377,18 +381,13 @@ body {
 }
 
 .sc-badge-key {
-  background: #fff1d6;
-  color: #8a5300;
+  background: var(--sc-warning-subtle);
+  color: var(--sc-warning-text);
 }
 
 .sc-badge-link {
   background: var(--sc-accent-subtle);
   color: var(--sc-accent-text);
-}
-
-:root[data-theme="dark"] .sc-badge-key {
-  background: #3d2c0d;
-  color: #f4a437;
 }
 
 .sc-list {

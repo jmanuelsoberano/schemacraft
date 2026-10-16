@@ -1,8 +1,8 @@
-import type { Point, SchemaSnapshot } from "@/shared/contracts";
+import { entityKey } from "@/features/schema/entities";
+import type { DetailLevel, Point, SchemaSnapshot } from "@/shared/contracts";
 
-import { NODE_WIDTH, entityKey, nodeHeight, rowsFor } from "../geometry";
+import { NODE_WIDTH, nodeHeight, rowsFor } from "../geometry";
 import type { EntityDescriptor } from "../geometry";
-import type { DetailLevel } from "@/shared/contracts";
 
 /** A node as the layout engines see it: an id and a box. */
 export interface LayoutNode {

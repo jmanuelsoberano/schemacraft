@@ -98,6 +98,24 @@ describe("buildEntityNodes", () => {
     expect(nodes[0]?.position).toEqual({ x: 0, y: 0 });
     expect([...visibleEntityKeys(entities, hidden)]).toEqual(["sales.Orders"]);
   });
+
+  it("tells which nodes have rows to hide, so a view at keys is a header-only card", () => {
+    const withView = describeEntities({
+      ...snapshot,
+      views: [{ name: { schema: "sales", name: "RecentOrders" }, columns: [column("OrderId")] }],
+    });
+    const atKeys = buildEntityNodes(withView, states, "keys");
+    expect(atKeys.map((node) => `${node.id}:${node.data.isCollapsible}`)).toEqual([
+      "dbo.Customers:true",
+      "sales.Orders:true",
+      "sales.RecentOrders:false",
+    ]);
+    expect(atKeys[2]?.height).toBe(38);
+    expect(buildEntityNodes(withView, states, "full")[2]?.data.isCollapsible).toBe(true);
+    expect(
+      buildEntityNodes(withView, states, "compact").every((node) => !node.data.isCollapsible),
+    ).toBe(true);
+  });
 });
 
 describe("buildRelationEdges", () => {

@@ -6,6 +6,7 @@ import { describeSnapshotFact } from "@/features/access/snapshotFacts";
 import { describeColumn, formatDataType } from "@/features/schema/dataType";
 import type { DefaultLabels } from "@/features/schema/dataType";
 import { definitionText, isUnknownDefinition } from "@/features/schema/definition";
+import { entityKey } from "@/features/schema/entities";
 import type {
   AvailableFact,
   CarriedFact,
@@ -25,7 +26,6 @@ import type {
   Index,
   IndexChange,
   PrimaryKey,
-  QualifiedName,
   SchemaDiff,
   SchemaSnapshot,
   TableChange,
@@ -51,10 +51,6 @@ const BADGE_CLASS: Record<ChangeKind, string | undefined> = {
   removed: styles.removed,
   changed: styles.changed,
 };
-
-function qualified(name: QualifiedName): string {
-  return `${name.schema}.${name.name}`;
-}
 
 function describePrimaryKey(key: PrimaryKey | null, t: Translator["t"]): string {
   return key === null ? t("review.value.none") : `${key.name} (${key.columns.join(", ")})`;
@@ -89,12 +85,12 @@ function describeForeignKey(key: ForeignKey): string {
   const pairs = key.columnPairs
     .map((pair) => `${pair.referencingColumn} → ${pair.referencedColumn}`)
     .join(", ");
-  return `${qualified(key.referencingTable)} → ${qualified(key.referencedTable)} (${pairs})`;
+  return `${entityKey(key.referencingTable)} → ${entityKey(key.referencedTable)} (${pairs})`;
 }
 
 function describeKeyToInvisibleTable(key: ForeignKeyToInvisibleTable, t: Translator["t"]): string {
   return t("review.foreignKey.invisibleTable", {
-    table: qualified(key.referencingTable),
+    table: entityKey(key.referencingTable),
     columns: key.columns.join(", "),
   });
 }
@@ -168,7 +164,7 @@ function foreignKeyPropertyValues(
       .join(", ");
   switch (property) {
     case "referencedTable":
-      return [qualified(before.referencedTable), qualified(after.referencedTable)];
+      return [entityKey(before.referencedTable), entityKey(after.referencedTable)];
     case "columns":
       return [pairs(before), pairs(after)];
     case "onDelete":
@@ -314,7 +310,7 @@ function TableItem({ change }: { change: TableChange }) {
     return (
       <li className={styles.item}>
         <Badge kind={change.kind} />
-        <span className={styles.name}>{qualified(change.name)}</span>
+        <span className={styles.name}>{entityKey(change.name)}</span>
         <span className={styles.meta}>{tCount("review.columns", change.columnCount)}</span>
       </li>
     );
@@ -322,7 +318,7 @@ function TableItem({ change }: { change: TableChange }) {
   return (
     <li className={styles.item}>
       <Badge kind="changed" />
-      <span className={styles.name}>{qualified(change.name)}</span>
+      <span className={styles.name}>{entityKey(change.name)}</span>
       <span className={styles.meta} />
       <ul className={styles.details}>
         <ColumnDetails changes={change.columns} />
@@ -347,7 +343,7 @@ function ViewItem({ change }: { change: ViewChange }) {
     return (
       <li className={styles.item}>
         <Badge kind={change.kind} />
-        <span className={styles.name}>{qualified(change.name)}</span>
+        <span className={styles.name}>{entityKey(change.name)}</span>
         <span className={styles.meta}>{tCount("review.columns", change.columnCount)}</span>
       </li>
     );
@@ -355,7 +351,7 @@ function ViewItem({ change }: { change: ViewChange }) {
   return (
     <li className={styles.item}>
       <Badge kind="changed" />
-      <span className={styles.name}>{qualified(change.name)}</span>
+      <span className={styles.name}>{entityKey(change.name)}</span>
       <span className={styles.meta} />
       <ul className={styles.details}>
         <ColumnDetails changes={change.columns} />
@@ -480,7 +476,7 @@ function NotCheckedSection({ facts }: { facts: readonly CarriedFact[] }) {
     <Section title={t("review.section.notChecked")} icon={ShieldQuestionMark}>
       {facts.map((entry) => (
         <li key={JSON.stringify([entry.object, entry.fact])} className={styles.factItem}>
-          <span className={styles.name}>{qualified(entry.object)}</span>
+          <span className={styles.name}>{entityKey(entry.object)}</span>
           <span className={styles.meta}>
             {t("access.report.carried.entry", {
               fact: describeSnapshotFact(entry.fact, t),
@@ -500,7 +496,7 @@ function NowAvailableSection({ facts }: { facts: readonly AvailableFact[] }) {
     <Section title={t("review.section.nowAvailable")} icon={Sparkles}>
       {facts.map((entry) => (
         <li key={JSON.stringify([entry.object, entry.fact])} className={styles.factItem}>
-          <span className={styles.name}>{qualified(entry.object)}</span>
+          <span className={styles.name}>{entityKey(entry.object)}</span>
           <span className={styles.meta}>{describeSnapshotFact(entry.fact, t)}</span>
         </li>
       ))}
@@ -566,14 +562,14 @@ export function ReviewChangesPanel({ diff, capture }: ReviewChangesPanelProps) {
       {diff.tables.length > 0 ? (
         <Section title={t("review.section.tables")}>
           {diff.tables.map((change) => (
-            <TableItem key={qualified(change.name)} change={change} />
+            <TableItem key={entityKey(change.name)} change={change} />
           ))}
         </Section>
       ) : null}
       {diff.views.length > 0 ? (
         <Section title={t("review.section.views")}>
           {diff.views.map((change) => (
-            <ViewItem key={qualified(change.name)} change={change} />
+            <ViewItem key={entityKey(change.name)} change={change} />
           ))}
         </Section>
       ) : null}
@@ -583,7 +579,7 @@ export function ReviewChangesPanel({ diff, capture }: ReviewChangesPanelProps) {
             const key = change.kind === "changed" ? change.after : change.key;
             return (
               <ForeignKeyItem
-                key={`${qualified(key.referencingTable)}.${key.name}`}
+                key={`${entityKey(key.referencingTable)}.${key.name}`}
                 change={change}
               />
             );
@@ -592,7 +588,7 @@ export function ReviewChangesPanel({ diff, capture }: ReviewChangesPanelProps) {
             const key = change.kind === "changed" ? change.after : change.key;
             return (
               <KeyToInvisibleTableItem
-                key={`invisible:${qualified(key.referencingTable)}.${key.name}`}
+                key={`invisible:${entityKey(key.referencingTable)}.${key.name}`}
                 change={change}
               />
             );

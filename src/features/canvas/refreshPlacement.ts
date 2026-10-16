@@ -1,6 +1,7 @@
+import { entityKey } from "@/features/schema/entities";
 import type { CanvasState, SchemaSnapshot } from "@/shared/contracts";
 
-import { describeEntities, entityKey } from "./geometry";
+import { describeEntities } from "./geometry";
 import { visibleEntityKeys } from "./graph";
 import { buildLayoutInput, placeNearRelated } from "./layouts";
 

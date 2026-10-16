@@ -31,17 +31,17 @@ schemacraft/
 │   ├── app/                   composition root: shell, actions, palette, global styles, dev hooks
 │   │   ├── actions/           action registry, keyboard shortcuts, action buttons
 │   │   ├── palette/           command palette over the action registry
-│   │   ├── shell/             top bar, entities sidebar, diagram canvas, status bar, shell guards
-│   │   └── styles/            design tokens and base styles
+│   │   ├── shell/             top bar, status bar, welcome overlay, layout menu, sidebar resizer, shell guards
+│   │   └── styles/            design tokens, base styles and the test that keeps every stylesheet on tokens
 │   ├── features/              one folder per product capability
 │   │   ├── about/             About dialog
 │   │   ├── access/            partial-access chip and bar, access report, GRANT script
-│   │   ├── canvas/            entity nodes, relation edges, layouts and their worker, geometry
+│   │   ├── canvas/            diagram canvas, entities panel, nodes, edges and markers, layouts and their worker, geometry
 │   │   ├── connection/        connection dialog, history, flow store, progress, change review
 │   │   ├── export/            export dialog and store, SVG renderer, standalone HTML packaging
 │   │   ├── preferences/       mirror of the preferences file: history and recent projects
 │   │   ├── project/           open project store, open/save flows, unsaved-changes guard, undo
-│   │   └── schema/            entity list helpers, data types, expression texts and coverage
+│   │   └── schema/            entity identity and kinds, entity lists, data types, expression texts, coverage
 │   ├── shared/                cross-cutting modules
 │   │   ├── brand/             logo and author credits
 │   │   ├── contracts/         TypeScript types generated from Rust (ts-rs)
@@ -60,8 +60,9 @@ schemacraft/
 
 Dependencies only point inwards: `src-tauri` depends on `schemacraft-core`, never the other way
 round. In the frontend, `app/` composes `features/`, which build on `shared/`; `shared/` never
-imports from `app/` or `features/`, and only `src/shared/ipc` imports the Tauri API, for commands,
-dialogs and the window alike. ESLint enforces these rules (ADR-031).
+imports from `app/` or `features/`, `features/schema` imports only `shared/` and itself, and only
+`src/shared/ipc` imports the Tauri API, for commands, dialogs and the window alike. ESLint
+enforces these rules (ADR-031, ADR-037).
 
 ## Decisions
 
@@ -120,6 +121,15 @@ ask of users without a Pro subscription; it is styled to blend with the canvas.
 All colours, type sizes, spacing, radii and motion live as custom properties in
 `src/app/styles/tokens.css`. Colours are declared once with `light-dark()`; the theme is chosen via
 `color-scheme` on the root element (`system`, `light` or `dark`). Components use CSS Modules.
+
+Since 1.1 no stylesheet other than `tokens.css` writes a theme colour. The tones that components once
+declared for themselves are tokens: the subtle and border colours of the four alert tones, the
+overlays, the danger ring, the highlights on the accent colour and the brand glow, together with
+the view tokens (`--color-view`, `--color-view-subtle`, `--color-on-view`, ADR-036) and
+`--color-warning-text`. CSS Modules and the viewer's stylesheet use `var(...)` for every theme
+colour, and `src/app/styles/tokens.test.ts` fails on a raw hex or `oklch()` colour in any of them
+(ADR-037); the viewer's two shadows (`--sc-shadow` and the pressed-button shadow) stay translucent
+black in `viewer.css`, the one colour the test does not police.
 
 Why: one token set means light and dark cannot drift, native controls and scrollbars follow the
 theme automatically, and there is no flash on startup because the system preference applies
@@ -362,8 +372,12 @@ at the row of its first column pair on each table. Anchors (`edgeGeometry.ts`) f
 nodes: tables stacked vertically connect through their facing top and bottom edges, tables side
 by side through their facing sides at the key row, overlapping tables leave through the same
 side and bend around, and a self-reference loops out of the right side. Crow's foot markers are
-SVG markers defined once (`RelationMarkers.tsx`) and painted with `context-stroke`, so they
-inherit the colour and the emphasis of their edge.
+described once as data, `RELATION_MARKER_SHAPES` in `edgeGeometry.ts` (ADR-037):
+`RelationMarkers.tsx` renders them as SVG markers painted with `context-stroke`, so they inherit
+the colour and the emphasis of their edge, and the exporter renders the same table.
+`relationPath` routes every edge with one set of smooth-step options or draws the self-reference
+loop, `relationOffsets` picks the attachment row at each end, and `isCollapsible` says whether a
+card has rows to hide at a detail level, which is when it shows a collapse toggle.
 
 Why: Step 5 renders the same diagram to SVG, HTML and PDF without a browser layout pass. When
 geometry is a function of the project file, the export is the canvas, pixel for pixel, and the
@@ -417,13 +431,17 @@ code path, and Step 5 can reuse the strategies without a canvas.
 
 The export never screenshots the DOM. `src/features/export/svg/renderDiagram.ts` builds an SVG
 document from the project data with the geometry of ADR-020 (`geometry.ts`, `edgeGeometry.ts`)
-and the same crow's foot markers, so the file is the canvas drawn again: the visible entities at
-their positions, collapsed ones collapsed, at the chosen detail level and theme. Colours are the
-design tokens converted once to sRGB hex (`palette.ts`), because renderers outside the browser
-understand neither `oklch()` nor `light-dark()`; styles are plain class rules without
-combinators, the subset every SVG consumer shares. Text stays text, selectable in SVG and PDF;
-names that do not fit are shortened with an ellipsis, measured with a canvas in the webview and
-estimated in tests. The renderer is deterministic for a given input, which the unit tests check.
+and the marker table of `edgeGeometry.ts`, so the file is the canvas drawn again: the visible
+entities at their positions, collapsed ones collapsed, at the chosen detail level and theme, with
+views marked as on the canvas (ADR-036). Colours are the design tokens converted to sRGB hex
+(`palette.ts`), because renderers outside the browser understand neither `oklch()` nor
+`light-dark()`; a test recomputes the conversion, so the palette cannot drift from `tokens.css`
+(ADR-037). Styles are plain class rules without combinators, the subset every SVG consumer
+shares. The renderer holds no text of its own: the caller passes the labels it needs already
+translated (`RenderOptions.labels`, today the VIEW label), so the exports speak the interface
+language and the viewer its own. Text stays text, selectable in SVG and PDF; names that do not
+fit are shortened with an ellipsis, measured with a canvas in the webview and estimated in tests.
+The renderer is deterministic for a given input, which the unit tests check.
 
 Why: the PRD asks for continuous vector output with selectable text that matches the screen.
 One renderer, shared with the standalone viewer, keeps the drawing rules in a single place.
@@ -453,11 +471,15 @@ The HTML export embeds the visible part of the schema as JSON (never the server,
 server version or the access probe: only the database name, the objects on the diagram, their
 positions and the verdict on the login's access, ADR-034) together with a small vanilla
 TypeScript viewer (`src/viewer`) that draws with the renderer of ADR-023 in the browser: pan and
-zoom, the three detail levels, search, neighbour highlighting, a detail
-panel per table and light and dark themes. A plugin in `vite.config.ts` bundles the viewer on
-demand into a virtual module (`virtual:schemacraft-viewer`), so the application build stays one
-command and the viewer never pulls React or the application stores. Fonts are embedded as
-`@font-face` data URLs while "Embed fonts" stays on, as in SVG, adding about 125 KB.
+zoom, the three detail levels, a search whose results name the kind of each entity, neighbour
+highlighting, a detail panel per table and light and dark themes. Its colours are the
+application's: `buildStandalonePage` writes the palette of ADR-023 into the page as `--sc-*`
+custom properties for both themes, ahead of the viewer's stylesheet, which therefore declares no
+colour of its own beyond its shadows (ADR-037). A plugin in `vite.config.ts` bundles the viewer on
+demand into a
+virtual module (`virtual:schemacraft-viewer`), so the application build stays one command and
+the viewer never pulls React or the application stores. Fonts are embedded as `@font-face` data
+URLs while "Embed fonts" stays on, as in SVG, adding about 125 KB.
 
 Why: the user chose the full viewer over pre-rendered pictures; it keeps the file lighter for
 large schemas and lets the reader explore. Sharing the renderer avoids a second drawing
@@ -560,8 +582,15 @@ imports the viewer. Only `src/shared/ipc` may import `@tauri-apps/*`; the rest o
 reaches commands, dialogs, the window (`nativeWindow.ts`) and the runtime check (`runtime.ts`)
 through it. Code that several features need moves down into `shared/` (brand, error
 presentation), and code that composes the application moves up into `app/` (the command
-palette). Features may still use each other's public modules where one builds on the other, such
-as canvas and project; the architecture page lists those edges.
+palette). Code that is a feature's behaviour moves out of the shell into its feature: the diagram
+canvas, the entities panel and the entities search live in `features/canvas`, and `AppShell`
+only places them, handing over what belongs to the shell as props: the welcome screen
+(`emptyState`), the development hook (`onFlowInit`), the access bar (`notice`) and the registry's
+show-all command for the context menu. Features may still use each other's public modules where
+one builds on the other, such as canvas and project; the architecture page lists those edges.
+`features/schema` is the exception in the other direction: a second lint rule lets it import only
+`shared/` and itself, so every feature and the viewer can read entity identity from it without a
+cycle (ADR-037).
 
 Why: rules that live only in a document erode with every change. A lint error at the import names
 the rule and the way out, in the editor and in CI, so the structure holds as features are added.
@@ -708,6 +737,94 @@ Why: format 2 is a one-way door for 1.0 users, so the doors after it should open
 numbers let a later version add facts without locking 1.1 out, opening read-only keeps an older
 version from destroying what it does not understand, and migrations on raw JSON keep today's
 types free of yesterday's shapes.
+
+### ADR-036: Tables and views are told apart by section, label, icon and colour
+
+A database view is drawn as a card like a table, and 1.0 told them apart only by a tint on the
+header and a grid icon, which a grayscale print and a quick glance both lost. Since 1.1 the
+distinction is made in several ways at once, everywhere an entity appears.
+
+The entities panel (`features/canvas/EntitiesSidebar.tsx`) groups the entities by schema and,
+inside each schema, in a Tables and a Views section with a count. A level that distinguishes
+nothing is left out: one schema, no schema headers; one kind, no kind headers. The shape is
+decided on the unfiltered list (`entityListShape` in `features/schema/entities.ts`), so the panel
+keeps its structure while the user types. Headers are buttons with `aria-expanded`; a schema or
+a section collapses for the session only, never into storage, and while a search is active
+everything is expanded and the toggles are disabled, so a match is never hidden in a collapsed
+section. An absent kind omits its level the same way, and under partial coverage the single
+footer of ADR-034 stays the honest marker, so an omitted Views section never claims "none".
+
+On the canvas a view carries a solid VIEW label (VISTA in Spanish, key `entity.view.label`)
+between its name and the column count, the Lucide Glasses icon, the convention of SQL Server
+Management Studio, and the `--color-view` tokens, a teal (hue 195) well apart from the violet of
+selection; no dashed border and no italics. The schema prefix on the tinted header uses
+`--color-text-secondary`, so the text keeps AA contrast. At the Keys level a view has no key
+rows, so it is a header-only compact card with the label and its count: the same 38 px box as
+before, which leaves saved layouts and `spreadForDetailLevel` untouched. The collapse chevron
+shows only when `isCollapsible` (ADR-020) finds rows to hide, and the minimap tints views through
+React Flow's `--xy-minimap-node-background-color`. The SVG renderer draws the same header (view
+tint, label pill, Glasses symbol, secondary schema text) with the label passed in as
+`RenderOptions.labels.view`, which `exportStore` translates in the interface language, so SVG,
+PDF and PNG match the canvas; the HTML viewer passes its own `label.view`, tested equal to the
+application's, and names the kind next to every search result and in its detail panel. The
+command palette shows a kind icon and a Table or View label on every entity row.
+
+The word "view" therefore means a database view and nothing else in the interface, in both
+languages: the viewport commands read "Fit diagram to window" and "Center on screen" ("Ajustar el
+diagrama a la ventana", "Centrar en pantalla"), and compact, keys and full are detail levels.
+
+Why: WCAG 1.4.1 asks that colour never be the only signal; a label survives a grayscale print,
+and a label plus an icon survives a glance. The selection ring stays violet and the view tint
+teal, so the two never blend. Deciding the levels on the unfiltered list keeps the panel from
+reshaping on every keystroke, and keeping the box of a view unchanged keeps every existing
+project opening exactly as it did.
+
+### ADR-037: Each drawing rule has one home, and a test keeps it there
+
+Three rules of the diagram had drifted into copies: the `schema.name` identity of an entity and
+its kind lived in four modules; the crow's foot markers and the smooth-step routing were written
+once for the canvas and once for the SVG renderer; and the colours existed as `oklch()` tokens,
+as hand-converted hex in `palette.ts` and again in `viewer.css`, with stray `oklch()` values in
+several CSS Modules. Each rule now has one home, and where a rule can be checked by a machine, a
+lint rule or a test keeps it there.
+
+Entity identity: `src/features/schema/entities.ts` is the only module that spells `EntityKind`,
+`ENTITY_KINDS`, `entityKey` and the entity list (`listEntities`, `groupEntities`,
+`filterEntityGroups`, `countEntities`, `entityListShape`). The canvas, the command palette, the
+status bar, the review panel, the access report, the exports and the viewer import them from
+there; `shared/ipc`, which may not import features, compares names field by field where it filters
+canvas nodes (`previewProjectBackend.refreshProjectContent`), and the DEV-only preview fixture
+keeps a `Map` key of its own (`nameKey` in `previewAccess.ts`) that never stands in for the
+`schema.name` identity string. ESLint makes `features/schema` a leaf among the features: it may
+import only `shared/` and itself (ADR-031), so the viewer bundle can always take it and no entity
+helper can grow a dependency on a store.
+
+Markers and routing: `canvas/edgeGeometry.ts` holds `RELATION_MARKER_SHAPES` (the width,
+reference point, orientation, path and optional circle of each marker kind), `MARKER_HEIGHT`,
+`MARKER_REF_Y`, `startMarkerKind` and `relationPath`, which routes an edge with one set of
+smooth-step options or draws the self-reference loop; `geometry.ts` holds `relationOffsets`, the
+row at which each end attaches. `RelationMarkers.tsx` renders its `<marker>` elements from the
+table under the ids of `canvas/relationMarkerIds.ts`, and `RelationEdge.tsx` and
+`renderDiagram.ts` call the same functions. The refactor was checked by comparing the renderer's
+output byte for byte before and after it.
+
+Colours: `src/app/styles/tokens.css` is the only place a theme colour is written (ADR-006).
+`palette.ts` is its sRGB derivation, and `PALETTE_TOKENS` names the token each entry converts;
+`src/app/styles/tokens.test.ts` redoes the OKLab conversion and fails on any drift. The same test
+reads every `*.module.css` and `viewer.css` as text, which vitest hands through only for `?raw`
+imports (`test.css.include` in `vite.config.ts`), checks that it read them, and fails on a raw
+hex or `oklch()` colour (`url(#id)` references and relative `oklch(from ...)` colours excepted).
+`buildStandalonePage` writes the palette into the HTML as `--sc-*` custom properties for both
+themes (`viewerPaletteStyles`), so `viewer.css` holds no colour of its own beyond its two
+translucent shadows, which the test does not police. A new colour is a
+token first and then, when an export or the viewer needs it, a `DiagramPalette` entry with its
+`PALETTE_TOKENS` line; the test's failure message prints the expected hex.
+
+Why: a copy that is "kept in step" by hand is a bug waiting for its second editor, and the
+viewer's key badge had already drifted from the application's warning colour. One module per
+rule, a lint rule where a module boundary carries the rule and a test where a value does, keep
+the canvas, the exports and the viewer the same diagram without anyone having to remember to
+sync them.
 
 ## Milestones
 

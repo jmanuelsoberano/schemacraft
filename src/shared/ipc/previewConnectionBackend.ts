@@ -379,7 +379,8 @@ function withHiddenTexts(source: Table): Table {
  * What an inspection of the fixture returns for a login: the objects it sees inside the
  * scope, the texts it may read, and the keys split as the Rust assembly splits them. A key
  * whose referenced table the login sees outside the scope is dropped; one whose referenced
- * table it cannot see is kept apart. Views are filtered by `includeViews` only.
+ * table it cannot see is kept apart. Views follow the schema scope like tables and are left
+ * out altogether when `includeViews` is off.
  */
 export function previewSnapshot(
   database: string,
@@ -397,7 +398,9 @@ export function previewSnapshot(
     .filter((item) => seesSchema(login, item.name.schema) && inScope(item.name.schema))
     .map((item) => (grantIn(login, item.name.schema).definitions ? item : withHiddenTexts(item)));
   const views = options.includeViews
-    ? fixture.views.filter((item) => seesSchema(login, item.name.schema))
+    ? fixture.views.filter(
+        (item) => seesSchema(login, item.name.schema) && inScope(item.name.schema),
+      )
     : [];
 
   const included = new Set(tables.map((item) => nameKey(item.name)));

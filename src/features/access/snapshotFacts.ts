@@ -1,10 +1,5 @@
-import type { QualifiedName, SnapshotFact } from "@/shared/contracts";
+import type { SnapshotFact } from "@/shared/contracts";
 import type { Translator } from "@/shared/i18n/useI18n";
-
-/** `schema.name`, the way lists and reports name an object. */
-export function qualifiedName(name: QualifiedName): string {
-  return `${name.schema}.${name.name}`;
-}
 
 /**
  * Which fact of an object a carried or newly available entry is about, e.g. "Table",

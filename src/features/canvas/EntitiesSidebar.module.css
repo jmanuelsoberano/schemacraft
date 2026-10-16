@@ -96,41 +96,105 @@
 }
 
 .groups,
+.sections,
 .entities {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.group {
+.group,
+.section {
   padding-bottom: var(--space-2);
 }
 
-.groupHeader {
+.group .section:last-child {
+  padding-bottom: 0;
+}
+
+/*
+ * Group and section headers stick while their rows scroll under them; inside a schema group the
+ * kind headers sit just below the schema header. Each is a button that folds its list.
+ */
+.sectionHeader {
   position: sticky;
-  top: 0;
   z-index: 1;
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  height: 28px;
+  width: 100%;
   padding: 0 var(--space-4);
+  border: 0;
   background: var(--color-surface);
+  color: var(--color-text-muted);
+  font: inherit;
   font-size: var(--text-xs);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
+  text-align: left;
+  cursor: pointer;
 }
 
-.groupName {
+.sectionHeader:focus-visible {
+  outline-offset: -2px;
+}
+
+.sectionHeader:hover:not(:disabled) .sectionName {
+  color: var(--color-text);
+}
+
+/* Locked during a search: everything is open, so the chevron rests. */
+.sectionHeader:disabled {
+  cursor: default;
+}
+
+.sectionHeader:disabled .chevron {
+  opacity: 0.4;
+}
+
+.schemaHeader {
+  top: 0;
+  z-index: 2;
+  height: 28px;
+}
+
+.kindHeader {
+  top: 0;
+  height: 24px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.nested .kindHeader {
+  top: 28px;
+}
+
+.chevron {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  transition:
+    transform var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard);
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+.sectionName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schemaHeader .sectionName {
   font-family: var(--font-mono);
-  letter-spacing: 0;
-  text-transform: none;
   color: var(--color-text-secondary);
 }
 
-.groupCount {
+.sectionCount {
+  flex: none;
   font-variant-numeric: tabular-nums;
 }
 
@@ -216,6 +280,10 @@
   width: 14px;
   height: 14px;
   color: var(--color-text-muted);
+}
+
+.viewIcon {
+  color: var(--color-view);
 }
 
 .entityName {
