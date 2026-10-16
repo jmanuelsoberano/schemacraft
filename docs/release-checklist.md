@@ -2,7 +2,8 @@
 
 How a SchemaCraft release is verified against the acceptance criteria of the PRD (section 5),
 what CI covers and what is checked by hand before a draft release is published. The automated
-parts run on every push (`ci.yml`) and on every tag (`release.yml`).
+parts run on every pull request and push to `main` (`ci.yml`, sized to the change, ADR-033) and
+on every tag (`release.yml`).
 
 ## Acceptance criteria
 
@@ -21,7 +22,8 @@ parts run on every push (`ci.yml`) and on every tag (`release.yml`).
 
 ## Automated on every tag
 
-- The tag matches `version` in `package.json` (and therefore in `Cargo.toml`).
+- The tag points at a commit on `main` and matches `version` in `package.json` and in
+  `Cargo.toml`.
 - The Rust toolchain is the one pinned in `rust-toolchain.toml`, the same one used locally;
   bumping it is a deliberate change that runs through the gates first.
 - Frontend and Rust quality gates, generated contracts up to date.

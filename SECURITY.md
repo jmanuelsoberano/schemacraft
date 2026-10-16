@@ -24,3 +24,7 @@ problem is confirmed.
 - SchemaCraft only talks to the SQL Server you point it at. It sends no telemetry and contacts no
   other network service; the only web page it ever opens, on request, is Microsoft's WebView2
   download page when the runtime is missing.
+- Setting the `SCHEMACRAFT_REMOTE_DEBUGGING_PORT` environment variable opens a Chrome DevTools
+  Protocol port on the window, reachable from this computer only, so automated tests can drive
+  the built executable. Leave it unset in normal use: whoever can reach that port controls the
+  window.

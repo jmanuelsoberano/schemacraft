@@ -27,7 +27,6 @@
       "canvas",
       "connection",
       "export",
-      "palette",
       "preferences",
       "project",
       "schema"
@@ -48,7 +47,7 @@
       "preferencesBackend.ts",
       "projectBackend.ts"
     ],
-    "adrCount": 30
+    "adrCount": 33
   },
   "en": {
     "overview": {
@@ -56,7 +55,7 @@
       "oneLiner": "A Windows desktop app that reads a SQL Server catalog, draws it as an editable ER diagram, saves it as a .scraft file and exports it to SVG, HTML, PNG and PDF.",
       "paragraphs": [
         "SchemaCraft is a Tauri 2 app. The UI is React 19 and TypeScript running in WebView2. All disk, network and OS work is done in Rust. The Rust side has two parts: a thin host (src-tauri) that exposes 20 IPC commands, and a framework-free library (crates/schemacraft-core) that holds the real logic.",
-        "Dependencies point one way: frontend -> IPC -> host -> core -> external systems. The rule is that the frontend reaches Rust only through typed backends in src/shared/ipc. The one exception is useProjectWindow, which calls the Tauri window API directly for the title and the close guard. Commands are thin adapters: they resolve inputs, call the core and map errors, with no domain logic. The core knows nothing about Tauri or the UI. The types that cross the boundary are written once in Rust and generated as TypeScript with ts-rs.",
+        "Dependencies point one way: frontend -> IPC -> host -> core -> external systems. The frontend reaches Rust and the window only through src/shared/ipc, the one folder that imports the Tauri API, and ESLint enforces the layer rules (ADR-031). Commands are thin adapters: they resolve inputs, call the core and map errors, with no domain logic, and they keep blocking work off the main thread (ADR-032). The core knows nothing about Tauri or the UI. The types that cross the boundary are written once in Rust and generated as TypeScript with ts-rs.",
         "SchemaCraft has no database of its own. SQL Server is only read, with fixed SELECT queries over sys.* views. What lasts lives in four places: .scraft files the user picks, preferences.json in %APPDATA%\\com.jmanuelsoberano.schemacraft, passwords in Windows Credential Manager, and two localStorage keys for UI conveniences. Everything else is memory only."
       ]
     },
@@ -117,8 +116,15 @@
             "id": "action-registry",
             "name": "Action registry and shortcuts",
             "path": "src/app/actions",
-            "responsibility": "22 AppActions (id, labelKey, icon, shortcut, isAvailable, run) built in useAppActions.ts. useKeyboardShortcuts.ts routes keys in the capture phase; the first match wins. The toolbar, the menus, the welcome screen and the command palette all read this registry.",
+            "responsibility": "22 AppActions (id, labelKey, icon, shortcut, isAvailable, unavailableReason, run) built in useAppActions.ts. A disabled action says why in its tooltip: no project, a layout running, nothing hidden, nothing to undo or redo. useKeyboardShortcuts.ts routes keys in the capture phase; the first match wins. The toolbar, the menus, the welcome screen and the command palette all read this registry.",
             "patterns": ["Command / single registry (ADR-008)", "Platform-neutral mod key"]
+          },
+          {
+            "id": "command-palette",
+            "name": "Command palette",
+            "path": "src/app/palette",
+            "responsibility": "Ctrl+K palette over every registry action and every entity. paletteSearch.ts ranks results. It lives in app/ because it reads the action registry.",
+            "patterns": ["Reads the action registry"]
           },
           {
             "id": "entities-search",
@@ -131,7 +137,7 @@
             "id": "desktop-guards",
             "name": "Desktop shell guards",
             "path": "src/app/shell/useDesktopShellGuards.ts",
-            "responsibility": "Inside Tauri only: blocks the browser context menu and dragstart outside editable fields, and middle-click autoscroll everywhere (ADR-026).",
+            "responsibility": "Inside the desktop app only (isDesktopRuntime from shared/ipc): blocks the browser context menu and dragstart outside editable fields, and middle-click autoscroll everywhere (ADR-026).",
             "patterns": ["Environment-gated capture-phase listeners"]
           },
           {
@@ -140,13 +146,6 @@
             "path": "src/app/styles",
             "responsibility": "tokens.css holds every token; colours are written once with light-dark() in oklch. base.css holds the reset, focus ring, reduced motion and React Flow theming.",
             "patterns": ["Design tokens + CSS Modules (ADR-006)"]
-          },
-          {
-            "id": "brand",
-            "name": "Brand",
-            "path": "src/app/brand",
-            "responsibility": "Logo.tsx and credits.ts (DEVELOPER_NAME 'Manuel Soberano', REPOSITORY_URL).",
-            "patterns": ["Constants module"]
           },
           {
             "id": "dev-hooks",
@@ -160,7 +159,7 @@
       {
         "id": "shared",
         "name": "Frontend: shared",
-        "summary": "Code every feature may use. It never imports from src/app or src/features.",
+        "summary": "Code every feature may use. It never imports from src/app or src/features, and ESLint enforces it (ADR-031).",
         "path": "src/shared",
         "technologies": [
           "zustand 5 (persist)",
@@ -173,12 +172,19 @@
             "id": "shared-ipc",
             "name": "IPC backends and resolver",
             "path": "src/shared/ipc",
-            "responsibility": "One typed backend per area: connection, project, preferences, credentials, export. Each has a Tauri, an unavailable and a DEV-only preview implementation, picked by createBackendResolver (connection still has its own resolver). toOperationError normalises every rejection. appInfo.ts and the useAppInfo hook wrap get_app_info; windowTheme.ts wraps setTheme.",
+            "responsibility": "The only folder that imports the Tauri API. One typed backend per area (connection, project, preferences, credentials, export), each with a Tauri, an unavailable and a DEV-only preview implementation picked by createBackendResolver. Every command goes through invokeCommand, which normalises rejections with toOperationError. nativeWindow.ts wraps the window (theme, title, close guard, destroy), runtime.ts tells whether the page runs in the desktop app, and appInfo.ts with useAppInfo wraps get_app_info.",
             "patterns": [
               "Ports and adapters",
               "Lazy resolver (ADR-014, ADR-018)",
               "Error normalisation at the boundary"
             ]
+          },
+          {
+            "id": "shared-errors",
+            "name": "Error presentation",
+            "path": "src/shared/errors",
+            "responsibility": "describeOperationError turns an OperationError into a title, a hint and a remedy in the current language. The optional context says what the user tried, such as signing in with the Windows account. Connection, export and project use it.",
+            "patterns": ["Rust classifies, the UI words the remedy (ADR-012)"]
           },
           {
             "id": "shared-i18n",
@@ -200,6 +206,13 @@
             "path": "src/shared/ui",
             "responsibility": "Accessible primitives built on Radix: Button, IconButton, Dialog, Select, SegmentedControl, RadioMenu, Tooltip and more. No '@/' imports; all text comes in through props.",
             "patterns": ["Pure presentational components"]
+          },
+          {
+            "id": "brand",
+            "name": "Brand",
+            "path": "src/shared/brand",
+            "responsibility": "Logo.tsx and credits.ts (DEVELOPER_NAME 'Manuel Soberano', REPOSITORY_URL), used by the shell, the welcome screen and About.",
+            "patterns": ["Constants module"]
           }
         ]
       },
@@ -214,7 +227,7 @@
             "id": "feature-connection",
             "name": "connection",
             "path": "src/features/connection",
-            "responsibility": "Connection dialog: form, recent connections, test, database and schema pick, inspection with progress and cancel, refresh with diff review, remembered passwords, and the 'Trust the certificate and retry' remedy. connectionStore.ts is a phase machine (idle, testing, loadingSchemas, inspecting, reviewing, applying). The draft persists in localStorage 'schemacraft.connection' without the password.",
+            "responsibility": "Connection dialog: form, recent connections, test, database and schema pick, inspection with progress and cancel, refresh with diff review, remembered passwords, and the 'Trust the certificate and retry' remedy. connectionStore.ts is a phase machine (idle, testing, loadingSchemas, inspecting, reviewing, applying). fromSavedConnection.ts turns a saved connection back into a draft, live settings, a description and a history key. The draft persists in localStorage 'schemacraft.connection' without the password.",
             "patterns": [
               "Store as controller",
               "Phase + failure instead of booleans",
@@ -225,15 +238,15 @@
             "id": "feature-project",
             "name": "project",
             "path": "src/features/project",
-            "responsibility": "The open project: open, save, save as, undo and redo, unsaved-changes guard. projectStore.ts is the Memento caretaker (HISTORY_LIMIT 100) and runs ensurePlaced on every open, inspection and refresh. savedConnection.ts converts between connection drafts, settings and SavedConnection. The window title and the close guard live in useProjectWindow.",
+            "responsibility": "The open project: open, save, save as, undo and redo, unsaved-changes guard. projectStore.ts is the Memento caretaker (HISTORY_LIMIT 100) and runs ensurePlaced on every open, inspection and refresh. savedConnection.ts turns connection settings into the SavedConnection a project records, so project never imports connection. The window title and the close guard live in useProjectWindow.",
             "patterns": ["Memento caretaker (ADR-021)", "Guarded action (pendingDiscard)"]
           },
           {
             "id": "project-window",
             "name": "useProjectWindow",
             "path": "src/features/project/useProjectWindow.ts",
-            "responsibility": "Inside Tauri only; AppShell runs it. Keeps the window title as 'name – SchemaCraft', with a '• ' prefix while there are unsaved changes, or just 'SchemaCraft' with no project. On onCloseRequested with unsaved changes it cancels the close, runs guardUnsavedChanges and then calls window.destroy(). It calls @tauri-apps/api/window directly, the one place that bypasses shared/ipc.",
-            "patterns": ["Close guard", "Direct native call (known deviation)"]
+            "responsibility": "Inside the desktop app only; AppShell runs it. Keeps the window title as 'name – SchemaCraft', with a '• ' prefix while there are unsaved changes, or just 'SchemaCraft' with no project. When the window is closed with unsaved changes it cancels the close, runs guardUnsavedChanges and then closes the window for good. It reaches the window through shared/ipc/nativeWindow.ts.",
+            "patterns": ["Close guard"]
           },
           {
             "id": "project-notice",
@@ -294,13 +307,6 @@
             "path": "src/features/preferences",
             "responsibility": "Mirror of the Rust-owned preferences.json: recent connections and recent projects. Applies the whole document Rust returns.",
             "patterns": ["Rust owns state, frontend mirrors (ADR-017)"]
-          },
-          {
-            "id": "feature-palette",
-            "name": "palette",
-            "path": "src/features/palette",
-            "responsibility": "Ctrl+K palette over every registry action and every entity. paletteSearch.ts ranks results.",
-            "patterns": ["Reads the action registry"]
           },
           {
             "id": "feature-about",
@@ -364,7 +370,7 @@
             "id": "ipc-invoke",
             "name": "Commands (invoke)",
             "path": "src-tauri/src/main.rs",
-            "responsibility": "invoke(name, args) reaches one of the 20 commands in generate_handler!. Arguments go camelCase from TS and arrive as snake_case Rust parameters. Async commands (the four connection calls, read_project, write_project, export_diagram) run on Tauri's async runtime. Sync commands (get_app_info, both cancel_* commands, compute_schema_diff, refresh_project_content and the preference and credential commands) run on the main thread, which also drives the window, so a large diff or a slow keyring call freezes the UI while it runs. Only export_diagram moves its work to spawn_blocking.",
+            "responsibility": "invokeCommand(name, args) in src/shared/ipc reaches one of the 20 commands in generate_handler!. Arguments go camelCase from TS and arrive as snake_case Rust parameters. Commands that only read memory stay synchronous and return at once (get_app_info, read_preferences, both cancel_* commands). Every other command is async, and its file, credential-store or heavy work runs on the blocking pool through run_blocking (ADR-032), so the window never freezes.",
             "patterns": [
               "Request/response over serde JSON",
               "The signature decides the thread (async or sync)"
@@ -388,7 +394,7 @@
             "id": "ipc-capabilities",
             "name": "Capabilities and plugins",
             "path": "src-tauri/capabilities/default.json",
-            "responsibility": "Seven entries: core:default, core:window:allow-set-theme, core:window:allow-set-title, core:window:allow-destroy, dialog:default, opener:default and opener:allow-reveal-item-in-dir. opener:default already includes reveal-item-in-dir and open-url; dialog:default means open, save and message. set-title and destroy serve useProjectWindow. App commands need no entry. No fs plugin, so the frontend never touches files.",
+            "responsibility": "Seven entries, exactly what the frontend calls: core:default, core:window:allow-set-theme, core:window:allow-set-title, core:window:allow-destroy, dialog:allow-open, dialog:allow-save and opener:allow-reveal-item-in-dir. set-title and destroy serve the close guard in nativeWindow.ts. App commands need no entry. No fs plugin, so the frontend never touches files.",
             "patterns": ["Capability-based permissions"]
           }
         ]
@@ -418,7 +424,7 @@
             "id": "host-state",
             "name": "AppState",
             "path": "src-tauri/src/state.rs",
-            "responsibility": "Jobs registries ('inspection-N', 'export-N' -> CancellationToken), PreferencesStore (Mutex, saved on every update) and the credential store (SystemCredentialStore).",
+            "responsibility": "Jobs registries ('inspection-N', 'export-N' -> CancellationToken), PreferencesStore and the credential store (SystemCredentialStore). PreferencesStore applies a change to a copy and keeps it only once the file holds it, and never overwrites a file written by a newer version.",
             "patterns": ["Registry of cancellation tokens", "Write-through persistence"]
           },
           {
@@ -446,28 +452,28 @@
             "id": "cmd-project",
             "name": "commands/project.rs",
             "path": "src-tauri/src/commands/project.rs",
-            "responsibility": "read_project and write_project (stamps savedAt and savedWith) are async but do blocking file IO inline. compute_schema_diff and refresh_project_content are sync, so they run on the main thread with whole snapshots.",
+            "responsibility": "Async. read_project and write_project (stamps savedAt and savedWith) do their file IO through run_blocking, and so do compute_schema_diff and refresh_project_content, which handle whole snapshots.",
             "patterns": ["Thin command"]
           },
           {
             "id": "cmd-preferences",
             "name": "commands/preferences.rs",
             "path": "src-tauri/src/commands/preferences.rs",
-            "responsibility": "Sync, on the main thread. read_preferences and remember/forget for connections and projects. Each change is saved to disk and the whole document is returned.",
+            "responsibility": "read_preferences is synchronous and returns the copy in memory. remember and forget for connections and projects are async and save through run_blocking; each returns the whole document as saved.",
             "patterns": ["Rust owns state"]
           },
           {
             "id": "cmd-credentials",
             "name": "commands/credentials.rs",
             "path": "src-tauri/src/commands/credentials.rs",
-            "responsibility": "Sync, so the keyring calls run on the main thread. has_stored_password, remember_password, forget_password, keyed by SavedConnection::credential_key. remember_password receives the password once and no command sends it back (ADR-019). This does not cover typed passwords, which travel with every connection command and with each refresh from liveSettings.",
+            "responsibility": "Async, with the keyring calls on run_blocking. has_stored_password, remember_password, forget_password, keyed by SavedConnection::credential_key. remember_password receives the password once and no command sends it back (ADR-019). This does not cover typed passwords, which travel with every connection command and with each refresh from liveSettings.",
             "patterns": ["Secret never serialised toward the webview (ADR-019)"]
           },
           {
             "id": "cmd-export",
             "name": "commands/export.rs",
             "path": "src-tauri/src/commands/export.rs",
-            "responsibility": "Async. export_diagram runs the core export on spawn_blocking, the only command that uses the blocking pool, and streams stages; cancel_export (sync) cancels by jobId.",
+            "responsibility": "Async. export_diagram runs the core export through run_blocking and streams stages; cancel_export (sync) cancels by jobId.",
             "patterns": ["Offload CPU work to the blocking pool"]
           }
         ]
@@ -533,7 +539,7 @@
             "id": "core-project",
             "name": "project",
             "path": "crates/schemacraft-core/src/project",
-            "responsibility": ".scraft document (FORMAT_VERSION 1), ProjectContent, SavedConnection without password, CanvasState (the Memento) with normalisation and retaining_entities_of.",
+            "responsibility": ".scraft document (FORMAT_VERSION 1), read and written by file.rs with the fs helpers; ProjectContent, SavedConnection without password, CanvasState (the Memento) with normalisation and retaining_entities_of.",
             "patterns": [
               "Memento",
               "Header + flattened content",
@@ -542,16 +548,16 @@
           },
           {
             "id": "core-file-io",
-            "name": "project/file.rs",
-            "path": "crates/schemacraft-core/src/project/file.rs",
-            "responsibility": "read_project and write_project, plus pub(crate) helpers read_json_bytes, write_json_atomically and write_bytes_atomically (sibling .tmp then rename), reused by preferences and export.",
+            "name": "fs.rs",
+            "path": "crates/schemacraft-core/src/fs.rs",
+            "responsibility": "Crate-private helpers that project, preferences and export share: read_bytes tells a missing file apart, format_version reads the header of a versioned document, and write_json_atomically and write_bytes_atomically write a sibling .tmp, flush it with sync_all and rename it over the destination.",
             "patterns": ["Atomic replace", "Header-first parse"]
           },
           {
             "id": "core-preferences",
             "name": "preferences",
             "path": "crates/schemacraft-core/src/preferences/mod.rs",
-            "responsibility": "Preferences document: recent connections and recent projects, 10 each, deduplicated. A damaged file falls back to defaults with a warning.",
+            "responsibility": "Preferences document: recent connections and recent projects, 10 each, deduplicated. The format version is checked first: a damaged file is reported as corrupt and a newer one as unsupported, and the host decides what to do with each.",
             "patterns": ["Bounded MRU lists", "Fail-soft load"]
           },
           {
@@ -596,7 +602,7 @@
           {
             "id": "ext-filesystem",
             "name": "File system",
-            "path": "crates/schemacraft-core/src/project/file.rs",
+            "path": "crates/schemacraft-core/src/fs.rs",
             "responsibility": ".scraft and export files at paths the user picks in native dialogs, preferences.json in %APPDATA%, system fonts for PNG and PDF.",
             "patterns": ["Dialog returns a path, Rust does the IO"]
           },
@@ -643,14 +649,14 @@
             "id": "ci",
             "name": "CI workflow",
             "path": ".github/workflows/ci.yml",
-            "responsibility": "Windows job: prettier, eslint, tsc, vitest and npm run docs:check; cargo fmt, clippy -D warnings, cargo test; contracts check; tauri build --no-bundle; installs the WebView2 runtime when the runner lacks it; smoke test. It uploads the exe and the smoke-test screenshots as artifacts. Linux job: SQL Server integration tests against a mssql/server:2022-latest service.",
-            "patterns": ["Required checks"]
+            "responsibility": "On every pull request each job first runs scripts/ci-changes.sh. Windows job: prettier, eslint, tsc, vitest and npm run docs:check always; when code changed, also cargo fmt, clippy -D warnings, cargo test, the contracts check, tauri build --no-bundle with the ci profile, WebView2 when the runner lacks it and the smoke test, uploading the exe and the screenshots. Linux job: SQL Server integration tests against mssql/server:2022-latest when the core changed. Pushes to main run everything and keep the cache warm (ADR-033).",
+            "patterns": ["Required checks", "Change-based filtering that fails closed"]
           },
           {
             "id": "release",
             "name": "Release workflow",
             "path": ".github/workflows/release.yml",
-            "responsibility": "On a v* tag, without caches: checks the tag against package.json, runs the gates, builds the exe and the NSIS installer, installs WebView2 when missing, runs the smoke test (screenshots uploaded), writes SHA256SUMS.txt and creates a draft GitHub release (ADR-027).",
+            "responsibility": "On a v* tag, without caches: checks that the tag is on main and matches package.json and Cargo.toml, runs the gates, builds the exe and the NSIS installer with the full release profile, installs WebView2 when missing, runs the smoke test (screenshots uploaded), writes SHA256SUMS.txt and creates a draft GitHub release (ADR-027).",
             "patterns": ["Tag-driven release", "Draft then manual publish"]
           },
           {
@@ -791,9 +797,9 @@
         "kind": "call"
       },
       {
-        "id": "action-registry-to-feature-palette",
+        "id": "action-registry-to-command-palette",
         "from": "action-registry",
-        "to": "feature-palette",
+        "to": "command-palette",
         "label": "toggle palette",
         "kind": "call"
       },
@@ -822,7 +828,7 @@
         "id": "feature-connection-to-feature-project",
         "from": "feature-connection",
         "to": "feature-project",
-        "label": "loadFromInspection, applyRefreshedContent",
+        "label": "loadFromInspection, applyRefreshedContent, toSavedConnection",
         "kind": "call"
       },
       {
@@ -910,15 +916,15 @@
         "kind": "call"
       },
       {
-        "id": "feature-palette-to-action-registry",
-        "from": "feature-palette",
+        "id": "command-palette-to-action-registry",
+        "from": "command-palette",
         "to": "action-registry",
-        "label": "reads actions (upward import)",
+        "label": "reads actions",
         "kind": "call"
       },
       {
-        "id": "feature-palette-to-feature-canvas",
-        "from": "feature-palette",
+        "id": "command-palette-to-feature-canvas",
+        "from": "command-palette",
         "to": "feature-canvas",
         "label": "focusEntity",
         "kind": "call"
@@ -927,7 +933,7 @@
         "id": "feature-about-to-brand",
         "from": "feature-about",
         "to": "brand",
-        "label": "Logo, credits (upward import)",
+        "label": "Logo, credits",
         "kind": "call"
       },
       {
@@ -976,7 +982,7 @@
         "id": "shared-ipc-to-ipc-capabilities",
         "from": "shared-ipc",
         "to": "ipc-capabilities",
-        "label": "dialog open/save, revealItemInDir, setTheme",
+        "label": "dialog open/save, revealItemInDir, window theme, title and close",
         "kind": "ipc"
       },
       {
@@ -1179,14 +1185,14 @@
         "id": "cmd-export-to-core-export",
         "from": "cmd-export",
         "to": "core-export",
-        "label": "export_diagram on spawn_blocking",
+        "label": "export_diagram on run_blocking",
         "kind": "call"
       },
       {
         "id": "host-state-to-core-preferences",
         "from": "host-state",
         "to": "core-preferences",
-        "label": "load_or_default, save",
+        "label": "load, save",
         "kind": "call"
       },
       {
@@ -1379,9 +1385,9 @@
         "kind": "call"
       },
       {
-        "id": "app-shell-to-feature-palette",
+        "id": "app-shell-to-command-palette",
         "from": "app-shell",
-        "to": "feature-palette",
+        "to": "command-palette",
         "label": "mounts CommandPalette",
         "kind": "call"
       },
@@ -1498,13 +1504,6 @@
         "kind": "call"
       },
       {
-        "id": "project-window-to-ipc-capabilities",
-        "from": "project-window",
-        "to": "ipc-capabilities",
-        "label": "setTitle, onCloseRequested, destroy (bypasses shared/ipc)",
-        "kind": "ipc"
-      },
-      {
         "id": "project-notice-to-feature-project",
         "from": "project-notice",
         "to": "feature-project",
@@ -1516,13 +1515,6 @@
         "from": "project-notice",
         "to": "feature-connection",
         "label": "describeOperationError",
-        "kind": "call"
-      },
-      {
-        "id": "feature-project-to-feature-connection",
-        "from": "feature-project",
-        "to": "feature-connection",
-        "label": "savedConnection.ts: connectionDraft, serverAddress",
         "kind": "call"
       },
       {
@@ -1547,13 +1539,6 @@
         "kind": "call"
       },
       {
-        "id": "feature-export-to-feature-connection",
-        "from": "feature-export",
-        "to": "feature-connection",
-        "label": "describeOperationError",
-        "kind": "call"
-      },
-      {
         "id": "feature-export-to-export-font-faces",
         "from": "feature-export",
         "to": "export-font-faces",
@@ -1561,8 +1546,8 @@
         "kind": "call"
       },
       {
-        "id": "feature-palette-to-feature-project",
-        "from": "feature-palette",
+        "id": "command-palette-to-feature-project",
+        "from": "command-palette",
         "to": "feature-project",
         "label": "entities of the open project",
         "kind": "call"
@@ -1699,6 +1684,41 @@
         "to": "core-credentials",
         "label": "resolve_stored_password",
         "kind": "call"
+      },
+      {
+        "id": "project-window-to-shared-ipc",
+        "from": "project-window",
+        "to": "shared-ipc",
+        "label": "setWindowTitle, watchWindowClose, closeWindow",
+        "kind": "call"
+      },
+      {
+        "id": "desktop-guards-to-shared-ipc",
+        "from": "desktop-guards",
+        "to": "shared-ipc",
+        "label": "isDesktopRuntime",
+        "kind": "call"
+      },
+      {
+        "id": "feature-connection-to-shared-errors",
+        "from": "feature-connection",
+        "to": "shared-errors",
+        "label": "describeOperationError",
+        "kind": "call"
+      },
+      {
+        "id": "feature-export-to-shared-errors",
+        "from": "feature-export",
+        "to": "shared-errors",
+        "label": "describeOperationError",
+        "kind": "call"
+      },
+      {
+        "id": "feature-project-to-shared-errors",
+        "from": "feature-project",
+        "to": "shared-errors",
+        "label": "describeOperationError",
+        "kind": "call"
       }
     ],
     "dataStores": [
@@ -1716,7 +1736,7 @@
         "format": "Pretty JSON, formatVersion 1",
         "owner": "Rust: crates/schemacraft-core/src/preferences/mod.rs, kept in memory by src-tauri/src/state.rs",
         "contents": "Up to 10 recent connections (no password) and up to 10 recent projects.",
-        "notes": "The frontend only mirrors it. A missing or damaged file becomes defaults. formatVersion is not checked."
+        "notes": "The frontend only mirrors it. A missing or damaged file becomes defaults. A file written by a newer version is left untouched: this version starts with an empty history and does not save changes to it."
       },
       {
         "name": "Remembered passwords",
@@ -1952,7 +1972,7 @@
           {
             "actor": "useProjectWindow",
             "action": "Keeps the title current",
-            "detail": "On every change of path or isDirty it calls setTitle: '• name – SchemaCraft' with unsaved changes, 'name – SchemaCraft' without, 'SchemaCraft' with no project. A project never saved uses the project.untitled text."
+            "detail": "On every change of path or isDirty it calls setWindowTitle: '• name – SchemaCraft' with unsaved changes, 'name – SchemaCraft' without, 'SchemaCraft' with no project. A project never saved uses the project.untitled text."
           },
           {
             "actor": "User",
@@ -1962,7 +1982,7 @@
           {
             "actor": "useProjectWindow",
             "action": "Checks for unsaved changes",
-            "detail": "Without unsaved changes the close goes ahead. With them, event.preventDefault() keeps the window open."
+            "detail": "Without unsaved changes the close goes ahead. With them, the handler given to watchWindowClose returns true and the close is cancelled (event.preventDefault())."
           },
           {
             "actor": "projectStore",
@@ -1977,7 +1997,7 @@
           {
             "actor": "useProjectWindow",
             "action": "Closes for good",
-            "detail": "window.destroy() closes the window without raising onCloseRequested again. This is why core:window:allow-destroy and allow-set-title are granted."
+            "detail": "closeWindow() calls window.destroy(), which closes the window without raising onCloseRequested again. This is why core:window:allow-destroy and allow-set-title are granted."
           }
         ]
       },
@@ -2046,7 +2066,7 @@
           {
             "actor": "cmd-export",
             "action": "Starts the job",
-            "detail": "export_diagram with a Channel<ExportEvent>; Started{jobId 'export-N'}; work runs on spawn_blocking."
+            "detail": "export_diagram with a Channel<ExportEvent>; Started{jobId 'export-N'}; work runs on run_blocking."
           },
           {
             "actor": "core export",
@@ -2258,7 +2278,7 @@
       },
       {
         "name": "Typed errors with kinds",
-        "where": "core *Error enums, src-tauri/src/error.rs, src/features/connection/operationErrorMessages.ts",
+        "where": "core *Error enums, src-tauri/src/error.rs, src/shared/errors/describeOperationError.ts",
         "why": "Rust classifies; the UI owns the localised remedy, such as 'Trust the certificate and retry' (ADR-012)."
       },
       {
@@ -2268,8 +2288,8 @@
       },
       {
         "name": "Atomic write",
-        "where": "crates/schemacraft-core/src/project/file.rs",
-        "why": "Temp file then rename, so a crash never leaves a half-written file (ADR-015)."
+        "where": "crates/schemacraft-core/src/fs.rs",
+        "why": "Temp file, sync_all, then rename, so a crash or a power cut never leaves a half-written file (ADR-015)."
       },
       {
         "name": "Rust owns state, frontend mirrors",
@@ -2315,13 +2335,23 @@
         "name": "Checked architecture model",
         "where": "docs/architecture/model.json, scripts/check-architecture-page.mjs",
         "why": "The page is data plus a renderer; CI compares its manifest with the code (ADR-030)."
+      },
+      {
+        "name": "Lint-enforced layers",
+        "where": "eslint.config.js",
+        "why": "no-restricted-imports per folder keeps app -> features -> shared and the Tauri API inside shared/ipc (ADR-031)."
+      },
+      {
+        "name": "Blocking work off the main thread",
+        "where": "src-tauri/src/commands/mod.rs",
+        "why": "run_blocking moves file, keyring and heavy work to the blocking pool, so no command freezes the window (ADR-032)."
       }
     ],
     "recipes": {
       "featureTypes": [
         {
           "kind": "Frontend-only feature (panel, dialog, canvas tool)",
-          "example": "A 'Table details' panel beside the canvas. Built like features/about and features/palette.",
+          "example": "A 'Table details' panel beside the canvas. Built like features/about.",
           "steps": [
             {
               "layer": "Scope",
@@ -2619,7 +2649,7 @@
             },
             {
               "layer": "host",
-              "step": "A #[tauri::command] in a commands module, registered in generate_handler!. Pick the thread on purpose: async for IO, spawn_blocking for CPU or blocking work; a sync command runs on the main thread and must stay short. A new error type gets a CommandErrorKind variant and From impl. A long job uses Jobs, a Channel and a cancel_* command.",
+              "step": "A #[tauri::command] in a commands module, registered in generate_handler!. Keep it synchronous only if it just reads memory; otherwise make it async and run file, credential-store or heavy work through run_blocking (ADR-032). A new error type gets a CommandErrorKind variant and From impl. A long job uses Jobs, a Channel and a cancel_* command.",
               "files": [
                 "src-tauri/src/commands/mod.rs",
                 "src-tauri/src/main.rs",
@@ -2629,15 +2659,16 @@
             },
             {
               "layer": "permissions",
-              "step": "A capability entry only if a plugin or window API is used.",
+              "step": "A capability entry only if a plugin or window API is used, naming the exact permission rather than a :default set.",
               "files": ["src-tauri/capabilities/default.json"]
             },
             {
               "layer": "frontend",
-              "step": "npm run contracts; a backend interface with Tauri, preview and unavailable implementations via createBackendResolver; error keys error.<name>.title and .hint.",
+              "step": "npm run contracts; a backend interface with Tauri, preview and unavailable implementations via createBackendResolver, calling commands through invokeCommand; error keys error.<name>.title and .hint.",
               "files": [
                 "src/shared/ipc/backendResolver.ts",
-                "src/features/connection/operationErrorMessages.ts"
+                "src/shared/ipc/invokeCommand.ts",
+                "src/shared/errors/describeOperationError.ts"
               ]
             },
             {
@@ -2733,7 +2764,7 @@
         },
         {
           "concern": "Threading",
-          "touches": "Async commands run on Tauri's async runtime; sync commands run on the main thread with the window. CPU or blocking work belongs in spawn_blocking, as in export_diagram; today compute_schema_diff, refresh_project_content, the preference and the credential commands do not follow it."
+          "touches": "Commands that only read memory stay synchronous; every other command is async and runs file, credential-store and heavy work through run_blocking in src-tauri/src/commands/mod.rs (ADR-032)."
         },
         {
           "concern": "Fonts",
@@ -2763,7 +2794,7 @@
       },
       {
         "topic": "Folders",
-        "rule": "src/app composes src/features, and both use src/shared. shared never imports app or features. One folder per capability."
+        "rule": "src/app composes src/features, and both use src/shared; shared never imports app or features, and ESLint enforces it (ADR-031). One folder per capability: code several features need moves down into shared, code that composes the application moves up into app."
       },
       {
         "topic": "Errors",
@@ -2783,7 +2814,11 @@
       },
       {
         "topic": "IPC",
-        "rule": "Features call getXBackend() from src/shared/ipc, never invoke directly. The one exception today is useProjectWindow, which uses the Tauri window API."
+        "rule": "Features call getXBackend() and the wrappers in src/shared/ipc, never invoke or @tauri-apps/* directly; ESLint enforces it."
+      },
+      {
+        "topic": "Commands",
+        "rule": "Synchronous only when a command just reads memory; otherwise async, with blocking work in run_blocking (ADR-032)."
       },
       {
         "topic": "State",
@@ -2808,17 +2843,21 @@
       {
         "topic": "Branches",
         "rule": "Branch from main. main accepts only merge commits through PRs with both CI checks green and up to date (ruleset 'Protect main')."
+      },
+      {
+        "topic": "Pull requests",
+        "rule": "One pull request per coherent block of work, with one commit per logical part; a separate small one only for an urgent fix to something released. CI runs what the change needs (ADR-033)."
       }
     ],
     "conformance": {
-      "verdict": "The architecture holds. The core has no Tauri dependency, commands are thin, errors are typed end to end, contracts are generated and checked, shared never imports app or features, and the viewer pulls in no React or stores. Builder and Memento are implemented as the ADRs say. The deviations are consistency problems, not structural breaks, but they are what the next feature would copy. Three are major: the wrong tooltip on disabled buttons, the stale layout in docs/architecture.md, and features that depend on each other in both directions. The stale Layout tree is fixed by the same change that adds this page, and so is the PRD's runtime statement; both stay below, marked fixed.",
+      "verdict": "The architecture holds. The core has no Tauri dependency, commands are thin and keep blocking work off the main thread, errors are typed end to end, contracts are generated and checked, ESLint enforces the frontend layers, only src/shared/ipc talks to Tauri, and the viewer pulls in no React or stores. Builder and Memento are implemented as the ADRs say. The three major deviations are fixed, with most minor ones. The eleven still open are consistency problems, not structural breaks; ten are planned for v1.1, where the views, the inspector and the access probe touch the same code, and one stays in the backlog. Fixed entries stay below, marked fixed.",
       "deviations": [
         {
           "what": "Disabled action buttons always say 'Available in an upcoming milestone', even when the cause is a runtime condition.",
           "where": "src/app/actions/ActionIconButton.tsx:23, ActionButton.tsx:44, action.ts:40",
-          "fix": "Add unavailableReason?: MessageKey to AppAction, fill it in useAppActions, remove common.comingSoon.",
+          "fix": "Fixed: AppAction has unavailableReason, useAppActions fills it (no project, layout running, nothing hidden, nothing to undo or redo) and common.comingSoon is gone.",
           "severity": "major",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "The Layout tree in docs/architecture.md was stale: features/ listed only connection, preferences, project and schema (about, canvas, export and palette were missing); src/viewer and core src/export/ were absent; scripts/ was described only as the SQL Server container (prepare-fonts.mjs and smoke-test-release.mjs were missing); .github/workflows only as CI (release.yml was missing); and docs/release-checklist.md was not listed.",
@@ -2830,182 +2869,182 @@
         {
           "what": "ADR-001 lists the core contents without credentials and export, and ADR-018 names only the connection, project and preferences backends; credentials and export are missing. ADR-015 also calls .scraft files byte-stable without excepting savedAt, and the architecture notes say the frontend reaches Rust exclusively through src/shared/ipc, although useProjectWindow calls the window API directly.",
           "where": "docs/architecture.md, ADR-001 and ADR-018",
-          "fix": "Amend both ADRs. The recipes on this page serve as the 'Adding a feature' checklist. Correct ADR-015 and the dependency rule, or move the window calls into src/shared/ipc.",
+          "fix": "Fixed: ADR-001 and ADR-018 name every module and backend, ADR-015 excepts savedAt, and the dependency rule holds now that the window calls live in src/shared/ipc.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Features depend on each other in both directions (canvas <-> project, connection <-> project) and about and palette import from app/. No lint rule guards boundaries.",
           "where": "src/features/{canvas,project,connection,about,palette}; eslint.config.js",
-          "fix": "Enforce app -> features -> shared with no-restricted-imports or eslint-plugin-boundaries; move savedConnection conversions to connection/, action types to shared, credits to shared/brand.",
+          "fix": "Fixed: ESLint enforces the layers (ADR-031); the palette moved to app/palette, the credits to shared/brand and the error presentation to shared/errors; the saved-connection conversions moved to features/connection, so project no longer imports connection. canvas and project still use each other by design: canvas edits go through projectStore.updateCanvas, and the store uses canvas's pure placement helpers (ADR-021).",
           "severity": "major",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "connectionBackend.ts hand-rolls its own resolver instead of createBackendResolver.",
           "where": "src/shared/ipc/connectionBackend.ts:54-77",
-          "fix": "Use createBackendResolver like the other four backends.",
+          "fix": "Fixed: connectionBackend uses createBackendResolver.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "The invokeCommand helper is copied into five backend files; appInfo.ts skips normalisation.",
           "where": "src/shared/ipc/*Backend.ts, appInfo.ts:7",
-          "fix": "Export it once from src/shared/ipc and reuse it.",
+          "fix": "Fixed: src/shared/ipc/invokeCommand.ts is the one copy; every backend and appInfo.ts use it.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "useProjectWindow calls the Tauri window API directly (setTitle, onCloseRequested, destroy), outside shared/ipc.",
           "where": "src/features/project/useProjectWindow.ts",
-          "fix": "Add src/shared/ipc/windowShell.ts with setWindowTitle and onWindowCloseRequested.",
+          "fix": "Fixed: src/shared/ipc/nativeWindow.ts wraps the title, the close guard and destroy; useProjectWindow no longer imports Tauri.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Entity listing, the `${schema}.${name}` key and EntityKind exist in several places.",
           "where": "src/features/schema/entities.ts, canvas/geometry.ts, palette/CommandPalette.tsx, connection/ReviewChangesPanel.tsx, shared/ipc/previewProjectBackend.ts",
-          "fix": "Make features/schema the single home of entityKey and EntityKind.",
+          "fix": "Planned for v1.1: Make features/schema the single home of entityKey and EntityKind.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "Crow's foot marker paths and edge routing options are copied between the canvas and the SVG renderer.",
           "where": "src/features/canvas/RelationMarkers.tsx vs src/features/export/svg/renderDiagram.ts",
-          "fix": "Export them from canvas/edgeGeometry.ts and use them in both.",
+          "fix": "Planned for v1.1: Export them from canvas/edgeGeometry.ts and use them in both.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "The diagram colours exist three times (tokens.css, palette.ts, viewer.css) and some CSS modules declare their own oklch colours.",
           "where": "src/features/export/svg/palette.ts, src/viewer/viewer.css, src/shared/ui/Alert.module.css",
-          "fix": "Feed the viewer from DIAGRAM_PALETTES; move stray colours into tokens.",
+          "fix": "Planned for v1.1: Feed the viewer from DIAGRAM_PALETTES; move stray colours into tokens.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "Detail level, theme, language, context-menu items and the sidebar eye bypass the action registry; 6 actions have no shortcut.",
           "where": "src/app/shell/TopBar.tsx, src/features/canvas/CanvasContextMenu.tsx, src/app/shell/EntitiesSidebar.tsx",
-          "fix": "Add view.detail*, settings.theme.* and settings.language.* actions; state the exceptions in ADR-008.",
+          "fix": "Planned for v1.1: Add view.detail*, settings.theme.* and settings.language.* actions; state the exceptions in ADR-008.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "The .scraft file filter name is hard-coded in English.",
           "where": "src/shared/ipc/projectBackend.ts:32",
-          "fix": "Pass a translated name, key project.dialog.fileType.",
+          "fix": "Fixed: the caller passes the translated name, key project.dialog.fileType.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "The viewer re-implements interpolation and uses count === 1 plurals; no placeholder test.",
           "where": "src/viewer/messages.ts:96-109",
-          "fix": "Reuse src/shared/i18n/formatMessage.ts and add a placeholder test.",
+          "fix": "Planned for v1.1: Reuse src/shared/i18n/formatMessage.ts and add a placeholder test.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "Shared error presentation lives inside features/connection.",
           "where": "src/features/connection/operationErrorMessages.ts",
-          "fix": "Move it to src/shared/errors/describeOperationError.ts.",
+          "fix": "Fixed: it lives in src/shared/errors/describeOperationError.ts.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Canvas behaviour lives in the shell (DiagramCanvas, EntitiesSidebar).",
           "where": "src/app/shell/DiagramCanvas.tsx, src/app/shell/EntitiesSidebar.tsx",
-          "fix": "Move them into features/canvas; AppShell only places them.",
+          "fix": "Planned for v1.1: Move them into features/canvas; AppShell only places them.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "Dead or duplicated exports: projectDisplayName, layoutKindOf, sameName, hasHiddenEntities.",
           "where": "projectStore.ts:105, layouts/index.ts:15, canvasState.ts:22, canvasActions.ts:138",
-          "fix": "Delete them; consider a dead-export check (knip) in CI.",
+          "fix": "Fixed: the four exports are deleted. A dead-export check in CI remains an option.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "PreferencesStore::update changes memory before saving and does not roll back on a failed write.",
           "where": "src-tauri/src/state.rs:90-98",
-          "fix": "Apply the change to a clone, save it, swap only on success.",
+          "fix": "Fixed: update changes a copy and swaps it in only after the save succeeds; a test covers a failed write.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Persisted state is split between preferences.json and localStorage. The 'schemacraft.connection' key is undocumented, keeps the last server, login, database and trustServerCertificate, and survives deleting preferences.json, which README.md says clears the history.",
           "where": "src/shared/settings/settingsStore.ts:34, src/features/connection/connectionStore.ts:95, README.md:175-177",
-          "fix": "Record in ADR-017: Rust file for domain history, localStorage only for UI conveniences, never secrets. List both keys in the README and say what deleting each one clears.",
+          "fix": "Planned for v1.1: Record in ADR-017: Rust file for domain history, localStorage only for UI conveniences, never secrets. List both keys in the README and say what deleting each one clears.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "Inspection and export use different progress and cancellation shapes; the connect phase is not cancellable; export checks cancel once; ADR-013 and progress.rs:55 overstate.",
           "where": "crates/schemacraft-core/src/inspectors/sqlserver/mod.rs:95-122, export/mod.rs:104",
-          "fix": "Race the connect phase against the token; document one long-job pattern; fix the wording.",
+          "fix": "Planned for v1.1: Race the connect phase against the token; document one long-job pattern; fix the wording.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "Adding an engine touches more than the inspectors doc says: SavedConnection, CredentialKey, model notions and frontend conversions are SQL Server specific.",
           "where": "crates/schemacraft-core/src/inspectors/mod.rs:1-6, project/connection.rs, src/features/project/savedConnection.ts",
-          "fix": "Fix the doc comment and keep the engine recipe on this page.",
+          "fix": "Fixed: the doc comment names every SQL Server specific part; the engine recipe stays on this page.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Server-address formatting differs: Rust appends ',1433', TypeScript does not.",
           "where": "inspectors/sqlserver/settings.rs:232-238 vs src/features/connection/serverAddress.ts:58-62",
-          "fix": "Treat the Rust format as canonical and align the TS one.",
+          "fix": "Planned for v1.1: Treat the Rust format as canonical and align the TS one.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "Commands handle threading three ways and no ADR covers it. Sync commands (compute_schema_diff, refresh_project_content, preferences, credentials) run on the main thread, so a large diff or a slow keyring call blocks the UI; read_project and write_project do blocking IO on the async runtime; only export_diagram uses spawn_blocking.",
           "where": "src-tauri/src/commands/project.rs, preferences.rs, credentials.rs vs export.rs",
-          "fix": "Rule: commands are async and blocking work goes through spawn_blocking; record an ADR.",
+          "fix": "Fixed: commands that only read memory stay synchronous; every other command is async and uses run_blocking (ADR-032).",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Atomic-write helpers live in project/ (sideways dependency) and skip sync_all before rename.",
           "where": "crates/schemacraft-core/src/project/file.rs:100-124",
-          "fix": "Move them to a neutral src/fs.rs and call File::sync_all before the rename.",
+          "fix": "Fixed: the helpers live in the crate-private src/fs.rs and call File::sync_all before the rename.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "preferences.json formatVersion is never checked.",
           "where": "crates/schemacraft-core/src/preferences/mod.rs:76-91",
-          "fix": "Reuse the header pre-parse; keep a newer file untouched.",
+          "fix": "Fixed: preferences use the same header check; a newer file is refused and never overwritten.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "A detail-level change that moves nothing is dirty but not undoable.",
           "where": "src/features/project/projectStore.ts:264-278",
-          "fix": "Always undoable, or document it in ADR-021.",
+          "fix": "Fixed: ADR-021 states it: the detail level alone is a view setting, saved but not an undo step.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Mixed styles: #[allow] vs #[expect], FileError without thiserror, PathBuf vs String for paths.",
           "where": "export/render.rs:84, project/file.rs:58-75, commands/preferences.rs",
-          "fix": "Use #[expect], derive thiserror, use PathBuf in commands.",
+          "fix": "Fixed: #[expect] in render.rs, FileError derives thiserror, and the commands take paths as PathBuf. Test modules keep #![allow], as the conventions say.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Capabilities grant more than the frontend uses: opener:default includes open-url, which nothing calls; opener:allow-reveal-item-in-dir repeats part of opener:default; dialog:default includes message, which is unused.",
           "where": "src-tauri/capabilities/default.json",
-          "fix": "List only dialog:allow-open, dialog:allow-save and opener:allow-reveal-item-in-dir.",
+          "fix": "Fixed: the capabilities list dialog:allow-open, dialog:allow-save and opener:allow-reveal-item-in-dir.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "connectionStore, exportStore, preferencesStore and canvasActions have no unit tests.",
           "where": "src/features/*",
-          "fix": "Follow projectStore.test.ts, mocking the backends.",
+          "fix": "Planned for v1.1: Follow projectStore.test.ts, mocking the backends.",
           "severity": "minor",
           "status": "open"
         },
@@ -3019,30 +3058,30 @@
         {
           "what": "release.yml runs on any v* tag and no ruleset protects tags. It checks the tag only against package.json; docs/release-checklist.md:24 says Cargo.toml follows, but nothing enforces it.",
           "where": ".github/workflows/release.yml:38-42, docs/release-checklist.md:24",
-          "fix": "Check the tag is on main and that both versions match.",
+          "fix": "Fixed: release.yml checks that the tag is on main and matches package.json and Cargo.toml; a tag that fails builds nothing.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "SCHEMACRAFT_REMOTE_DEBUGGING_PORT opens a CDP port in release builds too (for the smoke test).",
           "where": "src-tauri/src/main.rs:78-115",
-          "fix": "Keep as a documented trade-off and state it in the security notes.",
+          "fix": "Fixed: kept as a trade-off and stated in SECURITY.md.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "No log file; release builds show no logs.",
           "where": "src-tauri/src/logging.rs",
-          "fix": "Consider a rolling log file for bug reports.",
+          "fix": "Backlog: Consider a rolling log file for bug reports.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "The smoke test covers only welcome, About, language, theme and F5; its output folder is not in .gitignore.",
           "where": "scripts/smoke-test-release.mjs:15, .gitignore",
-          "fix": "Ignore smoke-test/; keep the manual checklist for connect, save and export.",
+          "fix": "Fixed: smoke-test/ is ignored. The manual checklist still covers connect, save and export.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         }
       ]
     },
@@ -3233,7 +3272,7 @@
       {
         "id": "spawn-blocking",
         "term": "spawn_blocking",
-        "meaning": "Runs blocking or CPU-bound work on a separate thread pool, so the async runtime and the window stay free; export_diagram uses it."
+        "meaning": "Runs blocking or CPU-bound work on a separate thread pool, so the async runtime and the window stay free. Commands reach it through run_blocking (ADR-032)."
       },
       {
         "id": "static-font-faces",
@@ -3248,7 +3287,7 @@
       "oneLiner": "Una app de escritorio para Windows que lee el catálogo de SQL Server, lo dibuja como un diagrama ER editable, lo guarda como archivo .scraft y lo exporta a SVG, HTML, PNG y PDF.",
       "paragraphs": [
         "SchemaCraft es una app Tauri 2. La interfaz es React 19 y TypeScript dentro de WebView2. Todo el trabajo de disco, red y sistema operativo lo hace Rust. El lado Rust tiene dos partes: un host delgado (src-tauri) que expone 20 comandos IPC, y una biblioteca sin framework (crates/schemacraft-core) que contiene la lógica real.",
-        "Las dependencias van en un solo sentido: frontend -> IPC -> host -> core -> sistemas externos. La regla es que el frontend llega a Rust solo a través de backends tipados en src/shared/ipc. La única excepción es useProjectWindow, que llama directamente a la API de ventana de Tauri para el título y la protección al cerrar. Los comandos son adaptadores delgados: resuelven las entradas, llaman al core y traducen los errores, sin lógica de dominio. El core no sabe nada de Tauri ni de la interfaz. Los tipos que cruzan la frontera se escriben una vez en Rust y se generan en TypeScript con ts-rs.",
+        "Las dependencias van en un solo sentido: frontend -> IPC -> host -> core -> sistemas externos. El frontend llega a Rust y a la ventana solo a través de src/shared/ipc, la única carpeta que importa la API de Tauri, y ESLint hace cumplir las reglas de capas (ADR-031). Los comandos son adaptadores delgados: resuelven las entradas, llaman al core y traducen los errores, sin lógica de dominio, y mantienen el trabajo bloqueante fuera del hilo principal (ADR-032). El core no sabe nada de Tauri ni de la interfaz. Los tipos que cruzan la frontera se escriben una vez en Rust y se generan en TypeScript con ts-rs.",
         "SchemaCraft no tiene base de datos propia. SQL Server solo se lee, con consultas SELECT fijas sobre las vistas sys.*. Lo que perdura vive en cuatro lugares: archivos .scraft que elige el usuario, preferences.json en %APPDATA%\\com.jmanuelsoberano.schemacraft, contraseñas en el Administrador de credenciales de Windows y dos claves de localStorage para comodidades de la interfaz. Todo lo demás vive solo en memoria."
       ]
     },
@@ -3311,11 +3350,18 @@
             "id": "action-registry",
             "name": "Registro de acciones y atajos",
             "path": "src/app/actions",
-            "responsibility": "22 AppActions (id, labelKey, icono, atajo, isAvailable, run) construidas en useAppActions.ts. useKeyboardShortcuts.ts dirige las teclas en fase de captura; gana la primera coincidencia. La barra superior, los menús, la pantalla de bienvenida y la paleta de comandos leen este registro.",
+            "responsibility": "22 AppActions (id, labelKey, icono, atajo, isAvailable, unavailableReason, run) construidas en useAppActions.ts. Una acción deshabilitada dice por qué en su tooltip: no hay proyecto, se está calculando una disposición, no hay nada oculto, nada que deshacer o rehacer. useKeyboardShortcuts.ts dirige las teclas en fase de captura; gana la primera coincidencia. La barra superior, los menús, la pantalla de bienvenida y la paleta de comandos leen este registro.",
             "patterns": [
               "Command / registro único (ADR-008)",
               "Tecla mod independiente de plataforma"
             ]
+          },
+          {
+            "id": "command-palette",
+            "name": "Paleta de comandos",
+            "path": "src/app/palette",
+            "responsibility": "Paleta Ctrl+K sobre todas las acciones del registro y todas las entidades. paletteSearch.ts ordena los resultados. Vive en app/ porque lee el registro de acciones.",
+            "patterns": ["Lee el registro de acciones"]
           },
           {
             "id": "entities-search",
@@ -3328,7 +3374,7 @@
             "id": "desktop-guards",
             "name": "Protecciones de escritorio",
             "path": "src/app/shell/useDesktopShellGuards.ts",
-            "responsibility": "Solo dentro de Tauri: bloquea el menú contextual del navegador y dragstart fuera de los campos editables, y el autoscroll con clic central en todas partes (ADR-026).",
+            "responsibility": "Solo dentro de la aplicación de escritorio (isDesktopRuntime de shared/ipc): bloquea el menú contextual del navegador y dragstart fuera de los campos editables, y el autoscroll con clic central en todas partes (ADR-026).",
             "patterns": ["Manejadores en fase de captura, según el entorno"]
           },
           {
@@ -3337,13 +3383,6 @@
             "path": "src/app/styles",
             "responsibility": "tokens.css contiene todos los tokens; los colores se escriben una vez con light-dark() en oklch. base.css tiene el reset, el anillo de foco, el movimiento reducido y el tema de React Flow.",
             "patterns": ["Tokens de diseño + CSS Modules (ADR-006)"]
-          },
-          {
-            "id": "brand",
-            "name": "Marca",
-            "path": "src/app/brand",
-            "responsibility": "Logo.tsx y credits.ts (DEVELOPER_NAME 'Manuel Soberano', REPOSITORY_URL).",
-            "patterns": ["Módulo de constantes"]
           },
           {
             "id": "dev-hooks",
@@ -3357,7 +3396,7 @@
       {
         "id": "shared",
         "name": "Frontend: compartido",
-        "summary": "Código que cualquier funcionalidad puede usar. Nunca importa de src/app ni de src/features.",
+        "summary": "Código que cualquier funcionalidad puede usar. Nunca importa de src/app ni de src/features, y ESLint lo exige (ADR-031).",
         "path": "src/shared",
         "technologies": [
           "zustand 5 (persist)",
@@ -3370,12 +3409,19 @@
             "id": "shared-ipc",
             "name": "Backends IPC y resolver",
             "path": "src/shared/ipc",
-            "responsibility": "Un backend tipado por área: connection, project, preferences, credentials, export. Cada uno tiene implementación Tauri, unavailable y preview (solo DEV), elegidas por createBackendResolver (connection aún tiene su propio resolver). toOperationError normaliza cada rechazo. appInfo.ts y el hook useAppInfo envuelven get_app_info; windowTheme.ts envuelve setTheme.",
+            "responsibility": "La única carpeta que importa la API de Tauri. Un backend tipado por área (connection, project, preferences, credentials, export), cada uno con implementación Tauri, unavailable y preview (solo DEV), elegidas por createBackendResolver. Todo comando pasa por invokeCommand, que normaliza los rechazos con toOperationError. nativeWindow.ts envuelve la ventana (tema, título, protección al cerrar, destroy), runtime.ts indica si la página corre en la aplicación de escritorio, y appInfo.ts con useAppInfo envuelve get_app_info.",
             "patterns": [
               "Puertos y adaptadores",
               "Resolver perezoso (ADR-014, ADR-018)",
               "Normalización de errores en la frontera"
             ]
+          },
+          {
+            "id": "shared-errors",
+            "name": "Presentación de errores",
+            "path": "src/shared/errors",
+            "responsibility": "describeOperationError convierte un OperationError en un título, una sugerencia y un remedio en el idioma actual. El contexto opcional dice qué intentó el usuario, como entrar con la cuenta de Windows. Lo usan connection, export y project.",
+            "patterns": ["Rust clasifica, la interfaz redacta el remedio (ADR-012)"]
           },
           {
             "id": "shared-i18n",
@@ -3397,6 +3443,13 @@
             "path": "src/shared/ui",
             "responsibility": "Primitivas accesibles sobre Radix: Button, IconButton, Dialog, Select, SegmentedControl, RadioMenu, Tooltip y más. Sin imports '@/'; todo el texto llega por props.",
             "patterns": ["Componentes puramente de presentación"]
+          },
+          {
+            "id": "brand",
+            "name": "Marca",
+            "path": "src/shared/brand",
+            "responsibility": "Logo.tsx y credits.ts (DEVELOPER_NAME 'Manuel Soberano', REPOSITORY_URL), que usan el shell, la pantalla de bienvenida y Acerca de.",
+            "patterns": ["Módulo de constantes"]
           }
         ]
       },
@@ -3411,7 +3464,7 @@
             "id": "feature-connection",
             "name": "connection",
             "path": "src/features/connection",
-            "responsibility": "Diálogo de conexión: formulario, conexiones recientes, prueba, elección de base de datos y esquemas, inspección con progreso y cancelación, actualización con revisión de diferencias, contraseñas recordadas y el remedio 'Confiar en el certificado y reintentar'. connectionStore.ts es una máquina de fases (idle, testing, loadingSchemas, inspecting, reviewing, applying). El borrador persiste en localStorage 'schemacraft.connection' sin la contraseña.",
+            "responsibility": "Diálogo de conexión: formulario, conexiones recientes, prueba, elección de base de datos y esquemas, inspección con progreso y cancelación, actualización con revisión de diferencias, contraseñas recordadas y el remedio 'Confiar en el certificado y reintentar'. connectionStore.ts es una máquina de fases (idle, testing, loadingSchemas, inspecting, reviewing, applying). fromSavedConnection.ts convierte una conexión guardada en borrador, ajustes vivos, descripción y clave del historial. El borrador persiste en localStorage 'schemacraft.connection' sin la contraseña.",
             "patterns": [
               "Store como controlador",
               "Fase + fallo en vez de booleanos",
@@ -3422,15 +3475,15 @@
             "id": "feature-project",
             "name": "project",
             "path": "src/features/project",
-            "responsibility": "El proyecto abierto: abrir, guardar, guardar como, deshacer y rehacer, aviso de cambios sin guardar. projectStore.ts es el caretaker del Memento (HISTORY_LIMIT 100) y aplica ensurePlaced en cada apertura, inspección y actualización. savedConnection.ts convierte entre borradores de conexión, ajustes y SavedConnection. El título de la ventana y la protección al cerrar viven en useProjectWindow.",
+            "responsibility": "El proyecto abierto: abrir, guardar, guardar como, deshacer y rehacer, aviso de cambios sin guardar. projectStore.ts es el caretaker del Memento (HISTORY_LIMIT 100) y aplica ensurePlaced en cada apertura, inspección y actualización. savedConnection.ts convierte los ajustes de conexión en la SavedConnection que registra un proyecto, así project nunca importa connection. El título de la ventana y la protección al cerrar viven en useProjectWindow.",
             "patterns": ["Caretaker del Memento (ADR-021)", "Acción protegida (pendingDiscard)"]
           },
           {
             "id": "project-window",
             "name": "useProjectWindow",
             "path": "src/features/project/useProjectWindow.ts",
-            "responsibility": "Solo dentro de Tauri; lo ejecuta AppShell. Mantiene el título de la ventana como 'nombre – SchemaCraft', con el prefijo '• ' mientras hay cambios sin guardar, o solo 'SchemaCraft' si no hay proyecto. En onCloseRequested con cambios sin guardar cancela el cierre, ejecuta guardUnsavedChanges y luego llama a window.destroy(). Llama directamente a @tauri-apps/api/window: es el único lugar que salta shared/ipc.",
-            "patterns": ["Protección al cerrar", "Llamada nativa directa (desviación conocida)"]
+            "responsibility": "Solo dentro de la aplicación de escritorio; lo ejecuta AppShell. Mantiene el título de la ventana como 'nombre – SchemaCraft', con el prefijo '• ' mientras hay cambios sin guardar, o solo 'SchemaCraft' si no hay proyecto. Si se cierra la ventana con cambios sin guardar, cancela el cierre, ejecuta guardUnsavedChanges y luego la cierra del todo. Llega a la ventana a través de shared/ipc/nativeWindow.ts.",
+            "patterns": ["Protección al cerrar"]
           },
           {
             "id": "project-notice",
@@ -3491,13 +3544,6 @@
             "path": "src/features/preferences",
             "responsibility": "Espejo del preferences.json que posee Rust: conexiones recientes y proyectos recientes. Aplica el documento completo que devuelve Rust.",
             "patterns": ["Rust es dueño del estado, el frontend lo refleja (ADR-017)"]
-          },
-          {
-            "id": "feature-palette",
-            "name": "palette",
-            "path": "src/features/palette",
-            "responsibility": "Paleta Ctrl+K sobre todas las acciones del registro y todas las entidades. paletteSearch.ts ordena los resultados.",
-            "patterns": ["Lee el registro de acciones"]
           },
           {
             "id": "feature-about",
@@ -3561,7 +3607,7 @@
             "id": "ipc-invoke",
             "name": "Comandos (invoke)",
             "path": "src-tauri/src/main.rs",
-            "responsibility": "invoke(nombre, args) llega a uno de los 20 comandos de generate_handler!. Los argumentos salen en camelCase desde TS y llegan como parámetros snake_case en Rust. Los comandos async (las cuatro llamadas de conexión, read_project, write_project y export_diagram) corren en el runtime asíncrono de Tauri. Los síncronos (get_app_info, los dos cancel_*, compute_schema_diff, refresh_project_content y los de preferencias y credenciales) corren en el hilo principal, que también mueve la ventana, así que un diff grande o una llamada lenta al keyring congela la interfaz mientras dura. Solo export_diagram pasa su trabajo a spawn_blocking.",
+            "responsibility": "invokeCommand(nombre, args) en src/shared/ipc llega a uno de los 20 comandos de generate_handler!. Los argumentos salen en camelCase desde TS y llegan como parámetros snake_case en Rust. Los comandos que solo leen memoria siguen siendo síncronos y responden al instante (get_app_info, read_preferences y los dos cancel_*). Todos los demás son async, y su trabajo con archivos, con el almacén de credenciales o pesado corre en el pool bloqueante mediante run_blocking (ADR-032), así la ventana nunca se congela.",
             "patterns": [
               "Petición/respuesta sobre serde JSON",
               "La firma decide el hilo (async o síncrona)"
@@ -3585,7 +3631,7 @@
             "id": "ipc-capabilities",
             "name": "Capabilities y plugins",
             "path": "src-tauri/capabilities/default.json",
-            "responsibility": "Siete entradas: core:default, core:window:allow-set-theme, core:window:allow-set-title, core:window:allow-destroy, dialog:default, opener:default y opener:allow-reveal-item-in-dir. opener:default ya incluye reveal-item-in-dir y open-url; dialog:default equivale a open, save y message. set-title y destroy sirven a useProjectWindow. Los comandos de la app no necesitan entrada. No hay plugin fs, así que el frontend nunca toca archivos.",
+            "responsibility": "Siete entradas, exactamente lo que llama el frontend: core:default, core:window:allow-set-theme, core:window:allow-set-title, core:window:allow-destroy, dialog:allow-open, dialog:allow-save y opener:allow-reveal-item-in-dir. set-title y destroy sirven a la protección al cerrar de nativeWindow.ts. Los comandos de la app no necesitan entrada. No hay plugin fs, así que el frontend nunca toca archivos.",
             "patterns": ["Permisos basados en capabilities"]
           }
         ]
@@ -3615,7 +3661,7 @@
             "id": "host-state",
             "name": "AppState",
             "path": "src-tauri/src/state.rs",
-            "responsibility": "Registros Jobs ('inspection-N', 'export-N' -> CancellationToken), PreferencesStore (Mutex, se guarda en cada cambio) y el almacén de credenciales (SystemCredentialStore).",
+            "responsibility": "Registros Jobs ('inspection-N', 'export-N' -> CancellationToken), PreferencesStore y el almacén de credenciales (SystemCredentialStore). PreferencesStore aplica cada cambio a una copia y la conserva solo cuando el archivo ya la tiene, y nunca sobrescribe un archivo escrito por una versión más nueva.",
             "patterns": [
               "Registro de tokens de cancelación",
               "Persistencia inmediata (write-through)"
@@ -3646,28 +3692,28 @@
             "id": "cmd-project",
             "name": "commands/project.rs",
             "path": "src-tauri/src/commands/project.rs",
-            "responsibility": "read_project y write_project (registra savedAt y savedWith) son async pero hacen IO de archivos bloqueante en línea. compute_schema_diff y refresh_project_content son síncronos, así que corren en el hilo principal con snapshots completos.",
+            "responsibility": "Async. read_project y write_project (registra savedAt y savedWith) hacen su IO de archivos mediante run_blocking, igual que compute_schema_diff y refresh_project_content, que manejan snapshots completos.",
             "patterns": ["Comando delgado"]
           },
           {
             "id": "cmd-preferences",
             "name": "commands/preferences.rs",
             "path": "src-tauri/src/commands/preferences.rs",
-            "responsibility": "Síncronos, en el hilo principal. read_preferences y remember/forget para conexiones y proyectos. Cada cambio se guarda en disco y se devuelve el documento completo.",
+            "responsibility": "read_preferences es síncrono y devuelve la copia en memoria. remember y forget para conexiones y proyectos son async y guardan mediante run_blocking; cada uno devuelve el documento completo tal como quedó guardado.",
             "patterns": ["Rust es dueño del estado"]
           },
           {
             "id": "cmd-credentials",
             "name": "commands/credentials.rs",
             "path": "src-tauri/src/commands/credentials.rs",
-            "responsibility": "Síncronos, así que las llamadas al keyring corren en el hilo principal. has_stored_password, remember_password, forget_password, con la clave SavedConnection::credential_key. remember_password recibe la contraseña una vez y ningún comando la devuelve (ADR-019). Esto no cubre las contraseñas tecleadas, que viajan con cada comando de conexión y con cada actualización desde liveSettings.",
+            "responsibility": "Async, con las llamadas al keyring en run_blocking. has_stored_password, remember_password, forget_password, con la clave SavedConnection::credential_key. remember_password recibe la contraseña una vez y ningún comando la devuelve (ADR-019). Esto no cubre las contraseñas tecleadas, que viajan con cada comando de conexión y con cada actualización desde liveSettings.",
             "patterns": ["El secreto nunca se serializa hacia el webview (ADR-019)"]
           },
           {
             "id": "cmd-export",
             "name": "commands/export.rs",
             "path": "src-tauri/src/commands/export.rs",
-            "responsibility": "Async. export_diagram ejecuta la exportación del core en spawn_blocking, el único comando que usa el pool bloqueante, y transmite etapas; cancel_export (síncrono) cancela por jobId.",
+            "responsibility": "Async. export_diagram ejecuta la exportación del core mediante run_blocking y transmite etapas; cancel_export (síncrono) cancela por jobId.",
             "patterns": ["Trabajo de CPU en el pool de hilos bloqueantes"]
           }
         ]
@@ -3736,7 +3782,7 @@
             "id": "core-project",
             "name": "project",
             "path": "crates/schemacraft-core/src/project",
-            "responsibility": "Documento .scraft (FORMAT_VERSION 1), ProjectContent, SavedConnection sin contraseña, CanvasState (el Memento) con normalización y retaining_entities_of.",
+            "responsibility": "Documento .scraft (FORMAT_VERSION 1), que file.rs lee y escribe con los helpers de fs; ProjectContent, SavedConnection sin contraseña, CanvasState (el Memento) con normalización y retaining_entities_of.",
             "patterns": [
               "Memento",
               "Encabezado + contenido aplanado",
@@ -3745,16 +3791,16 @@
           },
           {
             "id": "core-file-io",
-            "name": "project/file.rs",
-            "path": "crates/schemacraft-core/src/project/file.rs",
-            "responsibility": "read_project y write_project, más los helpers pub(crate) read_json_bytes, write_json_atomically y write_bytes_atomically (.tmp hermano y luego rename), reutilizados por preferences y export.",
+            "name": "fs.rs",
+            "path": "crates/schemacraft-core/src/fs.rs",
+            "responsibility": "Helpers privados del crate que comparten project, preferences y export: read_bytes distingue un archivo ausente, format_version lee el encabezado de un documento versionado, y write_json_atomically y write_bytes_atomically escriben un .tmp hermano, lo vuelcan al disco con sync_all y lo renombran sobre el destino.",
             "patterns": ["Reemplazo atómico", "Lectura del encabezado primero"]
           },
           {
             "id": "core-preferences",
             "name": "preferences",
             "path": "crates/schemacraft-core/src/preferences/mod.rs",
-            "responsibility": "Documento Preferences: conexiones recientes y proyectos recientes, 10 de cada uno, sin duplicados. Un archivo dañado se reemplaza por valores por defecto y se registra una advertencia.",
+            "responsibility": "Documento Preferences: conexiones recientes y proyectos recientes, 10 de cada uno, sin duplicados. Primero se revisa la versión del formato: un archivo dañado se reporta como corrupto y uno más nuevo como no soportado, y el host decide qué hacer con cada caso.",
             "patterns": ["Listas MRU acotadas", "Carga tolerante a fallos"]
           },
           {
@@ -3799,7 +3845,7 @@
           {
             "id": "ext-filesystem",
             "name": "Sistema de archivos",
-            "path": "crates/schemacraft-core/src/project/file.rs",
+            "path": "crates/schemacraft-core/src/fs.rs",
             "responsibility": "Archivos .scraft y de exportación en rutas que el usuario elige en diálogos nativos, preferences.json en %APPDATA%, fuentes del sistema para PNG y PDF.",
             "patterns": ["El diálogo devuelve una ruta y Rust hace el IO"]
           },
@@ -3846,14 +3892,14 @@
             "id": "ci",
             "name": "Workflow de CI",
             "path": ".github/workflows/ci.yml",
-            "responsibility": "Job de Windows: prettier, eslint, tsc, vitest y npm run docs:check; cargo fmt, clippy -D warnings, cargo test; revisión de contratos; tauri build --no-bundle; instala el runtime de WebView2 si el runner no lo tiene; prueba de humo. Sube como artefactos el exe y las capturas de la prueba de humo. Job de Linux: pruebas de integración con un servicio mssql/server:2022-latest.",
-            "patterns": ["Checks obligatorios"]
+            "responsibility": "En cada pull request, cada job corre primero scripts/ci-changes.sh. Job de Windows: prettier, eslint, tsc, vitest y npm run docs:check siempre; si cambió código, además cargo fmt, clippy -D warnings, cargo test, la revisión de contratos, tauri build --no-bundle con el perfil ci, WebView2 si el runner no lo tiene y la prueba de humo, y sube el exe y las capturas. Job de Linux: pruebas de integración con mssql/server:2022-latest si cambió el core. Los push a main corren todo y mantienen la caché caliente (ADR-033).",
+            "patterns": ["Checks obligatorios", "Filtrado según el cambio, que falla cerrado"]
           },
           {
             "id": "release",
             "name": "Workflow de release",
             "path": ".github/workflows/release.yml",
-            "responsibility": "Con un tag v* y sin cachés: compara el tag con package.json, corre los controles, compila el exe y el instalador NSIS, instala WebView2 si falta, corre la prueba de humo (sube las capturas), escribe SHA256SUMS.txt y crea un borrador de release en GitHub (ADR-027).",
+            "responsibility": "Con un tag v* y sin cachés: revisa que el tag esté en main y coincida con package.json y Cargo.toml, corre los controles, compila el exe y el instalador NSIS con el perfil release completo, instala WebView2 si falta, corre la prueba de humo (sube las capturas), escribe SHA256SUMS.txt y crea un borrador de release en GitHub (ADR-027).",
             "patterns": ["Publicación disparada por tag", "Borrador y publicación manual"]
           },
           {
@@ -4001,9 +4047,9 @@
         "kind": "call"
       },
       {
-        "id": "action-registry-to-feature-palette",
+        "id": "action-registry-to-command-palette",
         "from": "action-registry",
-        "to": "feature-palette",
+        "to": "command-palette",
         "label": "abre/cierra la paleta",
         "kind": "call"
       },
@@ -4032,7 +4078,7 @@
         "id": "feature-connection-to-feature-project",
         "from": "feature-connection",
         "to": "feature-project",
-        "label": "loadFromInspection, applyRefreshedContent",
+        "label": "loadFromInspection, applyRefreshedContent, toSavedConnection",
         "kind": "call"
       },
       {
@@ -4120,15 +4166,15 @@
         "kind": "call"
       },
       {
-        "id": "feature-palette-to-action-registry",
-        "from": "feature-palette",
+        "id": "command-palette-to-action-registry",
+        "from": "command-palette",
         "to": "action-registry",
-        "label": "lee acciones (import hacia arriba)",
+        "label": "lee acciones",
         "kind": "call"
       },
       {
-        "id": "feature-palette-to-feature-canvas",
-        "from": "feature-palette",
+        "id": "command-palette-to-feature-canvas",
+        "from": "command-palette",
         "to": "feature-canvas",
         "label": "focusEntity",
         "kind": "call"
@@ -4137,7 +4183,7 @@
         "id": "feature-about-to-brand",
         "from": "feature-about",
         "to": "brand",
-        "label": "Logo, créditos (import hacia arriba)",
+        "label": "Logo, créditos",
         "kind": "call"
       },
       {
@@ -4186,7 +4232,7 @@
         "id": "shared-ipc-to-ipc-capabilities",
         "from": "shared-ipc",
         "to": "ipc-capabilities",
-        "label": "diálogo open/save, revealItemInDir, setTheme",
+        "label": "diálogo open/save, revealItemInDir, tema, título y cierre de la ventana",
         "kind": "ipc"
       },
       {
@@ -4389,14 +4435,14 @@
         "id": "cmd-export-to-core-export",
         "from": "cmd-export",
         "to": "core-export",
-        "label": "export_diagram en spawn_blocking",
+        "label": "export_diagram en run_blocking",
         "kind": "call"
       },
       {
         "id": "host-state-to-core-preferences",
         "from": "host-state",
         "to": "core-preferences",
-        "label": "load_or_default, save",
+        "label": "load, save",
         "kind": "call"
       },
       {
@@ -4589,9 +4635,9 @@
         "kind": "call"
       },
       {
-        "id": "app-shell-to-feature-palette",
+        "id": "app-shell-to-command-palette",
         "from": "app-shell",
-        "to": "feature-palette",
+        "to": "command-palette",
         "label": "monta CommandPalette",
         "kind": "call"
       },
@@ -4708,13 +4754,6 @@
         "kind": "call"
       },
       {
-        "id": "project-window-to-ipc-capabilities",
-        "from": "project-window",
-        "to": "ipc-capabilities",
-        "label": "setTitle, onCloseRequested, destroy (salta shared/ipc)",
-        "kind": "ipc"
-      },
-      {
         "id": "project-notice-to-feature-project",
         "from": "project-notice",
         "to": "feature-project",
@@ -4726,13 +4765,6 @@
         "from": "project-notice",
         "to": "feature-connection",
         "label": "describeOperationError",
-        "kind": "call"
-      },
-      {
-        "id": "feature-project-to-feature-connection",
-        "from": "feature-project",
-        "to": "feature-connection",
-        "label": "savedConnection.ts: connectionDraft, serverAddress",
         "kind": "call"
       },
       {
@@ -4757,13 +4789,6 @@
         "kind": "call"
       },
       {
-        "id": "feature-export-to-feature-connection",
-        "from": "feature-export",
-        "to": "feature-connection",
-        "label": "describeOperationError",
-        "kind": "call"
-      },
-      {
         "id": "feature-export-to-export-font-faces",
         "from": "feature-export",
         "to": "export-font-faces",
@@ -4771,8 +4796,8 @@
         "kind": "call"
       },
       {
-        "id": "feature-palette-to-feature-project",
-        "from": "feature-palette",
+        "id": "command-palette-to-feature-project",
+        "from": "command-palette",
         "to": "feature-project",
         "label": "entidades del proyecto abierto",
         "kind": "call"
@@ -4909,6 +4934,41 @@
         "to": "core-credentials",
         "label": "resolve_stored_password",
         "kind": "call"
+      },
+      {
+        "id": "project-window-to-shared-ipc",
+        "from": "project-window",
+        "to": "shared-ipc",
+        "label": "setWindowTitle, watchWindowClose, closeWindow",
+        "kind": "call"
+      },
+      {
+        "id": "desktop-guards-to-shared-ipc",
+        "from": "desktop-guards",
+        "to": "shared-ipc",
+        "label": "isDesktopRuntime",
+        "kind": "call"
+      },
+      {
+        "id": "feature-connection-to-shared-errors",
+        "from": "feature-connection",
+        "to": "shared-errors",
+        "label": "describeOperationError",
+        "kind": "call"
+      },
+      {
+        "id": "feature-export-to-shared-errors",
+        "from": "feature-export",
+        "to": "shared-errors",
+        "label": "describeOperationError",
+        "kind": "call"
+      },
+      {
+        "id": "feature-project-to-shared-errors",
+        "from": "feature-project",
+        "to": "shared-errors",
+        "label": "describeOperationError",
+        "kind": "call"
       }
     ],
     "dataStores": [
@@ -4926,7 +4986,7 @@
         "format": "JSON con sangría, formatVersion 1",
         "owner": "Rust: crates/schemacraft-core/src/preferences/mod.rs, en memoria en src-tauri/src/state.rs",
         "contents": "Hasta 10 conexiones recientes (sin contraseña) y hasta 10 proyectos recientes.",
-        "notes": "El frontend solo lo refleja. Un archivo ausente o dañado se reemplaza por valores por defecto. formatVersion no se revisa."
+        "notes": "El frontend solo lo refleja. Un archivo ausente o dañado se reemplaza por valores por defecto. Un archivo escrito por una versión más nueva no se toca: esta versión empieza con el historial vacío y no guarda cambios en él."
       },
       {
         "name": "Contraseñas recordadas",
@@ -5162,7 +5222,7 @@
           {
             "actor": "useProjectWindow",
             "action": "Mantiene el título al día",
-            "detail": "Con cada cambio de ruta o de isDirty llama a setTitle: '• nombre – SchemaCraft' con cambios sin guardar, 'nombre – SchemaCraft' sin ellos y 'SchemaCraft' sin proyecto. Un proyecto nunca guardado usa el texto project.untitled."
+            "detail": "Con cada cambio de ruta o de isDirty llama a setWindowTitle: '• nombre – SchemaCraft' con cambios sin guardar, 'nombre – SchemaCraft' sin ellos y 'SchemaCraft' sin proyecto. Un proyecto nunca guardado usa el texto project.untitled."
           },
           {
             "actor": "Usuario",
@@ -5172,7 +5232,7 @@
           {
             "actor": "useProjectWindow",
             "action": "Revisa si hay cambios sin guardar",
-            "detail": "Sin cambios, la ventana se cierra. Con cambios, event.preventDefault() la mantiene abierta."
+            "detail": "Sin cambios, la ventana se cierra. Con cambios, el manejador que recibe watchWindowClose devuelve true y el cierre se cancela (event.preventDefault())."
           },
           {
             "actor": "projectStore",
@@ -5187,7 +5247,7 @@
           {
             "actor": "useProjectWindow",
             "action": "Cierra del todo",
-            "detail": "window.destroy() cierra la ventana sin lanzar onCloseRequested otra vez. Por eso se otorgan core:window:allow-destroy y allow-set-title."
+            "detail": "closeWindow() llama a window.destroy(), que cierra la ventana sin lanzar onCloseRequested otra vez. Por eso se otorgan core:window:allow-destroy y allow-set-title."
           }
         ]
       },
@@ -5256,7 +5316,7 @@
           {
             "actor": "cmd-export",
             "action": "Inicia el trabajo",
-            "detail": "export_diagram con un Channel<ExportEvent>; Started{jobId 'export-N'}; el trabajo corre en spawn_blocking."
+            "detail": "export_diagram con un Channel<ExportEvent>; Started{jobId 'export-N'}; el trabajo corre en run_blocking."
           },
           {
             "actor": "core export",
@@ -5468,7 +5528,7 @@
       },
       {
         "name": "Errores tipados con kind",
-        "where": "enums *Error del core, src-tauri/src/error.rs, src/features/connection/operationErrorMessages.ts",
+        "where": "enums *Error del core, src-tauri/src/error.rs, src/shared/errors/describeOperationError.ts",
         "why": "Rust clasifica; la interfaz define el remedio localizado, como 'Confiar en el certificado y reintentar' (ADR-012)."
       },
       {
@@ -5478,8 +5538,8 @@
       },
       {
         "name": "Escritura atómica",
-        "where": "crates/schemacraft-core/src/project/file.rs",
-        "why": "Archivo temporal y luego rename, para que un fallo no deje un archivo a medias (ADR-015)."
+        "where": "crates/schemacraft-core/src/fs.rs",
+        "why": "Archivo temporal, sync_all y luego rename, para que un fallo o un corte de luz no deje un archivo a medias (ADR-015)."
       },
       {
         "name": "Rust es dueño, el frontend refleja",
@@ -5525,13 +5585,23 @@
         "name": "Modelo de arquitectura revisado",
         "where": "docs/architecture/model.json, scripts/check-architecture-page.mjs",
         "why": "La página es datos más un renderizador; CI compara su manifiesto con el código (ADR-030)."
+      },
+      {
+        "name": "Capas exigidas por lint",
+        "where": "eslint.config.js",
+        "why": "no-restricted-imports por carpeta mantiene app -> features -> shared y la API de Tauri dentro de shared/ipc (ADR-031)."
+      },
+      {
+        "name": "Trabajo bloqueante fuera del hilo principal",
+        "where": "src-tauri/src/commands/mod.rs",
+        "why": "run_blocking lleva el trabajo con archivos, el keyring y el trabajo pesado al pool bloqueante, así ningún comando congela la ventana (ADR-032)."
       }
     ],
     "recipes": {
       "featureTypes": [
         {
           "kind": "Funcionalidad solo de frontend (panel, diálogo, herramienta del lienzo)",
-          "example": "Un panel 'Detalles de tabla' junto al lienzo. Se construye como features/about y features/palette.",
+          "example": "Un panel 'Detalles de tabla' junto al lienzo. Se construye como features/about.",
           "steps": [
             {
               "layer": "Alcance",
@@ -5829,7 +5899,7 @@
             },
             {
               "layer": "host",
-              "step": "Un #[tauri::command] en un módulo de commands, registrado en generate_handler!. Elige el hilo a propósito: async para IO, spawn_blocking para CPU o trabajo bloqueante; un comando síncrono corre en el hilo principal y debe ser breve. Un tipo de error nuevo lleva variante de CommandErrorKind e impl From. Un trabajo largo usa Jobs, un Channel y un comando cancel_*.",
+              "step": "Un #[tauri::command] en un módulo de commands, registrado en generate_handler!. Déjalo síncrono solo si únicamente lee memoria; si no, hazlo async y corre el trabajo con archivos, con el almacén de credenciales o pesado mediante run_blocking (ADR-032). Un tipo de error nuevo lleva variante de CommandErrorKind e impl From. Un trabajo largo usa Jobs, un Channel y un comando cancel_*.",
               "files": [
                 "src-tauri/src/commands/mod.rs",
                 "src-tauri/src/main.rs",
@@ -5839,15 +5909,16 @@
             },
             {
               "layer": "permisos",
-              "step": "Una entrada de capability solo si se usa un plugin o una API de ventana.",
+              "step": "Una entrada de capability solo si se usa un plugin o una API de ventana, con el permiso exacto en vez de un conjunto :default.",
               "files": ["src-tauri/capabilities/default.json"]
             },
             {
               "layer": "frontend",
-              "step": "npm run contracts; una interfaz de backend con implementaciones Tauri, preview y unavailable vía createBackendResolver; claves de error error.<nombre>.title y .hint.",
+              "step": "npm run contracts; una interfaz de backend con implementaciones Tauri, preview y unavailable vía createBackendResolver, que llama a los comandos mediante invokeCommand; claves de error error.<nombre>.title y .hint.",
               "files": [
                 "src/shared/ipc/backendResolver.ts",
-                "src/features/connection/operationErrorMessages.ts"
+                "src/shared/ipc/invokeCommand.ts",
+                "src/shared/errors/describeOperationError.ts"
               ]
             },
             {
@@ -5943,7 +6014,7 @@
         },
         {
           "concern": "Hilos",
-          "touches": "Los comandos async corren en el runtime asíncrono de Tauri; los síncronos, en el hilo principal junto con la ventana. El trabajo de CPU o bloqueante va en spawn_blocking, como en export_diagram; hoy compute_schema_diff, refresh_project_content y los comandos de preferencias y credenciales no lo siguen."
+          "touches": "Los comandos que solo leen memoria siguen siendo síncronos; todos los demás son async y corren el trabajo con archivos, con el almacén de credenciales y pesado mediante run_blocking en src-tauri/src/commands/mod.rs (ADR-032)."
         },
         {
           "concern": "Fuentes",
@@ -5973,7 +6044,7 @@
       },
       {
         "topic": "Carpetas",
-        "rule": "src/app compone src/features y ambos usan src/shared. shared nunca importa app ni features. Una carpeta por capacidad."
+        "rule": "src/app compone src/features y ambos usan src/shared; shared nunca importa app ni features, y ESLint lo exige (ADR-031). Una carpeta por capacidad: el código que necesitan varias funcionalidades baja a shared y el que compone la aplicación sube a app."
       },
       {
         "topic": "Errores",
@@ -5993,7 +6064,11 @@
       },
       {
         "topic": "IPC",
-        "rule": "Las funcionalidades llaman a getXBackend() de src/shared/ipc, nunca a invoke directamente. La única excepción hoy es useProjectWindow, que usa la API de ventana de Tauri."
+        "rule": "Las funcionalidades llaman a getXBackend() y a los envoltorios de src/shared/ipc, nunca a invoke ni a @tauri-apps/* directamente; ESLint lo exige."
+      },
+      {
+        "topic": "Comandos",
+        "rule": "Síncronos solo cuando un comando únicamente lee memoria; si no, async y con el trabajo bloqueante en run_blocking (ADR-032)."
       },
       {
         "topic": "Estado",
@@ -6018,17 +6093,21 @@
       {
         "topic": "Ramas",
         "rule": "Rama desde main. main solo acepta merge commits por PR con ambos checks de CI en verde y al día (ruleset 'Protect main')."
+      },
+      {
+        "topic": "Pull requests",
+        "rule": "Un pull request por bloque de trabajo coherente, con un commit por parte lógica; uno pequeño aparte solo para una corrección urgente de algo publicado. CI corre lo que el cambio necesita (ADR-033)."
       }
     ],
     "conformance": {
-      "verdict": "La arquitectura se sostiene. El core no depende de Tauri, los comandos son delgados, los errores están tipados de punta a punta, los contratos se generan y se revisan, shared nunca importa app ni features y el visor no trae React ni stores. Builder y Memento están implementados como dicen los ADRs. Las desviaciones son problemas de consistencia, no rupturas estructurales, pero son lo que copiaría la siguiente funcionalidad. Tres son mayores: el tooltip equivocado en botones deshabilitados, el árbol Layout desactualizado de docs/architecture.md y carpetas de features que dependen entre sí en ambos sentidos. El árbol Layout desactualizado queda corregido en el mismo cambio que agrega esta página, igual que la frase del PRD sobre el runtime; ambos siguen abajo, marcados como corregidos.",
+      "verdict": "La arquitectura se sostiene. El core no depende de Tauri, los comandos son delgados y mantienen el trabajo bloqueante fuera del hilo principal, los errores están tipados de punta a punta, los contratos se generan y se revisan, ESLint exige las capas del frontend, solo src/shared/ipc habla con Tauri y el visor no trae React ni stores. Builder y Memento están implementados como dicen los ADRs. Las tres desviaciones mayores están corregidas, junto con la mayoría de las menores. Las once que siguen abiertas son problemas de consistencia, no rupturas estructurales; diez están planeadas para v1.1, donde las vistas, el inspector y el sondeo de acceso tocan el mismo código, y una queda pendiente sin fecha. Las corregidas siguen abajo, marcadas como corregidas.",
       "deviations": [
         {
           "what": "Los botones de acción deshabilitados siempre dicen 'Available in an upcoming milestone', aunque la causa sea una condición en tiempo de ejecución.",
           "where": "src/app/actions/ActionIconButton.tsx:23, ActionButton.tsx:44, action.ts:40",
-          "fix": "Agregar unavailableReason?: MessageKey a AppAction, llenarlo en useAppActions y quitar common.comingSoon.",
+          "fix": "Corregido: AppAction tiene unavailableReason, useAppActions lo llena (sin proyecto, disposición en curso, nada oculto, nada que deshacer o rehacer) y common.comingSoon ya no existe.",
           "severity": "major",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "El árbol Layout de docs/architecture.md estaba desactualizado: features/ listaba solo connection, preferences, project y schema (faltaban about, canvas, export y palette); no aparecían src/viewer ni src/export/ del core; scripts/ se describía solo como el contenedor de SQL Server (faltaban prepare-fonts.mjs y smoke-test-release.mjs); .github/workflows solo como CI (faltaba release.yml); y docs/release-checklist.md no aparecía.",
@@ -6040,182 +6119,182 @@
         {
           "what": "ADR-001 enumera el contenido del core sin credentials ni export, y ADR-018 nombra solo los backends connection, project y preferences; faltan credentials y export. ADR-015 además llama estables byte a byte a los archivos .scraft sin exceptuar savedAt, y las notas de arquitectura dicen que el frontend llega a Rust solo por src/shared/ipc, aunque useProjectWindow llama directamente a la API de ventana.",
           "where": "docs/architecture.md, ADR-001 y ADR-018",
-          "fix": "Corregir ambos ADR. Las recetas de esta página sirven como la lista 'Agregar una funcionalidad'. Corrige ADR-015 y la regla de dependencias, o mueve las llamadas de ventana a src/shared/ipc.",
+          "fix": "Corregido: ADR-001 y ADR-018 nombran todos los módulos y backends, ADR-015 exceptúa savedAt y la regla de dependencias se cumple ahora que las llamadas de ventana viven en src/shared/ipc.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Las carpetas de features dependen entre sí en ambos sentidos (canvas <-> project, connection <-> project) y about y palette importan de app/. Ninguna regla de lint protege las fronteras.",
           "where": "src/features/{canvas,project,connection,about,palette}; eslint.config.js",
-          "fix": "Exigir app -> features -> shared con no-restricted-imports o eslint-plugin-boundaries; mover las conversiones de savedConnection a connection/, los tipos de acción a shared y los créditos a shared/brand.",
+          "fix": "Corregido: ESLint exige las capas (ADR-031); la paleta pasó a app/palette, los créditos a shared/brand y la presentación de errores a shared/errors; las conversiones de conexiones guardadas pasaron a features/connection, así project ya no importa connection. canvas y project se siguen usando entre sí por diseño: los cambios al lienzo pasan por projectStore.updateCanvas y el store usa los helpers puros de colocación de canvas (ADR-021).",
           "severity": "major",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "connectionBackend.ts tiene su propio resolver en vez de createBackendResolver.",
           "where": "src/shared/ipc/connectionBackend.ts:54-77",
-          "fix": "Usar createBackendResolver como los otros cuatro backends.",
+          "fix": "Corregido: connectionBackend usa createBackendResolver.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "El helper invokeCommand está copiado en cinco archivos de backend; appInfo.ts no normaliza errores.",
           "where": "src/shared/ipc/*Backend.ts, appInfo.ts:7",
-          "fix": "Exportarlo una vez desde src/shared/ipc y reutilizarlo.",
+          "fix": "Corregido: src/shared/ipc/invokeCommand.ts es la única copia; todos los backends y appInfo.ts la usan.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "useProjectWindow llama directamente a la API de ventana de Tauri (setTitle, onCloseRequested, destroy), fuera de shared/ipc.",
           "where": "src/features/project/useProjectWindow.ts",
-          "fix": "Agregar src/shared/ipc/windowShell.ts con setWindowTitle y onWindowCloseRequested.",
+          "fix": "Corregido: src/shared/ipc/nativeWindow.ts envuelve el título, la protección al cerrar y destroy; useProjectWindow ya no importa Tauri.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "El listado de entidades, la clave `${schema}.${name}` y EntityKind existen en varios lugares.",
           "where": "src/features/schema/entities.ts, canvas/geometry.ts, palette/CommandPalette.tsx, connection/ReviewChangesPanel.tsx, shared/ipc/previewProjectBackend.ts",
-          "fix": "Hacer de features/schema el único hogar de entityKey y EntityKind.",
+          "fix": "Planeado para v1.1: Hacer de features/schema el único hogar de entityKey y EntityKind.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "Los trazos de la pata de gallo y las opciones de ruteo de aristas están copiados entre el lienzo y el renderizador SVG.",
           "where": "src/features/canvas/RelationMarkers.tsx vs src/features/export/svg/renderDiagram.ts",
-          "fix": "Exportarlos desde canvas/edgeGeometry.ts y usarlos en ambos.",
+          "fix": "Planeado para v1.1: Exportarlos desde canvas/edgeGeometry.ts y usarlos en ambos.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "Los colores del diagrama existen tres veces (tokens.css, palette.ts, viewer.css) y algunos CSS Modules declaran sus propios colores oklch.",
           "where": "src/features/export/svg/palette.ts, src/viewer/viewer.css, src/shared/ui/Alert.module.css",
-          "fix": "Alimentar el visor desde DIAGRAM_PALETTES; mover los colores sueltos a tokens.",
+          "fix": "Planeado para v1.1: Alimentar el visor desde DIAGRAM_PALETTES; mover los colores sueltos a tokens.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "Nivel de detalle, tema, idioma, el menú contextual y el ojo del panel de entidades saltan el registro de acciones; 6 acciones no tienen atajo.",
           "where": "src/app/shell/TopBar.tsx, src/features/canvas/CanvasContextMenu.tsx, src/app/shell/EntitiesSidebar.tsx",
-          "fix": "Agregar acciones view.detail*, settings.theme.* y settings.language.*; anotar las excepciones en ADR-008.",
+          "fix": "Planeado para v1.1: Agregar acciones view.detail*, settings.theme.* y settings.language.*; anotar las excepciones en ADR-008.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "El nombre del filtro de archivos .scraft está fijo en inglés.",
           "where": "src/shared/ipc/projectBackend.ts:32",
-          "fix": "Pasar un nombre traducido, clave project.dialog.fileType.",
+          "fix": "Corregido: quien llama pasa el nombre traducido, clave project.dialog.fileType.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "El visor reimplementa la interpolación y usa plurales con count === 1; no hay prueba de placeholders.",
           "where": "src/viewer/messages.ts:96-109",
-          "fix": "Reutilizar src/shared/i18n/formatMessage.ts y agregar una prueba de placeholders.",
+          "fix": "Planeado para v1.1: Reutilizar src/shared/i18n/formatMessage.ts y agregar una prueba de placeholders.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "La presentación de errores compartida vive dentro de features/connection.",
           "where": "src/features/connection/operationErrorMessages.ts",
-          "fix": "Moverla a src/shared/errors/describeOperationError.ts.",
+          "fix": "Corregido: vive en src/shared/errors/describeOperationError.ts.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "El comportamiento del lienzo vive en el shell (DiagramCanvas, EntitiesSidebar).",
           "where": "src/app/shell/DiagramCanvas.tsx, src/app/shell/EntitiesSidebar.tsx",
-          "fix": "Moverlos a features/canvas; AppShell solo los coloca.",
+          "fix": "Planeado para v1.1: Moverlos a features/canvas; AppShell solo los coloca.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "Exports muertos o duplicados: projectDisplayName, layoutKindOf, sameName, hasHiddenEntities.",
           "where": "projectStore.ts:105, layouts/index.ts:15, canvasState.ts:22, canvasActions.ts:138",
-          "fix": "Borrarlos; considerar una revisión de exports muertos (knip) en CI.",
+          "fix": "Corregido: los cuatro exports se borraron. Una revisión de exports muertos en CI sigue siendo una opción.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "PreferencesStore::update cambia la memoria antes de guardar y no revierte si la escritura falla.",
           "where": "src-tauri/src/state.rs:90-98",
-          "fix": "Aplicar el cambio a una copia, guardarla y reemplazar solo si tuvo éxito.",
+          "fix": "Corregido: update cambia una copia y la reemplaza solo si el guardado tuvo éxito; una prueba cubre la escritura fallida.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "El estado persistido está dividido entre preferences.json y localStorage. La clave 'schemacraft.connection' no está documentada, conserva el último servidor, inicio de sesión, base de datos y trustServerCertificate, y sobrevive a borrar preferences.json, aunque README.md dice que eso limpia el historial.",
           "where": "src/shared/settings/settingsStore.ts:34, src/features/connection/connectionStore.ts:95, README.md:175-177",
-          "fix": "Anotar en ADR-017: archivo Rust para el historial del dominio, localStorage solo para comodidades de la interfaz, nunca secretos. Listar ambas claves en el README y decir qué limpia borrar cada una.",
+          "fix": "Planeado para v1.1: Anotar en ADR-017: archivo Rust para el historial del dominio, localStorage solo para comodidades de la interfaz, nunca secretos. Listar ambas claves en el README y decir qué limpia borrar cada una.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "Inspección y exportación usan formas distintas de progreso y cancelación; la fase de conexión no se puede cancelar; la exportación revisa la cancelación una vez; ADR-013 y progress.rs:55 prometen de más.",
           "where": "crates/schemacraft-core/src/inspectors/sqlserver/mod.rs:95-122, export/mod.rs:104",
-          "fix": "Correr la fase de conexión contra el token; documentar un solo patrón de trabajo largo; corregir la redacción.",
+          "fix": "Planeado para v1.1: Correr la fase de conexión contra el token; documentar un solo patrón de trabajo largo; corregir la redacción.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "Agregar un motor toca más de lo que dice el doc de inspectors: SavedConnection, CredentialKey, nociones del modelo y conversiones del frontend son específicas de SQL Server.",
           "where": "crates/schemacraft-core/src/inspectors/mod.rs:1-6, project/connection.rs, src/features/project/savedConnection.ts",
-          "fix": "Corregir el comentario y mantener la receta de motor en esta página.",
+          "fix": "Corregido: el comentario nombra cada parte específica de SQL Server; la receta de motor sigue en esta página.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "El formato de dirección del servidor difiere: Rust agrega ',1433' y TypeScript no.",
           "where": "inspectors/sqlserver/settings.rs:232-238 vs src/features/connection/serverAddress.ts:58-62",
-          "fix": "Tomar el formato de Rust como canónico y alinear el de TS.",
+          "fix": "Planeado para v1.1: Tomar el formato de Rust como canónico y alinear el de TS.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "Los comandos manejan los hilos de tres formas y ningún ADR lo cubre. Los síncronos (compute_schema_diff, refresh_project_content, preferencias, credenciales) corren en el hilo principal, así que un diff grande o una llamada lenta al keyring bloquea la interfaz; read_project y write_project hacen IO bloqueante en el runtime asíncrono; solo export_diagram usa spawn_blocking.",
           "where": "src-tauri/src/commands/project.rs, preferences.rs, credentials.rs vs export.rs",
-          "fix": "Regla: comandos async y trabajo bloqueante en spawn_blocking; registrar un ADR.",
+          "fix": "Corregido: los comandos que solo leen memoria siguen siendo síncronos; todos los demás son async y usan run_blocking (ADR-032).",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Los helpers de escritura atómica viven en project/ (dependencia lateral) y omiten sync_all antes del rename.",
           "where": "crates/schemacraft-core/src/project/file.rs:100-124",
-          "fix": "Moverlos a un src/fs.rs neutral y llamar File::sync_all antes del rename.",
+          "fix": "Corregido: los helpers viven en src/fs.rs, privado del crate, y llaman a File::sync_all antes del rename.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "El formatVersion de preferences.json nunca se revisa.",
           "where": "crates/schemacraft-core/src/preferences/mod.rs:76-91",
-          "fix": "Reutilizar la lectura previa del encabezado; no tocar un archivo más nuevo.",
+          "fix": "Corregido: las preferencias usan la misma revisión del encabezado; un archivo más nuevo se rechaza y nunca se sobrescribe.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Un cambio de nivel de detalle que no mueve nada marca cambios pero no se puede deshacer.",
           "where": "src/features/project/projectStore.ts:264-278",
-          "fix": "Hacerlo siempre deshacible o documentarlo en ADR-021.",
+          "fix": "Corregido: ADR-021 lo dice: el nivel de detalle por sí solo es un ajuste de vista, se guarda pero no es un paso de deshacer.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Estilos mezclados: #[allow] vs #[expect], FileError sin thiserror, PathBuf vs String para rutas.",
           "where": "export/render.rs:84, project/file.rs:58-75, commands/preferences.rs",
-          "fix": "Usar #[expect], derivar thiserror y usar PathBuf en los comandos.",
+          "fix": "Corregido: #[expect] en render.rs, FileError deriva thiserror y los comandos reciben las rutas como PathBuf. Los módulos de prueba conservan #![allow], como dicen las convenciones.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Las capabilities otorgan más de lo que usa el frontend: opener:default incluye open-url, que nada llama; opener:allow-reveal-item-in-dir repite parte de opener:default; dialog:default incluye message, que no se usa.",
           "where": "src-tauri/capabilities/default.json",
-          "fix": "Listar solo dialog:allow-open, dialog:allow-save y opener:allow-reveal-item-in-dir.",
+          "fix": "Corregido: las capabilities listan dialog:allow-open, dialog:allow-save y opener:allow-reveal-item-in-dir.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "connectionStore, exportStore, preferencesStore y canvasActions no tienen pruebas unitarias.",
           "where": "src/features/*",
-          "fix": "Seguir projectStore.test.ts, simulando los backends.",
+          "fix": "Planeado para v1.1: Seguir projectStore.test.ts, simulando los backends.",
           "severity": "minor",
           "status": "open"
         },
@@ -6229,30 +6308,30 @@
         {
           "what": "release.yml corre con cualquier tag v* y ningún ruleset protege los tags. Solo compara el tag con package.json; docs/release-checklist.md:24 dice que Cargo.toml coincide, pero nada lo exige.",
           "where": ".github/workflows/release.yml:38-42, docs/release-checklist.md:24",
-          "fix": "Revisar que el tag esté en main y que ambas versiones coincidan.",
+          "fix": "Corregido: release.yml revisa que el tag esté en main y coincida con package.json y Cargo.toml; un tag que no cumple no compila nada.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "SCHEMACRAFT_REMOTE_DEBUGGING_PORT abre un puerto CDP también en compilaciones release (para la prueba de humo).",
           "where": "src-tauri/src/main.rs:78-115",
-          "fix": "Mantenerlo como compromiso documentado y anotarlo en las notas de seguridad.",
+          "fix": "Corregido: se mantiene como compromiso y está declarado en SECURITY.md.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "No hay archivo de log; las compilaciones release no muestran logs.",
           "where": "src-tauri/src/logging.rs",
-          "fix": "Considerar un archivo de log rotativo para reportes de errores.",
+          "fix": "Pendiente sin fecha: Considerar un archivo de log rotativo para reportes de errores.",
           "severity": "minor",
           "status": "open"
         },
         {
           "what": "La prueba de humo cubre solo bienvenida, Acerca de, idioma, tema y F5; su carpeta de salida no está en .gitignore.",
           "where": "scripts/smoke-test-release.mjs:15, .gitignore",
-          "fix": "Ignorar smoke-test/; mantener la lista manual para conectar, guardar y exportar.",
+          "fix": "Corregido: smoke-test/ se ignora. La lista manual sigue cubriendo conectar, guardar y exportar.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         }
       ]
     },
@@ -6443,7 +6522,7 @@
       {
         "id": "spawn-blocking",
         "term": "spawn_blocking",
-        "meaning": "Ejecuta trabajo bloqueante o de CPU en un pool de hilos aparte, así el runtime asíncrono y la ventana quedan libres; lo usa export_diagram."
+        "meaning": "Ejecuta trabajo bloqueante o de CPU en un pool de hilos aparte, así el runtime asíncrono y la ventana quedan libres. Los comandos llegan a él mediante run_blocking (ADR-032)."
       },
       {
         "id": "static-font-faces",

@@ -18,17 +18,19 @@ schemacraft/
 ├── crates/schemacraft-core/   Rust library, free of Tauri: everything the app knows and does
 │   ├── src/model/             pure schema types (tables, columns, keys, snapshot)
 │   ├── src/inspectors/        DatabaseInspector strategy, errors, progress, SQL Server implementation
-│   ├── src/project/           .scraft documents, saved connections, canvas state, atomic JSON files
+│   ├── src/project/           .scraft documents, saved connections, canvas state
 │   ├── src/diff/              comparison of two snapshots behind "refresh from database"
 │   ├── src/preferences/       connection history and recent projects (per-user JSON file)
 │   ├── src/credentials/       CredentialStore strategy: Windows Credential Manager, memory
 │   ├── src/export/            SVG to PNG and PDF rendering with bundled fonts
+│   ├── src/fs.rs              atomic file writes shared by projects, preferences and exports
 │   ├── assets/fonts/          TTF fonts embedded in the exports
 │   └── tests/                 integration tests and SQL fixtures (run against a real server)
 ├── src-tauri/                 Rust binary: Tauri host, IPC commands, job registry, logging, configuration
 ├── src/                       React + TypeScript frontend
-│   ├── app/                   composition root: shell, actions, brand, global styles, dev hooks
+│   ├── app/                   composition root: shell, actions, palette, global styles, dev hooks
 │   │   ├── actions/           action registry, keyboard shortcuts, action buttons
+│   │   ├── palette/           command palette over the action registry
 │   │   ├── shell/             top bar, entities sidebar, diagram canvas, status bar, shell guards
 │   │   └── styles/            design tokens and base styles
 │   ├── features/              one folder per product capability
@@ -36,35 +38,38 @@ schemacraft/
 │   │   ├── canvas/            entity nodes, relation edges, layouts and their worker, geometry
 │   │   ├── connection/        connection dialog, history, flow store, progress, change review
 │   │   ├── export/            export dialog and store, SVG renderer, standalone HTML packaging
-│   │   ├── palette/           command palette
 │   │   ├── preferences/       mirror of the preferences file: history and recent projects
 │   │   ├── project/           open project store, open/save flows, unsaved-changes guard, undo
 │   │   └── schema/            entity list helpers and data type formatting
 │   ├── shared/                cross-cutting modules
+│   │   ├── brand/             logo and author credits
 │   │   ├── contracts/         TypeScript types generated from Rust (ts-rs)
+│   │   ├── errors/            title, hint and remedy for every error kind
 │   │   ├── i18n/              message catalogues and translation hook
-│   │   ├── ipc/               typed wrappers over Tauri `invoke` and native dialogs; preview backends
+│   │   ├── ipc/               the only door to Tauri: commands, dialogs, window, runtime; preview backends
 │   │   ├── settings/          per-window UI settings (theme, language, sidebar)
 │   │   └── ui/                accessible UI primitives (Radix based)
 │   └── viewer/                standalone viewer embedded in exported HTML files
 ├── assets/brand/              source artwork for the application icon
-├── scripts/                   SQL Server container, font preparation, release smoke test, page check
+├── scripts/                   SQL Server container, font preparation, smoke test, page check, CI change filter
 ├── docs/                      PRD, decision records, UX principles, release checklist
 │   └── architecture/          interactive architecture page and its model (GitHub Pages)
-└── .github/workflows/         CI on every pull request; release on every tag
+└── .github/workflows/         CI on every pull request, sized to the change; release on every tag
 ```
 
 Dependencies only point inwards: `src-tauri` depends on `schemacraft-core`, never the other way
-round; the frontend talks to Rust exclusively through IPC commands wrapped in `src/shared/ipc`;
-`shared/` modules never import from `app/` or `features/`.
+round. In the frontend, `app/` composes `features/`, which build on `shared/`; `shared/` never
+imports from `app/` or `features/`, and only `src/shared/ipc` imports the Tauri API, for commands,
+dialogs and the window alike. ESLint enforces these rules (ADR-031).
 
 ## Decisions
 
 ### ADR-001: Rust workspace with a framework-free core
 
 `crates/schemacraft-core` knows nothing about Tauri, HTTP or any UI. It contains the schema model,
-the database inspectors (`DatabaseInspector` strategy), `.scraft` persistence, the diff engine and
-the preferences. `src-tauri` is a thin adapter that maps core operations to IPC commands.
+the database inspectors (`DatabaseInspector` strategy), `.scraft` persistence, the diff engine,
+the preferences, the credential store and the PNG and PDF export. `src-tauri` is a thin adapter
+that maps core operations to IPC commands.
 
 Why: the core can be unit tested with `cargo test` in seconds and without a window, the PRD's
 module boundaries (`inspectors`, `model`, `project`, `diff`, `ui`) map one-to-one to directories,
@@ -213,9 +218,11 @@ A project file is one JSON document: a header (`formatVersion`, `savedAt`, `save
 followed by the content the application holds in memory, `ProjectContent`: the connection
 without its password, the inspection options, the snapshot and the canvas state. Readers parse
 the header first and refuse newer format versions with a classified error; missing fields of
-older files take defaults. Files are written to a sibling temporary file and renamed over the
-destination, so a crash never leaves a truncated project behind. Node states are stored sorted
-by qualified name, so saving the same project twice yields the same bytes.
+older files take defaults. Files are written to a sibling temporary file, flushed to the disk
+and renamed over the destination, so a crash or a power cut never leaves a truncated project
+behind; the preferences and the exports share the same helper (`src/fs.rs`). Node states are
+stored sorted by qualified name, so saving an unchanged project twice yields the same bytes
+except for `savedAt`.
 
 Why: the PRD asks for a readable, structured file that reopens without a database. Pretty
 JSON with camelCase keys is diff-friendly and matches the IPC payloads, which means one set of
@@ -258,8 +265,11 @@ than next to the executable keeps the portable build usable from read-only locat
 ### ADR-018: Native dialogs through the Tauri plugin, preview backends behind a resolver
 
 File pickers use `tauri-plugin-dialog`; the chosen path is then passed to the Rust commands
-that read and write projects, so no file content crosses the IPC boundary twice. Every feature
-backend (connection, project, preferences) is resolved by one helper: the Tauri commands inside
+that read and write projects, so no file content crosses the IPC boundary twice. The caller
+passes the dialog title and the file-type name already translated. Every feature backend
+(connection, project, preferences, credentials, export) is resolved by one helper,
+`createBackendResolver`, and calls its commands through `invokeCommand`, which turns every
+failure into an `OperationError`. The resolver picks the Tauri commands inside
 the desktop runtime, a simulated backend in a development browser preview, or a backend that
 reports the runtime as unavailable. The preview loader is passed as
 `import.meta.env.DEV ? () => import(...) : null`, which lets the bundler drop every simulated
@@ -305,7 +315,9 @@ validates (`retaining_entities_of`, `normalized`). Every change to it goes throu
 `projectStore.updateCanvas(update, { undoable, dirty })`, which pushes the previous value on a
 bounded history (100 entries) and clears the redo stack; undo and redo swap values back. The
 first layout of a fresh project is applied with `undoable: false, dirty: false`, so it is
-neither an edit nor an undo step. Transient interaction state (selection, hover, zoom level,
+neither an edit nor an undo step. Changing the detail level is saved with the project, but it
+becomes an undo step only when the taller nodes have to move apart; on its own it is a view
+setting, like the viewport. Transient interaction state (selection, hover, zoom level,
 refresh highlights, context menu, layout in progress) lives in `canvasUiStore` and is never
 saved. After a refresh, `refreshPlacement.ts` places new tables in free space next to the
 tables they reference, or in a row below the diagram, and highlights them; surviving positions
@@ -405,15 +417,16 @@ mapping the familiar keys keeps the muscle memory useful.
 
 ### ADR-027: Releases are cut by a tag-driven workflow and smoke-tested
 
-Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`: it checks that the tag matches the
-package version, runs every quality gate, builds the portable executable and the NSIS installer,
+Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`: it checks that the tag points at a
+commit on `main` and matches the version in `package.json` and `Cargo.toml`, runs every quality
+gate, builds the portable executable and the NSIS installer with the full release profile,
 smoke-tests the real binary,
 computes SHA-256 sums and publishes a draft GitHub release with the assets and generated notes.
 The smoke test (`scripts/smoke-test-release.mjs`) starts the executable with a DevTools port,
 which the application opens when `SCHEMACRAFT_REMOTE_DEBUGGING_PORT` is set, in a private
 profile, and checks through that protocol that the welcome screen renders, that About shows the
 version, that the language and the theme switch and that F5 does not reload, saving screenshots
-as artifacts; CI runs the same test on every push. Before any
+as artifacts; CI runs the same test on pull requests that change code (ADR-033). Before any
 window exists, the executable checks that the WebView2 runtime loads and otherwise shows a
 native bilingual dialog offering Microsoft's download page, through `rfd`, which the dialog
 plugin already compiles, since the workspace forbids `unsafe` FFI.
@@ -474,6 +487,50 @@ same pull request; the check fails otherwise.
 Why: a diagram drawn by hand drifts from the code within weeks. Keeping the facts in data, the
 page as a renderer and a CI check on the parts that can be read from the code keeps the map
 honest without a build step, and the decision records stay the place for the reasons.
+
+### ADR-031: Layer boundaries are enforced by lint
+
+`eslint.config.js` gives each frontend layer a `no-restricted-imports` rule: `src/app` may import
+features and shared modules; `src/features` may not import `app/`; `src/shared` imports neither
+`app/` nor `features/`; the standalone viewer reuses features but never `app/`, and nothing
+imports the viewer. Only `src/shared/ipc` may import `@tauri-apps/*`; the rest of the frontend
+reaches commands, dialogs, the window (`nativeWindow.ts`) and the runtime check (`runtime.ts`)
+through it. Code that several features need moves down into `shared/` (brand, error
+presentation), and code that composes the application moves up into `app/` (the command
+palette). Features may still use each other's public modules where one builds on the other, such
+as canvas and project; the architecture page lists those edges.
+
+Why: rules that live only in a document erode with every change. A lint error at the import names
+the rule and the way out, in the editor and in CI, so the structure holds as features are added.
+
+### ADR-032: Commands keep blocking work off the main thread
+
+Tauri runs synchronous commands on the main thread, which also drives the window. A command stays
+synchronous only when it reads memory and returns at once (`get_app_info`, `read_preferences`,
+`cancel_*`). Every command that touches a file, the operating system credential store or a large
+computation is `async` and hands that work to `run_blocking` (`src-tauri/src/commands/mod.rs`),
+which runs it on the blocking thread pool and reports a crashed worker as an `unexpected` error.
+Commands that need the application state inside the worker take the `AppHandle` and look the
+state up there. `PreferencesStore::update` applies a change to a copy and keeps it only after the
+file holds it, and a preferences file written by a newer version is never overwritten.
+
+Why: a slow keyring call, a network drive or a diff of a thousand tables must not freeze the
+window, and one rule for every command is easier to review than a judgement per command.
+
+### ADR-033: CI runs what a change needs
+
+On a pull request, each CI job first runs `scripts/ci-changes.sh`, which classifies the changed
+files. A change limited to `docs/` and Markdown files runs only the frontend gates and the
+architecture page check; any other change adds the Rust gates, the build and the smoke test; the
+SQL Server integration job runs its tests only when the core, the Cargo manifests, the toolchain
+or the CI definition change. The executable for the smoke test is built with the `ci` Cargo
+profile (release without link-time optimisation), which halves the build time; release.yml keeps
+the full release profile. Pushes to `main` run everything, which also keeps the build cache warm
+for the next pull request. The classification runs inside each required job instead of in a
+separate job, because a job skipped through a failed dependency would count as passed.
+
+Why: a pull request that only touches the documentation should not wait fifteen minutes for a
+Rust build, and the required checks must still fail closed when the classification itself fails.
 
 ## Milestones
 
