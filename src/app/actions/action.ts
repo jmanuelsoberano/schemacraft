@@ -25,8 +25,17 @@ export type ActionId =
   | "edit.redo"
   | "view.commandPalette"
   | "view.toggleSidebar"
+  | "view.toggleInspector"
   | "view.searchEntities"
   | "view.accessReport"
+  | "view.detailCompact"
+  | "view.detailKeys"
+  | "view.detailFull"
+  | "settings.theme.system"
+  | "settings.theme.light"
+  | "settings.theme.dark"
+  | "settings.language.en"
+  | "settings.language.es"
   | "help.about";
 
 /**

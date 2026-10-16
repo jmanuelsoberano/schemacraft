@@ -31,26 +31,27 @@ schemacraft/
 │   ├── app/                   composition root: shell, actions, palette, global styles, dev hooks
 │   │   ├── actions/           action registry, keyboard shortcuts, action buttons
 │   │   ├── palette/           command palette over the action registry
-│   │   ├── shell/             top bar, status bar, welcome overlay, layout menu, sidebar resizer, shell guards
+│   │   ├── shell/             top bar, status bar, welcome overlay, layout menu, shell guards, side-panel widths
 │   │   └── styles/            design tokens, base styles and the test that keeps every stylesheet on tokens
 │   ├── features/              one folder per product capability
 │   │   ├── about/             About dialog
 │   │   ├── access/            partial-access chip and bar, access report, GRANT script
-│   │   ├── canvas/            diagram canvas, entities panel, nodes, edges and markers, layouts and their worker, geometry
+│   │   ├── canvas/            diagram canvas, entities panel, nodes, edges and markers, layouts and their worker, geometry, focus between canvas and Inspector
 │   │   ├── connection/        connection dialog, history, flow store, progress, change review
-│   │   ├── export/            export dialog and store, SVG renderer, standalone HTML packaging
+│   │   ├── export/            export dialog and store, SVG renderer, standalone HTML packaging with the viewer's catalogue subset
+│   │   ├── inspector/         Inspector panel: the selected entity's details beside the canvas
 │   │   ├── preferences/       mirror of the preferences file: history and recent projects
 │   │   ├── project/           open project store, open/save flows, unsaved-changes guard, undo
-│   │   └── schema/            entity identity and kinds, entity lists, data types, expression texts, coverage
+│   │   └── schema/            entity identity and kinds, entity lists, data types, expression texts, coverage, object details view-model
 │   ├── shared/                cross-cutting modules
 │   │   ├── brand/             logo and author credits
 │   │   ├── contracts/         TypeScript types generated from Rust (ts-rs)
 │   │   ├── errors/            title, hint and remedy for every error kind
-│   │   ├── i18n/              message catalogues and translation hook
+│   │   ├── i18n/              message catalogues, catalogue translator (shared with the viewer), translation hook
 │   │   ├── ipc/               the only door to Tauri: commands, dialogs, window, runtime; preview backends
-│   │   ├── settings/          per-window UI settings (theme, language, sidebar, closed access notices)
-│   │   └── ui/                accessible UI primitives (Radix based)
-│   └── viewer/                standalone viewer embedded in exported HTML files
+│   │   ├── settings/          per-window UI settings (theme, language, panel widths, closed access notices)
+│   │   └── ui/                accessible UI primitives (Radix based), the resizer of both side panels
+│   └── viewer/                standalone viewer embedded in exported HTML files, drawing the shared details view-model
 ├── assets/brand/              source artwork for the application icon
 ├── scripts/                   SQL Server container, font preparation, smoke test, page check, CI change filter
 ├── docs/                      PRD, decision records, UX principles, release checklist
@@ -143,6 +144,18 @@ the `MessageKey` type; other languages are typed against it, so a missing or ext
 type-checking. Plurals use `Intl.PluralRules`; interpolation is `{name}` replacement. A unit test
 verifies every catalogue has the same keys and placeholders.
 
+Since 1.1 one translator serves the application and the standalone viewer.
+`createCatalogTranslator` (`src/shared/i18n/translator.ts`) builds `t`, `tCount` and `template`
+over any catalogue with `formatMessage` and `Intl.PluralRules`, with no store or framework behind
+it. The application builds it over the whole catalogue of the chosen language (`useI18n`); an
+exported HTML file embeds the subset the viewer needs (`viewerMessages`, chosen by key prefix:
+`viewer.`, `details.`, `entity.`, `viewMode.`, `referentialAction.`, `indexKind.` and
+`definition.`, plus the search placeholder and the partial-access note), and the viewer builds
+the same translator over it. The viewer's own catalogue and its interpolation are gone, so every
+string lives in `en.ts` and `es.ts` and the catalogue test covers the viewer's placeholders too
+(ADR-025, ADR-038). A translator over a wider catalogue is assignable to one over a subset of it,
+which is how the shared details view-model accepts either.
+
 Why: two languages and a few hundred strings do not justify an i18n framework. The typed approach
 gives compile-time completeness checks that most libraries lack.
 
@@ -151,6 +164,25 @@ gives compile-time completeness checks that most libraries lack.
 Every user operation is an `AppAction` (id, label key, icon, shortcut, availability, `run`).
 Toolbars, menus, the welcome screen and keyboard shortcuts read from the same registry; the
 command palette (milestone 4) will too.
+
+Since 1.1 the detail levels, the theme and the language are registry actions as well
+(`view.detailCompact`, `view.detailKeys` and `view.detailFull` on Ctrl+1, Ctrl+2 and Ctrl+3;
+`settings.theme.*`; `settings.language.*`), run by the top bar's segmented control and menus and
+listed in the palette, and the Inspector toggle is `view.toggleInspector` (Ctrl+I). A test over
+the registry the shell builds (`useAppActions.test.ts`) fails when two actions share a shortcut
+or one takes a browser accelerator that is not on the claimed list of ADR-026 (F5, Ctrl+P,
+Ctrl+F, Ctrl+Shift+H, Ctrl+Shift+L).
+
+The exceptions are deliberate. A gesture on one entity is not an action, because an action
+takes no argument: the context menu's items, the eye and the double-click of a sidebar row, the
+card chevron, and the double-click and Enter on a card call the feature functions the registry
+would call (`canvasActions.setHidden` and `setCollapsed`, `focusEntity`, `openInspector`), and
+the one entity-free item of the context menu, "Show all", runs the registry action the shell
+passes in. Enter on a focused card is handled by the canvas, not as a global shortcut, because
+an Enter captured at the window would take activation from every button. The four layout
+strategies, collapse all, expand all, the three themes and the two languages have no shortcut:
+they live in the layout menu, the top bar and the palette, and Ctrl+Shift+L repeats the last
+layout.
 
 Why: labels, icons and shortcuts shown in tooltips can never disagree with what the keyboard does,
 and adding a feature means adding one action rather than touching every surface.
@@ -320,8 +352,9 @@ and replaced by defaults rather than blocking start-up.
 
 The webview's localStorage holds only conveniences of the window, never a secret and never
 domain history, under two keys. `schemacraft.settings` keeps the theme, the language, whether
-the entities panel is open and its width, and the signatures of the partial-access notices the
-user closed (endpoint, database and verdicts; the 50 most recent). `schemacraft.connection`
+the entities panel is open and its width, the Inspector's width (never whether it is open: it
+starts closed on every launch), and the signatures of the partial-access notices the user closed
+(endpoint, database and verdicts; the 50 most recent). `schemacraft.connection`
 keeps the last connection draft with the password always blank. Each field of the settings is
 checked on its own when it is read back (`mergePersistedSettings`), so a damaged value or one
 from another version falls back to its default. Deleting `preferences.json` clears the history
@@ -394,8 +427,10 @@ first layout of a fresh project is applied with `undoable: false, dirty: false`,
 neither an edit nor an undo step. Changing the detail level is saved with the project, but it
 becomes an undo step only when the taller nodes have to move apart; on its own it is a view
 setting, like the viewport. Transient interaction state (selection, hover, zoom level,
-refresh highlights, context menu, layout in progress) lives in `canvasUiStore` and is never
-saved. After a refresh, `refreshPlacement.ts` places new tables in free space next to the
+refresh highlights, context menu, layout in progress, whether the Inspector is open and its
+request for focus) lives in `canvasUiStore` and is never saved; the Inspector derives what it
+shows from the selection and holds no state of its own (ADR-038). After a refresh,
+`refreshPlacement.ts` places new tables in free space next to the
 tables they reference, or in a row below the diagram, and highlights them; surviving positions
 never move.
 
@@ -469,10 +504,12 @@ dialog, stays out of the picture.
 
 The HTML export embeds the visible part of the schema as JSON (never the server, the login, the
 server version or the access probe: only the database name, the objects on the diagram, their
-positions and the verdict on the login's access, ADR-034) together with a small vanilla
-TypeScript viewer (`src/viewer`) that draws with the renderer of ADR-023 in the browser: pan and
-zoom, the three detail levels, a search whose results name the kind of each entity, neighbour
-highlighting, a detail panel per table and light and dark themes. Its colours are the
+positions, the verdicts on the login's access, ADR-034, the read dates of the facts kept for
+those objects and the subset of the message catalogue the viewer says, ADR-038) together with a
+small vanilla TypeScript viewer (`src/viewer`) that draws with the renderer of ADR-023 in the
+browser: pan and zoom, the three detail levels, a search whose results name the kind of each
+entity, neighbour highlighting, a detail panel per table and view drawn from the view-model the
+Inspector draws, and light and dark themes. Its colours are the
 application's: `buildStandalonePage` writes the palette of ADR-023 into the page as `--sc-*`
 custom properties for both themes, ahead of the viewer's stylesheet, which therefore declares no
 colour of its own beyond its shadows (ADR-037). A plugin in `vite.config.ts` bundles the viewer on
@@ -480,6 +517,19 @@ demand into a
 virtual module (`virtual:schemacraft-viewer`), so the application build stays one command and
 the viewer never pulls React or the application stores. Fonts are embedded as `@font-face` data
 URLs while "Embed fonts" stays on, as in SVG, adding about 125 KB.
+
+Since 1.1 the viewer has no text of its own: `ViewerData.messages` carries the export language's
+subset of `en.ts` and `es.ts` and `createCatalogTranslator` reads it (ADR-007), so an export in
+Spanish speaks Spanish in every panel line. The detail panel is `describeObjectDetails` plus
+`presentObjectDetails` over the embedded snapshot, with the scope of a file: no hidden entities,
+`ViewerData.access` (level and coverage, never the probe) and `ViewerData.carriedOver` (the kept
+facts of the objects and keys on the diagram, apart from the snapshot, so a hidden table is
+never named), and only the diagram known: a key to a table that is not on the diagram is left
+out of the file, together with the FK mark it gives its columns, an empty relation list reads
+"None on the diagram" rather than saying there is none, and a list that is not empty carries no
+note that a key may be missing. The panel no longer announces its whole content through
+`aria-live` on every click: choosing a search result or following a relation link moves focus
+to the panel's heading, so a keyboard or screen-reader user lands on the entity they chose.
 
 Why: the user chose the full viewer over pre-rendered pictures; it keeps the file lighter for
 large schemas and lets the reader explore. Sharing the renderer avoids a second drawing
@@ -493,8 +543,16 @@ text fields (the diagram and the entities panel open their own), middle-click au
 dragging images or links out of the window are prevented, and every accelerator that would
 reload, print, find, zoom, navigate history or (outside development) open the developer tools is
 swallowed, held keys included. Where the habit has an application meaning it is mapped instead:
-F5 refreshes from the database, Ctrl+P exports a PDF and Ctrl+F searches the entities. The
-entities panel resizes by dragging its edge or with the arrow keys and remembers its width.
+F5 refreshes from the database, Ctrl+P exports a PDF, Ctrl+F searches the entities, Ctrl+Shift+H
+shows every hidden entity and Ctrl+Shift+L repeats the last layout; Ctrl+I (the Inspector) and
+Ctrl+1 to Ctrl+3 (the detail levels) need no mapping, because WebView2 reserves neither (only
+Ctrl+Shift+I, the developer tools). Both side panels, the entities panel and the Inspector,
+resize by dragging their edge or with the arrow keys, Home and End, through one handle for
+either edge (`PanelResizer` in `shared/ui`), and remember their width. In a window too narrow
+for both at their width, `fitSidePanels` (`app/shell/sidePanelWidths.ts`) narrows them, the
+Inspector last and neither below its minimum, so the canvas keeps 320 px and the top bar's
+controls stay in the window; the remembered widths do not change, and the handles' widest
+width follows the room left.
 
 Why: a reload threw the open project away and the print dialog printed the page chrome; both
 reached the user. Suppressing the defaults in one place keeps every future screen covered, and
@@ -581,13 +639,16 @@ features and shared modules; `src/features` may not import `app/`; `src/shared` 
 imports the viewer. Only `src/shared/ipc` may import `@tauri-apps/*`; the rest of the frontend
 reaches commands, dialogs, the window (`nativeWindow.ts`) and the runtime check (`runtime.ts`)
 through it. Code that several features need moves down into `shared/` (brand, error
-presentation), and code that composes the application moves up into `app/` (the command
-palette). Code that is a feature's behaviour moves out of the shell into its feature: the diagram
-canvas, the entities panel and the entities search live in `features/canvas`, and `AppShell`
-only places them, handing over what belongs to the shell as props: the welcome screen
-(`emptyState`), the development hook (`onFlowInit`), the access bar (`notice`) and the registry's
-show-all command for the context menu. Features may still use each other's public modules where
-one builds on the other, such as canvas and project; the architecture page lists those edges.
+presentation, the resizer both side panels share), and code that composes the application moves
+up into `app/` (the command palette). Code that is a feature's behaviour moves out of the shell
+into its feature: the diagram canvas, the entities panel and the entities search live in
+`features/canvas` and the Inspector in `features/inspector`, and `AppShell` only places them,
+each side panel in a named landmark, handing over what belongs to the shell as props: the
+welcome screen (`emptyState`), the development hook (`onFlowInit`), the access bar (`notice`),
+the registry's show-all command for the context menu and its access-report command and
+shortcut hint for the Inspector. Features may still use each other's public modules where one
+builds on the other, such as canvas and project, or the Inspector on canvas, project and schema;
+the architecture page lists those edges.
 `features/schema` is the exception in the other direction: a second lint rule lets it import only
 `shared/` and itself, so every feature and the viewer can read entity identity from it without a
 cycle (ADR-037).
@@ -680,8 +741,8 @@ least-privilege script, `GRANT VIEW DEFINITION TO [user]`, whose comments say th
 it, and does not offer it when a `DENY` explains the gap, because a grant does not lift a
 denial. A login that sees nothing gets a danger notice and cannot start a read; an empty
 database gets neutral notes and empty states. An export of a partial capture says so in one
-line (a footnote in SVG, PDF and PNG, a header line in HTML) and embeds only the level, never the
-probe. The wording is "not visible to this login" and "no visible para este inicio de sesión",
+line (a footnote in SVG, PDF and PNG, a header line in HTML), and the HTML export embeds the
+verdicts (level and coverage), never the probe (ADR-025). The wording is "not visible to this login" and "no visible para este inicio de sesión",
 never "hidden" or "oculto", which mean hidden on the canvas. CI reads one fixture database as
 logins with each of these profiles (`tests/sqlserver_permissions.rs`).
 
@@ -765,9 +826,10 @@ shows only when `isCollapsible` (ADR-020) finds rows to hide, and the minimap ti
 React Flow's `--xy-minimap-node-background-color`. The SVG renderer draws the same header (view
 tint, label pill, Glasses symbol, secondary schema text) with the label passed in as
 `RenderOptions.labels.view`, which `exportStore` translates in the interface language, so SVG,
-PDF and PNG match the canvas; the HTML viewer passes its own `label.view`, tested equal to the
-application's, and names the kind next to every search result and in its detail panel. The
-command palette shows a kind icon and a Table or View label on every entity row.
+PDF and PNG match the canvas; the HTML viewer passes the same `entity.view.label` from the
+catalogue subset embedded in the file (ADR-038), and names the kind next to every search result
+and in its detail panel. The command palette shows a kind icon and a Table or View label on
+every entity row.
 
 The word "view" therefore means a database view and nothing else in the interface, in both
 languages: the viewport commands read "Fit diagram to window" and "Center on screen" ("Ajustar el
@@ -825,6 +887,71 @@ viewer's key badge had already drifted from the application's warning colour. On
 rule, a lint rule where a module boundary carries the rule and a test where a value does, keep
 the canvas, the exports and the viewer the same diagram without anyone having to remember to
 sync them.
+
+### ADR-038: The Inspector and the viewer's detail panel share one view-model
+
+Since 1.1 the application has an Inspector: a panel on the right of the canvas with the details
+of the selected table or view, its columns (type, nullability, identity, computed, default),
+primary key, indexes, `CHECK` constraints and the foreign keys out of it and into it, each fact
+with how far the capture vouches for it: readable, not available to this login, not recorded by
+a 1.0 file, or not checked since the date it was last read (ADR-034, ADR-016); a `CHECK` or
+`DEFAULT` inside a table or view kept whole carries the object's date, or its own earlier one
+when it was kept on its own before. The exported HTML viewer has had a detail panel since 1.0. Both now draw one view-model, in two modules of
+`features/schema`: `objectDetails.ts` holds the facts (`describeObjectDetails(snapshot, key,
+scope)`), the only place the details are built from the snapshot, which reads `Definition`
+through `definition.ts` (`definitionText`, `isUnknownDefinition`, the only readers of the raw
+statuses) and the carried facts through the scope, and `objectDetailsView.ts` the presentation
+(`presentObjectDetails(details, translator)`), every title, badge, value, empty line and
+footnote already translated. The React panel (`features/inspector`) and the vanilla viewer
+(`src/viewer/main.ts`) only lay that text out, one renderer per section kind, so both show the
+same sections in the same order with the same words and states, and the next part can extend
+the sections without a third path. The `scope` argument states what the renderer knows beyond
+the snapshot: the entities hidden on the canvas, the access coverage, the carried facts,
+whether the read was limited to some schemas and whether only the diagram is known, as in an
+exported file. That is where the two differ: the file knows only the diagram (ADR-025), so it
+leaves out keys to tables that are not on it, an empty relation list reads "None on the
+diagram", and it offers no "Why?" link.
+
+Every applicable section appears, in a fixed order, and an empty one prints one line whose
+wording follows the completeness of the list: "None" only when the list is known to be
+complete, otherwise "None visible to this login", "None recorded", "Not checked since", "None
+on the diagram" or "None in the inspected schemas". "Referenced by" carries a footnote under
+partial coverage, because tables the login cannot see may reference the table. The target of a
+relation is a link when the table is on the canvas, "Hidden on the canvas" when it is hidden,
+"This table" for a self-reference and "A table not visible to this login" for a key kept in
+`foreignKeysToInvisibleTables`. In the Inspector every not-available value and every
+not-visible line carries a "Why?" link to the Access report; the exported file cannot offer one.
+
+The panel is a complementary landmark the shell places (`<aside aria-label="Inspector">`),
+never `role="dialog"`, so shortcuts keep working while it is open. It starts closed on every
+launch, remembers only its width (280 to 560 px, default 360, in `schemacraft.settings`,
+ADR-017; narrower in a window without room for it, ADR-026) and follows the canvas selection:
+one selected entity shows its details, none or several show an empty state, and an entity
+hidden on the canvas cannot be shown, because it has no card to select. It opens with Ctrl+I,
+the top-bar button or the palette (all three `view.toggleInspector`), a double-click on a card
+or on a sidebar row, Enter on a focused card, or "Show details" in the context menu. A
+double-click leaves focus where it was, so the pointer goes on working on the canvas; every
+other way in moves focus to the panel's heading, and so does following a relation link, "Show
+details" included when it is chosen with the mouse, because the closing menu leaves focus
+nowhere. Enter is handled by the canvas only when the focused element is the card itself, never
+as a global shortcut, so the buttons inside a card keep it. Escape anywhere in the panel, its
+resize handle included (the shell passes the handle in, and the panel draws it inside the
+element that handles Escape), returns focus to the inspected card, or to the canvas when the
+card is not rendered, and leaves the panel open; Ctrl+I and the close button close it, and
+`returnFocusFromInspector` hands focus back to the card before the panel turns inert, so focus
+never drops to the document. The open state and the focus request live in `canvasUiStore`
+(ADR-021); the panel itself holds no state.
+
+The viewer takes the embedded subset of the message catalogues through the shared translator
+(ADR-007), the access verdicts and the read dates of the kept facts of the objects on the
+diagram (ADR-025), and its own catalogue is gone.
+
+Why: a second implementation of the details would drift from the first within a release, and
+the exported file is where other people read the schema, so it must say what the application
+says, with the same honesty about what the login could not see. One module and two renderers
+is the rule ADR-020 and ADR-023 already apply to the diagram. A non-modal panel that mirrors
+the selection has no state to fall out of step with the canvas, and keeping Enter inside the
+canvas keeps every other button in the interface working.
 
 ## Milestones
 

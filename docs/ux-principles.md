@@ -118,8 +118,9 @@ search is active. Each entity has instant search, a column counter, a visibility
 "center on screen", and the same context menu as the canvas. Views are unmistakable: a VIEW label
 (VISTA in Spanish), their own icon and colour in the panel, on the canvas and its minimap, in the
 command palette and in every export, never a dashed border; at the Keys level a view is a compact
-card with its label and column count. The canvas offers three detail levels (compact, keys, full;
-switching to a taller level moves tables apart so none covers another, undoably), automatic
+card with its label and column count. The canvas offers three detail levels (compact, keys, full,
+on Ctrl+1 to Ctrl+3; switching to a taller level moves tables apart so none covers another,
+undoably), automatic
 layouts (layered top-down or left-to-right, organic, radial around a table), free dragging,
 multi-select with Shift, isolation of a table with its neighbours one or two levels deep, hide,
 show all, collapse and expand (the card chevron shows only when there are rows to hide), a
@@ -127,6 +128,24 @@ minimap and semantic zoom (cards turn compact below 40 %). Relationships use cro
 notation, attach at the key column and reveal their name and columns on hover. Every change is
 undoable (Ctrl+Z, Ctrl+Y), and the command palette (Ctrl+K) reaches every action by name and
 names the kind of every entity it lists.
+
+The Inspector, a panel on the right of the canvas, shows the selected table or view: its columns
+with type, nullability, identity, computed and default, its primary key, indexes and `CHECK`
+constraints, and the relationships out of it and into it. It starts closed and opens with a
+double-click on a card or on an entities row, with Enter on a focused card, with Ctrl+I or with
+"Show details" in the context menu; from an entities row the keyboard route is the context-menu
+key and "Show details", or selecting the row and pressing Ctrl+I. Once open it follows the
+selection: nothing or several entities selected shows an empty state, and an entity hidden on the
+canvas cannot be inspected. A double-click on a card or an entities row leaves focus where it
+was; Ctrl+I, the top-bar button, the palette, Enter on a focused card, "Show details" and
+following a relationship move focus to the panel's heading. Escape anywhere in the panel, its
+resize handle included, returns focus to the card and leaves the panel open; Ctrl+I or its close
+button closes it and focus goes back to the canvas. Every section appears in the same order, an
+empty one says "None" only when the list is complete, a fact the login could not read is marked,
+a value not available to this login or a table not visible to it carries a "Why?" link to the
+Access report, and a relationship to a table on the canvas is a link that moves the panel to it.
+The panel resizes from its edge and remembers its width; in a window too narrow for both side
+panels at their width they narrow, so the canvas and the top bar keep their room.
 
 ### Refreshing from the database
 
@@ -149,8 +168,12 @@ renderer's limit is refused with the reason, progress names the stage and can be
 finished export offers to show the file in its folder. Every export draws views as the canvas
 does, with the label in the language the interface had when the file was written. The HTML file
 opens in any browser with pan, zoom, the three detail levels, a search that names the kind of
-each result and a detail panel per table. A diagram read with partial access says so in one
-line, under the diagram or under the viewer's header. In the interface, "view" names a database
+each result and a detail panel per table and view built from the Inspector's view-model, with
+the same sections in the same order and the same words and states, for what is on the exported
+diagram: relationships to tables left off the diagram are not listed, an empty relationship list
+says "None on the diagram", and there are no "Why?" links to the Access report; choosing a result
+or following a relationship moves focus to the panel. A diagram read with partial access says so in one line,
+under the diagram or under the viewer's header. In the interface, "view" names a database
 view and nothing else: the viewport is the window or the screen, and compact, keys and full are
 detail levels.
 

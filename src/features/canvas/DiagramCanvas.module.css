@@ -3,6 +3,12 @@
   inset: 0;
 }
 
+/* The canvas takes focus when the Inspector hands it back and no card is rendered to take it. */
+.flow:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+}
+
 .emptySchema {
   position: absolute;
   inset: 0;

@@ -1,14 +1,16 @@
-import { KeyRound, Languages, Monitor, Moon, Rows3, Sun, Table2 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { Languages } from "lucide-react";
 
 import { ActionButton } from "@/app/actions/ActionButton";
 import { ActionIconButton } from "@/app/actions/ActionIconButton";
-import type { ActionsById } from "@/app/actions/action";
+import type { ActionId, ActionsById } from "@/app/actions/action";
+import { formatShortcut, isApplePlatform } from "@/app/actions/shortcut";
 import { Logo } from "@/shared/brand/Logo";
 import { projectDisplayName } from "@/features/project/projectPaths";
 import { useProjectStore } from "@/features/project/projectStore";
+import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import type { DetailLevel } from "@/shared/contracts";
 import { SUPPORTED_LOCALES } from "@/shared/i18n/locales";
+import type { Locale } from "@/shared/i18n/locales";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { useSettingsStore } from "@/shared/settings/settingsStore";
 import type { ThemePreference } from "@/shared/settings/theme";
@@ -21,10 +23,26 @@ import type { SegmentedOption } from "@/shared/ui/SegmentedControl";
 import { LayoutMenu } from "./LayoutMenu";
 import styles from "./TopBar.module.css";
 
-const THEME_ICONS: Record<ThemePreference, LucideIcon> = {
-  system: Monitor,
-  light: Sun,
-  dark: Moon,
+/*
+ * The segmented control and the preference menus are faces of registry actions: the choice
+ * runs the action, and the action lends its icon and shortcut, so the palette and the keyboard
+ * can never disagree with the top bar.
+ */
+const DETAIL_LEVELS: readonly DetailLevel[] = ["compact", "keys", "full"];
+const DETAIL_LEVEL_ACTIONS: Record<DetailLevel, ActionId> = {
+  compact: "view.detailCompact",
+  keys: "view.detailKeys",
+  full: "view.detailFull",
+};
+const THEME_PREFERENCES: readonly ThemePreference[] = ["system", "light", "dark"];
+const THEME_ACTIONS: Record<ThemePreference, ActionId> = {
+  system: "settings.theme.system",
+  light: "settings.theme.light",
+  dark: "settings.theme.dark",
+};
+const LANGUAGE_ACTIONS: Record<Locale, ActionId> = {
+  en: "settings.language.en",
+  es: "settings.language.es",
 };
 
 interface TopBarProps {
@@ -34,34 +52,34 @@ interface TopBarProps {
 export function TopBar({ actions }: TopBarProps) {
   const { t } = useI18n();
   const projectPath = useProjectStore((state) => state.project?.path ?? null);
-  const hasProject = useProjectStore((state) => state.project !== null);
   const isDirty = useProjectStore((state) => state.project?.isDirty ?? false);
   const detailLevel = useProjectStore(
     (state) => state.project?.content.canvas.detailLevel ?? "keys",
   );
-  const setDetailLevel = useProjectStore((state) => state.setDetailLevel);
   const themePreference = useSettingsStore((state) => state.themePreference);
-  const setThemePreference = useSettingsStore((state) => state.setThemePreference);
   const locale = useSettingsStore((state) => state.locale);
-  const setLocale = useSettingsStore((state) => state.setLocale);
   const isSidebarOpen = useSettingsStore((state) => state.isSidebarOpen);
+  const isInspectorOpen = useCanvasUiStore((state) => state.isInspectorOpen);
+  const applePlatform = isApplePlatform();
 
-  const detailLevelOptions: readonly SegmentedOption<DetailLevel>[] = [
-    {
-      value: "compact",
-      label: t("viewMode.compact"),
-      hint: t("viewMode.compact.hint"),
-      icon: Rows3,
-    },
-    { value: "keys", label: t("viewMode.keys"), hint: t("viewMode.keys.hint"), icon: KeyRound },
-    { value: "full", label: t("viewMode.full"), hint: t("viewMode.full.hint"), icon: Table2 },
-  ];
+  const detailLevelOptions: readonly SegmentedOption<DetailLevel>[] = DETAIL_LEVELS.map((level) => {
+    const action = actions[DETAIL_LEVEL_ACTIONS[level]];
+    return {
+      value: level,
+      label: t(`viewMode.${level}`),
+      hint: t(`viewMode.${level}.hint`),
+      shortcutHint: action.shortcut ? formatShortcut(action.shortcut, applePlatform) : undefined,
+      icon: action.icon,
+    };
+  });
 
-  const themeOptions: readonly RadioMenuOption<ThemePreference>[] = [
-    { value: "system", label: t("theme.system"), icon: Monitor },
-    { value: "light", label: t("theme.light"), icon: Sun },
-    { value: "dark", label: t("theme.dark"), icon: Moon },
-  ];
+  const themeOptions: readonly RadioMenuOption<ThemePreference>[] = THEME_PREFERENCES.map(
+    (preference) => ({
+      value: preference,
+      label: t(`theme.${preference}`),
+      icon: actions[THEME_ACTIONS[preference]].icon,
+    }),
+  );
 
   const languageOptions = SUPPORTED_LOCALES.map((code) => ({
     value: code,
@@ -97,8 +115,10 @@ export function TopBar({ actions }: TopBarProps) {
           ariaLabel={t("viewMode.label")}
           value={detailLevel}
           options={detailLevelOptions}
-          onValueChange={setDetailLevel}
-          disabled={!hasProject}
+          onValueChange={(level) => {
+            actions[DETAIL_LEVEL_ACTIONS[level]].run();
+          }}
+          disabled={!actions[DETAIL_LEVEL_ACTIONS[detailLevel]].isAvailable}
         />
       </div>
 
@@ -123,17 +143,27 @@ export function TopBar({ actions }: TopBarProps) {
           label={t("menu.theme")}
           value={themePreference}
           options={themeOptions}
-          onValueChange={setThemePreference}
-          trigger={<IconButton label={t("menu.theme")} icon={THEME_ICONS[themePreference]} />}
+          onValueChange={(preference) => {
+            actions[THEME_ACTIONS[preference]].run();
+          }}
+          trigger={
+            <IconButton
+              label={t("menu.theme")}
+              icon={actions[THEME_ACTIONS[themePreference]].icon}
+            />
+          }
         />
         <RadioMenu
           label={t("menu.language")}
           value={locale}
           options={languageOptions}
-          onValueChange={setLocale}
+          onValueChange={(code) => {
+            actions[LANGUAGE_ACTIONS[code]].run();
+          }}
           trigger={<IconButton label={t("menu.language")} icon={Languages} />}
         />
         <ActionIconButton action={actions["view.toggleSidebar"]} isActive={isSidebarOpen} />
+        <ActionIconButton action={actions["view.toggleInspector"]} isActive={isInspectorOpen} />
       </div>
     </header>
   );

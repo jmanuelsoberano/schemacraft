@@ -5,6 +5,7 @@ import {
   EyeOff,
   Focus,
   Layers,
+  PanelRight,
   ScanSearch,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -57,20 +58,23 @@ function MenuItem({ icon: Icon, label, onSelect, disabled = false, shortcutHint 
 }
 
 /**
- * Right-click menu of an entity, on the canvas or in the sidebar: centre, hide, isolate with its
- * relationships, collapse or expand, and show everything again. The entity-scoped commands go
- * through canvasActions; "show all" runs the registry action the shell passes in.
+ * Right-click menu of an entity, on the canvas or in the sidebar: centre, show its details,
+ * hide, isolate with its relationships, collapse or expand, and show everything again. The
+ * entity-scoped commands go through canvasActions and the canvas UI store; "show all" runs the
+ * registry action the shell passes in.
  */
 export function CanvasContextMenu({ showAll }: CanvasContextMenuProps) {
   const { t } = useI18n();
   const menu = useCanvasUiStore((state) => state.contextMenu);
   const closeContextMenu = useCanvasUiStore((state) => state.closeContextMenu);
   const focusEntity = useCanvasUiStore((state) => state.focusEntity);
+  const openInspector = useCanvasUiStore((state) => state.openInspector);
   const canvas = useProjectStore((state) => state.project?.content.canvas ?? null);
 
   const key = menu?.key ?? null;
   const nodeState = key !== null && canvas !== null ? nodeStateFor(canvas, key) : undefined;
   const isCollapsed = nodeState?.isCollapsed ?? false;
+  const isHidden = nodeState?.isHidden ?? false;
 
   return (
     <DropdownMenu.Root
@@ -102,6 +106,17 @@ export function CanvasContextMenu({ showAll }: CanvasContextMenuProps) {
                 label={t("canvas.menu.center")}
                 onSelect={() => {
                   focusEntity(key);
+                }}
+              />
+              {/* The Inspector follows the selection, so a hidden entity, which has no card to select, cannot be shown. */}
+              <MenuItem
+                icon={PanelRight}
+                label={t("canvas.menu.details")}
+                disabled={isHidden}
+                onSelect={() => {
+                  // Select without panning; the menu leaves focus nowhere, so the panel takes it.
+                  focusEntity(key, { center: false });
+                  openInspector({ focus: true });
                 }}
               />
               <MenuItem

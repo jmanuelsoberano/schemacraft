@@ -32,6 +32,17 @@ All notable changes to SchemaCraft are documented here. The format follows
   PDF, PNG and the HTML viewer included, with the label in the interface language. At the Keys
   level a view is a compact card with its label and column count.
 - The command palette and the HTML viewer's search name the kind, Table or View, of every entity.
+- An Inspector panel on the right of the canvas shows the selected table or view: columns with
+  type, nullability, identity, computed and default, primary key, indexes, `CHECK` constraints
+  and the foreign keys in both directions. Every fact the login could not read is marked; values
+  not available to this login and tables not visible to it link to the access report with
+  "Why?", and a list says "None" only when it is known to be complete. It opens with Ctrl+I, a
+  double-click on a card or on an entities row, Enter on a focused card or "Show details" in the
+  context menu, and follows the selection. It resizes like the entities panel, by dragging its
+  edge or with the arrow keys, Home and End, and remembers its width; in a window too narrow for
+  both side panels at their width they narrow, so the canvas and the top bar keep their room.
+- Ctrl+1, Ctrl+2 and Ctrl+3 switch the detail level, and the detail levels, the theme and the
+  language are commands in the command palette.
 
 ### Changed
 
@@ -43,6 +54,13 @@ All notable changes to SchemaCraft are documented here. The format follows
 - "Show all entities" in the context menu shows its shortcut.
 - The key badges of the HTML viewer take their colours from the application's warning tokens;
   the dark background is a little darker than before.
+- The HTML viewer's detail panel shows the same sections as the Inspector, in the same order and
+  with the same words, for what is on the exported diagram: relationships to tables left off the
+  diagram are not listed, an empty relationship list says "None on the diagram", and there is no
+  "Why?" link. It says "None" only when a list is known to be complete; choosing a search result
+  or following a relationship moves focus to the panel.
+- The Spanish detail levels read "Compacto" and "Completo" ("Compacta" and "Completa" before),
+  since they are levels, not views.
 
 - Projects are saved in format 2. SchemaCraft 1.1 opens and converts 1.0 projects, but a project
   saved by 1.1 needs SchemaCraft 1.1 or later.

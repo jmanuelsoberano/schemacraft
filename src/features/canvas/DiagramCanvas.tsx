@@ -17,7 +17,7 @@ import type {
 } from "@xyflow/react";
 import { DatabaseZap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 
 import { ProjectNotice } from "@/features/project/ProjectNotice";
 import { useProjectStore } from "@/features/project/projectStore";
@@ -32,6 +32,7 @@ import { EntityNode } from "./EntityNode";
 import { RelationEdge } from "./RelationEdge";
 import { RelationMarkers } from "./RelationMarkers";
 import { layoutFreshProject, setCollapsed } from "./canvasActions";
+import { returnFocusFromInspector } from "./canvasFocus";
 import { withPositions } from "./canvasState";
 import { useCanvasUiStore } from "./canvasUiStore";
 import { COMPACT_ZOOM_THRESHOLD, describeEntities, effectiveDetailLevel } from "./geometry";
@@ -56,6 +57,9 @@ type FlowInstance = ReactFlowInstance<EntityNodeType, RelationEdgeType>;
 
 /** Receives the React Flow instance once it exists; the shell records it for scripted checks. */
 type FlowInitHandler = (instance: unknown) => void;
+
+/** The element React Flow gives a card, which takes focus and selects on Enter. */
+const NODE_CLASS_NAME = "react-flow__node";
 
 interface DiagramCanvasProps {
   /** Shown over the canvas while no project is open; the shell passes its welcome screen. */
@@ -141,7 +145,8 @@ interface FlowCanvasProps {
 
 /**
  * One React Flow instance for the lifetime of the window. Nodes and edges derive from the open
- * project; a document switch restores its viewport or fits the diagram.
+ * project; a document switch restores its viewport or fits the diagram. The selection is the
+ * one source of what the Inspector shows: double-click or Enter on a card only open the panel.
  */
 function FlowCanvas({ onFlowInit }: FlowCanvasProps) {
   const snapshot = useProjectStore((state) => state.project?.content.snapshot ?? null);
@@ -160,6 +165,7 @@ function FlowCanvas({ onFlowInit }: FlowCanvasProps) {
   const clearHighlights = useCanvasUiStore((state) => state.clearHighlights);
   const openContextMenu = useCanvasUiStore((state) => state.openContextMenu);
   const closeContextMenu = useCanvasUiStore((state) => state.closeContextMenu);
+  const openInspector = useCanvasUiStore((state) => state.openInspector);
   const instanceRef = useRef<FlowInstance | null>(null);
 
   const entities = useMemo(
@@ -235,16 +241,21 @@ function FlowCanvas({ onFlowInit }: FlowCanvasProps) {
     if (focusRequest === null || instance?.getNode(focusRequest.key) === undefined) {
       return;
     }
-    void instance.fitView({
-      nodes: [{ id: focusRequest.key }],
-      duration: 300,
-      maxZoom: 1,
-      padding: 0.6,
-    });
+    if (focusRequest.center) {
+      void instance.fitView({
+        nodes: [{ id: focusRequest.key }],
+        duration: 300,
+        maxZoom: 1,
+        padding: 0.6,
+      });
+    }
     setNodes((previous) =>
       previous.map((node) => ({ ...node, selected: node.id === focusRequest.key })),
     );
   }, [focusRequest, setNodes]);
+
+  // Closing the Inspector would drop the focus it holds; the inspected card takes it back first.
+  useEffect(() => returnFocusFromInspector(), []);
 
   const handleInit = useCallback(
     (instance: FlowInstance) => {
@@ -271,12 +282,47 @@ function FlowCanvas({ onFlowInit }: FlowCanvasProps) {
     }
   }, []);
 
+  // Double-click opens the Inspector on the card React Flow just selected, except on the chevron,
+  // whose two clicks collapse and expand. Focus stays on the card.
+  const handleNodeDoubleClick = useCallback<NodeMouseHandler<EntityNodeType>>(
+    (event) => {
+      if (event.target instanceof Element && event.target.closest("[data-collapse-toggle]")) {
+        return;
+      }
+      openInspector();
+    },
+    [openInspector],
+  );
+
   const handleNodeContextMenu = useCallback<NodeMouseHandler<EntityNodeType>>(
     (event, node) => {
       event.preventDefault();
       openContextMenu({ key: node.id, x: event.clientX, y: event.clientY });
     },
     [openContextMenu],
+  );
+
+  // Enter on a focused card opens the Inspector and hands it focus; React Flow has already
+  // selected the card. It is handled here, not as a global shortcut, and only when the card
+  // itself is focused, so Enter still activates the buttons inside it, the chevron included.
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      if (
+        event.key !== "Enter" ||
+        event.repeat ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey
+      ) {
+        return;
+      }
+      if (event.target instanceof HTMLElement && event.target.classList.contains(NODE_CLASS_NAME)) {
+        event.preventDefault();
+        openInspector({ focus: true });
+      }
+    },
+    [openInspector],
   );
 
   const handlePaneClick = useCallback(() => {
@@ -318,6 +364,10 @@ function FlowCanvas({ onFlowInit }: FlowCanvasProps) {
 
   return (
     <ReactFlow<EntityNodeType, RelationEdgeType>
+      // Focusable by script only: where focus lands when the Inspector hands it back and the
+      // inspected card is not rendered.
+      className={styles.flow}
+      tabIndex={-1}
       nodes={nodes}
       edges={edges}
       nodeTypes={NODE_TYPES}
@@ -327,7 +377,9 @@ function FlowCanvas({ onFlowInit }: FlowCanvasProps) {
       onEdgesChange={onEdgesChange}
       onNodeDragStop={handleNodeDragStop}
       onNodeClick={handleNodeClick}
+      onNodeDoubleClick={handleNodeDoubleClick}
       onNodeContextMenu={handleNodeContextMenu}
+      onKeyDown={handleKeyDown}
       onPaneClick={handlePaneClick}
       onSelectionChange={handleSelectionChange}
       onMove={handleMove}

@@ -7,9 +7,9 @@ import type {
   Completeness,
   SchemaAccess,
 } from "@/shared/contracts";
-import { formatMessage, pluralKey } from "@/shared/i18n/formatMessage";
 import type { Locale } from "@/shared/i18n/locales";
 import { messageCatalogs } from "@/shared/i18n/messages/catalogs";
+import { createCatalogTranslator } from "@/shared/i18n/translator";
 import type { Translator } from "@/shared/i18n/useI18n";
 
 export function schema(name: string, grants: Partial<SchemaAccess> = {}): SchemaAccess {
@@ -124,11 +124,5 @@ export const personas = {
 
 /** A translator over the real catalogues, without the settings store behind `useI18n`. */
 export function translatorFor(locale: Locale): Translator {
-  const t: Translator["t"] = (key, parameters) =>
-    formatMessage(messageCatalogs[locale][key], parameters);
-  return {
-    locale,
-    t,
-    tCount: (base, count) => t(pluralKey(base, count, locale), { count }),
-  };
+  return createCatalogTranslator(messageCatalogs[locale], locale);
 }

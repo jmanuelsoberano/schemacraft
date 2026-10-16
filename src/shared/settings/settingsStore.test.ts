@@ -21,8 +21,9 @@ const storage = vi.hoisted(() => {
 
 const {
   DISMISSED_ACCESS_NOTICES_LIMIT,
-  SIDEBAR_DEFAULT_WIDTH,
-  SIDEBAR_MAX_WIDTH,
+  INSPECTOR_WIDTH_LIMITS,
+  SIDEBAR_WIDTH_LIMITS,
+  clampPanelWidth,
   mergePersistedSettings,
   useSettingsStore,
 } = await import("./settingsStore");
@@ -31,12 +32,31 @@ const defaults = {
   themePreference: "system" as const,
   locale: "en" as const,
   isSidebarOpen: true,
-  sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
+  sidebarWidth: SIDEBAR_WIDTH_LIMITS.default,
+  inspectorWidth: INSPECTOR_WIDTH_LIMITS.default,
   dismissedAccessNotices: [] as readonly string[],
 };
 
 beforeEach(() => {
   useSettingsStore.setState({ ...defaults });
+});
+
+describe("clampPanelWidth", () => {
+  it("keeps a width within the limits of its panel, in whole pixels", () => {
+    expect(clampPanelWidth(300, SIDEBAR_WIDTH_LIMITS)).toBe(300);
+    expect(clampPanelWidth(300.4, SIDEBAR_WIDTH_LIMITS)).toBe(300);
+    expect(clampPanelWidth(10, SIDEBAR_WIDTH_LIMITS)).toBe(SIDEBAR_WIDTH_LIMITS.min);
+    expect(clampPanelWidth(9000, SIDEBAR_WIDTH_LIMITS)).toBe(SIDEBAR_WIDTH_LIMITS.max);
+    expect(clampPanelWidth(10, INSPECTOR_WIDTH_LIMITS)).toBe(INSPECTOR_WIDTH_LIMITS.min);
+    expect(clampPanelWidth(9000, INSPECTOR_WIDTH_LIMITS)).toBe(INSPECTOR_WIDTH_LIMITS.max);
+  });
+
+  it("falls back to the default for a width that is not a number", () => {
+    expect(clampPanelWidth(Number.NaN, SIDEBAR_WIDTH_LIMITS)).toBe(SIDEBAR_WIDTH_LIMITS.default);
+    expect(clampPanelWidth(Number.POSITIVE_INFINITY, INSPECTOR_WIDTH_LIMITS)).toBe(
+      INSPECTOR_WIDTH_LIMITS.default,
+    );
+  });
 });
 
 describe("mergePersistedSettings", () => {
@@ -48,6 +68,7 @@ describe("mergePersistedSettings", () => {
           locale: "es",
           isSidebarOpen: false,
           sidebarWidth: 300,
+          inspectorWidth: 420,
           dismissedAccessNotices: ["b", "a"],
         },
         defaults,
@@ -57,6 +78,7 @@ describe("mergePersistedSettings", () => {
       locale: "es",
       isSidebarOpen: false,
       sidebarWidth: 300,
+      inspectorWidth: 420,
       dismissedAccessNotices: ["b", "a"],
     });
   });
@@ -71,6 +93,7 @@ describe("mergePersistedSettings", () => {
           locale: "fr",
           isSidebarOpen: "yes",
           sidebarWidth: "wide",
+          inspectorWidth: "wider",
           dismissedAccessNotices: "all",
         },
         defaults,
@@ -78,10 +101,18 @@ describe("mergePersistedSettings", () => {
     ).toEqual(defaults);
   });
 
-  it("keeps the panel width within its limits", () => {
-    expect(mergePersistedSettings({ sidebarWidth: 9000 }, defaults).sidebarWidth).toBe(
-      SIDEBAR_MAX_WIDTH,
-    );
+  it("gives the Inspector its default width when storage predates it", () => {
+    const stored = { themePreference: "light", sidebarWidth: 240 };
+    expect(mergePersistedSettings(stored, defaults)).toMatchObject({
+      sidebarWidth: 240,
+      inspectorWidth: INSPECTOR_WIDTH_LIMITS.default,
+    });
+  });
+
+  it("keeps the panel widths within their limits", () => {
+    const merged = mergePersistedSettings({ sidebarWidth: 9000, inspectorWidth: 10 }, defaults);
+    expect(merged.sidebarWidth).toBe(SIDEBAR_WIDTH_LIMITS.max);
+    expect(merged.inspectorWidth).toBe(INSPECTOR_WIDTH_LIMITS.min);
   });
 
   it("keeps the dismissed notices unique, most recent first and within the limit", () => {
@@ -94,6 +125,18 @@ describe("mergePersistedSettings", () => {
   it("leaves the rest of the state alone", () => {
     const current = { ...defaults, setLocale: () => undefined };
     expect(mergePersistedSettings({ locale: "es" }, current).setLocale).toBe(current.setLocale);
+  });
+});
+
+describe("the panel widths", () => {
+  it("are clamped as they are set", () => {
+    const { setSidebarWidth, setInspectorWidth } = useSettingsStore.getState();
+    setSidebarWidth(1);
+    setInspectorWidth(1e6);
+    expect(useSettingsStore.getState()).toMatchObject({
+      sidebarWidth: SIDEBAR_WIDTH_LIMITS.min,
+      inspectorWidth: INSPECTOR_WIDTH_LIMITS.max,
+    });
   });
 });
 
@@ -124,10 +167,12 @@ describe("dismissAccessNotice", () => {
     };
     expect(written.state).toMatchObject({
       dismissedAccessNotices: ["server|db|partial"],
-      sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
+      sidebarWidth: SIDEBAR_WIDTH_LIMITS.default,
+      inspectorWidth: INSPECTOR_WIDTH_LIMITS.default,
     });
     expect(Object.keys(written.state ?? {}).sort()).toEqual([
       "dismissedAccessNotices",
+      "inspectorWidth",
       "isSidebarOpen",
       "locale",
       "sidebarWidth",

@@ -8,17 +8,25 @@ import {
   FolderOpen,
   GitFork,
   Info,
+  KeyRound,
+  Languages,
   Layers,
   Maximize2,
+  Monitor,
+  Moon,
   Network,
   Orbit,
   PanelLeft,
+  PanelRight,
   Redo2,
   RefreshCw,
+  Rows3,
   Save,
   SaveAll,
   Search,
   ShieldHalf,
+  Sun,
+  Table2,
   Undo2,
   Workflow,
 } from "lucide-react";
@@ -51,6 +59,8 @@ export interface AppActions {
 
 export function useAppActions(): AppActions {
   const toggleSidebar = useSettingsStore((state) => state.toggleSidebar);
+  const setThemePreference = useSettingsStore((state) => state.setThemePreference);
+  const setLocale = useSettingsStore((state) => state.setLocale);
   const openConnectionDialog = useConnectionStore((state) => state.openDialog);
   const openExportDialog = useExportStore((state) => state.open);
   const refreshFromDatabase = useConnectionStore((state) => state.refresh);
@@ -60,6 +70,7 @@ export function useAppActions(): AppActions {
   const openProject = useProjectStore((state) => state.openProject);
   const saveProject = useProjectStore((state) => state.saveProject);
   const saveProjectAs = useProjectStore((state) => state.saveProjectAs);
+  const setDetailLevel = useProjectStore((state) => state.setDetailLevel);
   const openAbout = useAboutStore((state) => state.open);
   const openAccessReport = useAccessReportStore((state) => state.open);
   const canUndo = useProjectStore((state) => state.history.past.length > 0);
@@ -72,6 +83,7 @@ export function useAppActions(): AppActions {
   const isLayoutRunning = useCanvasUiStore((state) => state.isLayoutRunning);
   const requestFit = useCanvasUiStore((state) => state.requestFit);
   const selectedKeys = useCanvasUiStore((state) => state.selectedKeys);
+  const toggleInspector = useCanvasUiStore((state) => state.toggleInspector);
   const togglePalette = usePaletteStore((state) => state.toggle);
   const canLayout = hasProject && !isLayoutRunning;
   // A project a newer version wrote is shown but never written: saving would drop what this
@@ -202,6 +214,40 @@ export function useAppActions(): AppActions {
         unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
         run: requestFit,
       },
+      // Ctrl+1, 2 and 3 follow the segmented control from left to right, next to Ctrl+0 for fit.
+      "view.detailCompact": {
+        id: "view.detailCompact",
+        labelKey: "action.detailCompact",
+        icon: Rows3,
+        shortcut: { mod: true, key: "1" },
+        isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
+        run: () => {
+          setDetailLevel("compact");
+        },
+      },
+      "view.detailKeys": {
+        id: "view.detailKeys",
+        labelKey: "action.detailKeys",
+        icon: KeyRound,
+        shortcut: { mod: true, key: "2" },
+        isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
+        run: () => {
+          setDetailLevel("keys");
+        },
+      },
+      "view.detailFull": {
+        id: "view.detailFull",
+        labelKey: "action.detailFull",
+        icon: Table2,
+        shortcut: { mod: true, key: "3" },
+        isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
+        run: () => {
+          setDetailLevel("full");
+        },
+      },
       "diagram.showAll": {
         id: "diagram.showAll",
         labelKey: "action.showAll",
@@ -309,6 +355,65 @@ export function useAppActions(): AppActions {
         isAvailable: true,
         run: toggleSidebar,
       },
+      // Opened by the shortcut, the top-bar button or the palette, the Inspector takes focus;
+      // closing it hands focus back.
+      "view.toggleInspector": {
+        id: "view.toggleInspector",
+        labelKey: "action.toggleInspector",
+        icon: PanelRight,
+        shortcut: { mod: true, key: "i" },
+        isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
+        run: () => {
+          toggleInspector({ focus: true });
+        },
+      },
+      // Preferences are commands too, so the palette can switch them without a shortcut.
+      "settings.theme.system": {
+        id: "settings.theme.system",
+        labelKey: "action.themeSystem",
+        icon: Monitor,
+        isAvailable: true,
+        run: () => {
+          setThemePreference("system");
+        },
+      },
+      "settings.theme.light": {
+        id: "settings.theme.light",
+        labelKey: "action.themeLight",
+        icon: Sun,
+        isAvailable: true,
+        run: () => {
+          setThemePreference("light");
+        },
+      },
+      "settings.theme.dark": {
+        id: "settings.theme.dark",
+        labelKey: "action.themeDark",
+        icon: Moon,
+        isAvailable: true,
+        run: () => {
+          setThemePreference("dark");
+        },
+      },
+      "settings.language.en": {
+        id: "settings.language.en",
+        labelKey: "action.languageEn",
+        icon: Languages,
+        isAvailable: true,
+        run: () => {
+          setLocale("en");
+        },
+      },
+      "settings.language.es": {
+        id: "settings.language.es",
+        labelKey: "action.languageEs",
+        icon: Languages,
+        isAvailable: true,
+        run: () => {
+          setLocale("es");
+        },
+      },
       "help.about": {
         id: "help.about",
         labelKey: "action.about",
@@ -322,6 +427,8 @@ export function useAppActions(): AppActions {
     return { byId, list: Object.values(byId) };
   }, [
     toggleSidebar,
+    setThemePreference,
+    setLocale,
     openConnectionDialog,
     openExportDialog,
     refreshFromDatabase,
@@ -331,6 +438,7 @@ export function useAppActions(): AppActions {
     openProject,
     saveProject,
     saveProjectAs,
+    setDetailLevel,
     openAbout,
     openAccessReport,
     canUndo,
@@ -341,6 +449,7 @@ export function useAppActions(): AppActions {
     canLayout,
     requestFit,
     selectedKeys,
+    toggleInspector,
     togglePalette,
   ]);
 }

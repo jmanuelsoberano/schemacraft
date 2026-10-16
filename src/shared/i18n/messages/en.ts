@@ -1,6 +1,8 @@
 /**
  * English catalogue. It is the reference: its keys define the `MessageKey` type, so a message
  * missing from another language fails type-checking instead of showing up blank at runtime.
+ * The standalone viewer embeds a subset of it, chosen by key prefix (`viewer.`, `details.`,
+ * `entity.` and the other prefixes `viewerMessages` lists), so it says what the application says.
  */
 export const englishMessages = {
   "app.name": "SchemaCraft",
@@ -30,6 +32,15 @@ export const englishMessages = {
   "action.exportPdf": "Export diagram as PDF",
   "action.searchEntities": "Search entities",
   "action.accessReport": "Show access report",
+  "action.toggleInspector": "Toggle Inspector",
+  "action.detailCompact": "Detail level: Compact",
+  "action.detailKeys": "Detail level: Keys",
+  "action.detailFull": "Detail level: Full",
+  "action.themeSystem": "Theme: System",
+  "action.themeLight": "Theme: Light",
+  "action.themeDark": "Theme: Dark",
+  "action.languageEn": "Language: English",
+  "action.languageEs": "Language: Español",
 
   "credits.developedBy": "Developed by {name}",
   "about.title": "About SchemaCraft",
@@ -131,6 +142,18 @@ export const englishMessages = {
   "sidebar.empty.notVisible.description": "Others may exist in {database}.",
   "sidebar.footer.notVisible": "Other tables or views may exist that aren't visible to this login.",
 
+  "inspector.title": "Inspector",
+  "inspector.resize": "Resize the Inspector panel",
+  "inspector.close": "Close the Inspector",
+  "inspector.empty.title": "Nothing selected",
+  "inspector.empty.description":
+    "Select a table or view on the canvas to see its details here, or double-click a card or press Enter on it. {shortcut} closes this panel.",
+  "inspector.multiple.title.one": "{count} entity selected",
+  "inspector.multiple.title.other": "{count} entities selected",
+  "inspector.multiple.description": "Select only one to see its details.",
+  "inspector.why": "Why?",
+  "inspector.why.label": "Why? Show the access report",
+
   "entity.table": "Table",
   "entity.view": "View",
   "entity.view.label": "VIEW",
@@ -150,6 +173,7 @@ export const englishMessages = {
   "canvas.node.collapse": "Collapse",
   "canvas.node.expand": "Expand",
   "canvas.menu.center": "Center on screen",
+  "canvas.menu.details": "Show details",
   "canvas.menu.hide": "Hide",
   "canvas.menu.isolateOne": "Isolate with direct relationships",
   "canvas.menu.isolateTwo": "Isolate with relationships, two levels",
@@ -370,6 +394,61 @@ export const englishMessages = {
   "definition.default.notAvailable": "DEFAULT (not available)",
   "definition.default.notRecorded": "(default not recorded)",
 
+  "viewer.search.empty": "Nothing matches",
+  "viewer.action.fit": "Fit",
+  "viewer.action.theme": "Switch theme",
+  "viewer.action.close": "Close",
+  "viewer.panel.label": "Details",
+  "viewer.summary.tables.one": "{count} table",
+  "viewer.summary.tables.other": "{count} tables",
+  "viewer.summary.views.one": "{count} view",
+  "viewer.summary.views.other": "{count} views",
+  "viewer.summary.relations.one": "{count} relation",
+  "viewer.summary.relations.other": "{count} relations",
+  "viewer.footer.exported": "Exported {date} with {generator}",
+
+  "details.section.columns": "Columns",
+  "details.section.primaryKey": "Primary key",
+  "details.section.indexes": "Indexes",
+  "details.section.checks": "Check constraints",
+  "details.section.references": "References",
+  "details.section.referencedBy": "Referenced by",
+  "details.column.name": "Column",
+  "details.column.type": "Type",
+  "details.column.nullable": "Nullable",
+  "details.value.yes": "Yes",
+  "details.value.no": "No",
+  "details.badge.primaryKey": "PK",
+  "details.badge.foreignKey": "FK",
+  "details.badge.identity": "identity",
+  "details.badge.computed": "computed",
+  "details.badge.disabled": "disabled",
+  "details.default": "DEFAULT {expression}",
+  "details.hint.notAvailable": "The text isn't visible to this login.",
+  "details.hint.notRecorded":
+    "Saved by SchemaCraft 1.0, which didn't record it. Refresh from the database to read it.",
+  "details.hint.notChecked": "Read on {date}; this login couldn't check it since.",
+  "details.notice.notChecked": "Kept from a read on {date}: this login couldn't check it.",
+  "details.relation.onDelete": "On delete: {action}",
+  "details.relation.onUpdate": "On update: {action}",
+  "details.target.go": "Go to {name}",
+  "details.target.self": "This table",
+  "details.target.hidden": "Hidden on the canvas",
+  "details.target.unknown": "Not in this project",
+  "details.target.notVisible": "A table not visible to this login",
+  "details.empty.columns": "No columns",
+  "details.empty.primaryKey": "No primary key",
+  "details.empty.indexes": "No indexes",
+  "details.empty.checks": "No check constraints",
+  "details.empty.references": "References no table",
+  "details.empty.referencedBy": "No table references it",
+  "details.empty.notVisible": "None visible to this login",
+  "details.empty.notRecorded": "None recorded; refresh from the database to check",
+  "details.empty.notChecked": "Not checked since {date}",
+  "details.empty.diagram": "None on the diagram",
+  "details.empty.inspectedSchemas": "None in the inspected schemas",
+  "details.footnote.notVisible": "Other tables that aren't visible to this login may reference it.",
+
   "error.project.notFound.title": "The project file was not found",
   "error.project.notFound.hint":
     "It may have been moved or deleted, so it was removed from the recent projects.",
@@ -506,12 +585,3 @@ export const englishMessages = {
 export type MessageKey = keyof typeof englishMessages;
 
 export type MessageCatalog = Readonly<Record<MessageKey, string>>;
-
-/** Message keys that come in `one`/`other` plural forms, referred to by their common prefix. */
-export type PluralMessageBase = {
-  [Key in MessageKey]: Key extends `${infer Base}.one`
-    ? `${Base}.other` extends MessageKey
-      ? Base
-      : never
-    : never;
-}[MessageKey];

@@ -3,24 +3,27 @@ import { persist } from "zustand/middleware";
 
 import { SUPPORTED_LOCALES, detectInitialLocale } from "@/shared/i18n/locales";
 import type { Locale } from "@/shared/i18n/locales";
+import type { PanelWidthLimits } from "@/shared/ui/PanelResizer";
 
 import type { ThemePreference } from "./theme";
 
-export const SIDEBAR_MIN_WIDTH = 220;
-export const SIDEBAR_MAX_WIDTH = 560;
-export const SIDEBAR_DEFAULT_WIDTH = 280;
+/** Keeps the entities panel wide enough for its search box and never wider than half a screen. */
+export const SIDEBAR_WIDTH_LIMITS: PanelWidthLimits = { min: 220, max: 560, default: 280 };
+
+/** The Inspector needs room for a column table with its badges; its ceiling is the sidebar's. */
+export const INSPECTOR_WIDTH_LIMITS: PanelWidthLimits = { min: 280, max: 560, default: 360 };
 
 /** How many dismissed access notices are remembered; the oldest are forgotten first. */
 export const DISMISSED_ACCESS_NOTICES_LIMIT = 50;
 
 const THEME_PREFERENCES: readonly ThemePreference[] = ["system", "light", "dark"];
 
-/** Keeps the entities panel wide enough for its search box and never wider than half a screen. */
-export function clampSidebarWidth(width: number): number {
+/** A panel width within its limits, in whole pixels; the default when it is not a number. */
+export function clampPanelWidth(width: number, limits: PanelWidthLimits): number {
   if (!Number.isFinite(width)) {
-    return SIDEBAR_DEFAULT_WIDTH;
+    return limits.default;
   }
-  return Math.round(Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width)));
+  return Math.round(Math.min(limits.max, Math.max(limits.min, width)));
 }
 
 interface SettingsState {
@@ -29,6 +32,8 @@ interface SettingsState {
   isSidebarOpen: boolean;
   /** Width of the entities panel in pixels, within the clamp. */
   sidebarWidth: number;
+  /** Width of the Inspector in pixels, within the clamp. Whether it is open is never saved. */
+  inspectorWidth: number;
   /**
    * Signatures of the partial-access notices the user closed, most recent first. A signature
    * names the server, the database and the verdicts, so the notice returns when they change.
@@ -39,13 +44,19 @@ interface SettingsState {
   toggleSidebar: () => void;
   setSidebarOpen: (isOpen: boolean) => void;
   setSidebarWidth: (width: number) => void;
+  setInspectorWidth: (width: number) => void;
   dismissAccessNotice: (signature: string) => void;
 }
 
 /** The part of the settings written to local storage. */
 export type PersistedSettings = Pick<
   SettingsState,
-  "themePreference" | "locale" | "isSidebarOpen" | "sidebarWidth" | "dismissedAccessNotices"
+  | "themePreference"
+  | "locale"
+  | "isSidebarOpen"
+  | "sidebarWidth"
+  | "inspectorWidth"
+  | "dismissedAccessNotices"
 >;
 
 const SETTINGS_STORAGE_KEY = "schemacraft.settings";
@@ -56,6 +67,11 @@ function rememberSignature(signatures: readonly string[], signature: string): re
     0,
     DISMISSED_ACCESS_NOTICES_LIMIT,
   );
+}
+
+/** A stored panel width, or the default when storage predates the panel or holds nonsense. */
+function storedPanelWidth(value: unknown, limits: PanelWidthLimits): number {
+  return clampPanelWidth(typeof value === "number" ? value : limits.default, limits);
 }
 
 /**
@@ -69,16 +85,22 @@ export function mergePersistedSettings<State extends PersistedSettings>(
 ): State {
   const stored: Partial<Record<keyof PersistedSettings, unknown>> =
     typeof persisted === "object" && persisted !== null ? persisted : {};
-  const { themePreference, locale, isSidebarOpen, sidebarWidth, dismissedAccessNotices } = stored;
+  const {
+    themePreference,
+    locale,
+    isSidebarOpen,
+    sidebarWidth,
+    inspectorWidth,
+    dismissedAccessNotices,
+  } = stored;
   return {
     ...current,
     themePreference:
       THEME_PREFERENCES.find((known) => known === themePreference) ?? current.themePreference,
     locale: SUPPORTED_LOCALES.find((known) => known === locale) ?? current.locale,
     isSidebarOpen: typeof isSidebarOpen === "boolean" ? isSidebarOpen : current.isSidebarOpen,
-    sidebarWidth: clampSidebarWidth(
-      typeof sidebarWidth === "number" ? sidebarWidth : SIDEBAR_DEFAULT_WIDTH,
-    ),
+    sidebarWidth: storedPanelWidth(sidebarWidth, SIDEBAR_WIDTH_LIMITS),
+    inspectorWidth: storedPanelWidth(inspectorWidth, INSPECTOR_WIDTH_LIMITS),
     dismissedAccessNotices: Array.isArray(dismissedAccessNotices)
       ? dismissedAccessNotices
           .filter((signature): signature is string => typeof signature === "string")
@@ -88,7 +110,7 @@ export function mergePersistedSettings<State extends PersistedSettings>(
 }
 
 /**
- * Conveniences of this window that survive restarts: theme, language, the entities panel and
+ * Conveniences of this window that survive restarts: theme, language, the two side panels and
  * the access notices already closed. Persisted in the webview's local storage, never secrets;
  * the connection history and recent projects live in the Rust-owned preferences file.
  */
@@ -98,7 +120,8 @@ export const useSettingsStore = create<SettingsState>()(
       themePreference: "system",
       locale: detectInitialLocale(navigator.languages),
       isSidebarOpen: true,
-      sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
+      sidebarWidth: SIDEBAR_WIDTH_LIMITS.default,
+      inspectorWidth: INSPECTOR_WIDTH_LIMITS.default,
       dismissedAccessNotices: [],
       setThemePreference: (themePreference) => {
         set({ themePreference });
@@ -113,7 +136,10 @@ export const useSettingsStore = create<SettingsState>()(
         set({ isSidebarOpen });
       },
       setSidebarWidth: (width) => {
-        set({ sidebarWidth: clampSidebarWidth(width) });
+        set({ sidebarWidth: clampPanelWidth(width, SIDEBAR_WIDTH_LIMITS) });
+      },
+      setInspectorWidth: (width) => {
+        set({ inspectorWidth: clampPanelWidth(width, INSPECTOR_WIDTH_LIMITS) });
       },
       dismissAccessNotice: (signature) => {
         set((state) => ({
@@ -129,6 +155,7 @@ export const useSettingsStore = create<SettingsState>()(
         locale: state.locale,
         isSidebarOpen: state.isSidebarOpen,
         sidebarWidth: state.sidebarWidth,
+        inspectorWidth: state.inspectorWidth,
         dismissedAccessNotices: state.dismissedAccessNotices,
       }),
       merge: mergePersistedSettings,

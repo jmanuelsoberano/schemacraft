@@ -28,6 +28,7 @@
       "canvas",
       "connection",
       "export",
+      "inspector",
       "preferences",
       "project",
       "schema"
@@ -48,7 +49,7 @@
       "preferencesBackend.ts",
       "projectBackend.ts"
     ],
-    "adrCount": 37
+    "adrCount": 38
   },
   "en": {
     "overview": {
@@ -86,20 +87,14 @@
             "id": "app-shell",
             "name": "AppShell and regions",
             "path": "src/app/shell",
-            "responsibility": "Lays out TopBar, EntitiesSidebar with SidebarResizer, DiagramCanvas and StatusBar; the panel and the canvas come from features/canvas and only get placed here. TopBar shows LayoutMenu. Hands DiagramCanvas the WelcomeOverlay as emptyState and the DEV hook exposeFlowInstance as onFlowInit, and the sidebar the AccessBar through its notice slot (with focusEntitiesSearch as its onDismissed), so neither imports app/ or features/access; the sidebar shows one muted footer while the object list may be incomplete and a neutral state for an empty schema. Mounts ConnectionDialog, ExportDialog, AboutDialog, AccessReportDialog, CommandPalette, UnsavedChangesDialog and CanvasContextMenu once, giving the context menu the registry's diagram.showAll action with its shortcut. StatusBar adds the access chip and the read-only chip, and leaves out a count of zero under partial coverage. Runs useKeyboardShortcuts, useDesktopShellGuards and useProjectWindow (window title, close guard). Calls preferencesStore.load() on mount.",
+            "responsibility": "Lays out TopBar, the entities panel and the Inspector on either side of DiagramCanvas, and StatusBar; the panel, the canvas and the Inspector come from features/canvas and features/inspector and only get placed here, each side panel in a named aside landmark that turns inert while collapsed, with a PanelResizer from shared/ui (the Inspector's goes in through the panel's resizer slot) and its width in settingsStore; fitSidePanels (sidePanelWidths.ts) narrows the open panels in a window too narrow for both, the Inspector last and neither below its minimum, so the canvas keeps 320 px and the top bar stays in the window, without changing the remembered widths. TopBar shows LayoutMenu; its segmented control and its theme and language menus run the registry's view.detail*, settings.theme.* and settings.language.* actions, and its Inspector toggle runs view.toggleInspector. Hands DiagramCanvas the WelcomeOverlay as emptyState and the DEV hook exposeFlowInstance as onFlowInit, the sidebar the AccessBar through its notice slot (with focusEntitiesSearch as its onDismissed), and the InspectorPanel the toggle's shortcut hint and the registry's view.accessReport action for its 'Why?' links, so none of them imports app/ or features/access; the sidebar shows one muted footer while the object list may be incomplete and a neutral state for an empty schema. Mounts ConnectionDialog, ExportDialog, AboutDialog, AccessReportDialog, CommandPalette, UnsavedChangesDialog and CanvasContextMenu once, giving the context menu the registry's diagram.showAll action with its shortcut. StatusBar adds the access chip and the read-only chip, and leaves out a count of zero under partial coverage. Runs useKeyboardShortcuts, useDesktopShellGuards and useProjectWindow (window title, close guard). Calls preferencesStore.load() on mount.",
             "patterns": [
               "Dialogs read their own open flag from a store",
               "Props carry only the action registry",
               "Notice slot instead of a feature import",
-              "Shell concerns reach the canvas as props"
+              "Shell concerns reach the canvas as props",
+              "Side panels as named landmarks, inert while closed"
             ]
-          },
-          {
-            "id": "sidebar-resizer",
-            "name": "SidebarResizer",
-            "path": "src/app/shell/SidebarResizer.tsx",
-            "responsibility": "Handle on the edge of the entities panel. Drag to resize, use the arrow keys in steps of 16 px, or double-click to return to the default width. Writes sidebarWidth to settingsStore, so the width persists in 'schemacraft.settings'.",
-            "patterns": ["Pointer drag with a keyboard equivalent"]
           },
           {
             "id": "welcome-overlay",
@@ -112,7 +107,7 @@
             "id": "action-registry",
             "name": "Action registry and shortcuts",
             "path": "src/app/actions",
-            "responsibility": "23 AppActions (id, labelKey, icon, shortcut, isAvailable, unavailableReason, run) built in useAppActions.ts. A disabled action says why in its tooltip: no project, a layout running, nothing hidden, nothing to undo or redo, or a read-only project (Save, Save as and Refresh). view.accessReport (Ctrl+Shift+A) opens the Access report whenever a project is open. useKeyboardShortcuts.ts routes keys in the capture phase; the first match wins. The toolbar, the menus, the welcome screen and the command palette all read this registry.",
+            "responsibility": "32 AppActions (id, labelKey, icon, shortcut, isAvailable, unavailableReason, run) built in useAppActions.ts. A disabled action says why in its tooltip: no project, a layout running, nothing hidden, nothing to undo or redo, or a read-only project (Save, Save as and Refresh). view.accessReport (Ctrl+Shift+A) opens the Access report whenever a project is open. Since 1.1 the detail levels (view.detailCompact, view.detailKeys and view.detailFull on Ctrl+1, Ctrl+2 and Ctrl+3), the themes (settings.theme.*) and the languages (settings.language.*) are actions too, run by the top bar, and view.toggleInspector (Ctrl+I) opens or closes the Inspector with focus; the per-entity gestures and Enter on a card stay outside the registry on purpose (ADR-008). useKeyboardShortcuts.ts routes keys in the capture phase; the first match wins. useAppActions.test.ts builds the registry as the shell does and fails when two actions share a shortcut or one takes a browser key that is not on the claimed list. The toolbar, the menus, the welcome screen and the command palette all read this registry.",
             "patterns": ["Command / single registry (ADR-008)", "Platform-neutral mod key"]
           },
           {
@@ -179,22 +174,29 @@
             "id": "shared-i18n",
             "name": "Internationalisation",
             "path": "src/shared/i18n",
-            "responsibility": "en.ts is the reference catalogue; es.ts is typed as MessageCatalog. useI18n() and translate(locale, key). catalogs.test.ts checks keys, empty messages and placeholders. formatDate.ts formats the UTC timestamps Rust sends in the current language.",
+            "responsibility": "en.ts is the reference catalogue; es.ts is typed as MessageCatalog. useI18n() and translate(locale, key). translator.ts holds createCatalogTranslator, which builds t, tCount and template over any catalogue with formatMessage and Intl.PluralRules and no store behind it: useI18n builds it over the whole catalogue of the chosen language, and the exported viewer over the subset embedded in its file, so both say the same words (ADR-007). catalogs.test.ts checks keys, empty messages and placeholders, the viewer's strings included. formatDate.ts formats the UTC timestamps Rust sends in the current language.",
             "patterns": ["Typed message catalogues (ADR-007)"]
           },
           {
             "id": "shared-settings",
             "name": "Settings store",
             "path": "src/shared/settings",
-            "responsibility": "Theme preference, locale, sidebar open and width, and the signatures of the partial-access notices the user closed (50 at most, most recent first), persisted in localStorage 'schemacraft.settings'. mergePersistedSettings checks every stored field and falls back to its default. useThemeSynchronization sets data-theme and the native window theme.",
+            "responsibility": "Theme preference, locale, sidebar open and width, the Inspector's width (never whether it is open) and the signatures of the partial-access notices the user closed (50 at most, most recent first), persisted in localStorage 'schemacraft.settings'. SIDEBAR_WIDTH_LIMITS (220 to 560, default 280) and INSPECTOR_WIDTH_LIMITS (280 to 560, default 360), typed with PanelResizer's PanelWidthLimits, bound both widths through clampPanelWidth. mergePersistedSettings checks every stored field and falls back to its default. useThemeSynchronization sets data-theme and the native window theme.",
             "patterns": ["zustand persist with partialize and validating merge"]
           },
           {
             "id": "shared-ui",
             "name": "UI primitives",
             "path": "src/shared/ui",
-            "responsibility": "Accessible primitives built on Radix: Button, IconButton, Dialog, Select, SegmentedControl, RadioMenu, Tooltip, Alert (optionally announced politely, with an icon and a dismiss button) and more. No '@/' imports; all text comes in through props.",
+            "responsibility": "Accessible primitives built on Radix: Button, IconButton, Dialog, Select, SegmentedControl, RadioMenu, Tooltip, Alert (optionally announced politely, with an icon and a dismiss button), PanelResizer (the handle of both side panels) and more. No '@/' imports (imports.test.ts checks it); all text comes in through props.",
             "patterns": ["Pure presentational components"]
+          },
+          {
+            "id": "panel-resizer",
+            "name": "PanelResizer",
+            "path": "src/shared/ui/PanelResizer.tsx",
+            "responsibility": "Handle on the edge of a side panel, used by the entities panel (edge 'end') and by the Inspector (edge 'start'). Drag it to resize, use the arrow keys in steps of 16 px (away from the panel widens it on either side), Home and End for the narrowest and widest width, double-click to return to the default. Controlled and text-free: it reports the width it was dragged or stepped to, and the owner (AppShell) clamps and remembers it through settingsStore's setSidebarWidth and setInspectorWidth with SIDEBAR_WIDTH_LIMITS and INSPECTOR_WIDTH_LIMITS. It declares the PanelWidthLimits type those limits use, so it imports nothing from settingsStore; AppShell passes the limits fitSidePanels narrowed, so aria-valuemax and End follow the room the window leaves. role=separator with aria-valuenow and aria-controls.",
+            "patterns": ["Pointer drag with a keyboard equivalent", "Controlled component"]
           },
           {
             "id": "brand",
@@ -208,7 +210,7 @@
       {
         "id": "features",
         "name": "Frontend: features",
-        "summary": "One folder per product capability. Stateful features own one zustand store; schema is a pure helper module; canvas edits go through projectStore.updateCanvas. Logic lives in pure, unit-tested modules.",
+        "summary": "One folder per product capability. Stateful features own one zustand store; schema is a pure helper module; inspector holds no state and follows the canvas selection; canvas edits go through projectStore.updateCanvas. Logic lives in pure, unit-tested modules.",
         "path": "src/features",
         "technologies": ["zustand 5", "elkjs 0.12 (Web Worker)", "d3-force 3", "vitest 5"],
         "components": [
@@ -259,7 +261,7 @@
             "id": "feature-canvas",
             "name": "canvas",
             "path": "src/features/canvas",
-            "responsibility": "Diagram state transforms (canvasState.ts), geometry, edges, nodes, context menu, transient UI store (canvasUiStore.ts), canvas commands (canvasActions.ts), layouts/ (layered with ELK in a worker, organic with d3-force, radial) and, since 1.1, the two canvas regions the shell places: DiagramCanvas and EntitiesSidebar, with entitiesSearch.ts. The saved diagram state lives in projectStore; canvas commands change it through updateCanvas: setHidden serves the sidebar eye and the context menu, setCollapsed the card chevron. edgeGeometry.ts holds the one marker table (RELATION_MARKER_SHAPES) and relationPath, shared with the SVG renderer; relationMarkerIds.ts names the canvas markers. EntityNode draws a view with the Glasses icon, the VIEW label and the view tokens, and shows the collapse chevron only when isCollapsible finds rows to hide (ADR-036). describeEntities counts the columns of keys to invisible tables as key columns, so they keep the key badge without an edge.",
+            "responsibility": "Diagram state transforms (canvasState.ts), geometry, edges, nodes, context menu, transient UI store (canvasUiStore.ts), canvas commands (canvasActions.ts), layouts/ (layered with ELK in a worker, organic with d3-force, radial) and, since 1.1, the two canvas regions the shell places: DiagramCanvas and EntitiesSidebar, with entitiesSearch.ts. The saved diagram state lives in projectStore; canvas commands change it through updateCanvas: setHidden serves the sidebar eye and the context menu, setCollapsed the card chevron. canvasUiStore also holds whether the Inspector is open and its request for focus (openInspector, closeInspector, toggleInspector), and a FocusRequest can select without panning (center: false), which 'Show details' uses; canvasFocus.ts moves focus between the canvas and the Inspector (focusEntityNode, returnFocusFromInspector), the one place that knows how React Flow names a card. edgeGeometry.ts holds the one marker table (RELATION_MARKER_SHAPES) and relationPath, shared with the SVG renderer; relationMarkerIds.ts names the canvas markers. EntityNode draws a view with the Glasses icon, the VIEW label and the view tokens, and shows the collapse chevron only when isCollapsible finds rows to hide (ADR-036). describeEntities counts the columns of keys to invisible tables as key columns, so they keep the key badge without an edge.",
             "patterns": [
               "Pure transforms applied via updateCanvas",
               "Strategy as tagged union + exhaustive switch (ADR-022)",
@@ -271,7 +273,7 @@
             "id": "diagram-canvas",
             "name": "DiagramCanvas",
             "path": "src/features/canvas/DiagramCanvas.tsx",
-            "responsibility": "The one React Flow instance. Derives nodes and edges from projectStore and writes drags and the viewport back through updateCanvas; the card chevron runs canvasActions.setCollapsed. When loadToken changes it lays out a fresh project (no path, never saved, not dirty, layout manual); otherwise it restores the saved viewport or fits the diagram to the window. What belongs to the shell arrives as props: emptyState (the welcome screen), shown while no project is open, and onFlowInit (the DEV hook), called when React Flow is ready. Shows ProjectNotice when opening or saving fails. With a project open but no table or view, it shows a neutral empty state whose reason (an empty database, the schema selection, nothing visible to this login) comes from emptySchemaReason in schema/coverage.ts. The minimap tints views with the view colour.",
+            "responsibility": "The one React Flow instance. Derives nodes and edges from projectStore and writes drags and the viewport back through updateCanvas; the card chevron runs canvasActions.setCollapsed. When loadToken changes it lays out a fresh project (no path, never saved, not dirty, layout manual); otherwise it restores the saved viewport or fits the diagram to the window. What belongs to the shell arrives as props: emptyState (the welcome screen), shown while no project is open, and onFlowInit (the DEV hook), called when React Flow is ready. The selection is the one source of what the Inspector shows: a double-click on a card (not on its chevron) opens the Inspector and leaves focus on the card, and Enter on a focused card opens it and hands it focus, handled here and only when the card itself is focused, so the buttons inside a card keep Enter. The React Flow root is focusable by script (tabIndex -1) for when the Inspector hands focus back and the card is not rendered, and returnFocusFromInspector is installed once; a focus request pans only when it asks to (center). Shows ProjectNotice when opening or saving fails. With a project open but no table or view, it shows a neutral empty state whose reason (an empty database, the schema selection, nothing visible to this login) comes from emptySchemaReason in schema/coverage.ts. The minimap tints views with the view colour.",
             "patterns": [
               "Request counters (fitRequest, focusRequest) drive imperative view calls",
               "Shell concerns arrive as props"
@@ -281,7 +283,7 @@
             "id": "entities-sidebar",
             "name": "EntitiesSidebar",
             "path": "src/features/canvas/EntitiesSidebar.tsx",
-            "responsibility": "The entities panel. groupEntities(listEntities(snapshot)) gives the schema groups and their Tables and Views sections; entityListShape, decided on the unfiltered list, says which levels to show (several schemas, both kinds), so the structure stays put while typing. Headers are buttons with aria-expanded; a schema or a section collapses for the session only, and everything is expanded, with the toggles disabled, while the search has text. Counts read 'shown / total' once something is hidden. Each row centres its entity, opens the context menu and toggles visibility through canvasActions.setHidden; views carry the Glasses icon in the view colour. Keeps the empty states (no project, the emptySchemaReason states, no matches), the single not-visible footer of ADR-034 and the notice slot; the search box id comes from entitiesSearch.ts.",
+            "responsibility": "The entities panel. groupEntities(listEntities(snapshot)) gives the schema groups and their Tables and Views sections; entityListShape, decided on the unfiltered list, says which levels to show (several schemas, both kinds), so the structure stays put while typing. Headers are buttons with aria-expanded; a schema or a section collapses for the session only, and everything is expanded, with the toggles disabled, while the search has text. Counts read 'shown / total' once something is hidden. Each row centres its entity on click, opens the Inspector on double-click (never for a hidden entity, which has no card to select), opens the context menu and toggles visibility through canvasActions.setHidden; views carry the Glasses icon in the view colour. Keeps the empty states (no project, the emptySchemaReason states, no matches), the single not-visible footer of ADR-034 and the notice slot; the search box id comes from entitiesSearch.ts.",
             "patterns": [
               "Shape decided on the unfiltered list",
               "Session-only disclosure state",
@@ -313,7 +315,7 @@
             "id": "feature-export",
             "name": "export",
             "path": "src/features/export",
-            "responsibility": "Export dialog and store. ExportSpecificationBuilder validates choices. svg/renderDiagram.ts draws the SVG with the marker table of canvas/edgeGeometry.ts and the labels the caller passes (RenderOptions.labels: the VIEW label, which exportStore translates in the interface language); a view card gets the view tint, the Glasses symbol, the label pill and a secondary schema text, as on the canvas. svg/palette.ts is the sRGB derivation of tokens.css (PALETTE_TOKENS, checked by src/app/styles/tokens.test.ts), and viewerPaletteStyles() writes it as --sc-* custom properties that html/buildStandalonePage puts before the viewer's stylesheet. html/ builds the standalone page; fontFaces.ts supplies the fonts that are measured and embedded. visibleProjection is an allowlist: the visible tables, views and keys, the keys to invisible tables of visible tables and the access level, never the probe, the carriedOver list or unknown keys (the kept objects themselves are exported like any other). A partial capture adds a one-line note: a footnote in SVG, PDF and PNG (RenderOptions.footnote, included in the measured size) and a header line in the HTML viewer. Only the document string goes to Rust.",
+            "responsibility": "Export dialog and store. ExportSpecificationBuilder validates choices. svg/renderDiagram.ts draws the SVG with the marker table of canvas/edgeGeometry.ts and the labels the caller passes (RenderOptions.labels: the VIEW label, which exportStore translates in the interface language); a view card gets the view tint, the Glasses symbol, the label pill and a secondary schema text, as on the canvas. svg/palette.ts is the sRGB derivation of tokens.css (PALETTE_TOKENS, checked by src/app/styles/tokens.test.ts), and viewerPaletteStyles() writes it as --sc-* custom properties that html/buildStandalonePage puts before the viewer's stylesheet. html/ builds the standalone page; html/viewerMessages.ts picks, by key prefix, the subset of the catalogue the file embeds for the viewer (ViewerData.messages) and viewerMessages.test.ts checks it; fontFaces.ts supplies the fonts that are measured and embedded. visibleProjection is an allowlist: the visible tables, views and keys, the keys to invisible tables of visible tables, the access verdicts (AccessSummary: level and coverage, never the probe or the database user) and, apart from the snapshot, the kept facts of the objects on the diagram with their read dates (ViewerData.carriedOver), a key's only while the key itself is exported, never a hidden table's facts or unknown keys. A partial capture adds a one-line note: a footnote in SVG, PDF and PNG (RenderOptions.footnote, included in the measured size) and a header line in the HTML viewer. Only the document string goes to Rust.",
             "patterns": [
               "Builder",
               "TS draws, Rust writes (ADR-023, ADR-024)",
@@ -356,15 +358,26 @@
             "id": "feature-schema",
             "name": "schema",
             "path": "src/features/schema",
-            "responsibility": "Pure helpers over SchemaSnapshot: formatDataType and describeColumn (dataType.ts), which prints 'DEFAULT (not available)' or '(default not recorded)' instead of dropping a default it cannot read; the one home of entity identity (entities.ts): EntityKind, ENTITY_KINDS, entityKey, listEntities, groupEntities (schemas, then Tables and Views sections), filterEntityGroups, countEntities and entityListShape; definitionText and isUnknownDefinition (definition.ts), the only readers of the raw Definition statuses; objectsCoverage, definitionsCoverage, listsEveryObject, emptySchemaReason and the export-safe AccessSummary (coverage.ts); quoteIdentifier (sqlIdentifiers.ts). No store. A leaf: ESLint lets it import only shared/ and itself, so every feature and the viewer bundle can import it (ADR-037).",
+            "responsibility": "Pure helpers over SchemaSnapshot: formatDataType and describeColumn (dataType.ts), which prints 'DEFAULT (not available)' or '(default not recorded)' instead of dropping a default it cannot read; the one home of entity identity (entities.ts): EntityKind, ENTITY_KINDS, entityKey, listEntities, groupEntities (schemas, then Tables and Views sections), filterEntityGroups, countEntities and entityListShape; definitionText and isUnknownDefinition (definition.ts), the only readers of the raw Definition statuses; objectsCoverage, definitionsCoverage, listsEveryObject, emptySchemaReason and the export-safe AccessSummary (coverage.ts); quoteIdentifier (sqlIdentifiers.ts); objectDetails.ts (describeObjectDetails: the facts of one table or view with how far the capture vouches for each, FactText and ListCompleteness) and objectDetailsView.ts (presentObjectDetails: the same as translated text, DetailsView), the view-model the Inspector and the viewer's detail panel share (ADR-038). No store. A leaf: ESLint lets it import only shared/ and itself, so every feature and the viewer bundle can import it (ADR-037).",
             "patterns": ["Leaf module, enforced by lint, safe for the viewer bundle"]
+          },
+          {
+            "id": "feature-inspector",
+            "name": "inspector",
+            "path": "src/features/inspector",
+            "responsibility": "The Inspector panel (ADR-038): the details of the selected table or view beside the canvas. InspectorPanel.tsx reads the snapshot, the canvas nodes and the inspection options from projectStore and the selection, the focus request and closeInspector from canvasUiStore; inspectorScope.ts builds the DetailsScope (hidden keys, the coverage from accessSummary, the carried facts, the schema filter) and inspectedKey picks the one selected entity, so none or several selected is an empty state. It memoises describeObjectDetails and presentObjectDetails with useI18n's translator. A permanent header (the title and a close button with the Ctrl+I hint) gives the empty states a focus target; the entity heading takes focus on a focus request; the resizer the shell passes in (resizer slot) is drawn inside the element that handles Escape, so Escape anywhere in the panel, the handle included, runs focusEntityNode and leaves the panel open. InspectorSections.tsx draws the DetailsView as the viewer does, one component per section kind, with count chips, the one honest empty line and the referenced-by footnote; a relation target with a key is a link that runs focusEntity then openInspector; a value the capture could not vouch for carries an icon and its hint, and a not-available value, a not-visible target and a not-visible empty line add a 'Why?' link that opens the Access report through the action the shell passes in. No store, no role=dialog; tokens only.",
+            "patterns": [
+              "Shared view-model, two renderers (ADR-038)",
+              "Follows the selection, holds no state",
+              "Non-modal landmark, never a dialog"
+            ]
           }
         ]
       },
       {
         "id": "viewer",
         "name": "Frontend: standalone viewer",
-        "summary": "Vanilla TypeScript app embedded in exported HTML files. No React, no stores, no network.",
+        "summary": "Vanilla TypeScript app embedded in exported HTML files. No React, no stores, no network, no catalogue of its own.",
         "path": "src/viewer",
         "technologies": ["TypeScript", "Vite virtual module"],
         "components": [
@@ -372,7 +385,7 @@
             "id": "viewer-app",
             "name": "Viewer",
             "path": "src/viewer/main.ts",
-            "responsibility": "Reads the embedded JSON, draws with renderDiagramSvg, passing its own label.view, and offers pan and zoom, three detail levels, a search whose results name the kind (Table or View, in the view colour), neighbour highlight, a detail panel whose kind line is coloured for views, and a theme toggle. Its colours are the --sc-* properties buildStandalonePage writes from the palette; viewer.css declares none beyond its two translucent shadows. A text it cannot show reads 'not available' or 'not recorded' (describeDefinition), and an export of a partial capture shows a note line under the header bar. Imports canvasState and geometry from canvas, entityKey, formatDataType and the definition readers from schema and the renderer from export, but no React and no stores. Own EN/ES catalogue in messages.ts, whose label.view is tested equal to the app's entity.view.label.",
+            "responsibility": "Reads the embedded JSON, draws with renderDiagramSvg, passing the VIEW label of the embedded catalogue, and offers pan and zoom, three detail levels, a search whose results name the kind (Table or View, in the view colour), neighbour highlight, a detail panel whose kind line is coloured for views, and a theme toggle. Its colours are the --sc-* properties buildStandalonePage writes from the palette; viewer.css declares none beyond its two translucent shadows. Its words are the catalogue subset embedded in the file (ViewerData.messages), read with createCatalogTranslator, so it has no catalogue of its own (ADR-007). The detail panel is the view-model of features/schema, describeObjectDetails and presentObjectDetails, with the scope of a file: no hidden entities, the embedded access verdicts and kept facts, and only the diagram known; it draws every section in the fixed order with the Inspector's words and states, for what is on the diagram: keys to tables off the diagram are not in the file (nor the FK mark they give their columns), an empty relation list reads 'None on the diagram', a list that is not empty carries no note that a key may be missing, and there is no 'Why?' link. A relation target on the diagram is a link that selects, centres and focuses the panel's heading (ADR-038). Choosing a search result focuses the heading too; there is no aria-live. An export of a partial capture shows a note line under the header bar. Imports canvasState and geometry from canvas, entityKey and the view-model from schema, the renderer and ViewerData from export and the translator from shared/i18n, but no React and no stores.",
             "patterns": ["Reuses the app renderer (ADR-025)"]
           },
           {
@@ -670,7 +683,7 @@
             "id": "ext-localstorage",
             "name": "WebView2 localStorage",
             "path": "src/shared/settings/settingsStore.ts",
-            "responsibility": "Two keys: 'schemacraft.settings' (theme, language, the entities panel and the closed access notices) and 'schemacraft.connection' (the last draft: the password blank, but server, login, database, schemas, encryption and trustServerCertificate kept). Both live in the WebView2 profile under %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft. Neither holds a secret; deleting preferences.json clears neither, and clearing the WebView2 data resets both (ADR-017).",
+            "responsibility": "Two keys: 'schemacraft.settings' (theme, language, the entities panel, the Inspector's width and the closed access notices) and 'schemacraft.connection' (the last draft: the password blank, but server, login, database, schemas, encryption and trustServerCertificate kept). Both live in the WebView2 profile under %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft. Neither holds a secret; deleting preferences.json clears neither, and clearing the WebView2 data resets both (ADR-017).",
             "patterns": ["Per-window UI conveniences only"]
           }
         ]
@@ -825,14 +838,14 @@
         "id": "action-registry-to-feature-project",
         "from": "action-registry",
         "to": "feature-project",
-        "label": "open, save, undo, redo",
+        "label": "open, save, undo, redo, setDetailLevel (Ctrl+1/2/3)",
         "kind": "call"
       },
       {
         "id": "action-registry-to-feature-canvas",
         "from": "action-registry",
         "to": "feature-canvas",
-        "label": "layouts, fit, show all",
+        "label": "layouts, fit, show all, toggleInspector (Ctrl+I)",
         "kind": "call"
       },
       {
@@ -993,14 +1006,14 @@
         "id": "viewer-app-to-feature-export",
         "from": "viewer-app",
         "to": "feature-export",
-        "label": "renderDiagramSvg, ViewerData",
+        "label": "renderDiagramSvg, ViewerData, ViewerMessageKey",
         "kind": "call"
       },
       {
         "id": "shared-settings-to-ext-localstorage",
         "from": "shared-settings",
         "to": "ext-localstorage",
-        "label": "'schemacraft.settings' (UI conveniences, closed access notices)",
+        "label": "'schemacraft.settings' (UI conveniences, panel widths, closed access notices)",
         "kind": "file"
       },
       {
@@ -1396,11 +1409,18 @@
         "kind": "network"
       },
       {
-        "id": "app-shell-to-sidebar-resizer",
+        "id": "app-shell-to-panel-resizer",
         "from": "app-shell",
-        "to": "sidebar-resizer",
-        "label": "places the resizer in the entities panel",
+        "to": "panel-resizer",
+        "label": "places a resizer on each side panel, controlled: the fitted width and limits in, the new width out",
         "kind": "call"
+      },
+      {
+        "id": "shared-settings-to-panel-resizer",
+        "from": "shared-settings",
+        "to": "panel-resizer",
+        "label": "imports the PanelWidthLimits type of its width limits",
+        "kind": "build"
       },
       {
         "id": "app-shell-to-project-window",
@@ -1441,14 +1461,14 @@
         "id": "app-shell-to-feature-project",
         "from": "app-shell",
         "to": "feature-project",
-        "label": "UnsavedChangesDialog, TopBar setDetailLevel, StatusBar reads projectStore",
+        "label": "UnsavedChangesDialog; TopBar and StatusBar read projectStore",
         "kind": "call"
       },
       {
         "id": "app-shell-to-feature-canvas",
         "from": "app-shell",
         "to": "feature-canvas",
-        "label": "CanvasContextMenu with the registry's showAll command; StatusBar reads canvasUiStore",
+        "label": "CanvasContextMenu with the registry's showAll command; StatusBar reads canvasUiStore; the Inspector landmark reads isInspectorOpen",
         "kind": "call"
       },
       {
@@ -1522,10 +1542,10 @@
         "kind": "call"
       },
       {
-        "id": "sidebar-resizer-to-shared-settings",
-        "from": "sidebar-resizer",
+        "id": "app-shell-to-shared-settings",
+        "from": "app-shell",
         "to": "shared-settings",
-        "label": "setSidebarWidth",
+        "label": "isSidebarOpen and both panel widths; setSidebarWidth, setInspectorWidth with their limits",
         "kind": "call"
       },
       {
@@ -1595,7 +1615,7 @@
         "id": "viewer-app-to-feature-schema",
         "from": "viewer-app",
         "to": "feature-schema",
-        "label": "entityKey, formatDataType, definition readers",
+        "label": "entityKey; describeObjectDetails and presentObjectDetails for the detail panel",
         "kind": "call"
       },
       {
@@ -1847,7 +1867,7 @@
         "id": "entities-sidebar-to-feature-canvas",
         "from": "entities-sidebar",
         "to": "feature-canvas",
-        "label": "setHidden (eye); canvasUiStore (focus, context menu)",
+        "label": "setHidden (eye); canvasUiStore (focus, context menu, openInspector on double-click)",
         "kind": "call"
       },
       {
@@ -1862,6 +1882,55 @@
         "from": "command-palette",
         "to": "feature-schema",
         "label": "listEntities, EntityKind",
+        "kind": "call"
+      },
+      {
+        "id": "app-shell-to-feature-inspector",
+        "from": "app-shell",
+        "to": "feature-inspector",
+        "label": "mounts InspectorPanel in the Inspector landmark, with the toggle's shortcut hint and the registry's view.accessReport",
+        "kind": "call"
+      },
+      {
+        "id": "action-registry-to-shared-settings",
+        "from": "action-registry",
+        "to": "shared-settings",
+        "label": "settings.theme.* and settings.language.* (setThemePreference, setLocale)",
+        "kind": "call"
+      },
+      {
+        "id": "feature-inspector-to-feature-schema",
+        "from": "feature-inspector",
+        "to": "feature-schema",
+        "label": "describeObjectDetails, presentObjectDetails, accessSummary, entityKey",
+        "kind": "call"
+      },
+      {
+        "id": "feature-inspector-to-feature-canvas",
+        "from": "feature-inspector",
+        "to": "feature-canvas",
+        "label": "selectedKeys, inspectorFocusRequest, closeInspector, focusEntity, openInspector; focusEntityNode",
+        "kind": "call"
+      },
+      {
+        "id": "feature-inspector-to-feature-project",
+        "from": "feature-inspector",
+        "to": "feature-project",
+        "label": "snapshot, canvas nodes and inspection options of the open project",
+        "kind": "call"
+      },
+      {
+        "id": "feature-export-to-shared-i18n",
+        "from": "feature-export",
+        "to": "shared-i18n",
+        "label": "viewerMessages(locale): the catalogue subset the HTML embeds",
+        "kind": "call"
+      },
+      {
+        "id": "viewer-app-to-shared-i18n",
+        "from": "viewer-app",
+        "to": "shared-i18n",
+        "label": "createCatalogTranslator over the embedded messages",
         "kind": "call"
       }
     ],
@@ -1895,8 +1964,8 @@
         "location": "WebView2 profile under %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft",
         "format": "JSON, zustand persist version 1",
         "owner": "Frontend: src/shared/settings/settingsStore.ts",
-        "contents": "Theme preference, locale, sidebar open and sidebar width, and the signatures of the partial-access notices the user closed (endpoint, database, level and coverage; up to 50, most recent first).",
-        "notes": "UI convenience only, never a secret. mergePersistedSettings checks each field when it is read back and falls back to the default. Deleting preferences.json does not clear it; clearing the WebView2 data resets the theme, language and panel, and closed access notices show again (ADR-017)."
+        "contents": "Theme preference, locale, sidebar open and sidebar width, the Inspector's width (280 to 560 px; whether it is open is never saved), and the signatures of the partial-access notices the user closed (endpoint, database, level and coverage; up to 50, most recent first).",
+        "notes": "UI convenience only, never a secret. mergePersistedSettings checks each field when it is read back and falls back to the default. Deleting preferences.json does not clear it; clearing the WebView2 data resets the theme, language and panels, and closed access notices show again (ADR-017)."
       },
       {
         "name": "localStorage 'schemacraft.connection'",
@@ -1911,15 +1980,15 @@
         "location": "Any path the user picks",
         "format": "SVG, HTML, PNG or PDF",
         "owner": "TypeScript builds the document (src/features/export); Rust writes it (crates/schemacraft-core/src/export)",
-        "contents": "The visible diagram. HTML embeds the visible data as JSON plus the viewer code. A partial capture adds a one-line note: a footnote in SVG, PDF and PNG, a header line in HTML.",
-        "notes": "Written atomically. HTML drops hidden tables, the connection, the server version, the access probe and the database user, the carriedOver list and unknown keys; of the access profile it embeds only the level. Tables, texts and keys kept from an earlier read are exported like any other object on the diagram."
+        "contents": "The visible diagram. HTML embeds the visible data as JSON plus the viewer code and the viewer's message subset in the export language. A partial capture adds a one-line note: a footnote in SVG, PDF and PNG, a header line in HTML.",
+        "notes": "Written atomically. HTML drops hidden tables, the connection, the server version, the access probe and the database user, and unknown keys; of the access profile it embeds only the level and the coverage, and of the facts kept from an earlier read only those of the objects and keys on the diagram, with their read dates, apart from the snapshot, so the detail panel can date them without naming a hidden table. Tables, texts and keys kept from an earlier read are drawn like any other object on the diagram."
       },
       {
         "name": "Session memory (not saved)",
         "location": "Frontend stores and Rust AppState",
         "format": "In memory",
         "owner": "projectStore, connectionStore, canvasUiStore, src-tauri/src/state.rs",
-        "contents": "Undo history (100), liveSettings with the typed password (sent again on each refresh), running jobs, dialog phases, selection and zoom.",
+        "contents": "Undo history (100), liveSettings with the typed password (sent again on each refresh), running jobs, dialog phases, selection, zoom and whether the Inspector is open.",
         "notes": "Lost on close. The unsaved-changes guard and the close guard protect the canvas."
       },
       {
@@ -2260,6 +2329,43 @@
             "detail": "Follows docs/release-checklist.md (checksums, clean machine, real database round trip, HTML in a browser, install and uninstall), then publishes. Builds are unsigned until SignPath approves (ADR-029)."
           }
         ]
+      },
+      {
+        "id": "inspect-entity",
+        "name": "Inspect an entity",
+        "summary": "From a double-click, Enter or Ctrl+I to the selected table's details, with focus where it belongs.",
+        "steps": [
+          {
+            "actor": "User",
+            "action": "Opens the Inspector",
+            "detail": "Double-click on a card or on a row of the entities panel, Enter on a focused card, Ctrl+I (view.toggleInspector) or 'Show details' in the context menu. A double-click leaves focus where it was; Ctrl+I, the top-bar button, the palette, Enter on a focused card and 'Show details' (with the mouse too, because the closing menu leaves focus nowhere) ask for focus on the panel's heading (inspectorFocusRequest), and so does following a relation link. 'Show details' selects the entity without panning (focusEntity with center false); a hidden entity cannot be inspected, because it has no card to select."
+          },
+          {
+            "actor": "canvasUiStore",
+            "action": "Opens the panel",
+            "detail": "openInspector sets isInspectorOpen and, when asked, bumps inspectorFocusRequest. The aside in AppShell leaves inert and widens to the remembered width (settingsStore.inspectorWidth), or to what fitSidePanels leaves it in a narrow window; nothing is saved."
+          },
+          {
+            "actor": "InspectorPanel",
+            "action": "Reads the selection",
+            "detail": "inspectedKey(selectedKeys): one key shows the details; none or several show an empty state whose focus target is the permanent header. inspectorScope builds the DetailsScope from projectStore: the hidden nodes, the coverage from accessSummary, the carried facts and the schema filter."
+          },
+          {
+            "actor": "features/schema",
+            "action": "Builds the view-model",
+            "detail": "describeObjectDetails reads the snapshot: columns, primary key, indexes, CHECKs, references and referenced by, each text as a FactText (readable, notAvailable, notRecorded, notChecked with its date, which a text inside an object kept whole takes from the object unless it was kept on its own) and each list with its ListCompleteness. presentObjectDetails translates it with useI18n's translator into a DetailsView; the same two calls serve the viewer over the embedded data."
+          },
+          {
+            "actor": "InspectorSections",
+            "action": "Draws the sections",
+            "detail": "One component per section kind, in the fixed order; 'None' only for a complete list; a relation target with a key is a link that runs focusEntity and openInspector({focus: true}), so the panel follows the new selection; a value the capture could not vouch for carries an icon and its hint; a not-available value, a not-visible target and a not-visible empty line add a 'Why?' link that opens the Access report (view.accessReport)."
+          },
+          {
+            "actor": "User",
+            "action": "Leaves or closes",
+            "detail": "Escape anywhere in the panel, its resize handle included, returns focus to the inspected card (focusEntityNode) and leaves the panel open; the close button or Ctrl+I closes it, and returnFocusFromInspector hands focus back to the card or the canvas before the aside turns inert."
+          }
+        ]
       }
     ],
     "commands": [
@@ -2509,13 +2615,18 @@
         "name": "Forward-compatible reader",
         "where": "crates/schemacraft-core/src/project/file.rs, project/migrations.rs",
         "why": "formatVersion and minReaderVersion decide between upgrade, read-only and refusal, and unknown keys survive a save (ADR-035)."
+      },
+      {
+        "name": "Shared view-model, two renderers",
+        "where": "src/features/schema/objectDetails.ts and objectDetailsView.ts; src/features/inspector/InspectorSections.tsx; src/viewer/main.ts",
+        "why": "The Inspector and the viewer's detail panel draw one DetailsView, so the application and the exported file say the same about an object and 'None' is printed only for a complete list (ADR-038)."
       }
     ],
     "recipes": {
       "featureTypes": [
         {
           "kind": "Frontend-only feature (panel, dialog, canvas tool)",
-          "example": "A 'Table details' panel beside the canvas. Built like features/about.",
+          "example": "A panel beside the canvas, built like features/inspector (ADR-038), or a dialog, built like features/about.",
           "steps": [
             {
               "layer": "Scope",
@@ -2536,13 +2647,14 @@
             },
             {
               "layer": "Read state",
-              "step": "Use narrow selectors on projectStore and canvasUiStore. Reuse entityKey, EntityKind, listEntities and groupEntities (features/schema/entities.ts, the one home of entity identity), describeEntities and formatDataType. Call other stores with getState().",
+              "step": "Use narrow selectors on projectStore and canvasUiStore. Reuse entityKey, EntityKind, listEntities and groupEntities (features/schema/entities.ts, the one home of entity identity), describeEntities and formatDataType, and describeObjectDetails with presentObjectDetails for an entity's details, so a panel says what the viewer says. Call other stores with getState().",
               "files": [
                 "src/features/project/projectStore.ts",
                 "src/features/canvas/canvasUiStore.ts",
                 "src/features/canvas/geometry.ts",
                 "src/features/schema/entities.ts",
-                "src/features/schema/dataType.ts"
+                "src/features/schema/dataType.ts",
+                "src/features/schema/objectDetails.ts"
               ]
             },
             {
@@ -2552,11 +2664,14 @@
             },
             {
               "layer": "Shell",
-              "step": "Mount once in AppShell, or in features/canvas/DiagramCanvas.tsx if it sits over the canvas (as ProjectNotice does; the welcome screen arrives through the emptyState prop). A non-modal panel must not use role=\"dialog\", because open dialogs block shortcuts.",
+              "step": "Mount once in AppShell: a side panel in its own aside landmark, inert while closed, with a PanelResizer from shared/ui and its width in settingsStore, as the Inspector; something over the canvas in features/canvas/DiagramCanvas.tsx (as ProjectNotice does; the welcome screen arrives through the emptyState prop). A non-modal panel must not use role=\"dialog\", because open dialogs block shortcuts, and must hand focus back to the canvas when it closes while holding it (returnFocusFromInspector shows how).",
               "files": [
                 "src/app/shell/AppShell.tsx",
                 "src/app/shell/AppShell.module.css",
-                "src/features/canvas/DiagramCanvas.tsx"
+                "src/features/canvas/DiagramCanvas.tsx",
+                "src/shared/ui/PanelResizer.tsx",
+                "src/shared/settings/settingsStore.ts",
+                "src/features/canvas/canvasFocus.ts"
               ]
             },
             {
@@ -2738,7 +2853,7 @@
         },
         {
           "kind": "New user action with a shortcut",
-          "example": "'Isolate selection' on Ctrl+I, undoable.",
+          "example": "'Isolate selection' on Ctrl+Shift+E, undoable.",
           "steps": [
             {
               "layer": "Logic",
@@ -2755,8 +2870,8 @@
             },
             {
               "layer": "Shortcut",
-              "step": "Avoid taken keys and reserved browser keys (shortcut.ts). The first match wins and no test catches duplicates.",
-              "files": ["src/app/actions/shortcut.ts"]
+              "step": "Avoid taken keys and reserved browser keys (shortcut.ts). The first match wins; useAppActions.test.ts builds the registry and fails on a duplicate shortcut or on a browser key that is not on its claimed list, so a deliberately reused key is added there. A gesture on one entity, or Enter on a card, is not a registry shortcut (ADR-008).",
+              "files": ["src/app/actions/shortcut.ts", "src/app/actions/useAppActions.test.ts"]
             },
             {
               "layer": "Surfaces and i18n",
@@ -2880,7 +2995,7 @@
       "crossCutting": [
         {
           "concern": "Bilingual text",
-          "touches": "en.ts is the reference, es.ts typed as MessageCatalog, catalogs.test.ts. The viewer still has its own src/viewer/messages.ts, whose label.view is tested equal to the app's entity.view.label; the WebView2 dialog text is in src-tauri/src/main.rs."
+          "touches": "en.ts is the reference, es.ts typed as MessageCatalog, catalogs.test.ts. The viewer says the subset an export embeds (viewerMessages, by key prefix; viewerMessages.test.ts checks it) through the same createCatalogTranslator and has no catalogue of its own (ADR-007); the WebView2 dialog text is in src-tauri/src/main.rs."
         },
         {
           "concern": "Light and dark theme",
@@ -2888,11 +3003,11 @@
         },
         {
           "concern": "Keyboard and action registry",
-          "touches": "src/app/actions; dialogs block shortcuts; plain keys never fire in text fields."
+          "touches": "src/app/actions; dialogs block shortcuts, a non-modal panel such as the Inspector does not; plain keys never fire in text fields; Enter on a card is handled by the canvas and per-entity gestures call feature functions, not actions (ADR-008)."
         },
         {
           "concern": "Undo and unsaved changes",
-          "touches": "Only CanvasState is undoable, through projectStore.updateCanvas; transient state goes in canvasUiStore. The window title shows '•' and closing asks first (useProjectWindow)."
+          "touches": "Only CanvasState is undoable, through projectStore.updateCanvas; transient state (the selection, the Inspector's open state) goes in canvasUiStore. The window title shows '•' and closing asks first (useProjectWindow)."
         },
         {
           "concern": ".scraft versioning",
@@ -2904,7 +3019,7 @@
         },
         {
           "concern": "Export parity and privacy",
-          "touches": "Shared geometry, one marker and routing table (canvas/edgeGeometry.ts) and one palette; the renderer takes its labels from the caller, so a view reads VIEW or VISTA in the export's language; visibleProjection is an allowlist that decides what reaches HTML (never the probe, the database user, the carriedOver list or unknown keys; the kept objects themselves go out like any other); a partial capture carries one note line."
+          "touches": "Shared geometry, one marker and routing table (canvas/edgeGeometry.ts) and one palette; the renderer takes its labels from the caller, so a view reads VIEW or VISTA in the export's language; visibleProjection is an allowlist that decides what reaches HTML (never the probe, the database user, a hidden table's facts or unknown keys; the verdicts, the read dates of the kept facts of the objects on the diagram and the viewer's message subset travel apart from the snapshot); the viewer's detail panel is the Inspector's view-model, so both use the same words and states, the file only for what is on the diagram (ADR-038); a partial capture carries one note line."
         },
         {
           "concern": "Preview backends",
@@ -2924,7 +3039,7 @@
         },
         {
           "concern": "Module boundaries",
-          "touches": "app -> features -> shared and the Tauri API only in shared/ipc, enforced by ESLint no-restricted-imports (ADR-031); core never depends on Tauri."
+          "touches": "app -> features -> shared and the Tauri API only in shared/ipc, enforced by ESLint no-restricted-imports (ADR-031); features/schema imports only shared/ and itself, so the viewer can take it (ADR-037); core never depends on Tauri."
         },
         {
           "concern": "Performance",
@@ -2940,7 +3055,7 @@
         },
         {
           "concern": "Partial access",
-          "touches": "A login may see part of a database (ADR-034). Whatever lists or counts schema facts asks src/features/schema/coverage.ts before it says 'none', and an unreadable text reads 'not available'. The server side is covered by the logins in sqlserver_permissions.rs; the browser preview reproduces it with a server name that contains partial."
+          "touches": "A login may see part of a database (ADR-034). Whatever lists or counts schema facts asks src/features/schema/coverage.ts before it says 'none', and an unreadable text reads 'not available'; the Inspector and the viewer's detail panel print 'None' only for a complete list and mark every fact the capture could not vouch for (ADR-038). The server side is covered by the logins in sqlserver_permissions.rs; the browser preview reproduces it with a server name that contains partial."
         }
       ],
       "definitionOfDone": [
@@ -3027,7 +3142,7 @@
       }
     ],
     "conformance": {
-      "verdict": "The architecture holds. The core has no Tauri dependency, commands are thin and keep blocking work off the main thread, errors are typed end to end, contracts are generated and checked, ESLint enforces the frontend layers and keeps features/schema a leaf, only src/shared/ipc talks to Tauri, and the viewer pulls in no React or stores. Builder and Memento are implemented as the ADRs say, and each drawing rule has one home guarded by a test. The three major deviations are fixed, with most minor ones. The three still open are consistency problems, not structural breaks; two are planned for v1.1, where the inspector touches the same code, and one stays in the backlog. Fixed entries stay below, marked fixed.",
+      "verdict": "The architecture holds. The core has no Tauri dependency, commands are thin and keep blocking work off the main thread, errors are typed end to end, contracts are generated and checked, ESLint enforces the frontend layers and keeps features/schema a leaf, only src/shared/ipc talks to Tauri, and the viewer pulls in no React or stores. Builder and Memento are implemented as the ADRs say, and each drawing rule has one home guarded by a test. Every deviation but one is fixed, the three major ones included; the one still open, a log file for bug reports, is a backlog item, not a structural break. Fixed entries stay below, marked fixed.",
       "deviations": [
         {
           "what": "Disabled action buttons always say 'Available in an upcoming milestone', even when the cause is a runtime condition.",
@@ -3102,9 +3217,9 @@
         {
           "what": "Detail level, theme and language bypass the action registry; 6 actions have no shortcut.",
           "where": "src/app/shell/TopBar.tsx",
-          "fix": "Planned for v1.1: Add view.detail*, settings.theme.* and settings.language.* actions; state the exceptions in ADR-008. The entity-scoped bypasses are gone: the sidebar eye and the context menu's Hide go through canvasActions.setHidden, the card chevron through setCollapsed, and the context menu's Show all runs the registry's diagram.showAll, passed in by AppShell.",
+          "fix": "Fixed: view.detailCompact, view.detailKeys and view.detailFull (Ctrl+1, Ctrl+2, Ctrl+3), settings.theme.* and settings.language.* are registry actions that the top bar's segmented control and menus run, next to view.toggleInspector (Ctrl+I); ADR-008 states the exceptions (per-entity gestures call feature functions, Enter stays in the canvas, and the layout strategies, collapse all, expand all, the themes and the languages have no shortcut), and useAppActions.test.ts fails on a duplicate shortcut or an unlisted browser key. The entity-scoped bypasses were already gone: the sidebar eye and the context menu's Hide go through canvasActions.setHidden, the card chevron through setCollapsed, and the context menu's Show all runs the registry's diagram.showAll.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "The .scraft file filter name is hard-coded in English.",
@@ -3116,9 +3231,9 @@
         {
           "what": "The viewer re-implements interpolation and uses count === 1 plurals; no placeholder test.",
           "where": "src/viewer/messages.ts:96-109",
-          "fix": "Planned for v1.1: Reuse src/shared/i18n/formatMessage.ts and add a placeholder test.",
+          "fix": "Fixed: src/viewer/messages.ts is gone. The viewer says the subset of en.ts and es.ts the export embeds (viewerMessages, by key prefix) through createCatalogTranslator, built on formatMessage and Intl.PluralRules; catalogs.test.ts checks the placeholders of every string and viewerMessages.test.ts the embedded subset (ADR-007, ADR-038).",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "Shared error presentation lives inside features/connection.",
@@ -3268,7 +3383,7 @@
         "The page carries one manifest, at the top level of model.json and shared by both languages. CI checks it against the code with scripts/check-architecture-page.mjs (npm run docs:check).",
         "New command: add it to manifest.commands and to the commands table in both languages.",
         "New feature folder, core module or IPC backend: add it to the manifest, the layer list and the diagram edges.",
-        "New decision: add an ADR (ADR-038 is next), raise manifest.adrCount and link the ADR from the pattern or recipe it changes.",
+        "New decision: add an ADR (ADR-039 is next), raise manifest.adrCount and link the ADR from the pattern or recipe it changes.",
         "Scope change: update both PRD copies (docs/ and 02_Docs/), add a dated line to section 6, commit as docs(prd), only with the user's approval.",
         "Fixed deviation: mark it fixed in the same PR. New known deviation: add it with a severity and status open.",
         "New data store or localStorage key: add a row to the data table.",
@@ -3304,7 +3419,7 @@
       {
         "id": "inspector",
         "term": "Inspector",
-        "meaning": "An engine implementation of DatabaseInspector; today only SqlServerInspector."
+        "meaning": "An engine implementation of DatabaseInspector; today only SqlServerInspector. Not the Inspector panel of the interface."
       },
       {
         "id": "catalog-query",
@@ -3404,7 +3519,7 @@
       {
         "id": "visible-projection",
         "term": "visibleProjection",
-        "meaning": "The allowlist that keeps only visible data in an HTML export: no access probe, carriedOver list or unknown keys. Objects kept from an earlier read are exported like any other on the diagram."
+        "meaning": "The allowlist that keeps only visible data in an HTML export: no access probe, no facts of a hidden object, no unknown keys. The verdicts, the read dates of the facts kept for the objects on the diagram and the viewer's messages travel apart from the snapshot."
       },
       {
         "id": "adr",
@@ -3485,6 +3600,16 @@
         "id": "entity-kind",
         "term": "EntityKind / entityKey",
         "meaning": "'table' or 'view', and the 'schema.name' key that identifies an entity in nodes, hidden and collapsed state and search. Both are spelled only in src/features/schema/entities.ts (ADR-037); the kind decides the Tables and Views sections and the VIEW label (ADR-036)."
+      },
+      {
+        "id": "inspector-panel",
+        "term": "Inspector (panel)",
+        "meaning": "The panel beside the canvas that shows the selected entity's details (src/features/inspector, ADR-038). Not the DatabaseInspector of the core, which reads a database, and not the inspection options of a project."
+      },
+      {
+        "id": "details-view",
+        "term": "ObjectDetails / DetailsView",
+        "meaning": "The view-model of one table or view: the facts from describeObjectDetails (each text a FactText, each list with a ListCompleteness) and their translated text from presentObjectDetails. The Inspector and the viewer's detail panel draw it (ADR-038)."
       }
     ]
   },
@@ -3524,20 +3649,14 @@
             "id": "app-shell",
             "name": "AppShell y regiones",
             "path": "src/app/shell",
-            "responsibility": "Distribuye TopBar, EntitiesSidebar con SidebarResizer, DiagramCanvas y StatusBar; el panel y el lienzo vienen de features/canvas y aquí solo se colocan. TopBar muestra LayoutMenu. Entrega a DiagramCanvas el WelcomeOverlay como emptyState y el hook de DEV exposeFlowInstance como onFlowInit, y al panel el AccessBar por su ranura notice (con focusEntitiesSearch como su onDismissed), así ninguno importa app/ ni features/access; el panel muestra un pie atenuado mientras la lista de objetos puede estar incompleta y un estado neutral para un esquema vacío. Monta una vez ConnectionDialog, ExportDialog, AboutDialog, AccessReportDialog, CommandPalette, UnsavedChangesDialog y CanvasContextMenu, y le da al menú contextual la acción diagram.showAll del registro con su atajo. StatusBar agrega el chip de acceso y el de solo lectura, y omite un conteo de cero con cobertura parcial. Ejecuta useKeyboardShortcuts, useDesktopShellGuards y useProjectWindow (título de la ventana, protección al cerrar). Llama a preferencesStore.load() al montar.",
+            "responsibility": "Distribuye TopBar, el panel de entidades y el Inspector a cada lado de DiagramCanvas, y StatusBar; el panel, el lienzo y el Inspector vienen de features/canvas y features/inspector y aquí solo se colocan, cada panel lateral en un landmark aside con nombre que se vuelve inert mientras está plegado, con un PanelResizer de shared/ui (el del Inspector entra por la ranura resizer del panel) y su ancho en settingsStore; fitSidePanels (sidePanelWidths.ts) estrecha los paneles abiertos en una ventana demasiado estrecha para ambos, el Inspector al final y ninguno por debajo de su mínimo, así el lienzo conserva 320 px y la barra superior queda dentro de la ventana, sin cambiar los anchos recordados. TopBar muestra LayoutMenu; su control segmentado y sus menús de tema e idioma ejecutan las acciones view.detail*, settings.theme.* y settings.language.* del registro, y su botón del Inspector ejecuta view.toggleInspector. Entrega a DiagramCanvas el WelcomeOverlay como emptyState y el hook de DEV exposeFlowInstance como onFlowInit, al panel el AccessBar por su ranura notice (con focusEntitiesSearch como su onDismissed), y al InspectorPanel la pista del atajo del botón y la acción view.accessReport del registro para sus enlaces '¿Por qué?', así ninguno importa app/ ni features/access; el panel muestra un pie atenuado mientras la lista de objetos puede estar incompleta y un estado neutral para un esquema vacío. Monta una vez ConnectionDialog, ExportDialog, AboutDialog, AccessReportDialog, CommandPalette, UnsavedChangesDialog y CanvasContextMenu, y le da al menú contextual la acción diagram.showAll del registro con su atajo. StatusBar agrega el chip de acceso y el de solo lectura, y omite un conteo de cero con cobertura parcial. Ejecuta useKeyboardShortcuts, useDesktopShellGuards y useProjectWindow (título de la ventana, protección al cerrar). Llama a preferencesStore.load() al montar.",
             "patterns": [
               "Cada diálogo lee su bandera de apertura de un store",
               "Los props solo llevan el registro de acciones",
               "Ranura notice en vez de importar una funcionalidad",
-              "Lo que es del shell llega al lienzo por props"
+              "Lo que es del shell llega al lienzo por props",
+              "Paneles laterales como landmarks con nombre, inert mientras están cerrados"
             ]
-          },
-          {
-            "id": "sidebar-resizer",
-            "name": "SidebarResizer",
-            "path": "src/app/shell/SidebarResizer.tsx",
-            "responsibility": "Asa en el borde del panel de entidades. Se arrastra para cambiar el ancho, las flechas lo cambian de 16 en 16 px y el doble clic vuelve al ancho por defecto. Escribe sidebarWidth en settingsStore, así el ancho persiste en 'schemacraft.settings'.",
-            "patterns": ["Arrastre con equivalente de teclado"]
           },
           {
             "id": "welcome-overlay",
@@ -3550,7 +3669,7 @@
             "id": "action-registry",
             "name": "Registro de acciones y atajos",
             "path": "src/app/actions",
-            "responsibility": "23 AppActions (id, labelKey, icono, atajo, isAvailable, unavailableReason, run) construidas en useAppActions.ts. Una acción deshabilitada dice por qué en su tooltip: no hay proyecto, se está calculando una disposición, no hay nada oculto, nada que deshacer o rehacer, o el proyecto es de solo lectura (Guardar, Guardar como y Actualizar). view.accessReport (Ctrl+Shift+A) abre el informe de acceso siempre que hay un proyecto abierto. useKeyboardShortcuts.ts dirige las teclas en fase de captura; gana la primera coincidencia. La barra superior, los menús, la pantalla de bienvenida y la paleta de comandos leen este registro.",
+            "responsibility": "32 AppActions (id, labelKey, icono, atajo, isAvailable, unavailableReason, run) construidas en useAppActions.ts. Una acción deshabilitada dice por qué en su tooltip: no hay proyecto, se está calculando una disposición, no hay nada oculto, nada que deshacer o rehacer, o el proyecto es de solo lectura (Guardar, Guardar como y Actualizar). view.accessReport (Ctrl+Shift+A) abre el informe de acceso siempre que hay un proyecto abierto. Desde 1.1 los niveles de detalle (view.detailCompact, view.detailKeys y view.detailFull con Ctrl+1, Ctrl+2 y Ctrl+3), los temas (settings.theme.*) y los idiomas (settings.language.*) también son acciones, que ejecuta la barra superior, y view.toggleInspector (Ctrl+I) abre o cierra el Inspector con foco; los gestos por entidad y Enter sobre una tarjeta quedan fuera del registro a propósito (ADR-008). useKeyboardShortcuts.ts dirige las teclas en fase de captura; gana la primera coincidencia. useAppActions.test.ts arma el registro como lo hace el shell y falla si dos acciones comparten atajo o una toma una tecla del navegador que no está en la lista declarada. La barra superior, los menús, la pantalla de bienvenida y la paleta de comandos leen este registro.",
             "patterns": [
               "Command / registro único (ADR-008)",
               "Tecla mod independiente de plataforma"
@@ -3620,22 +3739,29 @@
             "id": "shared-i18n",
             "name": "Internacionalización",
             "path": "src/shared/i18n",
-            "responsibility": "en.ts es el catálogo de referencia; es.ts está tipado como MessageCatalog. useI18n() y translate(locale, key). catalogs.test.ts revisa claves, mensajes vacíos y placeholders. formatDate.ts da formato, en el idioma actual, a las marcas de tiempo UTC que envía Rust.",
+            "responsibility": "en.ts es el catálogo de referencia; es.ts está tipado como MessageCatalog. useI18n() y translate(locale, key). translator.ts tiene createCatalogTranslator, que arma t, tCount y template sobre cualquier catálogo con formatMessage e Intl.PluralRules y sin ningún store detrás: useI18n lo arma sobre el catálogo completo del idioma elegido, y el visor exportado sobre el subconjunto incrustado en su archivo, así ambos dicen las mismas palabras (ADR-007). catalogs.test.ts revisa claves, mensajes vacíos y placeholders, también los textos del visor. formatDate.ts da formato, en el idioma actual, a las marcas de tiempo UTC que envía Rust.",
             "patterns": ["Catálogos de mensajes tipados (ADR-007)"]
           },
           {
             "id": "shared-settings",
             "name": "Store de ajustes",
             "path": "src/shared/settings",
-            "responsibility": "Preferencia de tema, idioma, panel de entidades abierto y su ancho, y las firmas de los avisos de acceso parcial que el usuario cerró (50 como máximo, los más recientes primero), persistidos en localStorage 'schemacraft.settings'. mergePersistedSettings revisa cada campo guardado y vuelve a su valor por defecto si no es válido. useThemeSynchronization fija data-theme y el tema nativo de la ventana.",
+            "responsibility": "Preferencia de tema, idioma, panel de entidades abierto y su ancho, el ancho del Inspector (nunca si está abierto) y las firmas de los avisos de acceso parcial que el usuario cerró (50 como máximo, los más recientes primero), persistidos en localStorage 'schemacraft.settings'. SIDEBAR_WIDTH_LIMITS (220 a 560, por defecto 280) e INSPECTOR_WIDTH_LIMITS (280 a 560, por defecto 360), del tipo PanelWidthLimits de PanelResizer, acotan ambos anchos con clampPanelWidth. mergePersistedSettings revisa cada campo guardado y vuelve a su valor por defecto si no es válido. useThemeSynchronization fija data-theme y el tema nativo de la ventana.",
             "patterns": ["zustand persist con partialize y merge que valida"]
           },
           {
             "id": "shared-ui",
             "name": "Primitivas de la interfaz",
             "path": "src/shared/ui",
-            "responsibility": "Primitivas accesibles sobre Radix: Button, IconButton, Dialog, Select, SegmentedControl, RadioMenu, Tooltip, Alert (que puede anunciarse con aria-live polite y llevar icono y botón para descartar) y más. Sin imports '@/'; todo el texto llega por props.",
+            "responsibility": "Primitivas accesibles sobre Radix: Button, IconButton, Dialog, Select, SegmentedControl, RadioMenu, Tooltip, Alert (que puede anunciarse con aria-live polite y llevar icono y botón para descartar), PanelResizer (el asa de ambos paneles laterales) y más. Sin imports '@/' (imports.test.ts lo comprueba); todo el texto llega por props.",
             "patterns": ["Componentes puramente de presentación"]
+          },
+          {
+            "id": "panel-resizer",
+            "name": "PanelResizer",
+            "path": "src/shared/ui/PanelResizer.tsx",
+            "responsibility": "Asa en el borde de un panel lateral, que usan el panel de entidades (borde 'end') y el Inspector (borde 'start'). Se arrastra para cambiar el ancho, las flechas lo cambian de 16 en 16 px (alejarse del panel lo ensancha en cualquiera de los dos lados), Inicio y Fin van al ancho mínimo y al máximo, y el doble clic vuelve al ancho por defecto. Controlado y sin texto propio: informa el ancho al que se arrastró o se movió, y el dueño (AppShell) lo acota y lo recuerda con setSidebarWidth y setInspectorWidth de settingsStore, con SIDEBAR_WIDTH_LIMITS e INSPECTOR_WIDTH_LIMITS. Declara el tipo PanelWidthLimits que esos límites usan, así que no importa nada de settingsStore; AppShell le pasa los límites que fitSidePanels acotó, así aria-valuemax y Fin siguen el espacio que deja la ventana. role=separator con aria-valuenow y aria-controls.",
+            "patterns": ["Arrastre con equivalente de teclado", "Componente controlado"]
           },
           {
             "id": "brand",
@@ -3649,7 +3775,7 @@
       {
         "id": "features",
         "name": "Frontend: features",
-        "summary": "Una carpeta por capacidad del producto. Las funcionalidades con estado tienen un store de zustand; schema es un módulo de helpers puros; los cambios al lienzo pasan por projectStore.updateCanvas. La lógica vive en módulos puros con pruebas unitarias.",
+        "summary": "Una carpeta por capacidad del producto. Las funcionalidades con estado tienen un store de zustand; schema es un módulo de helpers puros; inspector no guarda estado y sigue la selección del lienzo; los cambios al lienzo pasan por projectStore.updateCanvas. La lógica vive en módulos puros con pruebas unitarias.",
         "path": "src/features",
         "technologies": ["zustand 5", "elkjs 0.12 (Web Worker)", "d3-force 3", "vitest 5"],
         "components": [
@@ -3700,7 +3826,7 @@
             "id": "feature-canvas",
             "name": "canvas",
             "path": "src/features/canvas",
-            "responsibility": "Transformaciones del estado del diagrama (canvasState.ts), geometría, aristas, nodos, menú contextual, store de estado transitorio de la interfaz (canvasUiStore.ts), comandos del lienzo (canvasActions.ts), layouts/ (jerárquica con ELK en un worker, orgánica con d3-force, radial) y, desde 1.1, las dos regiones del lienzo que el shell coloca: DiagramCanvas y EntitiesSidebar, con entitiesSearch.ts. El estado guardado del diagrama vive en projectStore; los comandos del lienzo lo cambian con updateCanvas: setHidden atiende el ojo del panel y el menú contextual, setCollapsed el chevrón de la tarjeta. edgeGeometry.ts tiene la única tabla de marcadores (RELATION_MARKER_SHAPES) y relationPath, compartidas con el renderizador SVG; relationMarkerIds.ts nombra los marcadores del lienzo. EntityNode dibuja una vista con el icono de gafas, la etiqueta VISTA y los tokens de vista, y muestra el chevrón de plegado solo cuando isCollapsible encuentra filas que ocultar (ADR-036). describeEntities cuenta las columnas de las llaves hacia tablas no visibles como columnas de llave, así conservan su distintivo de llave sin dibujar arista.",
+            "responsibility": "Transformaciones del estado del diagrama (canvasState.ts), geometría, aristas, nodos, menú contextual, store de estado transitorio de la interfaz (canvasUiStore.ts), comandos del lienzo (canvasActions.ts), layouts/ (jerárquica con ELK en un worker, orgánica con d3-force, radial) y, desde 1.1, las dos regiones del lienzo que el shell coloca: DiagramCanvas y EntitiesSidebar, con entitiesSearch.ts. El estado guardado del diagrama vive en projectStore; los comandos del lienzo lo cambian con updateCanvas: setHidden atiende el ojo del panel y el menú contextual, setCollapsed el chevrón de la tarjeta. canvasUiStore guarda también si el Inspector está abierto y su petición de foco (openInspector, closeInspector, toggleInspector), y un FocusRequest puede seleccionar sin desplazar el lienzo (center: false), que usa 'Mostrar detalles'; canvasFocus.ts mueve el foco entre el lienzo y el Inspector (focusEntityNode, returnFocusFromInspector), el único lugar que sabe cómo nombra React Flow una tarjeta. edgeGeometry.ts tiene la única tabla de marcadores (RELATION_MARKER_SHAPES) y relationPath, compartidas con el renderizador SVG; relationMarkerIds.ts nombra los marcadores del lienzo. EntityNode dibuja una vista con el icono de gafas, la etiqueta VISTA y los tokens de vista, y muestra el chevrón de plegado solo cuando isCollapsible encuentra filas que ocultar (ADR-036). describeEntities cuenta las columnas de las llaves hacia tablas no visibles como columnas de llave, así conservan su distintivo de llave sin dibujar arista.",
             "patterns": [
               "Transformaciones puras aplicadas con updateCanvas",
               "Strategy como unión etiquetada + switch exhaustivo (ADR-022)",
@@ -3712,7 +3838,7 @@
             "id": "diagram-canvas",
             "name": "DiagramCanvas",
             "path": "src/features/canvas/DiagramCanvas.tsx",
-            "responsibility": "La única instancia de React Flow. Deriva nodos y aristas de projectStore y escribe arrastres y viewport con updateCanvas; el chevrón de la tarjeta ejecuta canvasActions.setCollapsed. Cuando cambia loadToken distribuye un proyecto nuevo (sin ruta, nunca guardado, sin cambios, distribución manual); si no, restaura el viewport guardado o ajusta el diagrama a la ventana. Lo que es del shell llega por props: emptyState (la pantalla de bienvenida), que se muestra mientras no hay proyecto abierto, y onFlowInit (el hook de DEV), que se llama cuando React Flow está listo. Muestra ProjectNotice cuando falla abrir o guardar. Con un proyecto abierto sin tablas ni vistas muestra un estado vacío neutral, cuyo motivo (una base de datos vacía, la selección de esquemas, nada visible para este inicio de sesión) viene de emptySchemaReason en schema/coverage.ts. El minimapa tiñe las vistas con el color de vista.",
+            "responsibility": "La única instancia de React Flow. Deriva nodos y aristas de projectStore y escribe arrastres y viewport con updateCanvas; el chevrón de la tarjeta ejecuta canvasActions.setCollapsed. Cuando cambia loadToken distribuye un proyecto nuevo (sin ruta, nunca guardado, sin cambios, distribución manual); si no, restaura el viewport guardado o ajusta el diagrama a la ventana. Lo que es del shell llega por props: emptyState (la pantalla de bienvenida), que se muestra mientras no hay proyecto abierto, y onFlowInit (el hook de DEV), que se llama cuando React Flow está listo. La selección es la única fuente de lo que muestra el Inspector: un doble clic en una tarjeta (no en su chevrón) abre el Inspector y deja el foco en la tarjeta, y Enter sobre una tarjeta enfocada lo abre y le entrega el foco, manejado aquí y solo cuando la tarjeta misma tiene el foco, así los botones dentro de una tarjeta conservan Enter. La raíz de React Flow se puede enfocar por script (tabIndex -1) para cuando el Inspector devuelve el foco y la tarjeta no está dibujada, y returnFocusFromInspector se instala una vez; una petición de foco desplaza el lienzo solo si lo pide (center). Muestra ProjectNotice cuando falla abrir o guardar. Con un proyecto abierto sin tablas ni vistas muestra un estado vacío neutral, cuyo motivo (una base de datos vacía, la selección de esquemas, nada visible para este inicio de sesión) viene de emptySchemaReason en schema/coverage.ts. El minimapa tiñe las vistas con el color de vista.",
             "patterns": [
               "Contadores de petición (fitRequest, focusRequest) disparan llamadas imperativas",
               "Lo que es del shell llega por props"
@@ -3722,7 +3848,7 @@
             "id": "entities-sidebar",
             "name": "EntitiesSidebar",
             "path": "src/features/canvas/EntitiesSidebar.tsx",
-            "responsibility": "El panel de entidades. groupEntities(listEntities(snapshot)) da los grupos por esquema y sus secciones Tablas y Vistas; entityListShape, decidido sobre la lista sin filtrar, dice qué niveles se muestran (varios esquemas, ambos tipos), así la estructura no cambia al escribir. Los encabezados son botones con aria-expanded; un esquema o una sección se pliega solo durante la sesión, y todo queda desplegado, con los botones deshabilitados, mientras la búsqueda tiene texto. Los conteos dicen 'visibles / total' en cuanto algo está oculto. Cada fila centra su entidad, abre el menú contextual y cambia la visibilidad con canvasActions.setHidden; las vistas llevan el icono de gafas en el color de vista. Conserva los estados vacíos (sin proyecto, los estados de emptySchemaReason, sin coincidencias), el único pie de no visible de ADR-034 y la ranura notice; el id del cuadro de búsqueda viene de entitiesSearch.ts.",
+            "responsibility": "El panel de entidades. groupEntities(listEntities(snapshot)) da los grupos por esquema y sus secciones Tablas y Vistas; entityListShape, decidido sobre la lista sin filtrar, dice qué niveles se muestran (varios esquemas, ambos tipos), así la estructura no cambia al escribir. Los encabezados son botones con aria-expanded; un esquema o una sección se pliega solo durante la sesión, y todo queda desplegado, con los botones deshabilitados, mientras la búsqueda tiene texto. Los conteos dicen 'visibles / total' en cuanto algo está oculto. Cada fila centra su entidad al hacer clic, abre el Inspector con doble clic (nunca para una entidad oculta, que no tiene tarjeta que seleccionar), abre el menú contextual y cambia la visibilidad con canvasActions.setHidden; las vistas llevan el icono de gafas en el color de vista. Conserva los estados vacíos (sin proyecto, los estados de emptySchemaReason, sin coincidencias), el único pie de no visible de ADR-034 y la ranura notice; el id del cuadro de búsqueda viene de entitiesSearch.ts.",
             "patterns": [
               "Forma decidida sobre la lista sin filtrar",
               "Estado de plegado solo de la sesión",
@@ -3754,7 +3880,7 @@
             "id": "feature-export",
             "name": "export",
             "path": "src/features/export",
-            "responsibility": "Diálogo y store de exportación. ExportSpecificationBuilder valida las opciones. svg/renderDiagram.ts dibuja el SVG con la tabla de marcadores de canvas/edgeGeometry.ts y las etiquetas que le pasa quien llama (RenderOptions.labels: la etiqueta VISTA, que exportStore traduce en el idioma de la interfaz); una tarjeta de vista lleva el tinte de vista, el símbolo de gafas, la pastilla con la etiqueta y el esquema en texto secundario, como en el lienzo. svg/palette.ts es la derivación sRGB de tokens.css (PALETTE_TOKENS, revisada por src/app/styles/tokens.test.ts) y viewerPaletteStyles() la escribe como propiedades --sc-* que html/buildStandalonePage pone antes de la hoja de estilos del visor. html/ arma la página autónoma; fontFaces.ts aporta las fuentes que se miden e incrustan. visibleProjection es una lista de permitidos: las tablas, vistas y llaves visibles, las llaves hacia tablas no visibles de las tablas visibles y el nivel de acceso, nunca el sondeo, la lista carriedOver ni las claves desconocidas (los objetos conservados en sí se exportan como cualquier otro). Una lectura parcial agrega una nota de una línea: una nota al pie en SVG, PDF y PNG (RenderOptions.footnote, incluida en el tamaño medido) y una línea bajo el encabezado del visor HTML. Solo la cadena del documento va a Rust.",
+            "responsibility": "Diálogo y store de exportación. ExportSpecificationBuilder valida las opciones. svg/renderDiagram.ts dibuja el SVG con la tabla de marcadores de canvas/edgeGeometry.ts y las etiquetas que le pasa quien llama (RenderOptions.labels: la etiqueta VISTA, que exportStore traduce en el idioma de la interfaz); una tarjeta de vista lleva el tinte de vista, el símbolo de gafas, la pastilla con la etiqueta y el esquema en texto secundario, como en el lienzo. svg/palette.ts es la derivación sRGB de tokens.css (PALETTE_TOKENS, revisada por src/app/styles/tokens.test.ts) y viewerPaletteStyles() la escribe como propiedades --sc-* que html/buildStandalonePage pone antes de la hoja de estilos del visor. html/ arma la página autónoma; html/viewerMessages.ts elige, por prefijo de clave, el subconjunto del catálogo que el archivo incrusta para el visor (ViewerData.messages) y viewerMessages.test.ts lo revisa; fontFaces.ts aporta las fuentes que se miden e incrustan. visibleProjection es una lista de permitidos: las tablas, vistas y llaves visibles, las llaves hacia tablas no visibles de las tablas visibles, los veredictos de acceso (AccessSummary: nivel y cobertura, nunca el sondeo ni el usuario de base de datos) y, aparte del snapshot, los hechos conservados de los objetos del diagrama con sus fechas de lectura (ViewerData.carriedOver), los de una llave solo mientras la llave se exporta, nunca los hechos de una tabla oculta ni las claves desconocidas. Una lectura parcial agrega una nota de una línea: una nota al pie en SVG, PDF y PNG (RenderOptions.footnote, incluida en el tamaño medido) y una línea bajo el encabezado del visor HTML. Solo la cadena del documento va a Rust.",
             "patterns": [
               "Builder",
               "TS dibuja, Rust escribe (ADR-023, ADR-024)",
@@ -3797,15 +3923,26 @@
             "id": "feature-schema",
             "name": "schema",
             "path": "src/features/schema",
-            "responsibility": "Helpers puros sobre SchemaSnapshot: formatDataType y describeColumn (dataType.ts), que escribe 'DEFAULT (no disponible)' o '(valor por defecto no registrado)' en vez de omitir un valor por defecto que no puede leer; el único hogar de la identidad de las entidades (entities.ts): EntityKind, ENTITY_KINDS, entityKey, listEntities, groupEntities (esquemas y, dentro, secciones Tablas y Vistas), filterEntityGroups, countEntities y entityListShape; definitionText e isUnknownDefinition (definition.ts), los únicos lectores de los estados crudos de Definition; objectsCoverage, definitionsCoverage, listsEveryObject, emptySchemaReason y el AccessSummary que se puede exportar (coverage.ts); quoteIdentifier (sqlIdentifiers.ts). Sin store. Es una hoja: ESLint solo le deja importar shared/ y a sí mismo, así cualquier funcionalidad y el bundle del visor pueden importarlo (ADR-037).",
+            "responsibility": "Helpers puros sobre SchemaSnapshot: formatDataType y describeColumn (dataType.ts), que escribe 'DEFAULT (no disponible)' o '(valor por defecto no registrado)' en vez de omitir un valor por defecto que no puede leer; el único hogar de la identidad de las entidades (entities.ts): EntityKind, ENTITY_KINDS, entityKey, listEntities, groupEntities (esquemas y, dentro, secciones Tablas y Vistas), filterEntityGroups, countEntities y entityListShape; definitionText e isUnknownDefinition (definition.ts), los únicos lectores de los estados crudos de Definition; objectsCoverage, definitionsCoverage, listsEveryObject, emptySchemaReason y el AccessSummary que se puede exportar (coverage.ts); quoteIdentifier (sqlIdentifiers.ts); objectDetails.ts (describeObjectDetails: los hechos de una tabla o vista con cuánto respalda la lectura cada uno, FactText y ListCompleteness) y objectDetailsView.ts (presentObjectDetails: lo mismo como texto traducido, DetailsView), el modelo que comparten el Inspector y el panel de detalle del visor (ADR-038). Sin store. Es una hoja: ESLint solo le deja importar shared/ y a sí mismo, así cualquier funcionalidad y el bundle del visor pueden importarlo (ADR-037).",
             "patterns": ["Módulo hoja, exigido por lint, seguro para el bundle del visor"]
+          },
+          {
+            "id": "feature-inspector",
+            "name": "inspector",
+            "path": "src/features/inspector",
+            "responsibility": "El panel Inspector (ADR-038): los detalles de la tabla o vista seleccionada junto al lienzo. InspectorPanel.tsx lee el snapshot, los nodos del lienzo y las opciones de inspección de projectStore, y la selección, la petición de foco y closeInspector de canvasUiStore; inspectorScope.ts arma el DetailsScope (claves ocultas, la cobertura de accessSummary, los hechos conservados, el filtro de esquemas) e inspectedKey elige la única entidad seleccionada, así nada o varias seleccionadas es un estado vacío. Memoriza describeObjectDetails y presentObjectDetails con el traductor de useI18n. Un encabezado permanente (el título y un botón de cerrar con la pista Ctrl+I) da a los estados vacíos un destino de foco; el encabezado de la entidad toma el foco ante una petición de foco; el asa que le pasa el shell (ranura resizer) se dibuja dentro del elemento que atiende Escape, así Escape en cualquier parte del panel, el asa incluida, ejecuta focusEntityNode y deja el panel abierto. InspectorSections.tsx dibuja el DetailsView como lo hace el visor, un componente por tipo de sección, con chips de conteo, la única línea vacía honesta y la nota al pie de 'Referenciada por'; un destino de relación con clave es un enlace que ejecuta focusEntity y luego openInspector; un valor que la lectura no pudo respaldar lleva un icono y su pista, y un valor no disponible, un destino no visible y una línea vacía por no visible agregan un enlace '¿Por qué?' que abre el informe de acceso con la acción que el shell le pasa. Sin store, sin role=dialog; solo tokens.",
+            "patterns": [
+              "Modelo compartido, dos renderizadores (ADR-038)",
+              "Sigue la selección, no guarda estado",
+              "Landmark no modal, nunca un diálogo"
+            ]
           }
         ]
       },
       {
         "id": "viewer",
         "name": "Frontend: visor autónomo",
-        "summary": "App en TypeScript sin framework incrustada en los HTML exportados. Sin React, sin stores, sin red.",
+        "summary": "App en TypeScript sin framework incrustada en los HTML exportados. Sin React, sin stores, sin red, sin catálogo propio.",
         "path": "src/viewer",
         "technologies": ["TypeScript", "Módulo virtual de Vite"],
         "components": [
@@ -3813,7 +3950,7 @@
             "id": "viewer-app",
             "name": "Visor",
             "path": "src/viewer/main.ts",
-            "responsibility": "Lee el JSON incrustado, dibuja con renderDiagramSvg pasándole su propio label.view y ofrece desplazamiento y zoom, tres niveles de detalle, una búsqueda cuyos resultados indican el tipo (Tabla o Vista, en el color de vista), resaltado de vecinos, un panel de detalle cuya línea de tipo se colorea en las vistas y cambio de tema. Sus colores son las propiedades --sc-* que buildStandalonePage escribe desde la paleta; viewer.css no declara ninguno más allá de sus dos sombras translúcidas. Un texto que no puede mostrar dice 'no disponible' o 'no registrado' (describeDefinition), y la exportación de una lectura parcial muestra una línea de nota bajo la barra del encabezado. Importa canvasState y geometry de canvas, entityKey, formatDataType y los lectores de definiciones de schema y el renderizador de export, pero nada de React ni de stores. Catálogo EN/ES propio en messages.ts, cuyo label.view se comprueba igual al entity.view.label de la app.",
+            "responsibility": "Lee el JSON incrustado, dibuja con renderDiagramSvg pasándole la etiqueta VISTA del catálogo incrustado y ofrece desplazamiento y zoom, tres niveles de detalle, una búsqueda cuyos resultados indican el tipo (Tabla o Vista, en el color de vista), resaltado de vecinos, un panel de detalle cuya línea de tipo se colorea en las vistas y cambio de tema. Sus colores son las propiedades --sc-* que buildStandalonePage escribe desde la paleta; viewer.css no declara ninguno más allá de sus dos sombras translúcidas. Sus palabras son el subconjunto del catálogo incrustado en el archivo (ViewerData.messages), leído con createCatalogTranslator, así que no tiene catálogo propio (ADR-007). El panel de detalle es el modelo de features/schema, describeObjectDetails y presentObjectDetails, con el alcance de un archivo: sin entidades ocultas, con los veredictos de acceso y los hechos conservados incrustados, y solo el diagrama conocido; dibuja cada sección en el orden fijo con las palabras y los estados del Inspector, para lo que está en el diagrama: las llaves a tablas fuera del diagrama no están en el archivo (ni la marca FK que dan a sus columnas), una lista de relaciones vacía dice 'Ninguna en el diagrama', una lista que no está vacía no avisa que pueda faltar una llave y no hay enlace '¿Por qué?'. Un destino de relación que está en el diagrama es un enlace que selecciona, centra y enfoca el encabezado del panel (ADR-038). Elegir un resultado de la búsqueda también enfoca el encabezado; no hay aria-live. La exportación de una lectura parcial muestra una línea de nota bajo la barra del encabezado. Importa canvasState y geometry de canvas, entityKey y el modelo de schema, el renderizador y ViewerData de export y el traductor de shared/i18n, pero nada de React ni de stores.",
             "patterns": ["Reutiliza el renderizador de la app (ADR-025)"]
           },
           {
@@ -4114,7 +4251,7 @@
             "id": "ext-localstorage",
             "name": "localStorage de WebView2",
             "path": "src/shared/settings/settingsStore.ts",
-            "responsibility": "Dos claves: 'schemacraft.settings' (tema, idioma, el panel de entidades y los avisos de acceso cerrados) y 'schemacraft.connection' (el último borrador: la contraseña vacía, pero servidor, inicio de sesión, base de datos, esquemas, cifrado y trustServerCertificate se conservan). Ambas viven en el perfil de WebView2 bajo %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft. Ninguna guarda secretos; borrar preferences.json no limpia ninguna, y borrar los datos de WebView2 restablece ambas (ADR-017).",
+            "responsibility": "Dos claves: 'schemacraft.settings' (tema, idioma, el panel de entidades, el ancho del Inspector y los avisos de acceso cerrados) y 'schemacraft.connection' (el último borrador: la contraseña vacía, pero servidor, inicio de sesión, base de datos, esquemas, cifrado y trustServerCertificate se conservan). Ambas viven en el perfil de WebView2 bajo %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft. Ninguna guarda secretos; borrar preferences.json no limpia ninguna, y borrar los datos de WebView2 restablece ambas (ADR-017).",
             "patterns": ["Solo comodidades de la interfaz por ventana"]
           }
         ]
@@ -4276,14 +4413,14 @@
         "id": "action-registry-to-feature-project",
         "from": "action-registry",
         "to": "feature-project",
-        "label": "abrir, guardar, deshacer, rehacer",
+        "label": "abrir, guardar, deshacer, rehacer, setDetailLevel (Ctrl+1/2/3)",
         "kind": "call"
       },
       {
         "id": "action-registry-to-feature-canvas",
         "from": "action-registry",
         "to": "feature-canvas",
-        "label": "distribuciones, ajustar vista, mostrar todo",
+        "label": "distribuciones, ajustar, mostrar todo, toggleInspector (Ctrl+I)",
         "kind": "call"
       },
       {
@@ -4444,14 +4581,14 @@
         "id": "viewer-app-to-feature-export",
         "from": "viewer-app",
         "to": "feature-export",
-        "label": "renderDiagramSvg, ViewerData",
+        "label": "renderDiagramSvg, ViewerData, ViewerMessageKey",
         "kind": "call"
       },
       {
         "id": "shared-settings-to-ext-localstorage",
         "from": "shared-settings",
         "to": "ext-localstorage",
-        "label": "'schemacraft.settings' (comodidades de la interfaz, avisos de acceso cerrados)",
+        "label": "'schemacraft.settings' (comodidades de la interfaz, anchos de los paneles, avisos de acceso cerrados)",
         "kind": "file"
       },
       {
@@ -4847,11 +4984,18 @@
         "kind": "network"
       },
       {
-        "id": "app-shell-to-sidebar-resizer",
+        "id": "app-shell-to-panel-resizer",
         "from": "app-shell",
-        "to": "sidebar-resizer",
-        "label": "coloca el asa en el panel de entidades",
+        "to": "panel-resizer",
+        "label": "coloca un asa en cada panel lateral, controlada: el ancho ajustado y sus límites entran, el ancho nuevo sale",
         "kind": "call"
+      },
+      {
+        "id": "shared-settings-to-panel-resizer",
+        "from": "shared-settings",
+        "to": "panel-resizer",
+        "label": "importa el tipo PanelWidthLimits de sus límites de ancho",
+        "kind": "build"
       },
       {
         "id": "app-shell-to-project-window",
@@ -4892,14 +5036,14 @@
         "id": "app-shell-to-feature-project",
         "from": "app-shell",
         "to": "feature-project",
-        "label": "UnsavedChangesDialog, setDetailLevel en TopBar; StatusBar lee projectStore",
+        "label": "UnsavedChangesDialog; TopBar y StatusBar leen projectStore",
         "kind": "call"
       },
       {
         "id": "app-shell-to-feature-canvas",
         "from": "app-shell",
         "to": "feature-canvas",
-        "label": "CanvasContextMenu con el comando showAll del registro; StatusBar lee canvasUiStore",
+        "label": "CanvasContextMenu con el comando showAll del registro; StatusBar lee canvasUiStore; el landmark del Inspector lee isInspectorOpen",
         "kind": "call"
       },
       {
@@ -4973,10 +5117,10 @@
         "kind": "call"
       },
       {
-        "id": "sidebar-resizer-to-shared-settings",
-        "from": "sidebar-resizer",
+        "id": "app-shell-to-shared-settings",
+        "from": "app-shell",
         "to": "shared-settings",
-        "label": "setSidebarWidth",
+        "label": "isSidebarOpen y los anchos de ambos paneles; setSidebarWidth y setInspectorWidth con sus límites",
         "kind": "call"
       },
       {
@@ -5046,7 +5190,7 @@
         "id": "viewer-app-to-feature-schema",
         "from": "viewer-app",
         "to": "feature-schema",
-        "label": "entityKey, formatDataType, lectores de definiciones",
+        "label": "entityKey; describeObjectDetails y presentObjectDetails para el panel de detalle",
         "kind": "call"
       },
       {
@@ -5298,7 +5442,7 @@
         "id": "entities-sidebar-to-feature-canvas",
         "from": "entities-sidebar",
         "to": "feature-canvas",
-        "label": "setHidden (ojo); canvasUiStore (foco, menú contextual)",
+        "label": "setHidden (ojo); canvasUiStore (foco, menú contextual, openInspector con doble clic)",
         "kind": "call"
       },
       {
@@ -5313,6 +5457,55 @@
         "from": "command-palette",
         "to": "feature-schema",
         "label": "listEntities, EntityKind",
+        "kind": "call"
+      },
+      {
+        "id": "app-shell-to-feature-inspector",
+        "from": "app-shell",
+        "to": "feature-inspector",
+        "label": "monta InspectorPanel en el landmark del Inspector, con la pista del atajo y el view.accessReport del registro",
+        "kind": "call"
+      },
+      {
+        "id": "action-registry-to-shared-settings",
+        "from": "action-registry",
+        "to": "shared-settings",
+        "label": "settings.theme.* y settings.language.* (setThemePreference, setLocale)",
+        "kind": "call"
+      },
+      {
+        "id": "feature-inspector-to-feature-schema",
+        "from": "feature-inspector",
+        "to": "feature-schema",
+        "label": "describeObjectDetails, presentObjectDetails, accessSummary, entityKey",
+        "kind": "call"
+      },
+      {
+        "id": "feature-inspector-to-feature-canvas",
+        "from": "feature-inspector",
+        "to": "feature-canvas",
+        "label": "selectedKeys, inspectorFocusRequest, closeInspector, focusEntity, openInspector; focusEntityNode",
+        "kind": "call"
+      },
+      {
+        "id": "feature-inspector-to-feature-project",
+        "from": "feature-inspector",
+        "to": "feature-project",
+        "label": "snapshot, nodos del lienzo y opciones de inspección del proyecto abierto",
+        "kind": "call"
+      },
+      {
+        "id": "feature-export-to-shared-i18n",
+        "from": "feature-export",
+        "to": "shared-i18n",
+        "label": "viewerMessages(locale): el subconjunto del catálogo que incrusta el HTML",
+        "kind": "call"
+      },
+      {
+        "id": "viewer-app-to-shared-i18n",
+        "from": "viewer-app",
+        "to": "shared-i18n",
+        "label": "createCatalogTranslator sobre los mensajes incrustados",
         "kind": "call"
       }
     ],
@@ -5346,8 +5539,8 @@
         "location": "Perfil de WebView2 bajo %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft",
         "format": "JSON, zustand persist versión 1",
         "owner": "Frontend: src/shared/settings/settingsStore.ts",
-        "contents": "Preferencia de tema, idioma, panel de entidades abierto y su ancho, y las firmas de los avisos de acceso parcial que el usuario cerró (servidor, base de datos, nivel y cobertura; hasta 50, los más recientes primero).",
-        "notes": "Solo comodidad de la interfaz, nunca un secreto. mergePersistedSettings revisa cada campo al leerlo y vuelve al valor por defecto si no es válido. Borrar preferences.json no lo limpia; borrar los datos de WebView2 restablece el tema, el idioma y el panel, y los avisos de acceso cerrados vuelven a aparecer (ADR-017)."
+        "contents": "Preferencia de tema, idioma, panel de entidades abierto y su ancho, el ancho del Inspector (de 280 a 560 px; si está abierto nunca se guarda), y las firmas de los avisos de acceso parcial que el usuario cerró (servidor, base de datos, nivel y cobertura; hasta 50, los más recientes primero).",
+        "notes": "Solo comodidad de la interfaz, nunca un secreto. mergePersistedSettings revisa cada campo al leerlo y vuelve al valor por defecto si no es válido. Borrar preferences.json no lo limpia; borrar los datos de WebView2 restablece el tema, el idioma y los paneles, y los avisos de acceso cerrados vuelven a aparecer (ADR-017)."
       },
       {
         "name": "localStorage 'schemacraft.connection'",
@@ -5362,15 +5555,15 @@
         "location": "Cualquier ruta que el usuario elija",
         "format": "SVG, HTML, PNG o PDF",
         "owner": "TypeScript arma el documento (src/features/export); Rust lo escribe (crates/schemacraft-core/src/export)",
-        "contents": "El diagrama visible. El HTML incrusta los datos visibles como JSON más el código del visor. Una lectura parcial agrega una nota de una línea: al pie en SVG, PDF y PNG, bajo el encabezado en HTML.",
-        "notes": "Se escriben de forma atómica. El HTML omite tablas ocultas, la conexión, la versión del servidor, el sondeo de acceso y el usuario de base de datos, la lista carriedOver y las claves desconocidas; del perfil de acceso solo incrusta el nivel. Las tablas, textos y llaves conservados de una lectura anterior se exportan como cualquier otro objeto del diagrama."
+        "contents": "El diagrama visible. El HTML incrusta los datos visibles como JSON más el código del visor y el subconjunto de mensajes del visor en el idioma de la exportación. Una lectura parcial agrega una nota de una línea: al pie en SVG, PDF y PNG, bajo el encabezado en HTML.",
+        "notes": "Se escriben de forma atómica. El HTML omite tablas ocultas, la conexión, la versión del servidor, el sondeo de acceso y el usuario de base de datos, y las claves desconocidas; del perfil de acceso solo incrusta el nivel y la cobertura, y de los hechos conservados de una lectura anterior solo los de los objetos y las llaves del diagrama, con sus fechas de lectura, aparte del snapshot, así el panel de detalle puede fecharlos sin nombrar una tabla oculta. Las tablas, textos y llaves conservados de una lectura anterior se dibujan como cualquier otro objeto del diagrama."
       },
       {
         "name": "Memoria de la sesión (no se guarda)",
         "location": "Stores del frontend y AppState de Rust",
         "format": "En memoria",
         "owner": "projectStore, connectionStore, canvasUiStore, src-tauri/src/state.rs",
-        "contents": "Historial de deshacer (100), liveSettings con la contraseña tecleada (se envía de nuevo en cada actualización), trabajos en curso, fases de diálogos, selección y zoom.",
+        "contents": "Historial de deshacer (100), liveSettings con la contraseña tecleada (se envía de nuevo en cada actualización), trabajos en curso, fases de diálogos, selección, zoom y si el Inspector está abierto.",
         "notes": "Se pierde al cerrar. El aviso de cambios sin guardar y la protección al cerrar la ventana protegen el lienzo."
       },
       {
@@ -5711,6 +5904,43 @@
             "detail": "Sigue docs/release-checklist.md (checksums, máquina limpia, ida y vuelta con una base de datos real, HTML en un navegador, instalar y desinstalar) y publica. Las compilaciones van sin firma hasta que SignPath apruebe (ADR-029)."
           }
         ]
+      },
+      {
+        "id": "inspect-entity",
+        "name": "Inspeccionar una entidad",
+        "summary": "De un doble clic, Enter o Ctrl+I a los detalles de la tabla seleccionada, con el foco donde corresponde.",
+        "steps": [
+          {
+            "actor": "Usuario",
+            "action": "Abre el Inspector",
+            "detail": "Doble clic en una tarjeta o en una fila del panel de entidades, Enter sobre una tarjeta enfocada, Ctrl+I (view.toggleInspector) o 'Mostrar detalles' en el menú contextual. Un doble clic deja el foco donde estaba; Ctrl+I, el botón de la barra superior, la paleta, Enter sobre una tarjeta enfocada y 'Mostrar detalles' (también con el ratón, porque el menú al cerrarse no deja el foco en ningún sitio) piden el foco para el encabezado del panel (inspectorFocusRequest), y también seguir el enlace de una relación. 'Mostrar detalles' selecciona la entidad sin desplazar el lienzo (focusEntity con center false); una entidad oculta no se puede inspeccionar, porque no tiene tarjeta que seleccionar."
+          },
+          {
+            "actor": "canvasUiStore",
+            "action": "Abre el panel",
+            "detail": "openInspector marca isInspectorOpen y, si se pidió, sube inspectorFocusRequest. El aside de AppShell deja de ser inert y se ensancha al ancho recordado (settingsStore.inspectorWidth), o al que le deja fitSidePanels en una ventana estrecha; nada se guarda."
+          },
+          {
+            "actor": "InspectorPanel",
+            "action": "Lee la selección",
+            "detail": "inspectedKey(selectedKeys): una clave muestra los detalles; ninguna o varias muestran un estado vacío cuyo destino de foco es el encabezado permanente. inspectorScope arma el DetailsScope desde projectStore: los nodos ocultos, la cobertura de accessSummary, los hechos conservados y el filtro de esquemas."
+          },
+          {
+            "actor": "features/schema",
+            "action": "Arma el modelo",
+            "detail": "describeObjectDetails lee el snapshot: columnas, clave primaria, índices, CHECK, referencias y referenciada por, cada texto como FactText (readable, notAvailable, notRecorded, notChecked con su fecha, que un texto dentro de un objeto conservado entero toma del objeto salvo que se conservara por separado) y cada lista con su ListCompleteness. presentObjectDetails lo traduce con el traductor de useI18n en un DetailsView; las mismas dos llamadas sirven al visor sobre los datos incrustados."
+          },
+          {
+            "actor": "InspectorSections",
+            "action": "Dibuja las secciones",
+            "detail": "Un componente por tipo de sección, en el orden fijo; 'ninguno' solo para una lista completa; un destino de relación con clave es un enlace que ejecuta focusEntity y openInspector({focus: true}), así el panel sigue a la nueva selección; un valor que la lectura no pudo respaldar lleva un icono y su pista; un valor no disponible, un destino no visible y una línea vacía por no visible agregan un enlace '¿Por qué?' que abre el informe de acceso (view.accessReport)."
+          },
+          {
+            "actor": "Usuario",
+            "action": "Sale o cierra",
+            "detail": "Escape en cualquier parte del panel, su asa incluida, devuelve el foco a la tarjeta inspeccionada (focusEntityNode) y deja el panel abierto; el botón de cerrar o Ctrl+I lo cierran, y returnFocusFromInspector devuelve el foco a la tarjeta o al lienzo antes de que el aside se vuelva inert."
+          }
+        ]
       }
     ],
     "commands": [
@@ -5960,13 +6190,18 @@
         "name": "Lector compatible hacia adelante",
         "where": "crates/schemacraft-core/src/project/file.rs, project/migrations.rs",
         "why": "formatVersion y minReaderVersion deciden entre actualizar, abrir en solo lectura y rechazar, y las claves desconocidas sobreviven a un guardado (ADR-035)."
+      },
+      {
+        "name": "Modelo compartido, dos renderizadores",
+        "where": "src/features/schema/objectDetails.ts and objectDetailsView.ts; src/features/inspector/InspectorSections.tsx; src/viewer/main.ts",
+        "why": "El Inspector y el panel de detalle del visor dibujan un único DetailsView, así la aplicación y el archivo exportado dicen lo mismo de un objeto y 'ninguno' se escribe solo para una lista completa (ADR-038)."
       }
     ],
     "recipes": {
       "featureTypes": [
         {
           "kind": "Funcionalidad solo de frontend (panel, diálogo, herramienta del lienzo)",
-          "example": "Un panel 'Detalles de tabla' junto al lienzo. Se construye como features/about.",
+          "example": "Un panel junto al lienzo, como features/inspector (ADR-038), o un diálogo, como features/about.",
           "steps": [
             {
               "layer": "Alcance",
@@ -5987,13 +6222,14 @@
             },
             {
               "layer": "Leer estado",
-              "step": "Usa selectores estrechos sobre projectStore y canvasUiStore. Reutiliza entityKey, EntityKind, listEntities y groupEntities (features/schema/entities.ts, el único hogar de la identidad de las entidades), describeEntities y formatDataType. Llama a otros stores con getState().",
+              "step": "Usa selectores estrechos sobre projectStore y canvasUiStore. Reutiliza entityKey, EntityKind, listEntities y groupEntities (features/schema/entities.ts, el único hogar de la identidad de las entidades), describeEntities y formatDataType, y describeObjectDetails con presentObjectDetails para los detalles de una entidad, así un panel dice lo que dice el visor. Llama a otros stores con getState().",
               "files": [
                 "src/features/project/projectStore.ts",
                 "src/features/canvas/canvasUiStore.ts",
                 "src/features/canvas/geometry.ts",
                 "src/features/schema/entities.ts",
-                "src/features/schema/dataType.ts"
+                "src/features/schema/dataType.ts",
+                "src/features/schema/objectDetails.ts"
               ]
             },
             {
@@ -6003,11 +6239,14 @@
             },
             {
               "layer": "Shell",
-              "step": "Móntalo una vez en AppShell, o en features/canvas/DiagramCanvas.tsx si va sobre el lienzo (como ProjectNotice; la pantalla de bienvenida llega por el prop emptyState). Un panel no modal no debe usar role=\"dialog\", porque los diálogos abiertos bloquean los atajos.",
+              "step": "Móntalo una vez en AppShell: un panel lateral en su propio landmark aside, inert mientras está cerrado, con un PanelResizer de shared/ui y su ancho en settingsStore, como el Inspector; algo sobre el lienzo, en features/canvas/DiagramCanvas.tsx (como ProjectNotice; la pantalla de bienvenida llega por el prop emptyState). Un panel no modal no debe usar role=\"dialog\", porque los diálogos abiertos bloquean los atajos, y debe devolver el foco al lienzo si se cierra mientras lo tiene (returnFocusFromInspector muestra cómo).",
               "files": [
                 "src/app/shell/AppShell.tsx",
                 "src/app/shell/AppShell.module.css",
-                "src/features/canvas/DiagramCanvas.tsx"
+                "src/features/canvas/DiagramCanvas.tsx",
+                "src/shared/ui/PanelResizer.tsx",
+                "src/shared/settings/settingsStore.ts",
+                "src/features/canvas/canvasFocus.ts"
               ]
             },
             {
@@ -6189,7 +6428,7 @@
         },
         {
           "kind": "Nueva acción de usuario con atajo",
-          "example": "'Aislar selección' con Ctrl+I, que se puede deshacer.",
+          "example": "'Aislar selección' con Ctrl+Shift+E, que se puede deshacer.",
           "steps": [
             {
               "layer": "Lógica",
@@ -6206,8 +6445,8 @@
             },
             {
               "layer": "Atajo",
-              "step": "Evita teclas ocupadas y teclas reservadas del navegador (shortcut.ts). Gana la primera coincidencia y ninguna prueba detecta duplicados.",
-              "files": ["src/app/actions/shortcut.ts"]
+              "step": "Evita teclas ocupadas y teclas reservadas del navegador (shortcut.ts). Gana la primera coincidencia; useAppActions.test.ts arma el registro y falla ante un atajo duplicado o una tecla del navegador que no está en su lista declarada, así que una tecla reutilizada a propósito se agrega ahí. Un gesto sobre una entidad, o Enter sobre una tarjeta, no es un atajo del registro (ADR-008).",
+              "files": ["src/app/actions/shortcut.ts", "src/app/actions/useAppActions.test.ts"]
             },
             {
               "layer": "Superficies e i18n",
@@ -6331,7 +6570,7 @@
       "crossCutting": [
         {
           "concern": "Texto bilingüe",
-          "touches": "en.ts es la referencia, es.ts tipado como MessageCatalog, catalogs.test.ts. El visor todavía tiene su propio src/viewer/messages.ts, cuyo label.view se comprueba igual al entity.view.label de la app; el texto del diálogo de WebView2 está en src-tauri/src/main.rs."
+          "touches": "en.ts es la referencia, es.ts tipado como MessageCatalog, catalogs.test.ts. El visor dice el subconjunto que incrusta una exportación (viewerMessages, por prefijo de clave; viewerMessages.test.ts lo revisa) con el mismo createCatalogTranslator y no tiene catálogo propio (ADR-007); el texto del diálogo de WebView2 está en src-tauri/src/main.rs."
         },
         {
           "concern": "Tema claro y oscuro",
@@ -6339,11 +6578,11 @@
         },
         {
           "concern": "Teclado y registro de acciones",
-          "touches": "src/app/actions; los diálogos bloquean atajos; las teclas sin modificador nunca se disparan en campos de texto."
+          "touches": "src/app/actions; los diálogos bloquean atajos, un panel no modal como el Inspector no; las teclas sin modificador nunca se disparan en campos de texto; Enter sobre una tarjeta lo maneja el lienzo y los gestos por entidad llaman a funciones de la funcionalidad, no a acciones (ADR-008)."
         },
         {
           "concern": "Deshacer y cambios sin guardar",
-          "touches": "Solo CanvasState se puede deshacer, vía projectStore.updateCanvas; el estado transitorio va en canvasUiStore. El título de la ventana muestra '•' y cerrar pregunta antes (useProjectWindow)."
+          "touches": "Solo CanvasState se puede deshacer, vía projectStore.updateCanvas; el estado transitorio (la selección, si el Inspector está abierto) va en canvasUiStore. El título de la ventana muestra '•' y cerrar pregunta antes (useProjectWindow)."
         },
         {
           "concern": "Versionado de .scraft",
@@ -6355,7 +6594,7 @@
         },
         {
           "concern": "Paridad y privacidad de exportación",
-          "touches": "Geometría compartida, una sola tabla de marcadores y ruteo (canvas/edgeGeometry.ts) y una sola paleta; el renderizador recibe sus etiquetas de quien llama, así una vista dice VIEW o VISTA en el idioma de la exportación; visibleProjection es una lista de permitidos que decide qué llega al HTML (nunca el sondeo, el usuario de base de datos, la lista carriedOver ni las claves desconocidas; los objetos conservados en sí salen como cualquier otro); una lectura parcial lleva una línea de nota."
+          "touches": "Geometría compartida, una sola tabla de marcadores y ruteo (canvas/edgeGeometry.ts) y una sola paleta; el renderizador recibe sus etiquetas de quien llama, así una vista dice VIEW o VISTA en el idioma de la exportación; visibleProjection es una lista de permitidos que decide qué llega al HTML (nunca el sondeo, el usuario de base de datos, los hechos de una tabla oculta ni las claves desconocidas; los veredictos, las fechas de lectura de los hechos conservados de los objetos del diagrama y el subconjunto de mensajes del visor viajan aparte del snapshot); el panel de detalle del visor es el modelo del Inspector, así ambos usan las mismas palabras y estados, el archivo solo para lo que está en el diagrama (ADR-038); una lectura parcial lleva una línea de nota."
         },
         {
           "concern": "Backends preview",
@@ -6375,7 +6614,7 @@
         },
         {
           "concern": "Fronteras de módulos",
-          "touches": "app -> features -> shared y la API de Tauri solo en shared/ipc, exigido por ESLint con no-restricted-imports (ADR-031); el core nunca depende de Tauri."
+          "touches": "app -> features -> shared y la API de Tauri solo en shared/ipc, exigido por ESLint con no-restricted-imports (ADR-031); features/schema importa solo shared/ y a sí mismo, así el visor puede llevarlo (ADR-037); el core nunca depende de Tauri."
         },
         {
           "concern": "Rendimiento",
@@ -6391,7 +6630,7 @@
         },
         {
           "concern": "Acceso parcial",
-          "touches": "Un inicio de sesión puede ver solo parte de una base de datos (ADR-034). Todo lo que lista o cuenta hechos del esquema consulta src/features/schema/coverage.ts antes de decir 'ninguno', y un texto ilegible dice 'no disponible'. Del lado del servidor lo cubren los inicios de sesión de sqlserver_permissions.rs; el preview del navegador lo reproduce con un nombre de servidor que contenga partial."
+          "touches": "Un inicio de sesión puede ver solo parte de una base de datos (ADR-034). Todo lo que lista o cuenta hechos del esquema consulta src/features/schema/coverage.ts antes de decir 'ninguno', y un texto ilegible dice 'no disponible'; el Inspector y el panel de detalle del visor escriben 'ninguno' solo para una lista completa y marcan cada hecho que la lectura no pudo respaldar (ADR-038). Del lado del servidor lo cubren los inicios de sesión de sqlserver_permissions.rs; el preview del navegador lo reproduce con un nombre de servidor que contenga partial."
         }
       ],
       "definitionOfDone": [
@@ -6478,7 +6717,7 @@
       }
     ],
     "conformance": {
-      "verdict": "La arquitectura se sostiene. El core no depende de Tauri, los comandos son delgados y mantienen el trabajo bloqueante fuera del hilo principal, los errores están tipados de punta a punta, los contratos se generan y se revisan, ESLint exige las capas del frontend y mantiene features/schema como hoja, solo src/shared/ipc habla con Tauri y el visor no trae React ni stores. Builder y Memento están implementados como dicen los ADRs, y cada regla de dibujo tiene un solo hogar protegido por una prueba. Las tres desviaciones mayores están corregidas, junto con la mayoría de las menores. Las tres que siguen abiertas son problemas de consistencia, no rupturas estructurales; dos están planeadas para v1.1, donde el inspector toca el mismo código, y una queda pendiente sin fecha. Las corregidas siguen abajo, marcadas como corregidas.",
+      "verdict": "La arquitectura se sostiene. El core no depende de Tauri, los comandos son delgados y mantienen el trabajo bloqueante fuera del hilo principal, los errores están tipados de punta a punta, los contratos se generan y se revisan, ESLint exige las capas del frontend y mantiene features/schema como hoja, solo src/shared/ipc habla con Tauri y el visor no trae React ni stores. Builder y Memento están implementados como dicen los ADRs, y cada regla de dibujo tiene un solo hogar protegido por una prueba. Todas las desviaciones menos una están corregidas, incluidas las tres mayores; la que sigue abierta, un archivo de log para los reportes de errores, es un pendiente sin fecha, no una ruptura estructural. Las corregidas siguen abajo, marcadas como corregidas.",
       "deviations": [
         {
           "what": "Los botones de acción deshabilitados siempre dicen 'Available in an upcoming milestone', aunque la causa sea una condición en tiempo de ejecución.",
@@ -6553,9 +6792,9 @@
         {
           "what": "Nivel de detalle, tema e idioma saltan el registro de acciones; 6 acciones no tienen atajo.",
           "where": "src/app/shell/TopBar.tsx",
-          "fix": "Planeado para v1.1: Agregar acciones view.detail*, settings.theme.* y settings.language.*; anotar las excepciones en ADR-008. Los saltos por entidad ya no existen: el ojo del panel y Ocultar del menú contextual pasan por canvasActions.setHidden, el chevrón de la tarjeta por setCollapsed, y Mostrar todo del menú contextual ejecuta diagram.showAll del registro, que AppShell le pasa.",
+          "fix": "Corregido: view.detailCompact, view.detailKeys y view.detailFull (Ctrl+1, Ctrl+2, Ctrl+3), settings.theme.* y settings.language.* son acciones del registro que ejecutan el control segmentado y los menús de la barra superior, junto a view.toggleInspector (Ctrl+I); ADR-008 anota las excepciones (los gestos por entidad llaman a funciones de la funcionalidad, Enter se queda en el lienzo, y las estrategias de distribución, plegar todo, desplegar todo, los temas y los idiomas no tienen atajo), y useAppActions.test.ts falla ante un atajo duplicado o una tecla del navegador no declarada. Los saltos por entidad ya no existían: el ojo del panel y Ocultar del menú contextual pasan por canvasActions.setHidden, el chevrón de la tarjeta por setCollapsed, y Mostrar todo del menú contextual ejecuta diagram.showAll del registro.",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "El nombre del filtro de archivos .scraft está fijo en inglés.",
@@ -6567,9 +6806,9 @@
         {
           "what": "El visor reimplementa la interpolación y usa plurales con count === 1; no hay prueba de placeholders.",
           "where": "src/viewer/messages.ts:96-109",
-          "fix": "Planeado para v1.1: Reutilizar src/shared/i18n/formatMessage.ts y agregar una prueba de placeholders.",
+          "fix": "Corregido: src/viewer/messages.ts ya no existe. El visor dice el subconjunto de en.ts y es.ts que incrusta la exportación (viewerMessages, por prefijo de clave) con createCatalogTranslator, construido sobre formatMessage e Intl.PluralRules; catalogs.test.ts revisa los placeholders de cada texto y viewerMessages.test.ts el subconjunto incrustado (ADR-007, ADR-038).",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "La presentación de errores compartida vive dentro de features/connection.",
@@ -6719,7 +6958,7 @@
         "La página lleva un solo manifiesto, en el nivel superior de model.json y compartido por ambos idiomas. CI lo compara con el código con scripts/check-architecture-page.mjs (npm run docs:check).",
         "Comando nuevo: agrégalo a manifest.commands y a la tabla de comandos en ambos idiomas.",
         "Carpeta de funcionalidad, módulo del core o backend IPC nuevo: agrégalo al manifiesto, a la lista de capas y a las aristas del diagrama.",
-        "Decisión nueva: agrega un ADR (el siguiente es ADR-038), sube manifest.adrCount y enlaza el ADR desde el patrón o la receta que cambia.",
+        "Decisión nueva: agrega un ADR (el siguiente es ADR-039), sube manifest.adrCount y enlaza el ADR desde el patrón o la receta que cambia.",
         "Cambio de alcance: actualiza ambas copias del PRD (docs/ y 02_Docs/), agrega una línea fechada en la sección 6 y haz commit como docs(prd), solo con aprobación del usuario.",
         "Desviación corregida: márcala como corregida en el mismo PR. Desviación conocida nueva: agrégala con su severidad y estado open.",
         "Almacén de datos o clave de localStorage nueva: agrega una fila a la tabla de datos.",
@@ -6755,7 +6994,7 @@
       {
         "id": "inspector",
         "term": "Inspector",
-        "meaning": "Una implementación de DatabaseInspector para un motor; hoy solo SqlServerInspector."
+        "meaning": "Una implementación de DatabaseInspector para un motor; hoy solo SqlServerInspector. No es el panel Inspector de la interfaz."
       },
       {
         "id": "catalog-query",
@@ -6855,7 +7094,7 @@
       {
         "id": "visible-projection",
         "term": "visibleProjection",
-        "meaning": "La lista de permitidos que deja solo los datos visibles en una exportación HTML: sin sondeo de acceso, lista carriedOver ni claves desconocidas. Los objetos conservados de una lectura anterior se exportan como cualquier otro del diagrama."
+        "meaning": "La lista de permitidos que deja solo los datos visibles en una exportación HTML: sin sondeo de acceso, sin hechos de un objeto oculto, sin claves desconocidas. Los veredictos, las fechas de lectura de los hechos conservados de los objetos del diagrama y los mensajes del visor viajan aparte del snapshot."
       },
       {
         "id": "adr",
@@ -6936,6 +7175,16 @@
         "id": "entity-kind",
         "term": "EntityKind / entityKey",
         "meaning": "'table' o 'view', y la clave 'esquema.nombre' que identifica a una entidad en los nodos, en el estado de oculto y plegado y en la búsqueda. Ambos se escriben solo en src/features/schema/entities.ts (ADR-037); el tipo decide las secciones Tablas y Vistas y la etiqueta VISTA (ADR-036)."
+      },
+      {
+        "id": "inspector-panel",
+        "term": "Inspector (panel)",
+        "meaning": "El panel junto al lienzo que muestra los detalles de la entidad seleccionada (src/features/inspector, ADR-038). No es el DatabaseInspector del core, que lee una base de datos, ni las opciones de inspección de un proyecto."
+      },
+      {
+        "id": "details-view",
+        "term": "ObjectDetails / DetailsView",
+        "meaning": "El modelo de una tabla o vista: los hechos de describeObjectDetails (cada texto un FactText, cada lista con su ListCompleteness) y su texto traducido de presentObjectDetails. Lo dibujan el Inspector y el panel de detalle del visor (ADR-038)."
       }
     ]
   }

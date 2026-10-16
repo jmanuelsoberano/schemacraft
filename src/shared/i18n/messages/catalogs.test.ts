@@ -29,3 +29,13 @@ describe.each(SUPPORTED_LOCALES)("%s message catalogue", (locale) => {
     }
   });
 });
+
+describe("the Inspector's empty state", () => {
+  // It is only ever read inside the open panel, where the toggle shortcut closes it.
+  it.each([
+    ["en", /\{shortcut\} closes this panel/u],
+    ["es", /\{shortcut\} cierra este panel/u],
+  ] as const)("names the shortcut as closing the panel in %s", (locale, closes) => {
+    expect(messageCatalogs[locale]["inspector.empty.description"]).toMatch(closes);
+  });
+});

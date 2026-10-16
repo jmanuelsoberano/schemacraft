@@ -388,10 +388,14 @@ interface EntityRowProps {
   isSelected: boolean;
 }
 
-/** One table or view: centre on click, the context menu on right click, the eye to hide. */
+/**
+ * One table or view: centre on click, the Inspector on double-click, the context menu on right
+ * click, the eye to hide.
+ */
 function EntityRow({ entity, isHidden, isSelected }: EntityRowProps) {
   const { t, tCount } = useI18n();
   const focusEntity = useCanvasUiStore((state) => state.focusEntity);
+  const openInspector = useCanvasUiStore((state) => state.openInspector);
   const openContextMenu = useCanvasUiStore((state) => state.openContextMenu);
   const isView = entity.kind === "view";
   const KindIcon = isView ? Glasses : Table2;
@@ -415,6 +419,12 @@ function EntityRow({ entity, isHidden, isSelected }: EntityRowProps) {
         aria-label={t("sidebar.center", { name: entity.key })}
         onClick={() => {
           focusEntity(entity.key);
+        }}
+        onDoubleClick={() => {
+          // The first click selected the entity; a hidden one has no card, so nothing to show.
+          if (!isHidden) {
+            openInspector();
+          }
         }}
       >
         <KindIcon

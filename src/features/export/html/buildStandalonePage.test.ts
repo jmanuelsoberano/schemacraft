@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import { accessSummary } from "@/features/schema/coverage";
 import type { AccessProfile, CanvasState, SchemaSnapshot } from "@/shared/contracts";
 
 import { buildStandalonePage, embedJson } from "./buildStandalonePage";
-import { carriesAccessNote, exportedAccess, visibleProjection } from "./viewerData";
+import { carriesAccessNote, visibleProjection } from "./viewerData";
+import { viewerMessages } from "./viewerMessages";
 
 const snapshot: SchemaSnapshot = {
   databaseName: "Shop",
@@ -123,6 +125,17 @@ const partialSnapshot: SchemaSnapshot = {
       fact: { kind: "table" },
       readAt: "2026-10-12T08:00:00Z",
     },
+    // Keys are recorded on their referencing table; FK_A_B references B, which is hidden.
+    {
+      object: { schema: "dbo", name: "A" },
+      fact: { kind: "foreignKey", name: "FK_A_B" },
+      readAt: "2026-10-12T08:00:00Z",
+    },
+    {
+      object: { schema: "dbo", name: "A" },
+      fact: { kind: "foreignKey", name: "FK_A_Regions" },
+      readAt: "2026-10-12T08:00:00Z",
+    },
   ],
   ...{ routines: [{ name: { schema: "internal", name: "usp_Purge" } }] },
 };
@@ -140,7 +153,6 @@ const NEVER_EXPORTED = [
   '"counts"',
   '"databaseUser"',
   "reporting_user",
-  '"carriedOver"',
   '"audit"',
   '"payroll"',
   '"internal"',
@@ -148,6 +160,7 @@ const NEVER_EXPORTED = [
   '"gridSize"',
   '"color"',
   "FK_B_Regions",
+  "FK_A_B",
   "Microsoft SQL Server",
 ];
 
@@ -161,13 +174,27 @@ describe("visibleProjection", () => {
     expect(projected.canvas.nodes.map((node) => node.name.name)).toEqual(["A", "V"]);
     expect(projected.canvas.viewport).toEqual({ x: 0, y: 0, zoom: 1 });
     expect(projected.access).toBeNull();
+    expect(projected.carriedOver).toEqual([]);
     expect(projected.snapshot).not.toHaveProperty("foreignKeysToInvisibleTables");
   });
 
-  it("carries the access verdict, never the probe, the kept facts or unknown keys", () => {
+  it("carries the access verdicts, never the probe, facts kept about hidden tables or unknown keys", () => {
     const projected = visibleProjection(partialSnapshot, decoratedCanvas);
 
-    expect(projected.access).toEqual({ level: "partial" });
+    expect(projected.access).toEqual({
+      level: "partial",
+      coverage: { objects: "partial", definitions: "notAvailable" },
+    });
+    // audit.ChangeLog is not on the diagram, so the fact kept about it stays behind, and so does
+    // the one about FK_A_B, which left with the hidden table it references.
+    expect(projected.carriedOver).toEqual([
+      {
+        object: { schema: "dbo", name: "A" },
+        fact: { kind: "foreignKey", name: "FK_A_Regions" },
+        readAt: "2026-10-12T08:00:00Z",
+      },
+    ]);
+    expect(projected.snapshot).not.toHaveProperty("carriedOver");
     expect(Object.keys(projected.snapshot).sort()).toEqual([
       "databaseName",
       "extractedAt",
@@ -221,15 +248,37 @@ describe("visibleProjection", () => {
 
     expect(projected.snapshot.tables.map((table) => table.name.name)).toEqual(["A", "ChangeLog"]);
     expect(projected.canvas.nodes.map((node) => node.name.name)).toEqual(["A", "V", "ChangeLog"]);
+    // The date of its last read travels apart from the snapshot, so the viewer can say it.
     expect(projected.snapshot).not.toHaveProperty("carriedOver");
-    expect(embedJson(projected)).not.toContain('"carriedOver"');
+    expect(embedJson(projected)).toContain(
+      '"carriedOver":[{"object":{"schema":"audit","name":"ChangeLog"},"fact":{"kind":"table"},"readAt":"2026-10-12T08:00:00Z"},',
+    );
+  });
+
+  it("dates a kept key only while the key itself is on the diagram", () => {
+    const showingB: CanvasState = {
+      ...canvas,
+      nodes: canvas.nodes.map((node) => ({ ...node, isHidden: false })),
+    };
+
+    const projected = visibleProjection(partialSnapshot, showingB);
+
+    expect(projected.snapshot.foreignKeys.map((key) => key.name)).toEqual(["FK_A_B"]);
+    expect(
+      projected.carriedOver.map((carried) =>
+        carried.fact.kind === "foreignKey" ? carried.fact.name : carried.fact.kind,
+      ),
+    ).toEqual(["FK_A_B", "FK_A_Regions"]);
   });
 });
 
 describe("the access note", () => {
   it("is carried by exports of a partial capture only", () => {
-    expect(exportedAccess(partialSnapshot)).toEqual({ level: "partial" });
-    expect(exportedAccess(snapshot)).toBeNull();
+    expect(accessSummary(partialSnapshot)).toEqual({
+      level: "partial",
+      coverage: { objects: "partial", definitions: "notAvailable" },
+    });
+    expect(accessSummary(snapshot)).toBeNull();
     expect(carriesAccessNote({ level: "partial" })).toBe(true);
     expect(carriesAccessNote({ level: "full" })).toBe(false);
     expect(carriesAccessNote({ level: "empty" })).toBe(false);
@@ -246,6 +295,7 @@ describe("buildStandalonePage", () => {
         locale: "es",
         theme: "dark",
         detailLevel: "full",
+        messages: viewerMessages("es"),
         ...visibleProjection({ ...snapshot, databaseName: "Shop </script>" }, canvas),
       },
       viewerScript: 'console.log("</script>")',
@@ -254,6 +304,10 @@ describe("buildStandalonePage", () => {
     });
     expect(page.startsWith('<!doctype html>\n<html lang="es" data-theme="dark">')).toBe(true);
     expect(page).toContain("<title>Shop &lt;/script&gt; · SchemaCraft</title>");
+    // The viewer's words travel in the file, in the language of the export.
+    expect(page).toContain('"viewer.action.fit":"Ajustar"');
+    expect(page).toContain('"details.section.referencedBy":"Referenciada por"');
+    expect(page).not.toContain('"action.connect"');
     // Fonts first, then the diagram palette for both themes, then the viewer's own rules.
     const style = /<style>(.*?)<\/style>/su.exec(page)?.[1] ?? "";
     expect(style.startsWith("@font-face{font-family:Inter}:root{--sc-canvas:#f6f7f9;")).toBe(true);
@@ -275,13 +329,16 @@ describe("buildStandalonePage", () => {
         locale: "en",
         theme: "light",
         detailLevel: "keys",
+        messages: viewerMessages("en"),
         ...visibleProjection(partialSnapshot, decoratedCanvas),
       },
       viewerScript: "",
       viewerStyles: "",
       fontFaces: "",
     });
-    expect(page).toContain('"access":{"level":"partial"}');
+    expect(page).toContain(
+      '"access":{"level":"partial","coverage":{"objects":"partial","definitions":"notAvailable"}}',
+    );
     expect(page).toContain("FK_A_Regions");
     for (const secret of NEVER_EXPORTED) {
       expect(page, secret).not.toContain(secret);

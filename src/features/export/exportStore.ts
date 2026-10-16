@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 import { spreadForDetailLevel, withPositions } from "@/features/canvas/canvasState";
 import { useProjectStore } from "@/features/project/projectStore";
+import { accessSummary } from "@/features/schema/coverage";
 import type {
   DetailLevel,
   ExportEvent,
@@ -26,7 +27,8 @@ import {
 import type { ExportChoices, ExportSpecification } from "./exportSpecification";
 import { loadEmbeddedFontFaces } from "./fontFaces";
 import { buildStandalonePage } from "./html/buildStandalonePage";
-import { carriesAccessNote, exportedAccess, visibleProjection } from "./html/viewerData";
+import { carriesAccessNote, visibleProjection } from "./html/viewerData";
+import { viewerMessages } from "./html/viewerMessages";
 import type { ExportTheme } from "./svg/palette";
 import { measureDiagram, renderDiagramSvg } from "./svg/renderDiagram";
 import type { DiagramExtent, DiagramInput } from "./svg/renderDiagram";
@@ -96,7 +98,7 @@ function diagramForLevel(diagram: DiagramInput, detailLevel: DetailLevel): Diagr
  * application's language; the HTML viewer says the same in its header.
  */
 function accessFootnote(snapshot: SchemaSnapshot): string | undefined {
-  return carriesAccessNote(exportedAccess(snapshot))
+  return carriesAccessNote(accessSummary(snapshot))
     ? translate(useSettingsStore.getState().locale, "export.note.partial")
     : undefined;
 }
@@ -144,13 +146,16 @@ async function buildDocument(
   if (specification.format === "html") {
     // The viewer spreads nodes itself for whichever level the reader picks.
     const { viewerScript, viewerStyles } = await import("virtual:schemacraft-viewer");
+    // The file carries the application's words in the language it was exported in.
+    const { locale } = useSettingsStore.getState();
     return buildStandalonePage({
       data: {
         generator: labels.generator,
         exportedAt,
-        locale: useSettingsStore.getState().locale,
+        locale,
         theme,
         detailLevel,
+        messages: viewerMessages(locale),
         ...visibleProjection(diagram.snapshot, diagram.canvas),
       },
       viewerScript,

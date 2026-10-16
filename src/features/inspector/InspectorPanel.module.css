@@ -1,0 +1,99 @@
+/* The panel keeps its width while the landmark around it collapses, so nothing reflows. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: var(--inspector-width);
+  height: 100%;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+}
+
+.header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  height: 40px;
+  padding: 0 var(--space-2) 0 var(--space-4);
+}
+
+.title {
+  flex: 1;
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Both headings take focus by script only, and show it when they do. */
+.title:focus-visible,
+.name:focus-visible {
+  outline-offset: 4px;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: var(--space-4);
+}
+
+.entity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* The kind as a pill: a view carries the view colours the canvas gives its label. */
+.kind {
+  height: 16px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.kindView {
+  background: var(--color-view);
+  color: var(--color-on-view);
+}
+
+.name {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  overflow-wrap: anywhere;
+}
+
+.schema {
+  color: var(--color-text-secondary);
+  font-weight: 400;
+}
+
+.summary {
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+/* The whole object was kept from an earlier read, which the panel says before any fact. */
+.notice {
+  margin: var(--space-1) 0 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-subtle);
+  color: var(--color-warning-text);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}

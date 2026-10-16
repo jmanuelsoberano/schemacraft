@@ -296,6 +296,11 @@ body {
   margin-bottom: 10px;
 }
 
+.sc-panel-heading {
+  flex: 1;
+  min-width: 0;
+}
+
 .sc-panel-kind {
   margin-top: 2px;
   color: var(--sc-text-muted);
@@ -318,6 +323,29 @@ body {
   font-weight: 400;
 }
 
+/* The heading takes focus after a search or a relation link, so it shows where focus went. */
+.sc-panel-title:focus-visible {
+  outline: 2px solid var(--sc-accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.sc-panel-summary {
+  margin-top: 2px;
+  color: var(--sc-text-secondary);
+  font-size: 12px;
+}
+
+/* The whole object was kept from an earlier read, which the panel says before any fact. */
+.sc-panel-notice {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--sc-warning-subtle);
+  color: var(--sc-warning-text);
+  font-size: 12px;
+}
+
 .sc-close {
   width: 26px;
   padding: 0;
@@ -336,6 +364,59 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.sc-section-count {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--sc-surface-sunken);
+  color: var(--sc-text-secondary);
+  font-size: 10px;
+  letter-spacing: 0;
+  line-height: 15px;
+  vertical-align: 1px;
+}
+
+/*
+ * The one line of an empty section and the note under a list that may be missing keys. They
+ * read in the secondary colour, not the muted one, because they carry the honest wording.
+ */
+.sc-empty,
+.sc-footnote {
+  margin: 0;
+  color: var(--sc-text-secondary);
+  font-size: 12px;
+}
+
+.sc-footnote {
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+/* A CHECK or DEFAULT text under the name or the type it belongs to. */
+.sc-value {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+/* Words that stand in for a fact: not available, not checked, hidden. The hint is the title. */
+.sc-state {
+  color: var(--sc-text-secondary);
+}
+
+.sc-state[title] {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+
+/* Why a key may be stale, said under it. */
+.sc-hint {
+  margin-top: 2px;
+  color: var(--sc-text-secondary);
+  font-size: 11px;
 }
 
 .sc-table {

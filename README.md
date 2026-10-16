@@ -21,6 +21,12 @@ the same diagram, and renders fast, interactive diagrams with high-fidelity sing
   label, icon and colour, an entities panel with schema and kind sections, crow's foot
   relationships, layered, organic and radial layouts, isolation of a table with its neighbours,
   undo and redo, and a command palette.
+- **Inspector.** A panel beside the canvas with the selected table or view: columns with type,
+  nullability, identity, computed and default, primary key, indexes, check constraints and the
+  relationships in both directions, each fact marked when the login could not read it. The HTML
+  viewer's detail panel is built from the same view-model, with the same sections, order and
+  words, for what is on the exported diagram: it leaves out relationships to tables that are not
+  on it, says "None on the diagram" for an empty relationship list and has no "Why?" links.
 - **Exports.** SVG with selectable text, a self-contained interactive HTML viewer, single-page
   PDF and PNG at 1x, 2x and 4x, all drawn by one renderer with bundled fonts.
 - **Desktop quality.** English and Spanish, light and dark themes, keyboard access throughout, a
@@ -186,9 +192,12 @@ A `.scraft` file is pretty-printed JSON: a header with the format version, the o
 reader needs (`minReaderVersion`) and the save time, the connection without its password, the
 inspection options, the full snapshot and the diagram state. The snapshot also records what the
 login that read it could see: its permissions in that database, including the name of its
-database user, and the list of facts kept from an earlier read that it could not check. Exports
-leave out both records; the tables, views, texts and relationships kept from an earlier read are
-drawn and embedded like any other object on the diagram, without a mark. A project reopens
+database user, and the list of facts kept from an earlier read that it could not check. No export
+carries the permissions or the database user. An HTML export carries the access verdicts (the
+level and the coverage) and, for the objects on the diagram, the dates their kept facts were last
+read, so its detail panel marks those facts as not checked since that date. SVG, PDF and PNG
+carry neither, beyond the one-line note of a partial read, and draw what was kept like any other
+object on the diagram. A project reopens
 without a database; refresh reconnects through the connection dialog and shows the differences
 before applying them, keeping the positions of surviving tables.
 
@@ -205,8 +214,8 @@ Windows. Delete the file to clear the history and the recent projects.
 The interface also keeps two conveniences in the WebView2 local storage, under
 `%LOCALAPPDATA%\com.jmanuelsoberano.schemacraft`; neither holds a secret:
 
-- `schemacraft.settings`: the theme, the language, the entities panel's state and width, and the
-  partial-access notices you closed.
+- `schemacraft.settings`: the theme, the language, the entities panel's state and width, the
+  Inspector's width, and the partial-access notices you closed.
 - `schemacraft.connection`: the last connection form. The password is always blank; the server,
   login, database, schemas, encryption and certificate choice are kept.
 
@@ -238,8 +247,11 @@ GRANT VIEW DEFINITION TO [reporting];
 
 `VIEW DEFINITION` gives no access to data and allows no change; on SQL Server 2022 and later it
 also shows users, roles and permissions. SchemaCraft only copies the script and does not offer
-it when an explicit `DENY` is the cause, because a grant does not lift a denial. A login that
-sees no table or view at all is told so and cannot start a read. Refreshing a project with a
+it when an explicit `DENY` is the cause, because a grant does not lift a denial. The Inspector
+marks every `CHECK`, `DEFAULT` or relationship the login could not read, and links a value not
+available to this login, or a table not visible to it, to the report with "Why?"; a list there
+says "None" only when it is complete. A login that sees no table or
+view at all is told so and cannot start a read. Refreshing a project with a
 login that sees less never removes what it cannot see: those items are kept and listed as not
 checked.
 
@@ -249,7 +261,7 @@ checked.
 crates/schemacraft-core/   domain model, inspectors, project files, diff engine, export (no Tauri)
 src-tauri/                 Tauri host: IPC commands, configuration, icons
 src/app/                   application shell, actions, brand, global styles
-src/features/              connection, project, canvas, export and other features
+src/features/              connection, project, canvas, inspector, export and other features
 src/shared/                contracts, i18n, ipc, settings, ui primitives
 src/viewer/                standalone viewer embedded in exported HTML files
 assets/brand/              source artwork for the application icon

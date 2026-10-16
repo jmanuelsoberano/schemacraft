@@ -13,6 +13,13 @@ import type {
  */
 export type AccessSummary = Pick<AccessProfile, "level" | "coverage">;
 
+/** The verdicts of the snapshot's capture, or `null` when it recorded none (a 1.0 file). */
+export function accessSummary(snapshot: SchemaSnapshot): AccessSummary | null {
+  return snapshot.access === undefined
+    ? null
+    : { level: snapshot.access.level, coverage: snapshot.access.coverage };
+}
+
 /** Completeness of one kind of fact; `notRecorded` for a snapshot written by SchemaCraft 1.0. */
 export type FactCoverage = Completeness | "notRecorded";
 
