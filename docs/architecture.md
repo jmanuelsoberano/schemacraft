@@ -6,46 +6,57 @@ shape the codebase as short architecture decision records (ADRs). Each one state
 the reason; alternatives appear only when they were seriously considered.
 
 The product requirements live in [PRD_SchemaCraft_v1.md](./PRD_SchemaCraft_v1.md) and the user
-experience bar in [ux-principles.md](./ux-principles.md).
+experience bar in [ux-principles.md](./ux-principles.md). The
+[architecture page](https://jmanuelsoberano.github.io/schemacraft/architecture/) shows the same
+structure as an interactive map: layers, components, data stores, flows and how to add a feature
+(ADR-030).
 
 ## Layout
 
 ```
 schemacraft/
-├── crates/schemacraft-core/   Rust library: domain model, inspectors, project files, diff engine
+├── crates/schemacraft-core/   Rust library, free of Tauri: everything the app knows and does
 │   ├── src/model/             pure schema types (tables, columns, keys, snapshot)
-│   ├── src/inspectors/        DatabaseInspector trait, errors, progress, SQL Server implementation
+│   ├── src/inspectors/        DatabaseInspector strategy, errors, progress, SQL Server implementation
 │   ├── src/project/           .scraft documents, saved connections, canvas state, atomic JSON files
 │   ├── src/diff/              comparison of two snapshots behind "refresh from database"
 │   ├── src/preferences/       connection history and recent projects (per-user JSON file)
 │   ├── src/credentials/       CredentialStore strategy: Windows Credential Manager, memory
+│   ├── src/export/            SVG to PNG and PDF rendering with bundled fonts
+│   ├── assets/fonts/          TTF fonts embedded in the exports
 │   └── tests/                 integration tests and SQL fixtures (run against a real server)
-├── src-tauri/                 Rust binary: Tauri host, IPC commands, logging, configuration
+├── src-tauri/                 Rust binary: Tauri host, IPC commands, job registry, logging, configuration
 ├── src/                       React + TypeScript frontend
-│   ├── app/                   application shell, actions, brand, global styles
+│   ├── app/                   composition root: shell, actions, brand, global styles, dev hooks
 │   │   ├── actions/           action registry, keyboard shortcuts, action buttons
-│   │   ├── shell/             top bar, entities sidebar, diagram canvas, status bar
+│   │   ├── shell/             top bar, entities sidebar, diagram canvas, status bar, shell guards
 │   │   └── styles/            design tokens and base styles
 │   ├── features/              one folder per product capability
+│   │   ├── about/             About dialog
+│   │   ├── canvas/            entity nodes, relation edges, layouts and their worker, geometry
 │   │   ├── connection/        connection dialog, history, flow store, progress, change review
+│   │   ├── export/            export dialog and store, SVG renderer, standalone HTML packaging
+│   │   ├── palette/           command palette
 │   │   ├── preferences/       mirror of the preferences file: history and recent projects
-│   │   ├── project/           open project store, open/save flows, unsaved-changes guard
+│   │   ├── project/           open project store, open/save flows, unsaved-changes guard, undo
 │   │   └── schema/            entity list helpers and data type formatting
-│   └── shared/                cross-cutting modules
-│       ├── contracts/         TypeScript types generated from Rust (ts-rs)
-│       ├── i18n/              message catalogues and translation hook
-│       ├── ipc/               typed wrappers over Tauri `invoke` and native dialogs; preview backends
-│       ├── settings/          persisted preferences (theme, language, layout)
-│       └── ui/                accessible UI primitives (Radix based)
+│   ├── shared/                cross-cutting modules
+│   │   ├── contracts/         TypeScript types generated from Rust (ts-rs)
+│   │   ├── i18n/              message catalogues and translation hook
+│   │   ├── ipc/               typed wrappers over Tauri `invoke` and native dialogs; preview backends
+│   │   ├── settings/          per-window UI settings (theme, language, sidebar)
+│   │   └── ui/                accessible UI primitives (Radix based)
+│   └── viewer/                standalone viewer embedded in exported HTML files
 ├── assets/brand/              source artwork for the application icon
-├── scripts/                   developer scripts (SQL Server container for tests)
-├── docs/                      PRD, architecture, UX principles
-└── .github/workflows/         continuous integration
+├── scripts/                   SQL Server container, font preparation, release smoke test, page check
+├── docs/                      PRD, decision records, UX principles, release checklist
+│   └── architecture/          interactive architecture page and its model (GitHub Pages)
+└── .github/workflows/         CI on every pull request; release on every tag
 ```
 
 Dependencies only point inwards: `src-tauri` depends on `schemacraft-core`, never the other way
-round; the frontend talks to Rust exclusively through IPC commands; `shared/` modules never import
-from `app/`.
+round; the frontend talks to Rust exclusively through IPC commands wrapped in `src/shared/ipc`;
+`shared/` modules never import from `app/` or `features/`.
 
 ## Decisions
 
@@ -447,6 +458,22 @@ SchemaCraft runs on a growing share of Windows 11 machines, and a certificate in
 individual costs a yearly fee and a hardware token. The bootstrapper was the only third-party
 binary in the installer, and leaving the runtime to Windows also keeps the installer from
 contacting Microsoft on its own.
+
+### ADR-030: The architecture page is generated from a checked model
+
+`docs/architecture/index.html` renders `docs/architecture/model.json`: layers and components, the
+dependency edges between them, where every piece of data lives, the main flows, the IPC commands,
+the patterns, the recipes for adding a feature, the known deviations and a glossary, in English
+and Spanish. GitHub Pages publishes the `docs/` folder. The model carries a manifest of the IPC
+commands, feature folders, core modules, IPC backends and the number of decision records;
+`scripts/check-architecture-page.mjs` compares it with the code in CI and also checks that every
+component path exists and that both languages share their ids. A change that adds a command,
+a feature folder, a core module or a backend, or a new decision record, updates the model in the
+same pull request; the check fails otherwise.
+
+Why: a diagram drawn by hand drifts from the code within weeks. Keeping the facts in data, the
+page as a renderer and a CI check on the parts that can be read from the code keeps the map
+honest without a build step, and the decision records stay the place for the reasons.
 
 ## Milestones
 

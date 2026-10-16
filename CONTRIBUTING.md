@@ -23,7 +23,7 @@ frontend alone in a browser with simulated backends.
 CI runs these on every pull request, and they must pass:
 
 ```bash
-npm run format:check && npm run lint && npm run typecheck && npm test
+npm run format:check && npm run lint && npm run typecheck && npm test && npm run docs:check
 ```
 
 ```bash
@@ -42,7 +42,10 @@ on integration tests.
 - Commit messages follow Conventional Commits: `feat(canvas): ...`, `fix(export): ...`,
   `docs: ...`, `chore(ci): ...`.
 - Decisions that shape the architecture are recorded as ADRs in
-  [docs/architecture.md](docs/architecture.md). UX work follows
+  [docs/architecture.md](docs/architecture.md). The
+  [architecture page](https://jmanuelsoberano.github.io/schemacraft/architecture/) shows the
+  layers, flows and recipes for adding a feature; follow the recipe for the kind of change you
+  make, so every feature is built the same way. UX work follows
   [docs/ux-principles.md](docs/ux-principles.md), including its definition of done: both
   languages, both themes, keyboard access.
 
@@ -50,6 +53,10 @@ on integration tests.
 
 - Branch from `main`, keep the pull request focused, and describe what changed and how it was
   verified.
+- Keep the documentation in the same pull request as the code it describes:
+  `docs/architecture/model.json` when a component, command, data store, flow or recipe changes
+  (`npm run docs:check` names what is missing; `npm run docs:serve` previews the page), an ADR
+  for a new decision, and the PRD when the scope of the product changes.
 - `main` only accepts merge commits through pull requests with green CI; nobody pushes to it
   directly.
 - A maintainer reviews and merges. Releases are cut by tagging `main`; see the README section on
