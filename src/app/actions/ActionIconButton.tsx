@@ -20,7 +20,11 @@ export function ActionIconButton({ action, isActive }: ActionIconButtonProps) {
       shortcutHint={
         action.shortcut ? formatShortcut(action.shortcut, isApplePlatform()) : undefined
       }
-      description={action.isAvailable ? undefined : t("common.comingSoon")}
+      description={
+        action.isAvailable || action.unavailableReason === undefined
+          ? undefined
+          : t(action.unavailableReason)
+      }
       disabled={!action.isAvailable}
       isActive={isActive}
       onClick={action.run}

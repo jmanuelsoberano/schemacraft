@@ -3,11 +3,7 @@ import { persist } from "zustand/middleware";
 
 import { usePreferencesStore } from "@/features/preferences/preferencesStore";
 import { useProjectStore } from "@/features/project/projectStore";
-import {
-  savedConnectionToDraft,
-  savedConnectionToSettings,
-  toSavedConnection,
-} from "@/features/project/savedConnection";
+import { toSavedConnection } from "@/features/project/savedConnection";
 import type {
   ConnectionSettings,
   InspectionEvent,
@@ -24,6 +20,7 @@ import { inspectorErrorKind, toOperationError } from "@/shared/ipc/operationErro
 import type { OperationError } from "@/shared/ipc/operationError";
 import { getProjectBackend } from "@/shared/ipc/projectBackend";
 
+import { savedConnectionToDraft, savedConnectionToSettings } from "./fromSavedConnection";
 import { draftToInspectionOptions, draftToSettings, emptyConnectionDraft } from "./connectionDraft";
 import type { ConnectionDraft, DraftValidationError } from "./connectionDraft";
 

@@ -8,4 +8,4 @@ import type { ProjectErrorKind } from "../project/ProjectErrorKind";
 /**
  * Classification of a command failure.
  */
-export type CommandErrorKind = { "type": "inspector", "value": InspectorErrorKind } | { "type": "project", "value": ProjectErrorKind } | { "type": "preferences", "value": PreferencesErrorKind } | { "type": "credential", "value": CredentialErrorKind } | { "type": "export", "value": ExportErrorKind } | { "type": "unknownJob" } | { "type": "invalidArgument" };
+export type CommandErrorKind = { "type": "inspector", "value": InspectorErrorKind } | { "type": "project", "value": ProjectErrorKind } | { "type": "preferences", "value": PreferencesErrorKind } | { "type": "credential", "value": CredentialErrorKind } | { "type": "export", "value": ExportErrorKind } | { "type": "unknownJob" } | { "type": "invalidArgument" } | { "type": "unexpected" };

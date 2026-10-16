@@ -1,5 +1,5 @@
-import { Logo } from "@/app/brand/Logo";
-import { DEVELOPER_NAME, REPOSITORY_URL } from "@/app/brand/credits";
+import { Logo } from "@/shared/brand/Logo";
+import { DEVELOPER_NAME, REPOSITORY_URL } from "@/shared/brand/credits";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { useAppInfo } from "@/shared/ipc/useAppInfo";
 import { Button } from "@/shared/ui/Button";

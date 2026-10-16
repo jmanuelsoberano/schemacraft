@@ -3,7 +3,6 @@ import type {
   DetailLevel,
   NodeState,
   Point,
-  QualifiedName,
   SchemaSnapshot,
 } from "@/shared/contracts";
 
@@ -18,10 +17,6 @@ import type { PlacedBox } from "./layouts/overlaps";
  */
 
 const GRID_ROW_HEIGHT = nodeHeight(6);
-
-function sameName(left: QualifiedName, right: QualifiedName): boolean {
-  return left.schema === right.schema && left.name === right.name;
-}
 
 /**
  * Gives every table and view of the snapshot a node state. Missing ones get grid positions
@@ -191,5 +186,3 @@ export function nodesBounds(
   }
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
-
-export { sameName };

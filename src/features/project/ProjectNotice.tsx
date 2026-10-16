@@ -1,4 +1,4 @@
-import { describeOperationError } from "@/features/connection/operationErrorMessages";
+import { describeOperationError } from "@/shared/errors/describeOperationError";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { Alert } from "@/shared/ui/Alert";
 import { Button } from "@/shared/ui/Button";
@@ -17,9 +17,7 @@ export function ProjectNotice() {
     return null;
   }
 
-  const presentation = describeOperationError(failure.error, translator, {
-    authenticationMode: "sqlLogin",
-  });
+  const presentation = describeOperationError(failure.error, translator);
 
   return (
     <div className={styles.notice}>

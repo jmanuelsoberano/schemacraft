@@ -87,7 +87,11 @@ export const englishMessages = {
 
   "toolbar.connect": "Connect",
 
-  "common.comingSoon": "Available in an upcoming milestone",
+  "action.unavailable.noProject": "Open a project or connect to a database first",
+  "action.unavailable.layoutRunning": "A layout is being calculated",
+  "action.unavailable.nothingHidden": "No table is hidden in the diagram",
+  "action.unavailable.nothingToUndo": "Nothing to undo",
+  "action.unavailable.nothingToRedo": "Nothing to redo",
 
   "menu.theme": "Theme",
   "theme.system": "System",
@@ -137,7 +141,6 @@ export const englishMessages = {
   "canvas.menu.isolateTwo": "Isolate with relationships, two levels",
   "canvas.menu.showAll": "Show all entities",
   "canvas.layout.menu": "Automatic layout",
-  "canvas.layout.needsProject": "Open a project or connect to a database first",
   "canvas.layout.running": "Laying out the diagram…",
 
   "palette.title": "Command palette",
@@ -256,6 +259,7 @@ export const englishMessages = {
   "project.unsavedChanges": "Unsaved changes",
   "project.dialog.open": "Open project",
   "project.dialog.save": "Save project as",
+  "project.dialog.fileType": "SchemaCraft project",
   "project.discard.title": "Discard unsaved changes?",
   "project.discard.description": "{name} has changes that are not saved yet.",
   "project.discard.note": "Save the project first if you want to keep them.",
@@ -345,6 +349,9 @@ export const englishMessages = {
     "The history may not survive a restart. Check the permissions of the configuration folder.",
   "error.preferences.corrupt.title": "Preferences are damaged",
   "error.preferences.corrupt.hint": "The file is replaced on the next change.",
+  "error.preferences.unsupportedFormatVersion.title": "Newer preferences format",
+  "error.preferences.unsupportedFormatVersion.hint":
+    "A newer SchemaCraft saved them, so they are left untouched and this version keeps no history.",
 
   "connection.field.rememberPassword": "Remember password",
   "connection.field.rememberPassword.description":

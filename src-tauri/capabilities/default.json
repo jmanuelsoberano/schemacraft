@@ -8,8 +8,12 @@
     "core:window:allow-set-theme",
     "core:window:allow-set-title",
     "core:window:allow-destroy",
-    "dialog:default",
-    "opener:default",
-    "opener:allow-reveal-item-in-dir"
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "opener:allow-reveal-item-in-dir",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://reactflow.dev/*" }]
+    }
   ]
 }

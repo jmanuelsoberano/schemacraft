@@ -5,6 +5,35 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
+/*
+ * Layer boundaries (docs/architecture.md, ADR-031): app -> features -> shared, the viewer reuses
+ * features but never app, and only src/shared/ipc talks to the Tauri API. One rule per folder,
+ * because a later no-restricted-imports entry replaces an earlier one for the same file.
+ */
+const forbid = {
+  app: {
+    group: ["@/app/*"],
+    message: "Only app/ composes the application; import from features/ or shared/.",
+  },
+  features: {
+    group: ["@/features/*"],
+    message: "shared/ sits below the features; move the code down or pass it in.",
+  },
+  viewer: {
+    group: ["@/viewer/*"],
+    message: "The standalone viewer is a separate bundle; nothing imports it.",
+  },
+  tauri: {
+    group: ["@tauri-apps/*"],
+    message: "Only src/shared/ipc calls the Tauri API; add or use a wrapper there.",
+  },
+};
+const layer = (files, patterns, ignores = []) => ({
+  files,
+  ignores,
+  rules: { "no-restricted-imports": ["error", { patterns }] },
+});
+
 export default tseslint.config(
   {
     ignores: ["dist", "node_modules", "src-tauri", "target", "src/shared/contracts/generated"],
@@ -30,5 +59,14 @@ export default tseslint.config(
       "@typescript-eslint/restrict-template-expressions": ["error", { allowNumber: true }],
     },
   },
+  layer(["src/app/**/*.{ts,tsx}", "src/main.tsx"], [forbid.viewer, forbid.tauri]),
+  layer(["src/features/**/*.{ts,tsx}"], [forbid.app, forbid.viewer, forbid.tauri]),
+  layer(["src/shared/ipc/**/*.{ts,tsx}"], [forbid.app, forbid.features, forbid.viewer]),
+  layer(
+    ["src/shared/**/*.{ts,tsx}"],
+    [forbid.app, forbid.features, forbid.viewer, forbid.tauri],
+    ["src/shared/ipc/**"],
+  ),
+  layer(["src/viewer/**/*.{ts,tsx}"], [forbid.app, forbid.tauri]),
   prettier,
 );

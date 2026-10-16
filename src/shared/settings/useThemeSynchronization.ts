@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-import { applyWindowTheme } from "@/shared/ipc/windowTheme";
+import { applyWindowTheme } from "@/shared/ipc/nativeWindow";
 
 import { useSettingsStore } from "./settingsStore";
 import { DARK_SCHEME_MEDIA_QUERY, resolveTheme } from "./theme";

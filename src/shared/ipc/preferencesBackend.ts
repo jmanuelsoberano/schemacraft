@@ -1,9 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
-
 import type { Preferences, SavedConnection } from "@/shared/contracts";
 
 import { createBackendResolver } from "./backendResolver";
-import { ipcUnavailableError, toOperationError } from "./operationError";
+import { invokeCommand } from "./invokeCommand";
+import { ipcUnavailableError } from "./operationError";
 
 /** Connection history and recent projects, kept by the Rust side in the user's profile. */
 export interface PreferencesBackend {
@@ -12,14 +11,6 @@ export interface PreferencesBackend {
   forgetConnection(connection: SavedConnection): Promise<Preferences>;
   rememberProject(path: string): Promise<Preferences>;
   forgetProject(path: string): Promise<Preferences>;
-}
-
-async function invokeCommand<T>(command: string, arguments_: Record<string, unknown>): Promise<T> {
-  try {
-    return await invoke<T>(command, arguments_);
-  } catch (error: unknown) {
-    throw toOperationError(error);
-  }
 }
 
 const tauriPreferencesBackend: PreferencesBackend = {

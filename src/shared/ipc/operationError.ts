@@ -1,8 +1,7 @@
 import type { CommandError, CommandErrorKind, InspectorErrorKind } from "@/shared/contracts";
 
-/** Failures the frontend can raise on its own, next to the kinds the Rust side reports. */
-export type OperationErrorKind =
-  CommandErrorKind | { type: "ipcUnavailable" } | { type: "unexpected" };
+/** The kinds the Rust side reports, plus the one only the frontend can detect. */
+export type OperationErrorKind = CommandErrorKind | { type: "ipcUnavailable" };
 
 /** Normalised failure of an IPC call, safe to show and to translate. */
 export class OperationError extends Error {

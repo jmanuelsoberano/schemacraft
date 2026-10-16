@@ -11,11 +11,15 @@
 //! * [`credentials`]: remembered passwords, kept by the operating system credential store.
 //! * [`export`]: SVG, HTML, PNG and PDF files from a rendered diagram, with bundled fonts.
 //!
+//! A crate-private `fs` module holds the atomic file writes the persisting modules share, so
+//! none of them depends sideways on another.
+//!
 //! A module is added to the crate only once it carries real behaviour.
 
 pub mod credentials;
 pub mod diff;
 pub mod export;
+mod fs;
 pub mod inspectors;
 pub mod model;
 pub mod preferences;

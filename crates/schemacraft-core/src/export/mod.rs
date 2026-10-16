@@ -19,7 +19,7 @@ pub use error::{ExportError, ExportErrorKind};
 pub use fonts::{MONO_FAMILY, SANS_FAMILY};
 pub use render::PNG_SCALES;
 
-use crate::project::write_bytes_atomically;
+use crate::fs::write_bytes_atomically;
 
 /// Longest side a PNG may have, in pixels; larger rasters would exhaust memory.
 pub const MAX_RASTER_SIDE: u16 = 16_384;

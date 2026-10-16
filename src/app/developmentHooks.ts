@@ -2,7 +2,7 @@ import * as canvasActions from "@/features/canvas/canvasActions";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { useConnectionStore } from "@/features/connection/connectionStore";
 import { useExportStore } from "@/features/export/exportStore";
-import { usePaletteStore } from "@/features/palette/paletteStore";
+import { usePaletteStore } from "@/app/palette/paletteStore";
 import { usePreferencesStore } from "@/features/preferences/preferencesStore";
 import { useProjectStore } from "@/features/project/projectStore";
 import { useSettingsStore } from "@/shared/settings/settingsStore";

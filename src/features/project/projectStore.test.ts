@@ -1,3 +1,4 @@
+import type { FileDialogLabels } from "@/shared/ipc/projectBackend";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
@@ -9,8 +10,9 @@ import type {
 import { OperationError } from "@/shared/ipc/operationError";
 
 const projectBackend = vi.hoisted(() => ({
-  pickProjectToOpen: vi.fn<(title: string) => Promise<string | null>>(),
-  pickProjectToSave: vi.fn<(title: string, suggested: string) => Promise<string | null>>(),
+  pickProjectToOpen: vi.fn<(labels: FileDialogLabels) => Promise<string | null>>(),
+  pickProjectToSave:
+    vi.fn<(labels: FileDialogLabels, suggested: string) => Promise<string | null>>(),
   readProject: vi.fn<(path: string) => Promise<Project>>(),
   writeProject: vi.fn<(path: string, content: ProjectContent) => Promise<Project>>(),
   computeSchemaDiff: vi.fn(),
@@ -145,7 +147,7 @@ describe("saving", () => {
     await useProjectStore.getState().saveProject();
 
     expect(projectBackend.pickProjectToSave).toHaveBeenCalledWith(
-      "Save project as",
+      { title: "Save project as", fileTypeName: "SchemaCraft project" },
       "Northwind.scraft",
     );
     const { project } = useProjectStore.getState();

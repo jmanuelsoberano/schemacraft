@@ -1,10 +1,11 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 import type { ExportEvent, ExportOutcome, ExportRequest } from "@/shared/contracts";
 
 import { createBackendResolver } from "./backendResolver";
+import { invokeCommand } from "./invokeCommand";
 import { ipcUnavailableError, toOperationError } from "./operationError";
 
 /** A file type offered by the save dialog. */
@@ -30,14 +31,6 @@ export interface ExportBackend {
   cancelExport(jobId: string): Promise<void>;
   /** Shows the written file in the system file manager. */
   revealInFolder(path: string): Promise<void>;
-}
-
-async function invokeCommand<T>(command: string, arguments_: Record<string, unknown>): Promise<T> {
-  try {
-    return await invoke<T>(command, arguments_);
-  } catch (error: unknown) {
-    throw toOperationError(error);
-  }
 }
 
 const tauriExportBackend: ExportBackend = {

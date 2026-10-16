@@ -1,4 +1,4 @@
-import { isTauri } from "@tauri-apps/api/core";
+import { isDesktopRuntime } from "@/shared/ipc/runtime";
 import { useEffect } from "react";
 
 import type { ActionId, AppAction } from "./action";
@@ -36,7 +36,7 @@ function isBlockedByDialog(actionId: ActionId): boolean {
 export function useKeyboardShortcuts(actions: readonly AppAction[]): void {
   useEffect(() => {
     const applePlatform = isApplePlatform();
-    const insideTauri = isTauri();
+    const insideTauri = isDesktopRuntime();
     const allowDevtools = import.meta.env.DEV;
 
     const handleKeyDown = (event: KeyboardEvent) => {

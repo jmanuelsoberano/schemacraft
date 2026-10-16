@@ -1,5 +1,10 @@
 name: CI
 
+# Pull requests run only what their changes need (scripts/ci-changes.sh): a docs-only change
+# skips the Rust gates, the build and the smoke test; a change outside the core skips the SQL
+# Server integration tests. Pushes to main run everything, which also keeps the build cache warm
+# for the next pull request. Each job classifies on its own, so the required checks never report
+# a skipped job, which GitHub would count as passed.
 on:
   push:
     branches: [main]
@@ -24,6 +29,12 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Classify the changes
+        id: changes
+        run: bash scripts/ci-changes.sh
 
       - uses: actions/setup-node@v4
         with:
@@ -31,9 +42,11 @@ jobs:
           cache: npm
 
       - name: Install the Rust toolchain pinned in rust-toolchain.toml
+        if: steps.changes.outputs.code == 'true'
         run: rustup toolchain install
 
       - uses: Swatinem/rust-cache@v2
+        if: steps.changes.outputs.code == 'true'
 
       - run: npm ci
 
@@ -46,19 +59,25 @@ jobs:
           npm run docs:check
 
       - name: Rust quality gates
+        if: steps.changes.outputs.code == 'true'
         run: |
           cargo fmt --all --check
           cargo clippy --workspace --all-targets -- -D warnings
           cargo test --workspace
 
       - name: Generated TypeScript contracts are up to date
+        if: steps.changes.outputs.code == 'true'
         run: git diff --exit-code -- src/shared/contracts/generated
 
-      - name: Build portable executable
-        run: npm run tauri build -- --no-bundle
+      - name: Build the portable executable
+        # The ci profile skips link-time optimisation: half the build time, same behaviour.
+        # Releases are built with the full release profile by release.yml.
+        if: steps.changes.outputs.code == 'true'
+        run: npm run tauri build -- --no-bundle -- --profile ci
 
       - name: Ensure the WebView2 runtime is installed
         # Hosted Windows runners ship Edge but not always the WebView2 runtime the app needs.
+        if: steps.changes.outputs.code == 'true'
         shell: pwsh
         run: |
           $key = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
@@ -73,16 +92,18 @@ jobs:
           Write-Host "WebView2 runtime $version installed"
 
       - name: Smoke-test the portable executable
-        run: node scripts/smoke-test-release.mjs target/release/schemacraft.exe smoke-test
+        if: steps.changes.outputs.code == 'true'
+        run: node scripts/smoke-test-release.mjs target/ci/schemacraft.exe smoke-test
 
       - uses: actions/upload-artifact@v4
+        if: steps.changes.outputs.code == 'true'
         with:
           name: schemacraft-windows-x64
-          path: target/release/schemacraft.exe
+          path: target/ci/schemacraft.exe
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.changes.outputs.code == 'true'
         with:
           name: smoke-test-screenshots
           path: smoke-test
@@ -113,11 +134,20 @@ jobs:
       SCHEMACRAFT_TEST_MSSQL_PASSWORD: "SchemaCraft!Ci2026"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Classify the changes
+        id: changes
+        run: bash scripts/ci-changes.sh
 
       - name: Install the Rust toolchain pinned in rust-toolchain.toml
+        if: steps.changes.outputs.core == 'true'
         run: rustup toolchain install
 
       - uses: Swatinem/rust-cache@v2
+        if: steps.changes.outputs.core == 'true'
 
       - name: Inspector integration tests
+        if: steps.changes.outputs.core == 'true'
         run: cargo test -p schemacraft-core --test sqlserver_integration -- --nocapture

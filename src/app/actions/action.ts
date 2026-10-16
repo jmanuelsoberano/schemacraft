@@ -37,8 +37,10 @@ export interface AppAction {
   labelKey: MessageKey;
   icon: LucideIcon;
   shortcut?: Shortcut;
-  /** False while the feature behind the action has not shipped; the UI explains why. */
+  /** False while the action cannot run right now, for example without an open project. */
   isAvailable: boolean;
+  /** Why the action is unavailable, shown in its tooltip; set whenever `isAvailable` is false. */
+  unavailableReason?: MessageKey;
   /** Leave the shortcut to the focused text field, e.g. undo inside the search box. */
   skipWhenEditing?: boolean;
   run: () => void;

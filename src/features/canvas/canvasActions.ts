@@ -133,10 +133,3 @@ export function setCollapsedForAll(isCollapsed: boolean): void {
 export function setCollapsed(keys: readonly string[], isCollapsed: boolean): void {
   useProjectStore.getState().updateCanvas((canvas) => withCollapsed(canvas, keys, isCollapsed));
 }
-
-/** Whether any entity is hidden on the open project's canvas. */
-export function hasHiddenEntities(): boolean {
-  return (
-    useProjectStore.getState().project?.content.canvas.nodes.some((node) => node.isHidden) ?? false
-  );
-}

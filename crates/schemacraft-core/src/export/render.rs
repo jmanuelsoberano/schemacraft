@@ -81,7 +81,7 @@ pub(crate) fn to_pdf(tree: &Tree) -> Result<Vec<u8>, ExportError> {
 }
 
 /// Rounds a CSS length up to whole pixels; huge values saturate instead of overflowing.
-#[allow(
+#[expect(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "float to integer casts saturate, and negative lengths do not occur"

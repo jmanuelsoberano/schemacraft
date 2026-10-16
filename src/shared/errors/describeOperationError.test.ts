@@ -5,7 +5,7 @@ import { messageCatalogs } from "@/shared/i18n/messages/catalogs";
 import type { Translator } from "@/shared/i18n/useI18n";
 import { OperationError } from "@/shared/ipc/operationError";
 
-import { describeOperationError } from "./operationErrorMessages";
+import { describeOperationError } from "./describeOperationError";
 
 const english: Translator = {
   locale: "en",
@@ -22,7 +22,7 @@ const rejectedLogin = new OperationError(
 describe("describeOperationError", () => {
   it("advises on the login name and password when a SQL login is rejected", () => {
     const presentation = describeOperationError(rejectedLogin, english, {
-      authenticationMode: "sqlLogin",
+      usesIntegratedAuthentication: false,
     });
     expect(presentation.title).toBe("The login was rejected");
     expect(presentation.hint).toContain("login name and password");
@@ -32,7 +32,7 @@ describe("describeOperationError", () => {
 
   it("advises on the Windows account when integrated authentication is rejected", () => {
     const presentation = describeOperationError(rejectedLogin, english, {
-      authenticationMode: "integrated",
+      usesIntegratedAuthentication: true,
     });
     expect(presentation.title).toBe("The login was rejected");
     expect(presentation.hint).toContain("Windows account");
@@ -45,7 +45,7 @@ describe("describeOperationError", () => {
       "the server certificate could not be verified",
     );
     const presentation = describeOperationError(certificate, english, {
-      authenticationMode: "integrated",
+      usesIntegratedAuthentication: true,
     });
     expect(presentation.title).toBe("The server certificate is not trusted");
     expect(presentation.offersCertificateTrust).toBe(true);
@@ -54,7 +54,7 @@ describe("describeOperationError", () => {
   it("describes failures that do not come from the inspector", () => {
     const unknownJob = new OperationError({ type: "unknownJob" }, "no such job");
     const presentation = describeOperationError(unknownJob, english, {
-      authenticationMode: "sqlLogin",
+      usesIntegratedAuthentication: false,
     });
     expect(presentation.title).toBe("Nothing to cancel");
     expect(presentation.hint).toBe("The operation had already finished.");

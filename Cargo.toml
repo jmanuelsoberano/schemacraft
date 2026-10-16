@@ -66,6 +66,13 @@ missing_panics_doc = "allow"
 doc_markdown = "allow"
 
 # Size and speed oriented release profile (https://tauri.app/concept/size/).
+# Pull-request builds for the smoke test: same code and features as a release, without link-time
+# optimisation, so CI stays fast. Releases are still built and smoke-tested with [profile.release].
+[profile.ci]
+inherits = "release"
+lto = false
+codegen-units = 16
+
 [profile.release]
 codegen-units = 1
 lto = true

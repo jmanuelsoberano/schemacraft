@@ -11,7 +11,7 @@ import { ConnectionForm } from "./ConnectionForm";
 import { InspectionProgressPanel } from "./InspectionProgressPanel";
 import { ReviewChangesPanel } from "./ReviewChangesPanel";
 import { useConnectionStore } from "./connectionStore";
-import { describeOperationError } from "./operationErrorMessages";
+import { describeOperationError } from "@/shared/errors/describeOperationError";
 import { countChanges } from "./reviewChanges";
 
 /**
@@ -116,7 +116,9 @@ export function ConnectionDialog() {
 
   const reviewFailure =
     isReviewing && failure !== null
-      ? describeOperationError(failure.error, translator, { authenticationMode })
+      ? describeOperationError(failure.error, translator, {
+          usesIntegratedAuthentication: authenticationMode === "integrated",
+        })
       : null;
 
   return (

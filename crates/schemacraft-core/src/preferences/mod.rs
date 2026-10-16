@@ -1,7 +1,8 @@
 //! User preferences that survive restarts: the connection history and the recent projects.
 //!
 //! Everything lives in one JSON file in the per-user configuration directory, written
-//! atomically like project files. Passwords are never part of it.
+//! atomically like project files. Passwords are never part of it. A file written by a newer
+//! version is refused, so an older build never overwrites what it cannot read.
 
 use std::path::Path;
 
@@ -10,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use ts_rs::TS;
 
-use crate::project::{FileError, SavedConnection, read_json_bytes, write_json_atomically};
+use crate::fs::{FileError, format_version, read_bytes, write_json_atomically};
+use crate::project::SavedConnection;
 
 /// Newest preferences format this build writes and reads.
 pub const PREFERENCES_FORMAT_VERSION: u32 = 1;
@@ -72,9 +74,10 @@ pub struct RecentProject {
 }
 
 impl Preferences {
-    /// Reads the preferences file; a missing file means defaults.
+    /// Reads the preferences file; a missing file means defaults. A file in a newer format
+    /// fails with [`PreferencesError::UnsupportedFormatVersion`].
     pub fn load(path: &Path) -> Result<Self, PreferencesError> {
-        let bytes = match read_json_bytes(path) {
+        let bytes = match read_bytes(path) {
             Ok(bytes) => bytes,
             Err(FileError::NotFound) => return Ok(Self::default()),
             Err(error) => {
@@ -84,19 +87,21 @@ impl Preferences {
                 });
             }
         };
-        serde_json::from_slice(&bytes).map_err(|error| PreferencesError::Corrupt {
+        let corrupt = |error: serde_json::Error| PreferencesError::Corrupt {
             path: path.display().to_string(),
             details: error.to_string(),
-        })
-    }
-
-    /// Reads the preferences file, falling back to defaults when it cannot be used. Losing the
-    /// history is better than refusing to start; the problem is logged.
-    pub fn load_or_default(path: &Path) -> Self {
-        Self::load(path).unwrap_or_else(|error| {
-            tracing::warn!(%error, "preferences could not be loaded; starting from defaults");
-            Self::default()
-        })
+        };
+        let found = format_version(&bytes)
+            .map_err(corrupt)?
+            .unwrap_or(PREFERENCES_FORMAT_VERSION);
+        if found > PREFERENCES_FORMAT_VERSION {
+            return Err(PreferencesError::UnsupportedFormatVersion {
+                path: path.display().to_string(),
+                found,
+                supported: PREFERENCES_FORMAT_VERSION,
+            });
+        }
+        serde_json::from_slice(&bytes).map_err(corrupt)
     }
 
     /// Writes the preferences file atomically.
@@ -189,6 +194,18 @@ pub enum PreferencesError {
         /// Parser message.
         details: String,
     },
+    /// The file was written by a newer SchemaCraft; it is left untouched.
+    #[error(
+        "preferences in {path} use format {found}; this version reads up to format {supported}"
+    )]
+    UnsupportedFormatVersion {
+        /// Path of the file.
+        path: String,
+        /// Version declared by the file.
+        found: u32,
+        /// Newest version this build understands.
+        supported: u32,
+    },
 }
 
 impl PreferencesError {
@@ -198,6 +215,7 @@ impl PreferencesError {
             Self::Read { .. } => PreferencesErrorKind::Read,
             Self::Write { .. } => PreferencesErrorKind::Write,
             Self::Corrupt { .. } => PreferencesErrorKind::Corrupt,
+            Self::UnsupportedFormatVersion { .. } => PreferencesErrorKind::UnsupportedFormatVersion,
         }
     }
 }
@@ -213,6 +231,8 @@ pub enum PreferencesErrorKind {
     Write,
     /// See [`PreferencesError::Corrupt`].
     Corrupt,
+    /// See [`PreferencesError::UnsupportedFormatVersion`].
+    UnsupportedFormatVersion,
 }
 
 #[cfg(test)]
@@ -335,7 +355,7 @@ mod tests {
     }
 
     #[test]
-    fn damaged_files_are_reported_and_fall_back_to_defaults() {
+    fn damaged_files_are_reported() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("preferences.json");
         fs::write(&path, "{ not json").unwrap();
@@ -344,7 +364,23 @@ mod tests {
             Preferences::load(&path),
             Err(PreferencesError::Corrupt { .. })
         ));
-        assert_eq!(Preferences::load_or_default(&path), Preferences::default());
+    }
+
+    #[test]
+    fn newer_formats_are_refused() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("preferences.json");
+        let newer = PREFERENCES_FORMAT_VERSION + 1;
+        fs::write(&path, format!(r#"{{ "formatVersion": {newer} }}"#)).unwrap();
+
+        assert_eq!(
+            Preferences::load(&path),
+            Err(PreferencesError::UnsupportedFormatVersion {
+                path: path.display().to_string(),
+                found: newer,
+                supported: PREFERENCES_FORMAT_VERSION,
+            })
+        );
     }
 
     #[test]

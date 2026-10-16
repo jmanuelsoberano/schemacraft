@@ -1,8 +1,7 @@
-import { isTauri } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect } from "react";
 
 import { useI18n } from "@/shared/i18n/useI18n";
+import { closeWindow, setWindowTitle, watchWindowClose } from "@/shared/ipc/nativeWindow";
 
 import { projectDisplayName } from "./projectPaths";
 import { useProjectStore } from "./projectStore";
@@ -18,51 +17,32 @@ export function useProjectWindow(): void {
   const isDirty = useProjectStore((state) => state.project?.isDirty ?? false);
 
   useEffect(() => {
-    if (!isTauri()) {
-      return;
-    }
     const name = projectPath === null ? t("project.untitled") : projectDisplayName(projectPath);
     const marker = isDirty ? "• " : "";
     const title = hasProject ? `${marker}${name} – ${t("app.name")}` : t("app.name");
-    getCurrentWindow()
-      .setTitle(title)
-      .catch((error: unknown) => {
-        console.warn("Could not update the window title", error);
-      });
+    void setWindowTitle(title);
   }, [projectPath, hasProject, isDirty, t]);
 
   useEffect(() => {
-    if (!isTauri()) {
-      return;
-    }
     let unlisten: (() => void) | undefined;
     let isDisposed = false;
 
-    getCurrentWindow()
-      .onCloseRequested((event) => {
-        const { project, guardUnsavedChanges } = useProjectStore.getState();
-        if (project?.isDirty !== true) {
-          return;
-        }
-        event.preventDefault();
-        guardUnsavedChanges(() => {
-          getCurrentWindow()
-            .destroy()
-            .catch((error: unknown) => {
-              console.warn("Could not close the window", error);
-            });
-        });
-      })
-      .then((dispose) => {
-        if (isDisposed) {
-          dispose();
-        } else {
-          unlisten = dispose;
-        }
-      })
-      .catch((error: unknown) => {
-        console.warn("Could not watch the window close request", error);
+    void watchWindowClose(() => {
+      const { project, guardUnsavedChanges } = useProjectStore.getState();
+      if (project?.isDirty !== true) {
+        return false;
+      }
+      guardUnsavedChanges(() => {
+        void closeWindow();
       });
+      return true;
+    }).then((dispose) => {
+      if (isDisposed) {
+        dispose();
+      } else {
+        unlisten = dispose;
+      }
+    });
 
     return () => {
       isDisposed = true;

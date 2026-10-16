@@ -9,8 +9,6 @@ import type { MessageKey } from "@/shared/i18n/messages/en";
 import type { Translator } from "@/shared/i18n/useI18n";
 import type { OperationError } from "@/shared/ipc/operationError";
 
-import type { AuthenticationMode } from "./connectionDraft";
-
 type ErrorName =
   | InspectorErrorKind
   | `project.${ProjectErrorKind}`
@@ -33,7 +31,8 @@ export interface ErrorPresentation {
 
 /** What the user was attempting, so the guidance can match it. */
 export interface ErrorContext {
-  authenticationMode: AuthenticationMode;
+  /** True when the failed operation signed in with the Windows account. */
+  usesIntegratedAuthentication?: boolean;
 }
 
 function errorName(error: OperationError): ErrorName {
@@ -63,7 +62,7 @@ function errorName(error: OperationError): ErrorName {
 export function describeOperationError(
   error: OperationError,
   translator: Translator,
-  context: ErrorContext,
+  context: ErrorContext = {},
 ): ErrorPresentation {
   const name = errorName(error);
   return {
@@ -76,7 +75,7 @@ export function describeOperationError(
 
 function hintKey(name: ErrorName, context: ErrorContext): MessageKey {
   // A rejected Windows account calls for different advice than a wrong password.
-  if (name === "authenticationFailed" && context.authenticationMode === "integrated") {
+  if (name === "authenticationFailed" && context.usesIntegratedAuthentication === true) {
     return "error.authenticationFailed.hint.integrated";
   }
   return `error.${name}.hint`;

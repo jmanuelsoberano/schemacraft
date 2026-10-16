@@ -35,8 +35,10 @@ import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { useConnectionStore } from "@/features/connection/connectionStore";
 import { useExportStore } from "@/features/export/exportStore";
 import { useProjectStore } from "@/features/project/projectStore";
-import { usePaletteStore } from "@/features/palette/paletteStore";
+import { usePaletteStore } from "@/app/palette/paletteStore";
 import { useSettingsStore } from "@/shared/settings/settingsStore";
+
+import type { MessageKey } from "@/shared/i18n/messages/en";
 
 import type { ActionsById, AppAction } from "./action";
 
@@ -70,6 +72,9 @@ export function useAppActions(): AppActions {
   const canLayout = hasProject && !isLayoutRunning;
 
   return useMemo(() => {
+    const layoutUnavailableReason: MessageKey = hasProject
+      ? "action.unavailable.layoutRunning"
+      : "action.unavailable.noProject";
     const byId: ActionsById = {
       "project.connect": {
         id: "project.connect",
@@ -98,6 +103,7 @@ export function useAppActions(): AppActions {
         icon: Save,
         shortcut: { mod: true, key: "s" },
         isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
         run: () => {
           void saveProject();
         },
@@ -108,6 +114,7 @@ export function useAppActions(): AppActions {
         icon: SaveAll,
         shortcut: { mod: true, shift: true, key: "s" },
         isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
         run: () => {
           void saveProjectAs();
         },
@@ -118,6 +125,7 @@ export function useAppActions(): AppActions {
         icon: RefreshCw,
         shortcut: { key: "F5" },
         isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
         run: () => {
           void refreshFromDatabase();
         },
@@ -128,6 +136,7 @@ export function useAppActions(): AppActions {
         icon: Workflow,
         shortcut: { mod: true, shift: true, key: "l" },
         isAvailable: canLayout,
+        unavailableReason: canLayout ? undefined : layoutUnavailableReason,
         run: () => {
           void applyLastLayout();
         },
@@ -137,6 +146,7 @@ export function useAppActions(): AppActions {
         labelKey: "action.layoutLayered",
         icon: Network,
         isAvailable: canLayout,
+        unavailableReason: canLayout ? undefined : layoutUnavailableReason,
         run: () => {
           void applyLayout({ kind: "layered", direction: "down" });
         },
@@ -146,6 +156,7 @@ export function useAppActions(): AppActions {
         labelKey: "action.layoutLayeredHorizontal",
         icon: GitFork,
         isAvailable: canLayout,
+        unavailableReason: canLayout ? undefined : layoutUnavailableReason,
         run: () => {
           void applyLayout({ kind: "layered", direction: "right" });
         },
@@ -155,6 +166,7 @@ export function useAppActions(): AppActions {
         labelKey: "action.layoutOrganic",
         icon: Workflow,
         isAvailable: canLayout,
+        unavailableReason: canLayout ? undefined : layoutUnavailableReason,
         run: () => {
           void applyLayout({ kind: "organic" });
         },
@@ -164,6 +176,7 @@ export function useAppActions(): AppActions {
         labelKey: "action.layoutRadial",
         icon: Orbit,
         isAvailable: canLayout,
+        unavailableReason: canLayout ? undefined : layoutUnavailableReason,
         run: () => {
           void applyLayout({ kind: "radial", focusId: selectedKeys[0] ?? null });
         },
@@ -174,6 +187,7 @@ export function useAppActions(): AppActions {
         icon: Maximize2,
         shortcut: { mod: true, key: "0" },
         isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
         run: requestFit,
       },
       "diagram.showAll": {
@@ -182,6 +196,7 @@ export function useAppActions(): AppActions {
         icon: Layers,
         shortcut: { mod: true, shift: true, key: "h" },
         isAvailable: hasHidden,
+        unavailableReason: hasHidden ? undefined : "action.unavailable.nothingHidden",
         run: showAllEntities,
       },
       "diagram.collapseAll": {
@@ -189,6 +204,7 @@ export function useAppActions(): AppActions {
         labelKey: "action.collapseAll",
         icon: ChevronsDownUp,
         isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
         run: () => {
           setCollapsedForAll(true);
         },
@@ -198,6 +214,7 @@ export function useAppActions(): AppActions {
         labelKey: "action.expandAll",
         icon: ChevronsUpDown,
         isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
         run: () => {
           setCollapsedForAll(false);
         },
@@ -208,6 +225,7 @@ export function useAppActions(): AppActions {
         icon: Undo2,
         shortcut: { mod: true, key: "z" },
         isAvailable: canUndo,
+        unavailableReason: canUndo ? undefined : "action.unavailable.nothingToUndo",
         skipWhenEditing: true,
         run: undo,
       },
@@ -217,6 +235,7 @@ export function useAppActions(): AppActions {
         icon: Redo2,
         shortcut: { mod: true, key: "y" },
         isAvailable: canRedo,
+        unavailableReason: canRedo ? undefined : "action.unavailable.nothingToRedo",
         skipWhenEditing: true,
         run: redo,
       },
@@ -234,6 +253,7 @@ export function useAppActions(): AppActions {
         icon: Download,
         shortcut: { mod: true, key: "e" },
         isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
         run: () => {
           openExportDialog();
         },
@@ -245,6 +265,7 @@ export function useAppActions(): AppActions {
         icon: FileText,
         shortcut: { mod: true, key: "p" },
         isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
         run: () => {
           openExportDialog({ format: "pdf" });
         },
@@ -255,6 +276,7 @@ export function useAppActions(): AppActions {
         icon: Search,
         shortcut: { mod: true, key: "f" },
         isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
         run: focusEntitiesSearch,
       },
       "view.toggleSidebar": {

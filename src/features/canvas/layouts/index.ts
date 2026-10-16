@@ -1,5 +1,3 @@
-import type { LayoutKind } from "@/shared/contracts";
-
 import { layeredLayout } from "./layered";
 import type { ElkFactory, LayeredDirection } from "./layered";
 import type { LayoutInput, LayoutResult } from "./layoutGraph";
@@ -11,10 +9,6 @@ export type LayoutRequest =
   | { kind: "layered"; direction: LayeredDirection }
   | { kind: "organic" }
   | { kind: "radial"; focusId: string | null };
-
-export function layoutKindOf(request: LayoutRequest): Exclude<LayoutKind, "manual"> {
-  return request.kind;
-}
 
 /** Runs a layout; the layered engine is injected so tests can use the bundled ELK. */
 export function runLayout(

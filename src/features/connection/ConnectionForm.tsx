@@ -2,7 +2,6 @@ import { ShieldCheck, X } from "lucide-react";
 import type { RefObject } from "react";
 
 import { usePreferencesStore } from "@/features/preferences/preferencesStore";
-import { describeSavedConnection, savedConnectionKey } from "@/features/project/savedConnection";
 import type { EncryptionMode } from "@/shared/contracts";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { Alert } from "@/shared/ui/Alert";
@@ -16,10 +15,11 @@ import type { SelectOption } from "@/shared/ui/Select";
 import { Spinner } from "@/shared/ui/Spinner";
 import { TextField } from "@/shared/ui/TextField";
 
+import { describeSavedConnection, savedConnectionKey } from "./fromSavedConnection";
 import styles from "./ConnectionForm.module.css";
 import type { AuthenticationMode } from "./connectionDraft";
 import { useConnectionStore } from "./connectionStore";
-import { describeOperationError } from "./operationErrorMessages";
+import { describeOperationError } from "@/shared/errors/describeOperationError";
 import { toggleSchema } from "./schemaSelection";
 
 interface ConnectionFormProps {
@@ -305,7 +305,7 @@ export function ConnectionForm({ serverFieldRef, passwordFieldRef }: ConnectionF
       {failure !== null
         ? (() => {
             const presentation = describeOperationError(failure.error, translator, {
-              authenticationMode: draft.authenticationMode,
+              usesIntegratedAuthentication: draft.authenticationMode === "integrated",
             });
             return (
               <Alert

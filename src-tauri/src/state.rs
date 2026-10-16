@@ -63,12 +63,26 @@ impl Jobs {
 pub struct PreferencesStore {
     path: PathBuf,
     current: Mutex<Preferences>,
+    /// Set when the file was written by a newer version: it is never overwritten, and every
+    /// change fails with this error instead.
+    newer_file: Option<PreferencesError>,
 }
 
 impl PreferencesStore {
-    /// Loads the file at `path`, starting from defaults when it is missing or damaged.
+    /// Loads the file at `path`. A missing or damaged file starts from defaults, since losing
+    /// the history is better than refusing to start; a newer file is kept and left untouched.
     pub fn load(path: PathBuf) -> Self {
-        let current = Preferences::load_or_default(&path);
+        let (current, newer_file) = match Preferences::load(&path) {
+            Ok(preferences) => (preferences, None),
+            Err(error @ PreferencesError::UnsupportedFormatVersion { .. }) => {
+                tracing::warn!(%error, "preferences come from a newer version; leaving them untouched");
+                (Preferences::default(), Some(error))
+            }
+            Err(error) => {
+                tracing::warn!(%error, "preferences could not be loaded; starting from defaults");
+                (Preferences::default(), None)
+            }
+        };
         tracing::debug!(
             path = %path.display(),
             recent_connections = current.recent_connections.len(),
@@ -78,6 +92,7 @@ impl PreferencesStore {
         Self {
             path,
             current: Mutex::new(current),
+            newer_file,
         }
     }
 
@@ -86,15 +101,21 @@ impl PreferencesStore {
         self.guard().clone()
     }
 
-    /// Applies `change` and writes the result to disk, returning the new preferences.
+    /// Applies `change` to a copy and writes it to disk; the copy replaces the preferences in
+    /// memory only once the file holds it, so a failed write changes nothing.
     pub fn update(
         &self,
         change: impl FnOnce(&mut Preferences),
     ) -> Result<Preferences, PreferencesError> {
+        if let Some(error) = &self.newer_file {
+            return Err(error.clone());
+        }
         let mut guard = self.guard();
-        change(&mut guard);
-        guard.save(&self.path)?;
-        Ok(guard.clone())
+        let mut next = guard.clone();
+        change(&mut next);
+        next.save(&self.path)?;
+        *guard = next.clone();
+        Ok(next)
     }
 
     fn guard(&self) -> MutexGuard<'_, Preferences> {
@@ -131,7 +152,10 @@ impl AppState {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 
+    use std::fs;
+
     use chrono::Utc;
+    use schemacraft_core::preferences::PreferencesError;
 
     use super::{Jobs, PreferencesStore};
 
@@ -172,5 +196,38 @@ mod tests {
 
         let reloaded = PreferencesStore::load(path);
         assert_eq!(reloaded.current(), updated);
+    }
+
+    #[test]
+    fn a_failed_write_leaves_the_preferences_unchanged() {
+        let directory = tempfile::tempdir().unwrap();
+        // A folder where the file should be makes every save fail.
+        let path = directory.path().join("preferences.json");
+        fs::create_dir(&path).unwrap();
+
+        let store = PreferencesStore::load(path);
+        let result =
+            store.update(|preferences| preferences.remember_project("C:\\shop.scraft", Utc::now()));
+
+        assert!(matches!(result, Err(PreferencesError::Write { .. })));
+        assert_eq!(store.current().recent_projects, []);
+    }
+
+    #[test]
+    fn a_file_from_a_newer_version_is_never_overwritten() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("preferences.json");
+        let newer = r#"{ "formatVersion": 99, "recentProjects": [] }"#;
+        fs::write(&path, newer).unwrap();
+
+        let store = PreferencesStore::load(path.clone());
+        let result =
+            store.update(|preferences| preferences.remember_project("C:\\shop.scraft", Utc::now()));
+
+        assert!(matches!(
+            result,
+            Err(PreferencesError::UnsupportedFormatVersion { found: 99, .. })
+        ));
+        assert_eq!(fs::read_to_string(&path).unwrap(), newer);
     }
 }

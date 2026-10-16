@@ -1,9 +1,9 @@
-import { DEVELOPER_NAME } from "@/app/brand/credits";
+import { DEVELOPER_NAME } from "@/shared/brand/credits";
 import { useAboutStore } from "@/features/about/aboutStore";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { entityKey } from "@/features/canvas/geometry";
 import { useProjectStore } from "@/features/project/projectStore";
-import { describeSavedConnection } from "@/features/project/savedConnection";
+import { describeSavedConnection } from "@/features/connection/fromSavedConnection";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { useAppInfo } from "@/shared/ipc/useAppInfo";
 import { classNames } from "@/shared/ui/classNames";
