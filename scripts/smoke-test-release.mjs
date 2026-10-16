@@ -1,9 +1,9 @@
 // Starts a built SchemaCraft executable with a remote debugging port (the application opens it
 // when SCHEMACRAFT_REMOTE_DEBUGGING_PORT is set), checks the first screen
 // and a few interactions through the Chrome DevTools Protocol, saves screenshots and a JSON report
-// and exits with a non-zero code on any failure. It needs a release build (`npm run tauri build
-// -- --no-bundle`): debug builds load the Vite development server instead of the embedded
-// frontend. The machine needs the WebView2 runtime, like any user's machine; without it the test
+// and exits with a non-zero code on any failure. It needs an optimised build (`npm run tauri
+// build -- --no-bundle`, or `-- --no-bundle -- --profile ci` as CI does): debug builds load the
+// Vite development server instead of the embedded frontend. The machine needs the WebView2 runtime, like any user's machine; without it the test
 // fails right away instead of waiting for a window that never comes.
 //   node scripts/smoke-test-release.mjs <path-to-exe> [output-dir]
 import { execFile, spawn } from "node:child_process";
