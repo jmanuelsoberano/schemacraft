@@ -1,17 +1,12 @@
-use std::ffi::OsString;
-use std::fmt;
-use std::fs;
-use std::io;
-use std::path::{Path, PathBuf};
-
-use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 use super::document::{FORMAT_VERSION, Project};
 use super::error::ProjectError;
+use crate::fs::{FileError, format_version, read_bytes, write_json_atomically};
 
 /// Reads a project file, checking the format version before parsing the whole document.
 pub fn read_project(path: &Path) -> Result<Project, ProjectError> {
-    let bytes = read_json_bytes(path).map_err(|error| match error {
+    let bytes = read_bytes(path).map_err(|error| match error {
         FileError::NotFound => ProjectError::NotFound {
             path: display(path),
         },
@@ -21,23 +16,22 @@ pub fn read_project(path: &Path) -> Result<Project, ProjectError> {
         },
     })?;
 
-    let header: ProjectHeader =
-        serde_json::from_slice(&bytes).map_err(|error| ProjectError::NotAProject {
-            path: display(path),
-            details: error.to_string(),
-        })?;
-    if header.format_version > FORMAT_VERSION {
+    let not_a_project = |details: String| ProjectError::NotAProject {
+        path: display(path),
+        details,
+    };
+    let found = format_version(&bytes)
+        .map_err(|error| not_a_project(error.to_string()))?
+        .ok_or_else(|| not_a_project("the formatVersion field is missing".to_string()))?;
+    if found > FORMAT_VERSION {
         return Err(ProjectError::UnsupportedFormatVersion {
             path: display(path),
-            found: header.format_version,
+            found,
             supported: FORMAT_VERSION,
         });
     }
 
-    serde_json::from_slice(&bytes).map_err(|error| ProjectError::NotAProject {
-        path: display(path),
-        details: error.to_string(),
-    })
+    serde_json::from_slice(&bytes).map_err(|error| not_a_project(error.to_string()))
 }
 
 /// Writes a project file atomically: the previous file survives any failure.
@@ -46,81 +40,6 @@ pub fn write_project(path: &Path, project: &Project) -> Result<(), ProjectError>
         path: display(path),
         details: error.to_string(),
     })
-}
-
-/// The part of a project file every format version shares.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ProjectHeader {
-    format_version: u32,
-}
-
-/// Low-level failure of the file helpers shared by projects, preferences and exports.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum FileError {
-    /// No file at the path.
-    NotFound,
-    /// The file could not be read.
-    Read(String),
-    /// The document could not be serialised or written.
-    Write(String),
-}
-
-impl fmt::Display for FileError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NotFound => formatter.write_str("the file does not exist"),
-            Self::Read(details) | Self::Write(details) => formatter.write_str(details),
-        }
-    }
-}
-
-/// Reads a whole file, telling a missing file apart from other failures.
-pub(crate) fn read_json_bytes(path: &Path) -> Result<Vec<u8>, FileError> {
-    fs::read(path).map_err(|error| {
-        if error.kind() == io::ErrorKind::NotFound {
-            FileError::NotFound
-        } else {
-            FileError::Read(error.to_string())
-        }
-    })
-}
-
-/// Serialises `value` as pretty JSON and writes it with [`write_bytes_atomically`].
-pub(crate) fn write_json_atomically<T: Serialize>(path: &Path, value: &T) -> Result<(), FileError> {
-    let mut bytes =
-        serde_json::to_vec_pretty(value).map_err(|error| FileError::Write(error.to_string()))?;
-    bytes.push(b'\n');
-    write_bytes_atomically(path, &bytes)
-}
-
-/// Replaces `path` with `bytes` in one step: the content goes to a sibling temporary file first
-/// and is renamed over the destination, so a crash or a full disk never leaves a truncated file
-/// behind. Missing parent directories are created.
-pub(crate) fn write_bytes_atomically(path: &Path, bytes: &[u8]) -> Result<(), FileError> {
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent).map_err(|error| FileError::Write(error.to_string()))?;
-    }
-
-    let temporary = temporary_path(path);
-    fs::write(&temporary, bytes).map_err(|error| FileError::Write(error.to_string()))?;
-    if let Err(error) = fs::rename(&temporary, path) {
-        // The temporary file is useless once the rename failed; removing it is best effort.
-        let _ = fs::remove_file(&temporary);
-        return Err(FileError::Write(error.to_string()));
-    }
-    Ok(())
-}
-
-fn temporary_path(path: &Path) -> PathBuf {
-    let mut name = path
-        .file_name()
-        .map_or_else(|| OsString::from("document"), OsString::from);
-    name.push(".tmp");
-    path.with_file_name(name)
 }
 
 fn display(path: &Path) -> String {

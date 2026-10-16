@@ -352,6 +352,9 @@ export const spanishMessages: MessageCatalog = {
     "Puede que el historial no sobreviva a un reinicio. Revisa los permisos de la carpeta de configuración.",
   "error.preferences.corrupt.title": "Las preferencias están dañadas",
   "error.preferences.corrupt.hint": "El archivo se sustituye con el siguiente cambio.",
+  "error.preferences.unsupportedFormatVersion.title": "Formato de preferencias más reciente",
+  "error.preferences.unsupportedFormatVersion.hint":
+    "Las guardó un SchemaCraft más reciente, así que no se modifican y esta versión no guarda historial.",
 
   "connection.field.rememberPassword": "Recordar contraseña",
   "connection.field.rememberPassword.description":

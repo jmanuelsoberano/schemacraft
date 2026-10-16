@@ -2,8 +2,10 @@
 //!
 //! [`DatabaseInspector`] is the only abstraction the rest of the application depends on. Each
 //! supported engine implements it once and [`create_inspector`] picks the implementation from
-//! the connection settings, so adding PostgreSQL or MySQL later means adding a module here and
-//! a variant to [`ConnectionSettings`], nothing else.
+//! the connection settings. Adding PostgreSQL or MySQL means a module here and a variant of
+//! [`ConnectionSettings`], plus the parts that still speak SQL Server: the saved connection in
+//! `project`, the credential key in `credentials`, and the connection form and its conversions
+//! in the frontend. The architecture page keeps the full recipe.
 
 mod error;
 mod progress;

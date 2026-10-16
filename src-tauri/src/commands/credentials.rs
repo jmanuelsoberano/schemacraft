@@ -3,36 +3,29 @@
 
 use schemacraft_core::project::SavedConnection;
 use secrecy::SecretString;
-use tauri::State;
+use tauri::{AppHandle, Manager};
 
+use super::run_blocking;
 use crate::error::CommandError;
 use crate::state::AppState;
 
 /// Whether a password is remembered for the login of `connection`. Windows Authentication has
 /// no password, so it never has one.
 #[tauri::command]
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "Tauri injects command arguments by value"
-)]
-pub fn has_stored_password(
-    state: State<'_, AppState>,
+pub async fn has_stored_password(
+    app: AppHandle,
     connection: SavedConnection,
 ) -> Result<bool, CommandError> {
-    match connection.credential_key() {
-        Some(key) => Ok(state.credentials.contains(&key)?),
-        None => Ok(false),
-    }
+    let Some(key) = connection.credential_key() else {
+        return Ok(false);
+    };
+    Ok(run_blocking(move || app.state::<AppState>().credentials.contains(&key)).await??)
 }
 
 /// Remembers `password` for the login of `connection`, replacing any previous one.
 #[tauri::command]
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "Tauri injects command arguments by value"
-)]
-pub fn remember_password(
-    state: State<'_, AppState>,
+pub async fn remember_password(
+    app: AppHandle,
     connection: SavedConnection,
     password: SecretString,
 ) -> Result<(), CommandError> {
@@ -41,27 +34,29 @@ pub fn remember_password(
             "only SQL Server logins have a password to remember",
         ));
     };
-    state.credentials.store(&key, &password)?;
+    let stored_key = key.clone();
+    run_blocking(move || {
+        app.state::<AppState>()
+            .credentials
+            .store(&stored_key, &password)
+    })
+    .await??;
     tracing::debug!(%key, "password remembered");
     Ok(())
 }
 
 /// Forgets the password remembered for the login of `connection`; `false` when there was none.
 #[tauri::command]
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "Tauri injects command arguments by value"
-)]
-pub fn forget_password(
-    state: State<'_, AppState>,
+pub async fn forget_password(
+    app: AppHandle,
     connection: SavedConnection,
 ) -> Result<bool, CommandError> {
-    match connection.credential_key() {
-        Some(key) => {
-            let removed = state.credentials.remove(&key)?;
-            tracing::debug!(%key, removed, "password forgotten");
-            Ok(removed)
-        }
-        None => Ok(false),
-    }
+    let Some(key) = connection.credential_key() else {
+        return Ok(false);
+    };
+    let removed_key = key.clone();
+    let removed =
+        run_blocking(move || app.state::<AppState>().credentials.remove(&removed_key)).await??;
+    tracing::debug!(%key, removed, "password forgotten");
+    Ok(removed)
 }

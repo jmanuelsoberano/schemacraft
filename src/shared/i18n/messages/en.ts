@@ -349,6 +349,9 @@ export const englishMessages = {
     "The history may not survive a restart. Check the permissions of the configuration folder.",
   "error.preferences.corrupt.title": "Preferences are damaged",
   "error.preferences.corrupt.hint": "The file is replaced on the next change.",
+  "error.preferences.unsupportedFormatVersion.title": "Newer preferences format",
+  "error.preferences.unsupportedFormatVersion.hint":
+    "A newer SchemaCraft saved them, so they are left untouched and this version keeps no history.",
 
   "connection.field.rememberPassword": "Remember password",
   "connection.field.rememberPassword.description":

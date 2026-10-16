@@ -1,11 +1,12 @@
 //! Writing SVG, HTML, PNG and PDF exports of the diagram.
 
-use schemacraft_core::export::{self, ExportError, ExportOutcome, ExportRequest, ExportStage};
+use schemacraft_core::export::{self, ExportOutcome, ExportRequest, ExportStage};
 use serde::Serialize;
 use tauri::State;
 use tauri::ipc::Channel;
 use ts_rs::TS;
 
+use super::run_blocking;
 use crate::error::CommandError;
 use crate::state::AppState;
 
@@ -42,7 +43,7 @@ pub async fn export_diagram(
     );
 
     let stage_channel = on_event.clone();
-    let joined = tauri::async_runtime::spawn_blocking(move || {
+    let finished = run_blocking(move || {
         export::export_diagram(
             &request,
             &|stage| send(&stage_channel, ExportEvent::Progress(stage)),
@@ -52,9 +53,7 @@ pub async fn export_diagram(
     .await;
     state.export_jobs.finish(&job_id);
 
-    let outcome = joined.map_err(|error| ExportError::Render {
-        details: format!("the export thread failed: {error}"),
-    })??;
+    let outcome = finished??;
     tracing::info!(path = %outcome.path, bytes = outcome.bytes, "export written");
     Ok(outcome)
 }

@@ -3,4 +3,4 @@
 /**
  * Serialisable classification of a [`PreferencesError`].
  */
-export type PreferencesErrorKind = "read" | "write" | "corrupt";
+export type PreferencesErrorKind = "read" | "write" | "corrupt" | "unsupportedFormatVersion";
