@@ -6,10 +6,11 @@ use schemacraft_core::inspectors::{
 };
 use schemacraft_core::model::SchemaSnapshot;
 use serde::Serialize;
-use tauri::State;
 use tauri::ipc::Channel;
+use tauri::{AppHandle, Manager, State};
 use ts_rs::TS;
 
+use super::run_blocking;
 use crate::error::CommandError;
 use crate::state::AppState;
 
@@ -31,11 +32,10 @@ pub enum InspectionEvent {
 /// Verifies the connection and returns the server identity.
 #[tauri::command]
 pub async fn test_connection(
-    state: State<'_, AppState>,
+    app: AppHandle,
     settings: ConnectionSettings,
 ) -> Result<ServerInformation, CommandError> {
-    let inspector =
-        create_inspector(settings.resolve_stored_password(state.credentials.as_ref())?)?;
+    let inspector = create_inspector(with_stored_password(&app, settings).await?)?;
     tracing::debug!("test_connection requested");
     let information = inspector.test_connection().await?;
     tracing::debug!(product = %information.product, "test_connection succeeded");
@@ -45,35 +45,33 @@ pub async fn test_connection(
 /// Databases the login can open, for the database picker.
 #[tauri::command]
 pub async fn list_databases(
-    state: State<'_, AppState>,
+    app: AppHandle,
     settings: ConnectionSettings,
 ) -> Result<Vec<String>, CommandError> {
-    let inspector =
-        create_inspector(settings.resolve_stored_password(state.credentials.as_ref())?)?;
+    let inspector = create_inspector(with_stored_password(&app, settings).await?)?;
     Ok(inspector.list_databases().await?)
 }
 
 /// User schemas of the selected database, for the schema filter.
 #[tauri::command]
 pub async fn list_schemas(
-    state: State<'_, AppState>,
+    app: AppHandle,
     settings: ConnectionSettings,
 ) -> Result<Vec<String>, CommandError> {
-    let inspector =
-        create_inspector(settings.resolve_stored_password(state.credentials.as_ref())?)?;
+    let inspector = create_inspector(with_stored_password(&app, settings).await?)?;
     Ok(inspector.list_schemas().await?)
 }
 
 /// Extracts the schema, streaming progress through `on_event`.
 #[tauri::command]
 pub async fn inspect_database(
-    state: State<'_, AppState>,
+    app: AppHandle,
     settings: ConnectionSettings,
     options: InspectionOptions,
     on_event: Channel<InspectionEvent>,
 ) -> Result<SchemaSnapshot, CommandError> {
-    let inspector =
-        create_inspector(settings.resolve_stored_password(state.credentials.as_ref())?)?;
+    let inspector = create_inspector(with_stored_password(&app, settings).await?)?;
+    let state = app.state::<AppState>();
     let (job_id, cancellation) = state.inspection_jobs.start();
     tracing::debug!(job_id, "inspect_database started");
     send(
@@ -102,6 +100,19 @@ pub fn cancel_inspection(state: State<'_, AppState>, job_id: String) -> Result<(
     } else {
         Err(CommandError::unknown_job(&job_id))
     }
+}
+
+/// Replaces a remembered password with the one in the credential store. The store is a
+/// blocking call, so it runs on the blocking pool like any other (ADR-032).
+async fn with_stored_password(
+    app: &AppHandle,
+    settings: ConnectionSettings,
+) -> Result<ConnectionSettings, CommandError> {
+    let app = app.clone();
+    Ok(run_blocking(move || {
+        settings.resolve_stored_password(app.state::<AppState>().credentials.as_ref())
+    })
+    .await??)
 }
 
 struct ChannelProgress {

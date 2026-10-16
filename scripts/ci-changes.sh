@@ -9,7 +9,9 @@ if [ "${GITHUB_EVENT_NAME:-}" != "pull_request" ]; then
   code=true
   core=true
 else
-  changed=$(git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD")
+  # --no-renames lists a moved file under its old path too, so moving code out of crates/ or
+  # into docs/ still counts as a code change.
+  changed=$(git diff --name-only --no-renames "origin/${GITHUB_BASE_REF}...HEAD")
   code=false
   core=false
   while IFS= read -r file; do

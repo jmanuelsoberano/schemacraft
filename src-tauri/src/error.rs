@@ -38,7 +38,7 @@ pub enum CommandErrorKind {
     UnknownJob,
     /// A command was called with an argument it cannot act on.
     InvalidArgument,
-    /// A failure no other kind describes, such as a worker thread that panicked.
+    /// A failure no other kind describes, such as a blocking task that could not be joined.
     Unexpected,
 }
 

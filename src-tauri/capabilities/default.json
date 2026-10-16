@@ -10,6 +10,10 @@
     "core:window:allow-destroy",
     "dialog:allow-open",
     "dialog:allow-save",
-    "opener:allow-reveal-item-in-dir"
+    "opener:allow-reveal-item-in-dir",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://reactflow.dev/*" }]
+    }
   ]
 }
