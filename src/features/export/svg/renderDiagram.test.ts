@@ -191,24 +191,61 @@ describe("renderDiagramSvg", () => {
       { snapshot, canvas },
       { detailLevel: "keys", theme: "light", labels },
     );
-    expect(svg).toContain('marker-start="url(#sc-many)" marker-end="url(#sc-one)"');
-    expect(svg).toContain('marker-start="url(#sc-many-optional)"');
+    // A required key reads "exactly one" at the referenced end; a key column that accepts
+    // NULL, here SalesRepId and ManagerId, makes it "zero or one".
+    const ends = (name: string) =>
+      new RegExp(
+        `data-relation="[^"]*\\.${name}"[^>]* marker-start="url\\(#([a-z-]+)\\)" marker-end="url\\(#([a-z-]+)\\)"`,
+        "u",
+      )
+        .exec(svg)
+        ?.slice(1);
+    expect(ends("FK_Orders_Customers")).toEqual(["sc-many", "sc-one"]);
+    expect(ends("FK_Orders_Employees")).toEqual(["sc-many", "sc-zero-or-one"]);
+    expect(ends("FK_Employees_Manager")).toEqual(["sc-many", "sc-zero-or-one"]);
     expect(count(svg, 'class="sc-relation sc-relation-disabled"')).toBe(1);
     expect(svg).toMatch(
       /data-relation="hr\.Employees\.FK_Employees_Manager"[^>]* d="M [\d.]+,[\d.]+ C /u,
     );
     // The marker ids and shapes are what the viewer's stylesheet and the canvas rely on.
     expect(svg).toContain(
-      '<marker id="sc-many" viewBox="0 0 14 14" markerWidth="14" markerHeight="14" refX="1" refY="7" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path class="sc-marker" d="M13,7 L1,1 M13,7 L1,7 M13,7 L1,13"/></marker>',
+      '<marker id="sc-many" viewBox="0 0 14 14" markerWidth="14" markerHeight="14" refX="13" refY="7" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path class="sc-marker" d="M1,7 L13,1 M1,7 L13,7 M1,7 L13,13"/></marker>',
     );
-    expect(svg).toContain('<marker id="sc-many-optional" viewBox="0 0 22 14"');
-    expect(svg).toContain('<circle class="sc-marker-fill" cx="17" cy="7" r="3"/>');
     expect(svg).toContain(
-      '<marker id="sc-one" viewBox="0 0 14 14" markerWidth="14" markerHeight="14" refX="13" refY="7" orient="auto" markerUnits="userSpaceOnUse"><path class="sc-marker" d="M6,1 L6,13 M1,7 L13,7"/></marker>',
+      '<marker id="sc-one" viewBox="0 0 14 14" markerWidth="14" markerHeight="14" refX="13" refY="7" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path class="sc-marker" d="M6,1 L6,13 M1,7 L13,7"/></marker>',
     );
-    for (const id of ["sc-many", "sc-many-optional", "sc-one"]) {
-      expect(svg).toContain(`<marker id="${id}-active"`);
+    expect(svg).toContain(
+      '<marker id="sc-zero-or-one" viewBox="0 0 22 14" markerWidth="22" markerHeight="14" refX="21" refY="7" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path class="sc-marker" d="M14,1 L14,13 M1,7 L21,7"/><circle class="sc-marker-fill" cx="6" cy="7" r="3"/></marker>',
+    );
+    for (const id of ["sc-many", "sc-one", "sc-zero-or-one"]) {
+      expect(count(svg, `<marker id="${id}"`)).toBe(1);
+      expect(count(svg, `<marker id="${id}-active"`)).toBe(1);
     }
+    expect(svg).toContain('<circle class="sc-marker-fill-active" cx="6" cy="7" r="3"/>');
+    expect(svg).not.toContain("sc-many-optional");
+  });
+
+  it("draws a one-to-one key as zero or one at the referencing end", () => {
+    // dbo.Hidden's primary key is its key column: a customer has at most one such row.
+    const oneToOne: SchemaSnapshot = {
+      ...snapshot,
+      tables: snapshot.tables.map((table) =>
+        table.name.name === "Hidden"
+          ? { ...table, primaryKey: { name: "PK_Hidden", columns: ["Id"], isClustered: true } }
+          : table,
+      ),
+    };
+    const shown: CanvasState = {
+      ...canvas,
+      nodes: canvas.nodes.map((node) => ({ ...node, isHidden: false })),
+    };
+    const { svg } = renderDiagramSvg(
+      { snapshot: oneToOne, canvas: shown },
+      { detailLevel: "keys", theme: "light", labels },
+    );
+    expect(svg).toMatch(
+      /data-relation="dbo\.Hidden\.FK_Hidden_Customers"[^>]* marker-start="url\(#sc-zero-or-one\)" marker-end="url\(#sc-one\)"/u,
+    );
   });
 
   it("tells a view apart by its tint, icon and label, as a header-only card at keys", () => {
@@ -328,6 +365,36 @@ describe("renderDiagramSvg", () => {
     expect(keys.svg).toContain(">CustomerId<");
     expect(keys.svg).not.toContain(">ManagerId<");
     expect(keys.svg).not.toContain("#22242b");
+  });
+
+  it("names each row by its whole column name, escaped, even when the shown name is cut short", () => {
+    const long = 'A "quoted" & <very> long column name that cannot fit on one card row';
+    const wide: SchemaSnapshot = {
+      ...snapshot,
+      tables: snapshot.tables.map((table) =>
+        table.name.name === "Customers"
+          ? { ...table, columns: [...table.columns, column(long, "int")] }
+          : table,
+      ),
+    };
+    const { svg } = renderDiagramSvg(
+      { snapshot: wide, canvas },
+      { detailLevel: "full", theme: "light", labels },
+    );
+    const customers = entityMarkup(svg, "dbo.Customers");
+    expect(customers).toContain('class="sc-column" data-column="CustomerId"');
+    expect(customers).toContain('data-column="Email"');
+    expect(customers).toContain(
+      'data-column="A &quot;quoted&quot; &amp; &lt;very&gt; long column name that cannot fit on one card row"',
+    );
+    expect(customers).toContain(`${ELLIPSIS}</text>`);
+    // One per row drawn, in row order, which is how the viewer finds a row's place.
+    expect(count(customers, "data-column=")).toBe(4);
+    expect(customers.indexOf('data-column="Name"')).toBeLessThan(
+      customers.indexOf('data-column="Email"'),
+    );
+    const collapsed = entityMarkup(svg, "hr.Employees");
+    expect(collapsed).not.toContain("data-column=");
   });
 
   it("embeds font faces, keeps the background optional and is deterministic", () => {

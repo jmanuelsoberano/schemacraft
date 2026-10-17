@@ -13,6 +13,48 @@ export function formatMessage(template: string, parameters: MessageParameters = 
   });
 }
 
+/** A run of a message template: plain text, or a placeholder together with its parameter. */
+export type MessagePart<Value> =
+  { kind: "text"; text: string } | { kind: "parameter"; name: string; value: Value };
+
+/**
+ * Splits a message template into its text and its `{placeholders}`, paired with the given
+ * parameters, so a renderer can draw each parameter its own way (a chip, a code span) without
+ * putting the sentence together by concatenation. Like {@link formatMessage}, it keeps an
+ * unknown placeholder visible as text. Adjacent text is merged and empty text is dropped.
+ */
+export function formatMessageParts<Value>(
+  template: string,
+  parameters: Readonly<Partial<Record<string, Value>>>,
+): MessagePart<Value>[] {
+  const parts: MessagePart<Value>[] = [];
+  const pushText = (text: string) => {
+    if (text === "") {
+      return;
+    }
+    const last = parts.at(-1);
+    if (last?.kind === "text") {
+      last.text += text;
+    } else {
+      parts.push({ kind: "text", text });
+    }
+  };
+  let position = 0;
+  for (const match of template.matchAll(PLACEHOLDER_PATTERN)) {
+    const [placeholder, name = ""] = match;
+    pushText(template.slice(position, match.index));
+    position = match.index + placeholder.length;
+    const value = Object.hasOwn(parameters, name) ? parameters[name] : undefined;
+    if (value === undefined) {
+      pushText(placeholder);
+    } else {
+      parts.push({ kind: "parameter", name, value });
+    }
+  }
+  pushText(template.slice(position));
+  return parts;
+}
+
 /** Names of the `{placeholders}` used by a message template, in order of first appearance. */
 export function placeholderNames(template: string): string[] {
   return [...template.matchAll(PLACEHOLDER_PATTERN)].map((match) => match[1] ?? "");

@@ -1,0 +1,180 @@
+/*
+ * A rule item reads like the other items of its section; what it adds is a bar at its start
+ * while it is pointed at, the bar its columns carry on the canvas, which says that what it
+ * involves is highlighted there. The bar stands a little off the text, which the negative
+ * margin gives back.
+ */
+.rule {
+  margin: 0 calc(-1 * var(--space-2));
+  padding: var(--space-1) var(--space-2) var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  transition: box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.rule:last-child {
+  border-bottom: 0;
+}
+
+.rule:hover,
+.rule:focus-within {
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* The SQL toggle sits at the end of the head, out of the way of the name. */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+  margin-left: auto;
+  padding: 0 6px 0 2px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.toggle:hover {
+  background: var(--color-active);
+  color: var(--color-text);
+}
+
+.toggleIcon {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+.sentences {
+  margin: 2px 0 0;
+  padding: 0 0 0 14px;
+  list-style: disc;
+}
+
+.sentences .sentences {
+  margin-top: 1px;
+  list-style: circle;
+}
+
+.sentence,
+.group {
+  padding: 1px 0;
+}
+
+.sentence::marker,
+.group::marker {
+  color: var(--color-text-muted);
+}
+
+/* "When Discount has a value:", "When enabled:": the condition the nested sentences hold under. */
+.heading {
+  color: var(--color-text-secondary);
+}
+
+/* Columns and tables as chips, in the same mono type as the names around the panel. */
+.column,
+.table,
+.code {
+  padding: 0 3px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.column,
+.table {
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+}
+
+.code {
+  background: var(--color-code-background);
+  color: var(--color-text);
+}
+
+/* The table a sentence names and the item links to reads as the link it is. */
+.tableLink {
+  border: 0;
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-text);
+  line-height: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.tableLink:hover {
+  text-decoration-thickness: 2px;
+}
+
+.unread {
+  margin: 2px 0 0;
+  color: var(--color-text-secondary);
+}
+
+.sql {
+  margin-top: var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--color-code-background);
+}
+
+.sql[hidden] {
+  display: none;
+}
+
+.sqlText {
+  margin: 0;
+  padding: var(--space-2) var(--space-2) 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sqlBar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-height: 24px;
+  padding: 0 2px 2px var(--space-2);
+}
+
+/* Says a key's SQL was scripted from the catalog rather than kept as written. */
+.sqlNote {
+  flex: 1;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+}
+
+.copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Stays in the accessibility tree while empty, so the confirmation is announced when it appears. */
+.feedback {
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+}
+
+.copy .copyButton {
+  width: 24px;
+  height: 24px;
+}

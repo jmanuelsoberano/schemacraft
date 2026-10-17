@@ -18,12 +18,15 @@ import { Tooltip } from "@/shared/ui/Tooltip";
 import { classNames } from "@/shared/ui/classNames";
 
 import styles from "./InspectorSections.module.css";
+import { RuleItem } from "./RuleItem";
+import type { TableLink } from "./RuleItem";
 
 /*
  * The sections of the Inspector draw the DetailsView the viewer's detail panel draws, one
  * component per section kind, so the two renderers stay in step and a later part can replace
- * one item renderer without touching the rest. What the Inspector adds is a way out: a fact
- * the login could not see links to the Access report, which the exported file cannot offer.
+ * one item renderer without touching the rest. `CHECK`s and keys are drawn as rule items, in
+ * words with their SQL one click away. What the Inspector adds is a way out: a fact the login
+ * could not see links to the Access report, which the exported file cannot offer.
  */
 
 /** The badges with a colour of their own; the rest are plain. */
@@ -41,16 +44,18 @@ const STATE_ICONS: Record<Exclude<ValueState, "readable">, LucideIcon> = {
 
 interface SectionProps {
   section: SectionView;
+  /** Key of the inspected entity, whose columns a rule pointed at highlights. */
+  entityKey: string;
   /** Opens the Access report, the answer to every "Why?". */
   onShowAccessReport: () => void;
 }
 
 /**
- * A section with its title and count, its items or its one honest empty line, and a footnote.
- * The empty line and the footnote link to the report when the login's access is what the list
- * may be missing.
+ * A section with its title and count, its items or its one honest empty line, a footnote, and
+ * the notes its rules need. The empty line and the footnote link to the report when the login's
+ * access is what the list may be missing.
  */
-export function InspectorSection({ section, onShowAccessReport }: SectionProps) {
+export function InspectorSection({ section, entityKey, onShowAccessReport }: SectionProps) {
   const headingId = useId();
   const explains = section.completeness === "notVisible";
   return (
@@ -60,7 +65,11 @@ export function InspectorSection({ section, onShowAccessReport }: SectionProps) 
         {section.count > 0 ? <span className={styles.count}>{section.count}</span> : null}
       </h4>
       {section.emptyText === null ? (
-        <SectionBody section={section} onShowAccessReport={onShowAccessReport} />
+        <SectionBody
+          section={section}
+          entityKey={entityKey}
+          onShowAccessReport={onShowAccessReport}
+        />
       ) : (
         <p className={styles.note}>
           {section.emptyText}
@@ -73,14 +82,25 @@ export function InspectorSection({ section, onShowAccessReport }: SectionProps) 
           {explains ? <WhyLink onShow={onShowAccessReport} /> : null}
         </p>
       )}
+      {section.notes.map((note) => (
+        <p key={note} className={styles.ruleNote}>
+          {note}
+        </p>
+      ))}
     </section>
   );
 }
 
-function SectionBody({ section, onShowAccessReport }: SectionProps) {
+function SectionBody({ section, entityKey, onShowAccessReport }: SectionProps) {
   switch (section.kind) {
     case "columns":
-      return <ColumnsTable section={section} onShowAccessReport={onShowAccessReport} />;
+      return (
+        <ColumnsTable
+          section={section}
+          entityKey={entityKey}
+          onShowAccessReport={onShowAccessReport}
+        />
+      );
     case "primaryKey":
     case "indexes":
     case "checks":
@@ -93,11 +113,16 @@ function SectionBody({ section, onShowAccessReport }: SectionProps) {
 
 interface ColumnsTableProps {
   section: ColumnsSectionView;
+  entityKey: string;
   onShowAccessReport: () => void;
 }
 
-/** Column, type and nullability per row; the badges follow the name and the default the type. */
-function ColumnsTable({ section, onShowAccessReport }: ColumnsTableProps) {
+/**
+ * Column, type and nullability per row; the badges follow the name and the default the type.
+ * The columns of a rule pointed at are tinted, as they are on the canvas card.
+ */
+function ColumnsTable({ section, entityKey, onShowAccessReport }: ColumnsTableProps) {
+  const ruleColumns = useCanvasUiStore((state) => state.ruleHighlight?.columns.get(entityKey));
   return (
     <table className={styles.table}>
       <thead>
@@ -109,7 +134,10 @@ function ColumnsTable({ section, onShowAccessReport }: ColumnsTableProps) {
       </thead>
       <tbody>
         {section.items.map((column) => (
-          <tr key={column.name}>
+          <tr
+            key={column.name}
+            className={ruleColumns?.has(column.name) === true ? styles.ruleRow : undefined}
+          >
             <td className={styles.nameCell}>
               <span className={styles.mono}>{column.name}</span>
               {column.badges.map((badge) => (
@@ -137,13 +165,16 @@ interface ConstraintListProps {
   onShowAccessReport: () => void;
 }
 
-/** Primary key, indexes and `CHECK`s: the name with its columns and badges, then the expression. */
+/**
+ * Primary key, indexes and `CHECK`s: the name with its columns and badges, then for a `CHECK`
+ * its rule in words, or the marked words for a text the capture could not read.
+ */
 function ConstraintList({ section, onShowAccessReport }: ConstraintListProps) {
   return (
     <ul className={styles.list}>
-      {section.items.map((item) => (
-        <li key={item.name} className={styles.item}>
-          <div className={styles.itemHead}>
+      {section.items.map((item) => {
+        const head = (
+          <>
             <span className={styles.mono}>
               {item.name}
               {item.columns.length === 0 ? null : (
@@ -153,14 +184,32 @@ function ConstraintList({ section, onShowAccessReport }: ConstraintListProps) {
             {item.badges.map((badge) => (
               <Badge key={badge.kind} badge={badge} />
             ))}
-          </div>
-          {item.expression === null ? null : (
-            <div className={styles.subLine}>
-              <Value value={item.expression} onShowAccessReport={onShowAccessReport} />
-            </div>
-          )}
-        </li>
-      ))}
+          </>
+        );
+        if (item.rule !== null) {
+          // A text kept from an earlier read is worded too; its date says how far it holds.
+          const hint = item.expression?.state === "notChecked" ? item.expression.hint : null;
+          return (
+            <RuleItem
+              key={item.name}
+              rule={item.rule}
+              head={head}
+              link={null}
+              footer={hint === null ? null : <div className={styles.hint}>{hint}</div>}
+            />
+          );
+        }
+        return (
+          <li key={item.name} className={styles.item}>
+            <div className={styles.itemHead}>{head}</div>
+            {item.expression === null ? null : (
+              <div className={styles.subLine}>
+                <Value value={item.expression} onShowAccessReport={onShowAccessReport} />
+              </div>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -171,8 +220,9 @@ interface RelationListProps {
 }
 
 /**
- * Foreign keys out of or into the table: the name and badges, the column pairs, the actions
- * other than NO ACTION, the other table and, for a key kept from an earlier read, since when.
+ * Foreign keys out of or into the table: the name and badges, the column pairs, the sentences
+ * that say what the key means and what its actions do, the other table and, for a key kept from
+ * an earlier read, since when.
  */
 function RelationList({ section, onShowAccessReport }: RelationListProps) {
   const focusEntity = useCanvasUiStore((state) => state.focusEntity);
@@ -187,28 +237,40 @@ function RelationList({ section, onShowAccessReport }: RelationListProps) {
 
   return (
     <ul className={styles.list}>
-      {section.items.map((item) => (
-        <li key={`${item.name}:${item.target.label}`} className={styles.item}>
-          <div className={styles.itemHead}>
-            <span className={styles.mono}>{item.name}</span>
-            {item.badges.map((badge) => (
-              <Badge key={badge.kind} badge={badge} />
-            ))}
-          </div>
-          <div className={classNames(styles.mono, styles.secondary)}>{item.columns.join(", ")}</div>
-          {item.actions.map((action) => (
-            <div key={action} className={styles.secondary}>
-              {action}
+      {section.items.map((item) => {
+        const { key, goLabel } = item.target;
+        const link: TableLink | null =
+          key === null ? null : { key, label: goLabel ?? key, onFollow: follow };
+        return (
+          <RuleItem
+            key={`${item.name}:${item.target.label}`}
+            rule={item.rule}
+            link={link}
+            head={
+              <>
+                <span className={styles.mono}>{item.name}</span>
+                {item.badges.map((badge) => (
+                  <Badge key={badge.kind} badge={badge} />
+                ))}
+              </>
+            }
+            footer={
+              <>
+                <RelationTarget
+                  target={item.target}
+                  onFollow={follow}
+                  onShowAccessReport={onShowAccessReport}
+                />
+                {item.hint === null ? null : <div className={styles.hint}>{item.hint}</div>}
+              </>
+            }
+          >
+            <div className={classNames(styles.mono, styles.secondary)}>
+              {item.columns.join(", ")}
             </div>
-          ))}
-          <RelationTarget
-            target={item.target}
-            onFollow={follow}
-            onShowAccessReport={onShowAccessReport}
-          />
-          {item.hint === null ? null : <div className={styles.hint}>{item.hint}</div>}
-        </li>
-      ))}
+          </RuleItem>
+        );
+      })}
     </ul>
   );
 }

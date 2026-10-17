@@ -1,14 +1,16 @@
 import type { Edge, Node } from "@xyflow/react";
 
-import { entityKey } from "@/features/schema/entities";
-import type {
-  Column,
-  DetailLevel,
-  ForeignKey,
-  NodeState,
-  SchemaSnapshot,
-} from "@/shared/contracts";
+import { entityKey, foreignKeyId } from "@/features/schema/entities";
+import {
+  foreignKeyChildCardinality,
+  foreignKeyExplanation,
+  foreignKeyOptionality,
+} from "@/features/schema/rules/foreignKeyReader";
+import type { ForeignKeyExplanation } from "@/features/schema/rules/foreignKeyReader";
+import type { DetailLevel, ForeignKey, NodeState, SchemaSnapshot, Table } from "@/shared/contracts";
 
+import { endMarkerKind, startMarkerKind } from "./edgeGeometry";
+import type { RelationMarkerKind } from "./edgeGeometry";
 import { NODE_WIDTH, isCollapsible, nodeHeight, rowsFor } from "./geometry";
 import type { ColumnRow, EntityDescriptor } from "./geometry";
 
@@ -25,6 +27,14 @@ export interface EntityNodeData {
   [key: string]: unknown;
 }
 
+/** The crow's foot markers at the two ends of a relationship. */
+export interface RelationEnds {
+  /** At the referencing table: a crow's foot, or "zero or one" for a one-to-one key. */
+  start: RelationMarkerKind;
+  /** At the referenced table: "one", or "zero or one" when a key column accepts NULL. */
+  end: RelationMarkerKind;
+}
+
 /** What a relationship edge renders. */
 export interface RelationEdgeData {
   foreignKey: ForeignKey;
@@ -32,8 +42,9 @@ export interface RelationEdgeData {
   sourceRows: ColumnRow[];
   /** Rows of the referenced node. */
   targetRows: ColumnRow[];
-  /** Whether every referencing column accepts NULL: "zero or many" instead of "many". */
-  isOptional: boolean;
+  ends: RelationEnds;
+  /** The key in words, for the hover label; worked out once per snapshot. */
+  explanation: ForeignKeyExplanation;
   [key: string]: unknown;
 }
 
@@ -44,7 +55,7 @@ export const ENTITY_NODE_TYPE = "entity";
 export const RELATION_EDGE_TYPE = "relation";
 
 export function relationEdgeId(foreignKey: ForeignKey): string {
-  return `${entityKey(foreignKey.referencingTable)}.${foreignKey.name}`;
+  return foreignKeyId(foreignKey);
 }
 
 /** Node states keyed by entity key, for quick lookups. */
@@ -116,7 +127,7 @@ export function buildRelationEdges(
   nodes: readonly EntityNode[],
 ): RelationEdge[] {
   const rowsByKey = new Map(nodes.map((node) => [node.id, node.data.rows]));
-  const columnsByKey = new Map(nodes.map((node) => [node.id, node.data.entity.columns]));
+  const tables = tablesByKey(snapshot);
   const edges: RelationEdge[] = [];
   for (const foreignKey of snapshot.foreignKeys) {
     const source = entityKey(foreignKey.referencingTable);
@@ -126,28 +137,42 @@ export function buildRelationEdges(
     if (sourceRows === undefined || targetRows === undefined) {
       continue;
     }
-    const isOptional = isOptionalForeignKey(columnsByKey.get(source) ?? [], foreignKey);
     edges.push({
       id: relationEdgeId(foreignKey),
       type: RELATION_EDGE_TYPE,
       source,
       target,
-      data: { foreignKey, sourceRows, targetRows, isOptional },
+      data: {
+        foreignKey,
+        sourceRows,
+        targetRows,
+        ends: relationEnds(tables.get(source), foreignKey),
+        explanation: foreignKeyExplanation(snapshot, foreignKey),
+      },
     });
   }
   return edges;
 }
 
-/** Whether every referencing column accepts NULL: "zero or many" rather than "many". */
-export function isOptionalForeignKey(
-  referencingColumns: readonly Column[],
+/** The tables of `snapshot` by entity key, where a relationship finds its referencing table. */
+export function tablesByKey(snapshot: SchemaSnapshot): Map<string, Table> {
+  return new Map(snapshot.tables.map((table) => [entityKey(table.name), table]));
+}
+
+/**
+ * The markers of `foreignKey`, judged on its referencing table by the two functions its
+ * sentences are built from (`features/schema/rules`), so the diagram and the words always
+ * agree: zero or one at the referenced end when any key column accepts NULL, and at the
+ * referencing end when the key is one-to-one.
+ */
+export function relationEnds(
+  referencingTable: Table | undefined,
   foreignKey: ForeignKey,
-): boolean {
-  return foreignKey.columnPairs.every(
-    (pair) =>
-      referencingColumns.find((column) => column.name === pair.referencingColumn)?.isNullable ===
-      true,
-  );
+): RelationEnds {
+  return {
+    start: startMarkerKind(foreignKeyChildCardinality(referencingTable, foreignKey)),
+    end: endMarkerKind(foreignKeyOptionality(referencingTable?.columns ?? [], foreignKey)),
+  };
 }
 
 /** Number of foreign keys drawn between the visible entities. */

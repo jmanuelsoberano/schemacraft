@@ -1,6 +1,9 @@
 .node {
   width: 240px;
   border-radius: var(--radius-lg);
+  /* Transparent until a rule outlines the card, so the outline fades in rather than jumps. */
+  outline: 2px solid transparent;
+  outline-offset: 3px;
   background: var(--color-surface-raised);
   box-shadow: var(--shadow-sm);
   font-size: var(--text-sm);
@@ -18,6 +21,15 @@
   box-shadow:
     0 0 0 2px var(--color-accent),
     var(--shadow-md);
+}
+
+/*
+ * A card the rule pointed at in the Inspector involves: an outline standing off the card, so it
+ * never reads as the selection ring, which hugs it, and both show on a selected card. Solid,
+ * because a dashed line means disabled on the canvas.
+ */
+.ruleTarget {
+  outline-color: var(--color-accent);
 }
 
 .highlighted {
@@ -157,6 +169,24 @@
   height: 22px;
   padding: 0 10px;
   white-space: nowrap;
+}
+
+/*
+ * A column of that rule: tinted, with a bar at its start and its name in the accent text colour.
+ * Only colours change, so the row keeps its size and the edges their anchors.
+ */
+.ruleColumn {
+  background: var(--color-accent-subtle);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+.ruleColumn .columnName {
+  color: var(--color-accent-text);
+}
+
+.ruleColumn .columnType,
+.ruleColumn .nullable {
+  color: var(--color-text-secondary);
 }
 
 .role,

@@ -1,4 +1,5 @@
 import type { MessageCatalog } from "./en";
+import { spanishRuleMessages } from "./rules/es";
 
 export const spanishMessages: MessageCatalog = {
   "app.name": "SchemaCraft",
@@ -435,8 +436,6 @@ export const spanishMessages: MessageCatalog = {
     "Leído el {date}; este inicio de sesión no ha podido comprobarlo desde entonces.",
   "details.notice.notChecked":
     "Conservada de una lectura del {date}: este inicio de sesión no pudo comprobarla.",
-  "details.relation.onDelete": "Al eliminar: {action}",
-  "details.relation.onUpdate": "Al actualizar: {action}",
   "details.target.go": "Ir a {name}",
   "details.target.self": "Esta tabla",
   "details.target.hidden": "Oculta en el lienzo",
@@ -600,4 +599,6 @@ export const spanishMessages: MessageCatalog = {
     "Para leerlo todo, tu DBA puede ejecutar este script. SchemaCraft solo lo copia y nunca lo ejecuta.",
   "access.report.dbaOnly":
     "Puede que un GRANT no sirva aquí. Tu DBA puede revisar los permisos de este inicio de sesión.",
+
+  ...spanishRuleMessages,
 };

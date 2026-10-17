@@ -5,7 +5,8 @@ import type { MessageKey } from "@/shared/i18n/messages/en";
 /**
  * The part of the application's catalogue an exported HTML file carries, chosen by key prefix:
  * the viewer's own chrome, the object details it shares with the Inspector, the entity words,
- * the detail levels and the names of referential actions, index kinds and definition states.
+ * the detail levels, the names of index kinds and definition states, and the readable rules,
+ * whose sentences say what a key's referential actions do.
  * The viewer imports only the types from here, so the catalogues stay out of its bundle.
  */
 export const VIEWER_MESSAGE_PREFIXES = [
@@ -13,9 +14,9 @@ export const VIEWER_MESSAGE_PREFIXES = [
   "details.",
   "entity.",
   "viewMode.",
-  "referentialAction.",
   "indexKind.",
   "definition.",
+  "rule.",
 ] as const;
 
 /** Single messages the viewer says in the application's words, outside the prefixes. */

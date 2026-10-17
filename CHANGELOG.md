@@ -43,6 +43,19 @@ All notable changes to SchemaCraft are documented here. The format follows
   both side panels at their width they narrow, so the canvas and the top bar keep their room.
 - Ctrl+1, Ctrl+2 and Ctrl+3 switch the detail level, and the detail levels, the theme and the
   language are commands in the command palette.
+- Check constraints and foreign keys read as sentences, in English or Spanish, in the Inspector
+  and in the HTML viewer: comparisons, ranges, lists of values, `LIKE` patterns, required values,
+  lengths and their combinations, and for a foreign key whether a row must point to another, how
+  many rows can point to one row and what deleting or changing it does. Tables are named as
+  tables, so every sentence reads right in both languages. A rule over a column that accepts
+  NULL applies when it has a value, a disabled rule reads under "When enabled:", and a rule
+  SchemaCraft cannot read in full shows its SQL instead of a guess.
+- Pointing at a rule, or tabbing to it, highlights its columns on the cards and in the panel and
+  its relationship on the canvas, in the app and in the HTML viewer. The SQL behind a rule is one
+  click away, with a copy button in the app: a check constraint's stored definition, or for a
+  foreign key a statement scripted from the catalog (a key to a table the login cannot see has
+  none).
+- The hover label of a relationship says what deleting a referenced row does.
 
 ### Changed
 
@@ -61,7 +74,15 @@ All notable changes to SchemaCraft are documented here. The format follows
   or following a relationship moves focus to the panel.
 - The Spanish detail levels read "Compacto" and "Completo" ("Compacta" and "Completa" before),
   since they are levels, not views.
-
+- Relationships are drawn in standard crow's foot notation on the canvas and in every export, so
+  existing diagrams and exports look different: the circle (zero or one) sits at the referenced
+  table when any key column accepts NULL, and a one-to-one key is drawn zero or one at the
+  referencing table. 1.0 meant a circle at the referencing end, only when every key column
+  accepted NULL, and drew it under the card, where it never showed. Exported SVG files no longer
+  define the `sc-many-optional` marker and define `sc-zero-or-one` instead.
+- A relationship from a table to itself loops from the referencing column to the referenced one.
+- Column names in SVG exports carry their full name in a `data-column` attribute. HTML exports
+  are about 43 KB larger, for the rule readers and their words.
 - Projects are saved in format 2. SchemaCraft 1.1 opens and converts 1.0 projects, but a project
   saved by 1.1 needs SchemaCraft 1.1 or later.
 - The status bar and the connection history name a server as `host,port` (1433 when no port
@@ -84,6 +105,9 @@ All notable changes to SchemaCraft are documented here. The format follows
 - A failed write of the preferences no longer changes the history shown until the next restart.
 - Project, preferences and export files are flushed to the disk before they replace the previous
   file, so a power cut cannot leave an empty file behind.
+- The crow's foot at the referencing end of a relationship shows; since 1.0 it was drawn under
+  the referencing card, on the canvas and in every export.
+- Clicking a table in an exported HTML viewer selects it; since 1.0 only its search could.
 
 ## [1.0.0] - 2026-10-14
 

@@ -1,8 +1,11 @@
+import { englishRuleMessages } from "./rules/en";
+
 /**
  * English catalogue. It is the reference: its keys define the `MessageKey` type, so a message
  * missing from another language fails type-checking instead of showing up blank at runtime.
  * The standalone viewer embeds a subset of it, chosen by key prefix (`viewer.`, `details.`,
- * `entity.` and the other prefixes `viewerMessages` lists), so it says what the application says.
+ * `entity.`, `rule.` and the other prefixes `viewerMessages` lists), so it says what the
+ * application says. The words of the readable rules live in `rules/en.ts` and are spread in.
  */
 export const englishMessages = {
   "app.name": "SchemaCraft",
@@ -429,8 +432,6 @@ export const englishMessages = {
     "Saved by SchemaCraft 1.0, which didn't record it. Refresh from the database to read it.",
   "details.hint.notChecked": "Read on {date}; this login couldn't check it since.",
   "details.notice.notChecked": "Kept from a read on {date}: this login couldn't check it.",
-  "details.relation.onDelete": "On delete: {action}",
-  "details.relation.onUpdate": "On update: {action}",
   "details.target.go": "Go to {name}",
   "details.target.self": "This table",
   "details.target.hidden": "Hidden on the canvas",
@@ -580,6 +581,8 @@ export const englishMessages = {
     "To read everything, your DBA can run this script. SchemaCraft only copies it and never runs it.",
   "access.report.dbaOnly":
     "A GRANT may not help here. Your DBA can review the permissions of this login.",
+
+  ...englishRuleMessages,
 } as const;
 
 export type MessageKey = keyof typeof englishMessages;

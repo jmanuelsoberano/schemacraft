@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 
+import type { CheckConstraint, Column, ForeignKey } from "@/shared/contracts";
 import { formatDate } from "@/shared/i18n/formatDate";
 import { SUPPORTED_LOCALES } from "@/shared/i18n/locales";
 import { messageCatalogs } from "@/shared/i18n/messages/catalogs";
 import { createCatalogTranslator } from "@/shared/i18n/translator";
 import { previewSnapshot } from "@/shared/ipc/previewConnectionBackend";
 
+import { definitionText, isUnknownDefinition } from "./definition";
 import { describeObjectDetails } from "./objectDetails";
 import type {
+  CheckFacts,
   ColumnFacts,
   DetailSection,
   DetailSectionKind,
@@ -16,13 +19,68 @@ import type {
   ObjectDetails,
   RelationFacts,
 } from "./objectDetails";
-import { presentObjectDetails } from "./objectDetailsView";
-import type { DetailsTranslator, DetailsView, SectionView } from "./objectDetailsView";
+import { hasRuleTargets, presentObjectDetails } from "./objectDetailsView";
+import type {
+  DetailsTranslator,
+  DetailsView,
+  RuleNodeView,
+  SectionView,
+} from "./objectDetailsView";
+import { readCheckConstraint } from "./rules/checkReader";
+import { explainForeignKey, explainForeignKeyToInvisibleTable } from "./rules/foreignKeyReader";
+import { ruleTextToString } from "./rules/ruleText";
 
 // The application's translator, over the whole catalogue, narrows to the one the details need.
 const english: DetailsTranslator = createCatalogTranslator(messageCatalogs.en, "en");
 const spanish: DetailsTranslator = createCatalogTranslator(messageCatalogs.es, "es");
 const READ_AT = "2026-10-12T08:00:00Z";
+const SHOP = previewSnapshot("Shop", "full");
+
+/** A key of sales.Orders to dbo.Customers, the tables of the preview fixture. */
+function ordersCustomers(overrides: Partial<ForeignKey> = {}): ForeignKey {
+  return {
+    name: "FK_Orders_Customers",
+    referencingTable: { schema: "sales", name: "Orders" },
+    referencedTable: { schema: "dbo", name: "Customers" },
+    columnPairs: [{ referencingColumn: "CustomerId", referencedColumn: "CustomerId" }],
+    onDelete: "noAction",
+    onUpdate: "noAction",
+    isEnabled: true,
+    ...overrides,
+  };
+}
+
+/** The columns of sales.Orders, which the CHECKs below are read against. */
+const ORDERS_COLUMNS: readonly Column[] =
+  SHOP.tables.find((table) => table.name.name === "Orders")?.columns ?? [];
+
+/** The facts of a `CHECK` of sales.Orders, read as the details read it. */
+function check(
+  name: string,
+  expression: CheckConstraint["expression"],
+  isEnabled: boolean | null,
+): CheckFacts {
+  const text = definitionText(expression);
+  return {
+    name,
+    expression:
+      text === null
+        ? { status: isUnknownDefinition(expression) ? "notRecorded" : "notAvailable" }
+        : { status: "readable", text },
+    isEnabled,
+    reading: readCheckConstraint({ name, expression, isEnabled }, ORDERS_COLUMNS, "sales.Orders"),
+  };
+}
+
+/** Sentences as plain lines, a group's items indented under its heading. */
+function lines(nodes: readonly RuleNodeView[], depth = 0): string[] {
+  const indent = "  ".repeat(depth);
+  return nodes.flatMap((node) =>
+    node.kind === "sentence"
+      ? [`${indent}${ruleTextToString(node.parts)}`]
+      : [`${indent}${ruleTextToString(node.heading)}`, ...lines(node.items, depth + 1)],
+  );
+}
 
 const COMPLETE: ListCompleteness = { status: "complete" };
 const INCOMPLETE: readonly ListCompleteness[] = [
@@ -58,19 +116,24 @@ function column(overrides: Partial<ColumnFacts> = {}): ColumnFacts {
   };
 }
 
-function relation(overrides: Partial<RelationFacts> = {}): RelationFacts {
+function relation(
+  overrides: Partial<RelationFacts> = {},
+  key: ForeignKey = ordersCustomers(),
+): RelationFacts {
   return {
-    name: "FK_Orders_Customers",
+    name: key.name,
     columns: [{ referencing: "CustomerId", referenced: "CustomerId" }],
-    onDelete: "noAction",
-    onUpdate: "noAction",
-    isEnabled: true,
+    onDelete: key.onDelete,
+    onUpdate: key.onUpdate,
+    isEnabled: key.isEnabled,
     target: {
       status: "available",
       key: "dbo.Customers",
       name: { schema: "dbo", name: "Customers" },
     },
     notCheckedSince: null,
+    explanation: explainForeignKey(key, SHOP),
+    relation: "sales.Orders.FK_Orders_Customers",
     ...overrides,
   };
 }
@@ -188,26 +251,72 @@ describe.each(SUPPORTED_LOCALES)("presentObjectDetails in %s", (locale) => {
     expect(empty.emptyText).toBe(catalog["details.empty.notVisible"]);
   });
 
-  it("writes the referential actions only when they do something", () => {
-    expect(presentRelation(relation(), t).actions).toEqual([]);
-    expect(
-      presentRelation(relation({ onDelete: "cascade", onUpdate: "setNull" }), t).actions,
-    ).toEqual([
-      catalog["details.relation.onDelete"].replace(
-        "{action}",
-        catalog["referentialAction.cascade"],
-      ),
-      catalog["details.relation.onUpdate"].replace(
-        "{action}",
-        catalog["referentialAction.setNull"],
-      ),
-    ]);
-    expect(presentRelation(relation({ isEnabled: false }), t).badges).toEqual([
-      { kind: "disabled", label: catalog["details.badge.disabled"] },
-    ]);
+  it("says what a key means and what its actions do, with its scripted SQL and what it involves", () => {
+    const facts = relation({}, ordersCustomers({ onDelete: "cascade", onUpdate: "setNull" }));
+    const { rule } = presentRelation(facts, t);
+    // The sentences are the reader's, in its order, each worded once in the translator's language.
+    expect(rule.sentences.map((node) => node.kind)).toEqual(
+      facts.explanation.rules.map(() => "sentence"),
+    );
+    expect(lines(rule.sentences)).toHaveLength(4);
+    expect(lines(rule.sentences).at(2)).toContain("dbo.Customers");
+    expect(rule).toMatchObject({
+      unread: null,
+      sql: facts.explanation.sql,
+      sqlNote: catalog["rule.fk.sqlNote"],
+      targets: {
+        columns: new Map([
+          ["sales.Orders", ["CustomerId"]],
+          ["dbo.Customers", ["CustomerId"]],
+        ]),
+        relation: "sales.Orders.FK_Orders_Customers",
+      },
+    });
+    expect(hasRuleTargets(rule.targets)).toBe(true);
     expect(presentRelation(relation({ notCheckedSince: READ_AT }), t).hint).toBe(
       catalog["details.hint.notChecked"].replace("{date}", formatDate(READ_AT, locale)),
     );
+  });
+
+  it("puts a disabled key's sentences under When enabled, beside its badge", () => {
+    const disabled = presentRelation(
+      relation({ isEnabled: false }, ordersCustomers({ isEnabled: false })),
+      t,
+    );
+    expect(disabled.badges).toEqual([
+      { kind: "disabled", label: catalog["details.badge.disabled"] },
+    ]);
+    expect(disabled.rule.sentences).toHaveLength(1);
+    expect(disabled.rule.sentences[0]).toMatchObject({ kind: "group", group: "whenEnabled" });
+    expect(lines(disabled.rule.sentences)[0]).toBe(catalog["rule.whenEnabled"]);
+  });
+
+  it("says nothing it cannot know about a key to a table the login cannot see", () => {
+    const key = {
+      name: "FK_Orders_Regions",
+      referencingTable: { schema: "sales", name: "Orders" },
+      columns: ["CustomerId"],
+      onDelete: "cascade",
+      onUpdate: "noAction",
+      isEnabled: true,
+    } as const;
+    const invisible = presentRelation(
+      relation({
+        name: key.name,
+        columns: [{ referencing: "CustomerId", referenced: null }],
+        target: { status: "notVisible" },
+        relation: null,
+        explanation: explainForeignKeyToInvisibleTable({ ...key, columns: [...key.columns] }, SHOP),
+      }),
+      t,
+    );
+    // No SQL can be scripted without the referenced table, and no line is drawn for the key.
+    expect(invisible.rule).toMatchObject({ sql: null, sqlNote: null });
+    expect(invisible.rule.targets).toEqual({
+      columns: new Map([["sales.Orders", ["CustomerId"]]]),
+      relation: null,
+    });
+    expect(lines(invisible.rule.sentences)).toHaveLength(3);
   });
 
   it("links a target only when it is on the canvas", () => {
@@ -287,13 +396,9 @@ describe.each(SUPPORTED_LOCALES)("presentObjectDetails in %s", (locale) => {
           {
             kind: "checks",
             items: [
-              {
-                name: "CK_Quantity",
-                expression: { status: "readable", text: "([Quantity]>(0))" },
-                isEnabled: true,
-              },
-              { name: "CK_Email", expression: { status: "notAvailable" }, isEnabled: false },
-              { name: "CK_Status", expression: { status: "notRecorded" }, isEnabled: null },
+              check("CK_OrderId", { status: "readable", text: "([OrderId]>(0))" }, true),
+              check("CK_Email", { status: "notVisible" }, false),
+              check("CK_Status", { status: "notRecorded" }, null),
             ],
             completeness: COMPLETE,
           },
@@ -302,12 +407,25 @@ describe.each(SUPPORTED_LOCALES)("presentObjectDetails in %s", (locale) => {
       ),
       "checks",
     );
-    expect(checks.items).toEqual([
+    const [readable] = checks.items;
+    expect(readable?.rule).toMatchObject({
+      unread: null,
+      sql: "([OrderId]>(0))",
+      sqlNote: null,
+      targets: { columns: new Map([["sales.Orders", ["OrderId"]]]), relation: null },
+    });
+    expect(lines(readable?.rule?.sentences ?? [])).toEqual([
+      catalog["rule.check.gt"].replace("{column}", "OrderId").replace("{value}", "0"),
+    ]);
+    expect(
+      checks.items.map((item) => ({ ...item, rule: item.rule === null ? null : "rule" })),
+    ).toEqual([
       {
-        name: "CK_Quantity",
+        name: "CK_OrderId",
         columns: [],
         badges: [],
-        expression: { state: "readable", text: "([Quantity]>(0))", hint: null },
+        expression: { state: "readable", text: "([OrderId]>(0))", hint: null },
+        rule: "rule",
       },
       {
         name: "CK_Email",
@@ -318,6 +436,7 @@ describe.each(SUPPORTED_LOCALES)("presentObjectDetails in %s", (locale) => {
           text: catalog["definition.notAvailable"],
           hint: catalog["details.hint.notAvailable"],
         },
+        rule: null,
       },
       {
         name: "CK_Status",
@@ -328,6 +447,7 @@ describe.each(SUPPORTED_LOCALES)("presentObjectDetails in %s", (locale) => {
           text: catalog["definition.notRecorded"],
           hint: catalog["details.hint.notRecorded"],
         },
+        rule: null,
       },
     ]);
   });
@@ -374,8 +494,11 @@ describe.each(SUPPORTED_LOCALES)("presentObjectDetails in %s", (locale) => {
         columns: ["OrderId", "LineNumber"],
         badges: [{ kind: "clustered", label: catalog["indexKind.clustered"] }],
         expression: null,
+        rule: null,
       },
     ]);
+    // Keys and indexes are no rules to put into words, and need no notes.
+    expect(sectionOf(view, "indexes").notes).toEqual([]);
     expect(sectionOf(view, "indexes").items.map((index) => index.badges)).toEqual([
       [{ kind: "unique", label: catalog["indexKind.uniqueIndex"] }],
       [
@@ -456,18 +579,34 @@ describe("a table of the preview fixture, read with partial access", () => {
     );
     expect(references.items[0]).toMatchObject({
       columns: ["SalesRepId → EmployeeId"],
-      actions: ["On delete: set null"],
       target: { goLabel: "Go to hr.Employees" },
     });
+    expect(lines(references.items[0]?.rule.sentences ?? [])).toEqual([
+      "Each row in sales.Orders belongs to at most one row in hr.Employees, and to none when SalesRepId is NULL",
+      "A row in hr.Employees can be referenced by any number of rows in sales.Orders, or by none",
+      "Deleting a row in hr.Employees sets SalesRepId to NULL in the rows of sales.Orders that point to it",
+    ]);
+    // A key to a table the login cannot see says what its local columns and actions reveal.
     expect(references.items[1]).toMatchObject({
       columns: ["CustomerId"],
-      actions: ["On update: cascade"],
+      rule: { sql: null, targets: { relation: null } },
     });
+    expect(lines(references.items[1]?.rule.sentences ?? [])).toEqual([
+      "Each row in sales.Orders belongs to exactly one row in a table not visible to this login",
+      "Deleting a row in the referenced table is blocked if, once the statement has run, rows in sales.Orders still point to it",
+      "Changing the referenced key of a row in the referenced table also changes CustomerId in the rows of sales.Orders that point to it",
+    ]);
+    expect(references.notes).toEqual([
+      "SchemaCraft words these rules from their definitions. SQL Server checks them when values are written, so rows saved before a rule existed may not follow it.",
+    ]);
     const referencedBy = sectionOf(view, "referencedBy");
     expect(referencedBy.items.map((item) => item.name)).toEqual(["FK_OrderLines_Orders"]);
     expect(referencedBy.footnote).toBe(
       "Other tables that aren't visible to this login may reference it.",
     );
+    // The text of the CHECK is not visible, so nothing is worded and no note is needed.
+    expect(sectionOf(view, "checks").items[0]?.rule).toBeNull();
+    expect(sectionOf(view, "checks").notes).toEqual([]);
 
     expect(presentObjectDetails(recentOrders, english)).toMatchObject({
       kind: "view",
@@ -497,12 +636,17 @@ describe("a table of the preview fixture, read with partial access", () => {
       hint: "El texto no es visible para este inicio de sesión.",
     });
     const references = sectionOf(view, "references");
-    expect(references.items[0]).toMatchObject({
-      actions: ["Al eliminar: poner a null"],
-      target: { goLabel: "Ir a hr.Employees" },
-    });
+    expect(references.items[0]).toMatchObject({ target: { goLabel: "Ir a hr.Employees" } });
+    expect(lines(references.items[0]?.rule.sentences ?? [])).toEqual([
+      "Cada fila de sales.Orders pertenece como mucho a una fila de hr.Employees, y a ninguna cuando SalesRepId es NULL",
+      "Una fila de hr.Employees puede estar referenciada por cualquier número de filas de sales.Orders, o por ninguna",
+      "Al borrar una fila de hr.Employees, las filas de sales.Orders que la referenciaban quedan con SalesRepId en NULL",
+    ]);
     expect(references.items[1]?.target.label).toBe(
       "Una tabla no visible para este inicio de sesión",
+    );
+    expect(lines(references.items[1]?.rule.sentences ?? [])[0]).toBe(
+      "Cada fila de sales.Orders pertenece exactamente a una fila de una tabla no visible para este inicio de sesión",
     );
     expect(sectionOf(view, "referencedBy").footnote).toBe(
       "Puede haber otras tablas no visibles para este inicio de sesión que hagan referencia a ella.",
@@ -511,6 +655,25 @@ describe("a table of the preview fixture, read with partial access", () => {
       kindLabel: "Vista",
       summary: "2 columnas",
     });
+  });
+
+  it("words the key of a self-reference with both of its columns on its one table", () => {
+    const employees = describeObjectDetails(partial, "hr.Employees", scope);
+    if (employees === null) {
+      throw new Error("the fixture changed");
+    }
+    const [manager] = sectionOf(presentObjectDetails(employees, english), "references").items;
+    expect(manager?.rule.targets).toEqual({
+      columns: new Map([["hr.Employees", ["ManagerId", "EmployeeId"]]]),
+      relation: "hr.Employees.FK_Employees_Manager",
+    });
+    // It is disabled, so it holds only once it is enabled again.
+    expect(lines(manager?.rule.sentences ?? [])).toEqual([
+      "When enabled:",
+      "  Each row in hr.Employees belongs to at most one row of the same table, which may be itself, and to none when ManagerId is NULL",
+      "  A row in hr.Employees can be referenced by any number of rows of the same table, or by none",
+      "  Deleting a row in hr.Employees is blocked if, once the statement has run, rows of the same table still point to it",
+    ]);
   });
 
   it("notices an object kept whole from an earlier read", () => {
@@ -533,5 +696,76 @@ describe("a table of the preview fixture, read with partial access", () => {
         english,
       ).sections.map((section) => section.emptyText),
     ).toEqual(Array.from({ length: 6 }, () => `Not checked since ${date}`));
+  });
+});
+
+describe("the CHECKs of the preview fixture, read by its owner", () => {
+  const scope: DetailsScope = {
+    hiddenKeys: new Set(),
+    coverage: SHOP.access?.coverage ?? null,
+    carriedOver: [],
+    isSchemaFiltered: false,
+    isDiagramOnly: false,
+  };
+  const checksOf = (
+    key: string,
+    translator: DetailsTranslator,
+    carriedOver = scope.carriedOver,
+  ) => {
+    const details = describeObjectDetails(SHOP, key, { ...scope, carriedOver });
+    if (details === null) {
+      throw new Error("the fixture changed");
+    }
+    return sectionOf(presentObjectDetails(details, translator), "checks");
+  };
+
+  it("words what it can read, shows the SQL of what it cannot, and notes each once", () => {
+    const checks = checksOf("dbo.Customers", english);
+    const [email, name] = checks.items;
+    expect(lines(email?.rule?.sentences ?? [])).toEqual(["Email must match the pattern '%_@_%'"]);
+    expect(email?.rule?.targets.columns).toEqual(new Map([["dbo.Customers", ["Email"]]]));
+    expect(name?.rule).toEqual({
+      sentences: [],
+      unread: "This rule can't be put into words. Its definition, as SQL Server stores it:",
+      sql: "([dbo].[fn_valid_name]([Name])=(1))",
+      sqlNote: null,
+      targets: { columns: new Map([["dbo.Customers", ["Name"]]]), relation: null },
+    });
+    expect(checks.notes).toEqual([
+      "In a pattern, % stands for any text, _ for any one character and [ ] for one character from a set.",
+      "Text comparisons follow the column's collation, which may ignore case, accents or some characters, and two texts that differ only in trailing spaces count as equal.",
+      "SchemaCraft words these rules from their definitions. SQL Server checks them when values are written, so rows saved before a rule existed may not follow it.",
+    ]);
+    expect(checksOf("dbo.Customers", spanish).notes).toHaveLength(3);
+  });
+
+  it("puts a disabled CHECK under When enabled, in both languages", () => {
+    expect(lines(checksOf("hr.Employees", english).items[0]?.rule?.sentences ?? [])).toEqual([
+      "When enabled:",
+      "  When ManagerId has a value:",
+      "    ManagerId must be different from EmployeeId",
+    ]);
+    expect(lines(checksOf("hr.Employees", spanish).items[0]?.rule?.sentences ?? [])).toEqual([
+      "Cuando se habilite:",
+      "  Cuando ManagerId tiene un valor:",
+      "    ManagerId debe ser diferente de EmployeeId",
+    ]);
+  });
+
+  it("words a text kept from an earlier read, which its hint dates", () => {
+    const [status] = checksOf("sales.Orders", english, [
+      {
+        object: { schema: "sales", name: "Orders" },
+        fact: { kind: "checkConstraint", name: "CK_Orders_Status" },
+        readAt: READ_AT,
+      },
+    ]).items;
+    expect(status?.expression).toMatchObject({
+      state: "notChecked",
+      hint: `Read on ${formatDate(READ_AT, "en")}; this login couldn't check it since.`,
+    });
+    expect(lines(status?.rule?.sentences ?? [])).toEqual([
+      "Status must be one of 'N', 'P', 'S', or 'C'",
+    ]);
   });
 });

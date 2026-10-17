@@ -1,7 +1,8 @@
 /**
  * Standalone viewer embedded in exported HTML files. It renders the schema with the same SVG
  * renderer as the application, adds pan and zoom, the three detail levels, search, neighbour
- * highlighting and a detail panel, and depends on nothing outside the file.
+ * highlighting and a detail panel that reads `CHECK`s and keys out as the Inspector does, and
+ * depends on nothing outside the file.
  */
 import "./viewer.css";
 
@@ -21,7 +22,7 @@ import { createCanvasMeasurer } from "@/features/export/svg/text";
 import { entityKey } from "@/features/schema/entities";
 import { describeObjectDetails } from "@/features/schema/objectDetails";
 import type { DetailsScope } from "@/features/schema/objectDetails";
-import { presentObjectDetails } from "@/features/schema/objectDetailsView";
+import { hasRuleTargets, presentObjectDetails } from "@/features/schema/objectDetailsView";
 import type {
   BadgeView,
   ColumnsSectionView,
@@ -29,12 +30,17 @@ import type {
   DetailsView,
   RelationSectionView,
   RelationTargetView,
+  RuleTargets,
   SectionView,
   ValueView,
 } from "@/features/schema/objectDetailsView";
 import type { DetailLevel } from "@/shared/contracts";
 import { createCatalogTranslator } from "@/shared/i18n/translator";
 import type { CatalogTranslator } from "@/shared/i18n/translator";
+
+import { h } from "./dom";
+import { clearRuleHighlight, paintRuleHighlight, ruleBody, ruleSql } from "./rules";
+import type { TableLink } from "./rules";
 
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 4;
@@ -56,28 +62,10 @@ interface Transform {
   k: number;
 }
 
-type Attributes = Record<string, string | boolean | undefined>;
-
-/** Creates an element with attributes and children; text children are never parsed as HTML. */
-function h<Tag extends keyof HTMLElementTagNameMap>(
-  tag: Tag,
-  attributes: Attributes = {},
-  ...children: (Node | string | null)[]
-): HTMLElementTagNameMap[Tag] {
-  const element = document.createElement(tag);
-  for (const [name, value] of Object.entries(attributes)) {
-    if (value === true) {
-      element.setAttribute(name, "");
-    } else if (typeof value === "string") {
-      element.setAttribute(name, value);
-    }
-  }
-  for (const child of children) {
-    if (child !== null) {
-      element.append(child);
-    }
-  }
-  return element;
+/** The rule item the reader points at in the panel, and what it involves. */
+interface PointedRule {
+  item: HTMLElement;
+  targets: RuleTargets;
 }
 
 function readData(): ViewerData | null {
@@ -122,6 +110,8 @@ class Viewer {
   private theme: ExportTheme;
   private transform: Transform = { x: 0, y: 0, k: 1 };
   private selected: string | null = null;
+  /** The rule pointed at in the panel, which holds the diagram's emphasis while it lasts. */
+  private pointed: PointedRule | null = null;
   private diagramSize = { width: 1, height: 1 };
   private resultKeys: string[] = [];
   private activeResult = -1;
@@ -285,7 +275,9 @@ class Viewer {
     this.diagramSize = { width: rendered.width, height: rendered.height };
     // The markup is produced by the renderer from escaped data, never from the page.
     this.world.innerHTML = rendered.svg;
-    this.applySelection();
+    // The new drawing gets the selection and a rule pointed at back; the panel is left as it is,
+    // so a theme, a detail level or the late fonts never take the keyboard's place in it.
+    this.paintSelection();
     for (const [level, button] of this.levelButtons) {
       button.setAttribute("aria-pressed", String(level === this.detailLevel));
     }
@@ -367,6 +359,8 @@ class Viewer {
       originX: number;
       originY: number;
       moved: boolean;
+      /** The entity pressed on; the release goes to the stage, which captures the pointer. */
+      entity: string | null;
     } | null = null;
     this.stage.addEventListener("pointerdown", (event) => {
       if (event.button !== 0 || this.panel.contains(event.target as Node)) {
@@ -379,6 +373,8 @@ class Viewer {
         originX: this.transform.x,
         originY: this.transform.y,
         moved: false,
+        entity:
+          (event.target as Element).closest<SVGGElement>("[data-entity]")?.dataset.entity ?? null,
       };
       this.stage.setPointerCapture(event.pointerId);
     });
@@ -404,12 +400,11 @@ class Viewer {
       if (pointer?.id !== event.pointerId) {
         return;
       }
-      const wasClick = !pointer.moved;
+      const { moved, entity } = pointer;
       pointer = null;
       this.stage.classList.remove("sc-dragging");
-      if (wasClick) {
-        const entity = (event.target as Element).closest<SVGGElement>("[data-entity]");
-        this.select(entity?.dataset.entity ?? null);
+      if (!moved) {
+        this.select(entity);
       }
     };
     this.stage.addEventListener("pointerup", release);
@@ -424,16 +419,27 @@ class Viewer {
       },
       { passive: false },
     );
+    // The panel sits on the stage, but moving over it is not moving over the diagram.
     this.stage.addEventListener("pointerover", (event) => {
+      if (this.panel.contains(event.target as Node)) {
+        return;
+      }
       const entity = (event.target as Element).closest<SVGGElement>("[data-entity]");
       this.highlight(entity?.dataset.entity ?? this.selected);
     });
-    this.stage.addEventListener("pointerout", () => {
+    this.stage.addEventListener("pointerout", (event) => {
+      if (this.panel.contains(event.target as Node)) {
+        return;
+      }
       this.highlight(this.selected);
     });
   }
 
+  /** Emphasises the relations and neighbours of `key`, unless a rule in the panel holds the emphasis. */
   private highlight(key: string | null): void {
+    if (this.pointed !== null) {
+      return;
+    }
     for (const path of this.world.querySelectorAll<SVGPathElement>(".sc-relation")) {
       const active = key !== null && (path.dataset.source === key || path.dataset.target === key);
       path.classList.toggle("sc-active", active);
@@ -458,15 +464,68 @@ class Viewer {
 
   private select(key: string | null): void {
     this.selected = key;
-    this.applySelection();
+    // The panel's items are replaced, and with them the rule pointed at.
+    this.pointed = null;
+    this.paintSelection();
+    this.renderPanel();
   }
 
-  private applySelection(): void {
+  /** Marks the selection on the diagram, with its neighbours or the rule pointed at in the panel. */
+  private paintSelection(): void {
     for (const group of this.world.querySelectorAll<SVGGElement>(".sc-entity")) {
       group.classList.toggle("sc-selected", group.dataset.entity === this.selected);
     }
-    this.highlight(this.selected);
-    this.renderPanel();
+    if (this.pointed === null) {
+      clearRuleHighlight(this.world);
+      this.highlight(this.selected);
+    } else {
+      paintRuleHighlight(this.world, this.pointed.targets);
+    }
+    this.paintRuleRows();
+  }
+
+  /**
+   * Points at a rule of the panel: its columns and relationship are highlighted on the diagram,
+   * and its columns in the panel's own table, until the pointer and the focus both leave it.
+   */
+  private bindRule(item: HTMLElement, targets: RuleTargets): void {
+    if (!hasRuleTargets(targets)) {
+      return;
+    }
+    const point = () => {
+      this.pointed = { item, targets };
+      paintRuleHighlight(this.world, targets);
+      this.paintRuleRows();
+    };
+    const release = () => {
+      if (this.pointed?.item !== item) {
+        return;
+      }
+      this.pointed = null;
+      clearRuleHighlight(this.world);
+      this.highlight(this.selected);
+      this.paintRuleRows();
+    };
+    item.addEventListener("pointerenter", point);
+    item.addEventListener("focusin", point);
+    item.addEventListener("pointerleave", () => {
+      if (!item.contains(document.activeElement)) {
+        release();
+      }
+    });
+    item.addEventListener("focusout", (event) => {
+      if (!item.contains(event.relatedTarget as Node | null) && !item.matches(":hover")) {
+        release();
+      }
+    });
+  }
+
+  /** Tints the rows of the panel's columns table that the rule pointed at involves. */
+  private paintRuleRows(): void {
+    const names = this.pointed?.targets.columns.get(this.selected ?? "") ?? [];
+    for (const row of this.panel.querySelectorAll<HTMLTableRowElement>("tr[data-column]")) {
+      row.classList.toggle("sc-rule-row", names.includes(row.dataset.column ?? ""));
+    }
   }
 
   /** Moves focus to the panel's heading, so a keyboard user lands on what was just chosen. */
@@ -529,7 +588,10 @@ class Viewer {
     );
   }
 
-  /** A section with its title and count, its items or its one honest empty line, and a footnote. */
+  /**
+   * A section with its title and count, its items or its one honest empty line, a footnote, and
+   * the notes its rules need.
+   */
   private sectionElement(section: SectionView): HTMLElement {
     const heading = h("h3", {}, section.title);
     if (section.count > 0) {
@@ -543,6 +605,7 @@ class Viewer {
         ? this.sectionBody(section)
         : h("p", { class: "sc-empty" }, section.emptyText),
       section.footnote === null ? null : h("p", { class: "sc-footnote" }, section.footnote),
+      ...section.notes.map((note) => h("p", { class: "sc-rule-note" }, note)),
     );
   }
 
@@ -566,9 +629,10 @@ class Viewer {
       if (column.defaultValue !== null) {
         details.append(valueElement(column.defaultValue));
       }
+      // A rule pointed at tints its columns here as on the diagram, found by their full name.
       return h(
         "tr",
-        {},
+        { "data-column": column.name },
         h("td", { class: "sc-mono" }, column.name, ...column.badges.map(badgeElement)),
         details,
         h("td", { class: "sc-muted" }, column.nullable),
@@ -592,44 +656,77 @@ class Viewer {
     );
   }
 
+  /**
+   * Primary key, indexes and `CHECK`s: the name with its columns and badges, then for a `CHECK`
+   * its rule in words with the SQL behind a disclosure, or the marked words for a missing text.
+   */
   private constraintList(section: ConstraintSectionView): HTMLElement {
     return h(
       "ul",
       { class: "sc-list" },
-      ...section.items.map((item) =>
-        h(
+      ...section.items.map((item) => {
+        const head = h(
+          "div",
+          { class: "sc-mono" },
+          item.name,
+          item.columns.length === 0
+            ? null
+            : h("span", { class: "sc-muted" }, ` (${item.columns.join(", ")})`),
+          ...item.badges.map(badgeElement),
+        );
+        if (item.rule === null) {
+          return h("li", {}, head, item.expression === null ? null : valueElement(item.expression));
+        }
+        // A text kept from an earlier read is worded too; its date says how far it holds.
+        const hint = item.expression?.state === "notChecked" ? item.expression.hint : null;
+        const element = h(
           "li",
-          {},
-          h(
-            "div",
-            { class: "sc-mono" },
-            item.name,
-            item.columns.length === 0
-              ? null
-              : h("span", { class: "sc-muted" }, ` (${item.columns.join(", ")})`),
-            ...item.badges.map(badgeElement),
-          ),
-          item.expression === null ? null : valueElement(item.expression),
-        ),
-      ),
+          { class: "sc-rule" },
+          head,
+          ruleBody(item.rule, null),
+          hint === null ? null : h("div", { class: "sc-hint" }, hint),
+          ruleSql(item.rule, this.t),
+        );
+        this.bindRule(element, item.rule.targets);
+        return element;
+      }),
     );
   }
 
+  /**
+   * Foreign keys out of or into the table: the name and badges, the column pairs, the sentences
+   * that say what the key means and what its actions do, the other table, since when a kept key
+   * is unchecked, and the scripted SQL.
+   */
   private relationList(section: RelationSectionView): HTMLElement {
     return h(
       "ul",
       { class: "sc-list" },
-      ...section.items.map((item) =>
-        h(
+      ...section.items.map((item) => {
+        const { key, goLabel } = item.target;
+        const link: TableLink | null =
+          key === null
+            ? null
+            : {
+                key,
+                label: goLabel ?? key,
+                onFollow: (target) => {
+                  this.goTo(target);
+                },
+              };
+        const element = h(
           "li",
-          {},
+          { class: "sc-rule" },
           h("div", { class: "sc-mono" }, item.name, ...item.badges.map(badgeElement)),
           h("div", { class: "sc-muted sc-mono" }, item.columns.join(", ")),
-          ...item.actions.map((action) => h("div", { class: "sc-muted" }, action)),
+          ruleBody(item.rule, link),
           this.targetElement(item.target),
           item.hint === null ? null : h("div", { class: "sc-hint" }, item.hint),
-        ),
-      ),
+          ruleSql(item.rule, this.t),
+        );
+        this.bindRule(element, item.rule.targets);
+        return element;
+      }),
     );
   }
 

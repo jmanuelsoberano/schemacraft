@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import type { DetailsMessageKey } from "@/features/schema/objectDetailsView";
+import type { RuleMessageKey } from "@/shared/i18n/messages/rules/en";
 import { SUPPORTED_LOCALES } from "@/shared/i18n/locales";
 import { messageCatalogs } from "@/shared/i18n/messages/catalogs";
 
@@ -55,5 +56,11 @@ describe("isViewerMessageKey", () => {
     // The view-model's translator is a narrowing of the viewer's, so an HTML file can show
     // the same details as the Inspector.
     expectTypeOf<DetailsMessageKey>().toExtend<ViewerMessageKey>();
+  });
+
+  it("covers every word of the readable rules", () => {
+    // The rules are worded through a narrowing of the viewer's translator too.
+    expectTypeOf<RuleMessageKey>().toExtend<ViewerMessageKey>();
+    expect(isViewerMessageKey("rule.check.oneOf")).toBe(true);
   });
 });

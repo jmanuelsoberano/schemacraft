@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   MARKER_HEIGHT,
+  MARKER_ORIENT,
   MARKER_REF_Y,
   RELATION_MARKER_SHAPES,
+  endMarkerKind,
   relationAnchors,
   relationPath,
   selfLoopPath,
@@ -50,6 +52,20 @@ describe("relationAnchors", () => {
     expect(labelX).toBe(290);
     expect(labelY).toBe(70);
   });
+
+  it("starts the loop at the referencing row, where the crow's foot goes, below the key or above", () => {
+    // ManagerId under EmployeeId: the loop runs upwards, from ManagerId to EmployeeId.
+    const [upwards, labelX, labelY] = selfLoopPath(box(10, 20), 60, 40);
+    expect(upwards).toBe("M 250,80 C 294,80 294,60 250,60");
+    expect([labelX, labelY]).toEqual([290, 70]);
+  });
+
+  it("keeps the two ends of a loop apart when both attach at the header", () => {
+    // A collapsed card: both ends at the middle of its 38 px header, then 8 px up and down.
+    const [path, labelX, labelY] = selfLoopPath(box(10, 20), 19, 19);
+    expect(path).toBe("M 250,31 C 294,31 294,47 250,47");
+    expect([labelX, labelY]).toEqual([290, 39]);
+  });
 });
 
 describe("relationPath", () => {
@@ -74,27 +90,58 @@ describe("relationPath", () => {
 });
 
 describe("crow's foot markers", () => {
-  it("has one shape per end, all the same height, pointing into the path", () => {
-    expect(Object.keys(RELATION_MARKER_SHAPES)).toEqual(["many", "manyOptional", "one"]);
+  it("has one shape per meaning, all the same height, each touching its table", () => {
+    expect(Object.keys(RELATION_MARKER_SHAPES)).toEqual(["many", "one", "zeroOrOne"]);
     expect(MARKER_HEIGHT).toBe(14);
     expect(MARKER_REF_Y).toBe(7);
-    expect(RELATION_MARKER_SHAPES.many).toMatchObject({
+    // Drawn facing the table on the right of the box, which the reversed start orientation
+    // turns round at the referencing end. Any stroke right of the reference point would be
+    // drawn under the card, where nothing shows.
+    expect(MARKER_ORIENT).toBe("auto-start-reverse");
+    for (const shape of Object.values(RELATION_MARKER_SHAPES)) {
+      expect(shape.refX).toBe(shape.width - 1);
+    }
+    expect(RELATION_MARKER_SHAPES.many).toEqual({
       width: 14,
-      refX: 1,
-      orient: "auto-start-reverse",
+      refX: 13,
+      path: "M1,7 L13,1 M1,7 L13,7 M1,7 L13,13",
     });
-    expect(RELATION_MARKER_SHAPES.manyOptional).toMatchObject({
+    expect(RELATION_MARKER_SHAPES.one).toEqual({
+      width: 14,
+      refX: 13,
+      path: "M6,1 L6,13 M1,7 L13,7",
+    });
+    expect(RELATION_MARKER_SHAPES.zeroOrOne).toEqual({
       width: 22,
-      refX: 1,
-      path: RELATION_MARKER_SHAPES.many.path,
-      circle: { cx: 17, cy: 7, r: 3 },
+      refX: 21,
+      path: "M14,1 L14,13 M1,7 L21,7",
+      circle: { cx: 6, cy: 7, r: 3 },
     });
-    expect(RELATION_MARKER_SHAPES.one).toMatchObject({ width: 14, refX: 13, orient: "auto" });
-    expect(RELATION_MARKER_SHAPES.many.circle).toBeUndefined();
   });
 
-  it("marks an optional key with the zero-or-many end", () => {
-    expect(startMarkerKind(true)).toBe("manyOptional");
-    expect(startMarkerKind(false)).toBe("many");
+  it("puts the bar of both one ends at the same distance from the table, the circle beyond it", () => {
+    const barDistance = (kind: "one" | "zeroOrOne") => {
+      const shape = RELATION_MARKER_SHAPES[kind];
+      const bar = /^M(\d+),1 L\1,13/u.exec(shape.path);
+      return shape.refX - Number(bar?.[1]);
+    };
+    expect(barDistance("one")).toBe(7);
+    expect(barDistance("zeroOrOne")).toBe(7);
+    const { circle, refX } = RELATION_MARKER_SHAPES.zeroOrOne;
+    expect(circle).toBeDefined();
+    expect(refX - (circle?.cx ?? 0) - (circle?.r ?? 0)).toBeGreaterThan(7);
+  });
+
+  it("draws zero or one at the referencing end only for a one-to-one key", () => {
+    expect(startMarkerKind("atMostOne")).toBe("zeroOrOne");
+    expect(startMarkerKind("many")).toBe("many");
+    // A unique index may be filtered, so the crow's foot, which allows one, stays.
+    expect(startMarkerKind("unknown")).toBe("many");
+  });
+
+  it("draws zero or one at the referenced end when a key column accepts NULL", () => {
+    expect(endMarkerKind("optional")).toBe("zeroOrOne");
+    expect(endMarkerKind("required")).toBe("one");
+    expect(endMarkerKind("unknown")).toBe("one");
   });
 });

@@ -19,15 +19,20 @@ import type {
 
 import { formatDataType } from "./dataType";
 import { definitionText, isUnknownDefinition } from "./definition";
-import { entityKey } from "./entities";
+import { entityKey, foreignKeyId } from "./entities";
 import type { EntityKind } from "./entities";
+import { readCheckConstraint } from "./rules/checkReader";
+import type { CheckReading } from "./rules/checkReader";
+import { foreignKeyExplanation } from "./rules/foreignKeyReader";
+import type { ExplanationScope, ForeignKeyExplanation } from "./rules/foreignKeyReader";
 
 /**
  * The facts about one table or view that the Inspector and the viewer's detail panel show,
- * each with how far the capture vouches for it. This module reads the snapshot; the
- * presentation (`objectDetailsView.ts`) turns the facts into translated text, and two renderers
- * draw that text, so both say the same about an object in the same words. What each one knows
- * beyond the snapshot comes in the scope: an exported file knows only the diagram.
+ * each with how far the capture vouches for it, and its `CHECK`s and keys put into words by
+ * the rule readers. This module reads the snapshot; the presentation (`objectDetailsView.ts`)
+ * turns the facts into translated text, and two renderers draw that text, so both say the same
+ * about an object in the same words. What each one knows beyond the snapshot comes in the
+ * scope: an exported file knows only the diagram.
  */
 
 /** What the Inspector or the viewer knows beyond the snapshot. */
@@ -103,6 +108,8 @@ export interface CheckFacts {
   expression: FactText;
   /** `null` when the file did not record whether the constraint is enabled. */
   isEnabled: boolean | null;
+  /** The constraint in words, or why it is not: its text cannot be read or put into words. */
+  reading: CheckReading;
 }
 
 /** The table at the other end of a relation, and whether it can be shown. */
@@ -136,6 +143,13 @@ export interface RelationFacts {
   target: RelationTarget;
   /** When the key was kept from an earlier read, the moment it was last read; `null` otherwise. */
   notCheckedSince: string | null;
+  /** The key in words, with the columns it involves and its SQL. */
+  explanation: ForeignKeyExplanation;
+  /**
+   * The id of the relationship drawn for the key ({@link foreignKeyId}); `null` for a key to a
+   * table the login cannot see, which no diagram draws.
+   */
+  relation: string | null;
 }
 
 export type DetailSectionKind =
@@ -265,7 +279,15 @@ function indexFacts(index: Index): IndexFacts {
   };
 }
 
-function checkFacts(constraint: CheckConstraint, texts: TextMoments): CheckFacts {
+/**
+ * A `CHECK` of the table `texts` belongs to, read against the table's columns. A text kept
+ * from an earlier read is read as well; its date says how far it is vouched for.
+ */
+function checkFacts(
+  constraint: CheckConstraint,
+  columns: readonly Column[],
+  texts: TextMoments,
+): CheckFacts {
   return {
     name: constraint.name,
     expression: factText(
@@ -273,12 +295,25 @@ function checkFacts(constraint: CheckConstraint, texts: TextMoments): CheckFacts
       textReadAt(texts, { kind: "checkConstraint", name: constraint.name }),
     ),
     isEnabled: constraint.isEnabled,
+    reading: readCheckConstraint(constraint, columns, texts.ownerKey),
   };
+}
+
+/**
+ * What the key readers know beyond the snapshot, from the details' scope: an exported file's
+ * snapshot travels without its access profile and kept facts, which come beside it, so the
+ * Inspector and the viewer word a key the same.
+ */
+function explanationScope(scope: DetailsScope): ExplanationScope {
+  return { hasAccessProfile: scope.coverage !== null, carriedOver: scope.carriedOver };
 }
 
 /** What the facts of one table are built from. */
 interface TableContext {
+  snapshot: SchemaSnapshot;
   scope: DetailsScope;
+  /** The scope of the key readers, taken once from {@link scope}. */
+  explanationScope: ExplanationScope;
   key: string;
   /** Keys of every table and view of the snapshot. */
   entityKeys: ReadonlySet<string>;
@@ -313,6 +348,8 @@ function relation(context: TableContext, key: ForeignKey, other: QualifiedName):
       context.moments.get(
         carriedFactId(entityKey(key.referencingTable), { kind: "foreignKey", name: key.name }),
       ) ?? null,
+    explanation: foreignKeyExplanation(context.snapshot, key, context.explanationScope),
+    relation: foreignKeyId(key),
   };
 }
 
@@ -330,6 +367,8 @@ function relationToInvisibleTable(
     notCheckedSince:
       context.moments.get(carriedFactId(context.key, { kind: "foreignKey", name: key.name })) ??
       null,
+    explanation: foreignKeyExplanation(context.snapshot, key, context.explanationScope),
+    relation: null,
   };
 }
 
@@ -372,7 +411,9 @@ function describeTable(snapshot: SchemaSnapshot, table: Table, scope: DetailsSco
   const key = entityKey(table.name);
   const moments = readMoments(scope.carriedOver);
   const context: TableContext = {
+    snapshot,
     scope,
+    explanationScope: explanationScope(scope),
     key,
     entityKeys: new Set([
       ...snapshot.tables.map((candidate) => entityKey(candidate.name)),
@@ -426,7 +467,9 @@ function describeTable(snapshot: SchemaSnapshot, table: Table, scope: DetailsSco
       },
       {
         kind: "checks",
-        items: table.checkConstraints.map((constraint) => checkFacts(constraint, texts)),
+        items: table.checkConstraints.map((constraint) =>
+          checkFacts(constraint, table.columns, texts),
+        ),
         completeness: ownCompleteness(context.objectReadAt),
       },
       {

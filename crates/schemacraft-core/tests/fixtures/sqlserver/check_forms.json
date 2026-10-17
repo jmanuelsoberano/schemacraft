@@ -1,0 +1,637 @@
+{
+  "about": "Golden CHECK forms. Each case is a CHECK as a developer writes it, the text SQL Server stores for it in sys.check_constraints.definition, and how the rule reader must read that stored text. tests/sqlserver_integration.rs builds the table in SchemaCraftCheckForms from this file and asserts every stored form, column list and enabled state against the engine; src/features/schema/rules reads every stored form against these columns and asserts the reading. Every expression is synthetic.",
+  "engine": "SQL Server 2022 (16.x), default collation SQL_Latin1_General_CP1_CI_AS",
+  "notation": {
+    "setup": "Batches run before the table is created.",
+    "enabled": "false for a constraint disabled with NOCHECK; true when left out.",
+    "columns": "The table columns the stored text references, in order of first appearance, each once. An unread case keeps them so they can still be highlighted.",
+    "reading": "Either \"unread\" (the stored SQL is shown instead of sentences, and `why` says what is left out) or {rules, notes}.",
+    "rules": "Sentences in order. A string is one sentence. {\"when\": [columns], \"rules\": [...]} holds sentences that apply only when every listed column has a value, because a CHECK accepts a row when its expression is UNKNOWN. {\"anyOf\": [...]} holds sentences of which at least one must hold. {\"whenEnabled\": [...]} holds the sentences of a disabled constraint.",
+    "sentences": {
+      "A > 0": "A compared with a literal, with `now` (the server's local time when the value is saved), with `utcNow` (the UTC time when the value is saved) or with another column. Operators: = <> < <= > >=. The column is always on the left; a literal written first is flipped. 'When the value is saved' and not 'when the row is saved': SQL Server checks a CHECK only when a statement writes one of its columns.",
+      "between(A, 1, 5)": "An inclusive range.",
+      "oneOf(A, 'x', 'y')": "One of the values, in the order they were written (the engine stores IN as an OR chain in reverse order).",
+      "noneOf(A, 'x', 'y')": "None of the values, in the order they were written.",
+      "required(A)": "A must have a value.",
+      "notBlank(A)": "A must contain a character other than a space; trailing spaces are not compared.",
+      "startsWith(A, 'x')": "LIKE 'x%' with no wildcard in x; endsWith and contains are LIKE '%x' and LIKE '%x%'. endsWith does not count trailing spaces of A, which a char or varchar value matched against a plain pattern may have; endsWithExactly is the same suffix when A or the pattern is Unicode (nvarchar, or varchar against N'...'), where they count. char and nchar pad a shorter value with spaces, which a Unicode suffix counts too, so on them a suffix is read only outside Unicode.",
+      "matches(A, 'p')": "Any other LIKE pattern, explained by the pattern note. Left unread on char and nchar, where a _ can match a padding space, or a Unicode pattern fail on one.",
+      "onlyDigits(A)": "NOT LIKE '%[^0-9]%' on varchar or nvarchar: a trailing space is refused like any other character, and the empty text is accepted. On char and nchar, which pad a shorter value with spaces, it is left unread.",
+      "length(A)": "An operand: the number of characters of A, not counting trailing spaces (LEN).",
+      "bytes(A)": "An operand: the size of A in bytes (DATALENGTH)."
+    },
+    "literals": "Numbers as the engine stores them, without the parentheses. Text in single quotes, with quotes doubled and without the N prefix.",
+    "notes": "A set, in no particular order. pattern: the LIKE pattern needs explaining. collation: the rule compares text, so case, accents and ignorable characters follow the column's collation."
+  },
+  "table": { "schema": "dbo", "name": "RuleForms" },
+  "setup": [
+    "CREATE FUNCTION dbo.fn_IsValidCode (@Code varchar(20)) RETURNS bit AS BEGIN RETURN 1; END;"
+  ],
+  "columns": [
+    { "name": "Quantity", "type": "int", "nullable": false },
+    { "name": "Total", "type": "decimal(18,2)", "nullable": false },
+    { "name": "Code", "type": "varchar(20)", "nullable": false },
+    { "name": "Email", "type": "varchar(254)", "nullable": true },
+    { "name": "Name", "type": "nvarchar(100)", "nullable": false },
+    { "name": "Rating", "type": "tinyint", "nullable": true },
+    { "name": "Status", "type": "char(1)", "nullable": false },
+    { "name": "TaxId", "type": "varchar(20)", "nullable": true },
+    { "name": "Action", "type": "varchar(10)", "nullable": false },
+    { "name": "Discount", "type": "decimal(5,4)", "nullable": true },
+    { "name": "StartDate", "type": "date", "nullable": false },
+    { "name": "EndDate", "type": "date", "nullable": false },
+    { "name": "Order Date", "type": "date", "nullable": true },
+    { "name": "ShippedAt", "type": "datetime2(0)", "nullable": true },
+    { "name": "DueAt", "type": "datetime2(0)", "nullable": true },
+    { "name": "CreatedAt", "type": "datetime2(3)", "nullable": false },
+    { "name": "LoggedAt", "type": "datetime", "nullable": true },
+    { "name": "HiredOn", "type": "date", "nullable": false },
+    { "name": "Phone", "type": "varchar(20)", "nullable": true },
+    { "name": "Payload", "type": "varbinary(max)", "nullable": true },
+    { "name": "Rate", "type": "decimal(9,6)", "nullable": false },
+    { "name": "Kind", "type": "int", "nullable": false },
+    { "name": "Currency", "type": "char(3)", "nullable": false },
+    { "name": "Estado", "type": "nvarchar(20)", "nullable": false },
+    { "name": "Temperature", "type": "decimal(6,2)", "nullable": false },
+    { "name": "Weird]Name", "type": "int", "nullable": false },
+    { "name": "Price", "type": "decimal(18,2)", "nullable": false },
+    { "name": "Amount", "type": "decimal(18,2)", "nullable": false },
+    { "name": "Bonus", "type": "decimal(18,2)", "nullable": true },
+    { "name": "Commission", "type": "decimal(18,2)", "nullable": false },
+    { "name": "Ref", "type": "nchar(10)", "nullable": false }
+  ],
+  "cases": [
+    {
+      "name": "CK_RuleForms_QuantityPositive",
+      "written": "Quantity > 0",
+      "stored": "([Quantity]>(0))",
+      "columns": ["Quantity"],
+      "reading": { "rules": ["Quantity > 0"], "notes": [] }
+    },
+    {
+      "name": "CK_RuleForms_TotalNotNegative",
+      "written": "Total >= 0",
+      "stored": "([Total]>=(0))",
+      "columns": ["Total"],
+      "reading": { "rules": ["Total >= 0"], "notes": [] }
+    },
+    {
+      "name": "CK_RuleForms_QuantityLiteralFirst",
+      "written": "0 < Quantity",
+      "stored": "((0)<[Quantity])",
+      "columns": ["Quantity"],
+      "reading": { "rules": ["Quantity > 0"], "notes": [] }
+    },
+    {
+      "name": "CK_RuleForms_TemperatureFloor",
+      "written": "Temperature >= -273.15",
+      "stored": "([Temperature]>=(-273.15))",
+      "columns": ["Temperature"],
+      "reading": { "rules": ["Temperature >= -273.15"], "notes": [] }
+    },
+    {
+      "name": "CK_RuleForms_WeirdNamePositive",
+      "written": "[Weird]]Name] > 0",
+      "stored": "([Weird]]Name]>(0))",
+      "columns": ["Weird]Name"],
+      "reading": { "rules": ["Weird]Name > 0"], "notes": [] }
+    },
+    {
+      "name": "CK_RuleForms_EndOnOrAfterStart",
+      "written": "EndDate >= StartDate",
+      "stored": "([EndDate]>=[StartDate])",
+      "columns": ["EndDate", "StartDate"],
+      "reading": { "rules": ["EndDate >= StartDate"], "notes": [] }
+    },
+    {
+      "name": "CK_RuleForms_HiredSince1990",
+      "written": "HiredOn >= '1990-01-01'",
+      "stored": "([HiredOn]>='1990-01-01')",
+      "columns": ["HiredOn"],
+      "reading": { "rules": ["HiredOn >= '1990-01-01'"], "notes": [] }
+    },
+    {
+      "name": "CK_RuleForms_LoggedSince2000",
+      "written": "LoggedAt >= '2000-02-01'",
+      "stored": "([LoggedAt]>='2000-02-01')",
+      "columns": ["LoggedAt"],
+      "reading": "unread",
+      "why": "On datetime and smalldatetime, a 'YYYY-MM-DD' literal is read with the DATEFORMAT of the session that writes the row, so the date it means is not known."
+    },
+    {
+      "name": "CK_RuleForms_OrderDateSince2000",
+      "written": "[Order Date] >= '2000-01-01'",
+      "stored": "([Order Date]>='2000-01-01')",
+      "columns": ["Order Date"],
+      "reading": {
+        "rules": [{ "when": ["Order Date"], "rules": ["Order Date >= '2000-01-01'"] }],
+        "notes": []
+      }
+    },
+    {
+      "name": "CK_RuleForms_RateBetweenZeroAndOne",
+      "written": "Rate > 0 AND Rate < 1",
+      "stored": "([Rate]>(0) AND [Rate]<(1))",
+      "columns": ["Rate"],
+      "reading": { "rules": ["Rate > 0", "Rate < 1"], "notes": [] }
+    },
+    {
+      "name": "CK_RuleForms_ShippedNotInFuture",
+      "written": "ShippedAt <= GETDATE()",
+      "stored": "([ShippedAt]<=getdate())",
+      "columns": ["ShippedAt"],
+      "reading": {
+        "rules": [{ "when": ["ShippedAt"], "rules": ["ShippedAt <= now"] }],
+        "notes": []
+      }
+    },
+    {
+      "name": "CK_RuleForms_DueInFuture",
+      "written": "DueAt > GETDATE()",
+      "stored": "([DueAt]>getdate())",
+      "columns": ["DueAt"],
+      "reading": {
+        "rules": [{ "when": ["DueAt"], "rules": ["DueAt > now"] }],
+        "notes": []
+      }
+    },
+    {
+      "name": "CK_RuleForms_CreatedNotAfterUtcNow",
+      "written": "SYSUTCDATETIME() >= CreatedAt",
+      "stored": "(sysutcdatetime()>=[CreatedAt])",
+      "columns": ["CreatedAt"],
+      "reading": { "rules": ["CreatedAt <= utcNow"], "notes": [] }
+    },
+    {
+      "name": "CK_RuleForms_CreatedNotAfterCurrentTimestamp",
+      "written": "CreatedAt <= CURRENT_TIMESTAMP",
+      "stored": "([CreatedAt]<=getdate())",
+      "columns": ["CreatedAt"],
+      "reading": { "rules": ["CreatedAt <= now"], "notes": [] }
+    },
+    {
+      "name": "CK_RuleForms_RatingRange",
+      "written": "Rating BETWEEN 1 AND 5",
+      "stored": "([Rating]>=(1) AND [Rating]<=(5))",
+      "columns": ["Rating"],
+      "reading": {
+        "rules": [{ "when": ["Rating"], "rules": ["between(Rating, 1, 5)"] }],
+        "notes": []
+      }
+    },
+    {
+      "name": "CK_RuleForms_DiscountGuardedRange",
+      "written": "Discount IS NULL OR Discount BETWEEN 0 AND 1",
+      "stored": "([Discount] IS NULL OR [Discount]>=(0) AND [Discount]<=(1))",
+      "columns": ["Discount"],
+      "reading": {
+        "rules": [{ "when": ["Discount"], "rules": ["between(Discount, 0, 1)"] }],
+        "notes": []
+      }
+    },
+    {
+      "name": "CK_RuleForms_TotalNeedlessGuard",
+      "written": "Total IS NULL OR Total >= 0",
+      "stored": "([Total] IS NULL OR [Total]>=(0))",
+      "columns": ["Total"],
+      "reading": { "rules": ["Total >= 0"], "notes": [] }
+    },
+    {
+      "name": "CK_RuleForms_QuantityNotBetween",
+      "written": "Quantity NOT BETWEEN 10 AND 20",
+      "stored": "(NOT ([Quantity]>=(10) AND [Quantity]<=(20)))",
+      "columns": ["Quantity"],
+      "reading": "unread",
+      "why": "NOT over a range is outside the closed set of forms the reader words."
+    },
+    {
+      "name": "CK_RuleForms_StatusThreeValues",
+      "written": "Status IN ('A', 'I', 'S')",
+      "stored": "([Status]='S' OR [Status]='I' OR [Status]='A')",
+      "columns": ["Status"],
+      "reading": { "rules": ["oneOf(Status, 'A', 'I', 'S')"], "notes": ["collation"] }
+    },
+    {
+      "name": "CK_RuleForms_StatusFourValues",
+      "written": "Status IN ('N', 'P', 'S', 'C')",
+      "stored": "([Status]='C' OR [Status]='S' OR [Status]='P' OR [Status]='N')",
+      "columns": ["Status"],
+      "reading": { "rules": ["oneOf(Status, 'N', 'P', 'S', 'C')"], "notes": ["collation"] }
+    },
+    {
+      "name": "CK_RuleForms_StatusSingleValue",
+      "written": "Status IN ('A')",
+      "stored": "([Status]='A')",
+      "columns": ["Status"],
+      "reading": { "rules": ["Status = 'A'"], "notes": ["collation"] }
+    },
+    {
+      "name": "CK_RuleForms_ActionValues",
+      "written": "Action IN ('INSERT', 'UPDATE', 'DELETE')",
+      "stored": "([Action]='DELETE' OR [Action]='UPDATE' OR [Action]='INSERT')",
+      "columns": ["Action"],
+      "reading": {
+        "rules": ["oneOf(Action, 'INSERT', 'UPDATE', 'DELETE')"],
+        "notes": ["collation"]
+      }
+    },
+    {
+      "name": "CK_RuleForms_KindValues",
+      "written": "Kind IN (1, 2, 3)",
+      "stored": "([Kind]=(3) OR [Kind]=(2) OR [Kind]=(1))",
+      "columns": ["Kind"],
+      "reading": { "rules": ["oneOf(Kind, 1, 2, 3)"], "notes": [] }
+    },
+    {
+      "name": "CK_RuleForms_CurrencyExcluded",
+      "written": "Currency NOT IN ('XXX', 'XTS')",
+      "stored": "(NOT ([Currency]='XTS' OR [Currency]='XXX'))",
+      "columns": ["Currency"],
+      "reading": { "rules": ["noneOf(Currency, 'XXX', 'XTS')"], "notes": ["collation"] }
+    },
+    {
+      "name": "CK_RuleForms_EstadoUnicodeValues",
+      "written": "Estado IN (N'Pendiente', N'Pagado')",
+      "stored": "([Estado]=N'Pagado' OR [Estado]=N'Pendiente')",
+      "columns": ["Estado"],
+      "reading": { "rules": ["oneOf(Estado, 'Pendiente', 'Pagado')"], "notes": ["collation"] }
+    },
+    {
+      "name": "CK_RuleForms_TaxIdExcluded",
+      "written": "TaxId NOT IN ('A', 'B')",
+      "stored": "(NOT ([TaxId]='B' OR [TaxId]='A'))",
+      "columns": ["TaxId"],
+      "reading": {
+        "rules": [{ "when": ["TaxId"], "rules": ["noneOf(TaxId, 'A', 'B')"] }],
+        "notes": ["collation"]
+      }
+    },
+    {
+      "name": "CK_RuleForms_TwoLists",
+      "written": "Kind IN (1, 2) AND Status IN ('A', 'B')",
+      "stored": "(([Kind]=(2) OR [Kind]=(1)) AND ([Status]='B' OR [Status]='A'))",
+      "columns": ["Kind", "Status"],
+      "reading": {
+        "rules": ["oneOf(Kind, 1, 2)", "oneOf(Status, 'A', 'B')"],
+        "notes": ["collation"]
+      }
+    },
+    {
+      "name": "CK_RuleForms_RatingGuardKindList",
+      "written": "Rating IS NULL OR Kind IN (1, 2)",
+      "stored": "([Rating] IS NULL OR ([Kind]=(2) OR [Kind]=(1)))",
+      "columns": ["Rating", "Kind"],
+      "reading": {
+        "rules": [{ "when": ["Rating"], "rules": ["oneOf(Kind, 1, 2)"] }],
+        "notes": []
+      }
+    },
+    {
+      "name": "CK_RuleForms_KindListRatingGuard",
+      "written": "Kind IN (1, 2) OR Rating IS NULL",
+      "stored": "([Kind]=(2) OR [Kind]=(1) OR [Rating] IS NULL)",
+      "columns": ["Kind", "Rating"],
+      "reading": {
+        "rules": [{ "when": ["Rating"], "rules": ["oneOf(Kind, 1, 2)"] }],
+        "notes": []
+      },
+      "why": "The engine keeps an IN list in parentheses after a guard but flattens it into one OR chain before one; the reader takes the guard out first, so both read the same."
+    },
+    {
+      "name": "CK_RuleForms_StatusInWithNull",
+      "written": "Status IN ('A', NULL)",
+      "stored": "([Status]=NULL OR [Status]='A')",
+      "columns": ["Status"],
+      "reading": "unread",
+      "why": "A comparison with NULL is always UNKNOWN, so the CHECK accepts every value; any sentence about the list would be false."
+    },
+    {
+      "name": "CK_RuleForms_CurrencyNotInWithNull",
+      "written": "Currency NOT IN ('XXX', NULL)",
+      "stored": "(NOT ([Currency]=NULL OR [Currency]='XXX'))",
+      "columns": ["Currency"],
+      "reading": "unread",
+      "why": "A comparison with NULL is always UNKNOWN; comparisons with a NULL literal are never worded."
+    },
+    {
+      "name": "CK_RuleForms_StatusEqualsNull",
+      "written": "Status = 'A' OR Status = NULL",
+      "stored": "([Status]='A' OR [Status]=NULL)",
+      "columns": ["Status"],
+      "reading": "unread",
+      "why": "A comparison with NULL is always UNKNOWN, so the CHECK accepts every value."
+    },
+    {
+      "name": "CK_RuleForms_TaxIdRequired",
+      "written": "TaxId IS NOT NULL",
+      "stored": "([TaxId] IS NOT NULL)",
+      "columns": ["TaxId"],
+      "reading": { "rules": ["required(TaxId)"], "notes": [] }
+    },
+    {
+      "name": "CK_RuleForms_PhoneOrEmail",
+      "written": "Phone IS NOT NULL OR Email IS NOT NULL",
+      "stored": "([Phone] IS NOT NULL OR [Email] IS NOT NULL)",
+      "columns": ["Phone", "Email"],
+      "reading": {
+        "rules": [{ "anyOf": ["required(Phone)", "required(Email)"] }],
+        "notes": []
+      }
+    },
+    {
+      "name": "CK_RuleForms_EmailShape",
+      "written": "Email LIKE '%_@_%'",
+      "stored": "([Email] like '%_@_%')",
+      "columns": ["Email"],
+      "reading": {
+        "rules": [{ "when": ["Email"], "rules": ["matches(Email, '%_@_%')"] }],
+        "notes": ["pattern", "collation"]
+      }
+    },
+    {
+      "name": "CK_RuleForms_EmailHasAt",
+      "written": "Email LIKE '%@%'",
+      "stored": "([Email] like '%@%')",
+      "columns": ["Email"],
+      "reading": {
+        "rules": [{ "when": ["Email"], "rules": ["contains(Email, '@')"] }],
+        "notes": ["collation"]
+      }
+    },
+    {
+      "name": "CK_RuleForms_PhoneDigitsOnly",
+      "written": "Phone NOT LIKE '%[^0-9]%'",
+      "stored": "(NOT [Phone] like '%[^0-9]%')",
+      "columns": ["Phone"],
+      "reading": {
+        "rules": [{ "when": ["Phone"], "rules": ["onlyDigits(Phone)"] }],
+        "notes": ["collation"]
+      }
+    },
+    {
+      "name": "CK_RuleForms_CurrencyDigitsOnly",
+      "written": "Currency NOT LIKE '%[^0-9]%'",
+      "stored": "(NOT [Currency] like '%[^0-9]%')",
+      "columns": ["Currency"],
+      "reading": "unread",
+      "why": "char pads a shorter value with spaces, which the pattern refuses, so an empty or short value is refused and the digits-only sentence, which accepts an empty value, would be false."
+    },
+    {
+      "name": "CK_RuleForms_RefSuffix",
+      "written": "Ref LIKE '%-X'",
+      "stored": "([Ref] like '%-X')",
+      "columns": ["Ref"],
+      "reading": "unread",
+      "why": "nchar pads a shorter value with spaces and Unicode LIKE counts them, so 'AB-X' is stored with six spaces after it and refused; only a value that fills all ten characters can end with -X, and the suffix sentence would be false."
+    },
+    {
+      "name": "CK_RuleForms_CurrencyUnicodeSuffix",
+      "written": "Currency LIKE N'%X'",
+      "stored": "([Currency] like N'%X')",
+      "columns": ["Currency"],
+      "reading": "unread",
+      "why": "char pads a shorter value with spaces, and against an N'...' pattern they count, so 'AX' is refused and the suffix sentence would be false."
+    },
+    {
+      "name": "CK_RuleForms_CurrencySuffix",
+      "written": "Currency LIKE '%X'",
+      "stored": "([Currency] like '%X')",
+      "columns": ["Currency"],
+      "reading": { "rules": ["endsWith(Currency, 'X')"], "notes": ["collation"] }
+    },
+    {
+      "name": "CK_RuleForms_RefPrefix",
+      "written": "Ref LIKE N'R-%'",
+      "stored": "([Ref] like N'R-%')",
+      "columns": ["Ref"],
+      "reading": { "rules": ["startsWith(Ref, 'R-')"], "notes": ["collation"] }
+    },
+    {
+      "name": "CK_RuleForms_RefHasDash",
+      "written": "Ref LIKE '%-%'",
+      "stored": "([Ref] like '%-%')",
+      "columns": ["Ref"],
+      "reading": { "rules": ["contains(Ref, '-')"], "notes": ["collation"] }
+    },
+    {
+      "name": "CK_RuleForms_RefNoDoubleDash",
+      "written": "Ref NOT LIKE '%--%'",
+      "stored": "(NOT [Ref] like '%--%')",
+      "columns": ["Ref"],
+      "reading": { "rules": ["notContains(Ref, '--')"], "notes": ["collation"] }
+    },
+    {
+      "name": "CK_RuleForms_RefTwoLetters",
+      "written": "Ref LIKE N'[A-Z][A-Z]'",
+      "stored": "([Ref] like N'[A-Z][A-Z]')",
+      "columns": ["Ref"],
+      "reading": "unread",
+      "why": "nchar pads 'AB' with eight spaces and Unicode LIKE counts them, so no value matches two letters and the pattern sentence would be false."
+    },
+    {
+      "name": "CK_RuleForms_CurrencyStartsWithA",
+      "written": "Currency LIKE 'A_'",
+      "stored": "([Currency] like 'A_')",
+      "columns": ["Currency"],
+      "reading": "unread",
+      "why": "char(3) stores 'A' with two spaces after it and the _ matches one of them, so 'A' is accepted although it has no second character; the pattern sentence would be false."
+    },
+    {
+      "name": "CK_RuleForms_RefNotStartsWithA",
+      "written": "Ref NOT LIKE N'A_'",
+      "stored": "(NOT [Ref] like N'A_')",
+      "columns": ["Ref"],
+      "reading": "unread",
+      "why": "nchar pads 'AB' with eight spaces, which no longer match A_ in Unicode, so 'AB' is accepted and the sentence that it must not match would be false."
+    },
+    {
+      "name": "CK_RuleForms_CodePrefix",
+      "written": "Code LIKE 'INV-%'",
+      "stored": "([Code] like 'INV-%')",
+      "columns": ["Code"],
+      "reading": { "rules": ["startsWith(Code, 'INV-')"], "notes": ["collation"] }
+    },
+    {
+      "name": "CK_RuleForms_CodeSuffix",
+      "written": "Code LIKE '%-X'",
+      "stored": "([Code] like '%-X')",
+      "columns": ["Code"],
+      "reading": { "rules": ["endsWith(Code, '-X')"], "notes": ["collation"] }
+    },
+    {
+      "name": "CK_RuleForms_CodeUnicodeSuffix",
+      "written": "Code LIKE N'%-Y'",
+      "stored": "([Code] like N'%-Y')",
+      "columns": ["Code"],
+      "reading": { "rules": ["endsWithExactly(Code, '-Y')"], "notes": ["collation"] }
+    },
+    {
+      "name": "CK_RuleForms_EstadoSuffix",
+      "written": "Estado LIKE N'%o'",
+      "stored": "([Estado] like N'%o')",
+      "columns": ["Estado"],
+      "reading": { "rules": ["endsWithExactly(Estado, 'o')"], "notes": ["collation"] }
+    },
+    {
+      "name": "CK_RuleForms_CodeQuotedPrefix",
+      "written": "Code LIKE 'it''s%'",
+      "stored": "([Code] like 'it''s%')",
+      "columns": ["Code"],
+      "reading": { "rules": ["startsWith(Code, 'it''s')"], "notes": ["collation"] }
+    },
+    {
+      "name": "CK_RuleForms_NameUnicodePrefix",
+      "written": "Name LIKE N'Ñ%'",
+      "stored": "([Name] like N'Ñ%')",
+      "columns": ["Name"],
+      "reading": { "rules": ["startsWith(Name, 'Ñ')"], "notes": ["collation"] }
+    },
+    {
+      "name": "CK_RuleForms_CodeLetterRange",
+      "written": "Code LIKE '[A-Z]%'",
+      "stored": "([Code] like '[A-Z]%')",
+      "columns": ["Code"],
+      "reading": { "rules": ["matches(Code, '[A-Z]%')"], "notes": ["pattern", "collation"] }
+    },
+    {
+      "name": "CK_RuleForms_CodeEscape",
+      "written": "Code LIKE '%!%%' ESCAPE '!'",
+      "stored": "([Code] like '%!%%' escape '!' )",
+      "columns": ["Code"],
+      "reading": "unread",
+      "why": "LIKE with ESCAPE is outside the closed set. The engine stores a space before the closing parenthesis."
+    },
+    {
+      "name": "CK_RuleForms_CodeNotBlank",
+      "written": "Code <> ''",
+      "stored": "([Code]<>'')",
+      "columns": ["Code"],
+      "reading": { "rules": ["notBlank(Code)"], "notes": ["collation"] }
+    },
+    {
+      "name": "CK_RuleForms_NameLenPositive",
+      "written": "LEN(Name) > 0",
+      "stored": "(len([Name])>(0))",
+      "columns": ["Name"],
+      "reading": { "rules": ["notBlank(Name)"], "notes": [] }
+    },
+    {
+      "name": "CK_RuleForms_NameTrimNotBlank",
+      "written": "TRIM(Name) <> ''",
+      "stored": "(Trim([Name])<>'')",
+      "columns": ["Name"],
+      "reading": { "rules": ["notBlank(Name)"], "notes": ["collation"] }
+    },
+    {
+      "name": "CK_RuleForms_NameLtrimRtrimNotBlank",
+      "written": "LTRIM(RTRIM(Name)) <> ''",
+      "stored": "(ltrim(rtrim([Name]))<>'')",
+      "columns": ["Name"],
+      "reading": { "rules": ["notBlank(Name)"], "notes": ["collation"] }
+    },
+    {
+      "name": "CK_RuleForms_CodeLengthFive",
+      "written": "LEN(Code) = 5",
+      "stored": "(len([Code])=(5))",
+      "columns": ["Code"],
+      "reading": { "rules": ["length(Code) = 5"], "notes": [] }
+    },
+    {
+      "name": "CK_RuleForms_NameLengthRange",
+      "written": "LEN(Name) BETWEEN 2 AND 100",
+      "stored": "(len([Name])>=(2) AND len([Name])<=(100))",
+      "columns": ["Name"],
+      "reading": { "rules": ["between(length(Name), 2, 100)"], "notes": [] }
+    },
+    {
+      "name": "CK_RuleForms_PayloadSize",
+      "written": "DATALENGTH(Payload) <= 1048576",
+      "stored": "(datalength([Payload])<=(1048576))",
+      "columns": ["Payload"],
+      "reading": {
+        "rules": [{ "when": ["Payload"], "rules": ["bytes(Payload) <= 1048576"] }],
+        "notes": []
+      }
+    },
+    {
+      "name": "CK_RuleForms_UserFunction",
+      "written": "dbo.fn_IsValidCode(Code) = 1",
+      "stored": "([dbo].[fn_IsValidCode]([Code])=(1))",
+      "columns": ["Code"],
+      "reading": "unread",
+      "why": "What a user-defined function checks is not known from the constraint."
+    },
+    {
+      "name": "CK_RuleForms_CodeUpperCase",
+      "written": "UPPER(Code) = Code",
+      "stored": "(upper([Code])=[Code])",
+      "columns": ["Code"],
+      "reading": "unread",
+      "why": "Under a case-insensitive collation this accepts lower case too, so 'must be upper case' would be false."
+    },
+    {
+      "name": "CK_RuleForms_LineValueCap",
+      "written": "Price * Quantity <= 10000",
+      "stored": "([Price]*[Quantity]<=(10000))",
+      "columns": ["Price", "Quantity"],
+      "reading": "unread",
+      "why": "Arithmetic is outside the closed set."
+    },
+    {
+      "name": "CK_RuleForms_CaseExpression",
+      "written": "CASE WHEN Kind = 1 THEN Amount ELSE 0 END >= 0",
+      "stored": "(case when [Kind]=(1) then [Amount] else (0) end>=(0))",
+      "columns": ["Kind", "Amount"],
+      "reading": "unread",
+      "why": "CASE is outside the closed set."
+    },
+    {
+      "name": "CK_RuleForms_BonusOrCommission",
+      "written": "Bonus > 0 OR Commission > 0",
+      "stored": "([Bonus]>(0) OR [Commission]>(0))",
+      "columns": ["Bonus", "Commission"],
+      "reading": "unread",
+      "why": "An OR over a nullable operand: a row with no Bonus and Commission -1 is accepted, so 'at least one is greater than 0' would be false."
+    },
+    {
+      "name": "CK_RuleForms_OrOverAnd",
+      "written": "Kind = 1 OR Kind = 2 AND Amount > 0",
+      "stored": "([Kind]=(1) OR [Kind]=(2) AND [Amount]>(0))",
+      "columns": ["Kind", "Amount"],
+      "reading": "unread",
+      "why": "An OR whose branch is an AND list is outside the closed set. The engine keeps AND above OR without parentheses."
+    },
+    {
+      "name": "CK_RuleForms_NotOverComparison",
+      "written": "NOT (Quantity < 0)",
+      "stored": "(NOT [Quantity]<(0))",
+      "columns": ["Quantity"],
+      "reading": "unread",
+      "why": "NOT over a comparison is outside the closed set. The engine drops the parentheses: NOT binds looser than the comparison."
+    },
+    {
+      "name": "CK_RuleForms_FloatLiteral",
+      "written": "Price > 1e3",
+      "stored": "([Price]>(1.0000000000000000e+003))",
+      "columns": ["Price"],
+      "reading": "unread",
+      "why": "A float literal is stored in exponent notation; the reader does not reformat it."
+    },
+    {
+      "name": "CK_RuleForms_AlwaysTrue",
+      "written": "1 = 1",
+      "stored": "((1)=(1))",
+      "columns": [],
+      "reading": "unread",
+      "why": "The expression references no column."
+    },
+    {
+      "name": "CK_RuleForms_Disabled",
+      "written": "Quantity <= 1000",
+      "stored": "([Quantity]<=(1000))",
+      "enabled": false,
+      "columns": ["Quantity"],
+      "reading": { "rules": [{ "whenEnabled": ["Quantity <= 1000"] }], "notes": [] }
+    }
+  ]
+}

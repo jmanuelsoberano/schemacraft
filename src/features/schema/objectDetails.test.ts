@@ -10,6 +10,7 @@ import type {
 import { previewSnapshot } from "@/shared/ipc/previewConnectionBackend";
 
 import { TABLE_SECTIONS, describeObjectDetails } from "./objectDetails";
+import { foreignKeyExplanation } from "./rules/foreignKeyReader";
 import type {
   DetailSection,
   DetailSectionKind,
@@ -174,7 +175,10 @@ describe("describeObjectDetails", () => {
       ],
       completeness: { status: "complete" },
     });
-    expect(sectionOf(customers, "checks").items).toEqual([
+    const checks = sectionOf(customers, "checks").items;
+    expect(
+      checks.map(({ name, expression, isEnabled }) => ({ name, expression, isEnabled })),
+    ).toEqual([
       {
         name: "CK_Customers_Email",
         expression: { status: "readable", text: "([Email] like '%_@_%')" },
@@ -186,6 +190,11 @@ describe("describeObjectDetails", () => {
         isEnabled: true,
       },
     ]);
+    // Each is read against the columns of its own table: in words, or as SQL the reader cannot word.
+    expect(checks.map((check) => check.reading)).toMatchObject([
+      { status: "read", columns: ["Email"], sql: "([Email] like '%_@_%')" },
+      { status: "unread", columns: ["Name"], sql: "([dbo].[fn_valid_name]([Name])=(1))" },
+    ]);
 
     const employees = detailsOf(full, "hr.Employees");
     expect(sectionOf(employees, "indexes")).toEqual({
@@ -193,11 +202,12 @@ describe("describeObjectDetails", () => {
       items: [],
       completeness: { status: "complete" },
     });
-    expect(sectionOf(employees, "checks").items).toEqual([
+    expect(sectionOf(employees, "checks").items).toMatchObject([
       {
         name: "CK_Employees_Manager",
         expression: { status: "readable", text: "([ManagerId]<>[EmployeeId])" },
         isEnabled: false,
+        reading: { status: "read", columns: ["ManagerId", "EmployeeId"] },
       },
     ]);
   });
@@ -206,7 +216,7 @@ describe("describeObjectDetails", () => {
     const orders = detailsOf(full, "sales.Orders");
     const references = sectionOf(orders, "references");
     expect(references.completeness).toEqual({ status: "complete" });
-    expect(references.items).toEqual([
+    expect(references.items).toMatchObject([
       {
         name: "FK_Orders_Customers",
         columns: [{ referencing: "CustomerId", referenced: "CustomerId" }],
@@ -234,6 +244,18 @@ describe("describeObjectDetails", () => {
         notCheckedSince: null,
       },
     ]);
+    // Each key carries its words, the same the canvas reads for the snapshot, and the id of
+    // the relationship drawn for it.
+    for (const [index, key] of [
+      full.foreignKeys.find((candidate) => candidate.name === "FK_Orders_Customers"),
+      full.foreignKeys.find((candidate) => candidate.name === "FK_Orders_SalesRep"),
+    ].entries()) {
+      if (key === undefined) {
+        throw new Error("the fixture changed");
+      }
+      expect(references.items[index]?.explanation).toBe(foreignKeyExplanation(full, key));
+      expect(references.items[index]?.relation).toBe(`sales.Orders.${key.name}`);
+    }
     const referencedBy = sectionOf(orders, "referencedBy");
     expect(referencedBy.completeness).toEqual({ status: "complete" });
     expect(referencedBy.items).toMatchObject([
@@ -303,6 +325,13 @@ describe("describeObjectDetails", () => {
         isEnabled: true,
         target: { status: "notVisible" },
         notCheckedSince: null,
+        // Worded from its local columns and actions; no line is drawn and no SQL scripted.
+        explanation: {
+          childCardinality: null,
+          sql: null,
+          columns: new Map([["sales.Orders", ["CustomerId"]]]),
+        },
+        relation: null,
       },
     ]);
     // The column still reads as a foreign key, as its badge on the diagram does.
@@ -328,11 +357,43 @@ describe("describeObjectDetails", () => {
     });
   });
 
+  it("words a key of an exported file as the application does, from what travels beside it", () => {
+    // SET DEFAULT on a nullable column without a default sets it to NULL, which only a capture
+    // that recorded what the login could see may say.
+    const withSetDefault = (snapshot: SchemaSnapshot): SchemaSnapshot => ({
+      ...snapshot,
+      foreignKeys: snapshot.foreignKeys.map((key) =>
+        key.name === "FK_Orders_SalesRep" ? { ...key, onDelete: "setDefault" } : key,
+      ),
+    });
+    const application = withSetDefault(full);
+    const exported = withSetDefault(full);
+    delete exported.access;
+    const salesRep = (details: ObjectDetails) =>
+      sectionOf(details, "references").items.find((item) => item.name === "FK_Orders_SalesRep")
+        ?.explanation.deleteRule;
+
+    const inApplication = salesRep(detailsOf(application, "sales.Orders"));
+    expect(inApplication).toMatchObject({ plural: "rule.fk.delete.setDefaultNull" });
+    expect(
+      salesRep(detailsOf(exported, "sales.Orders", { coverage: full.access?.coverage ?? null })),
+    ).toEqual(inApplication);
+    // Without the verdicts beside it, a default may have gone unread, so the words stay neutral.
+    expect(salesRep(detailsOf(exported, "sales.Orders", { coverage: null }))).toMatchObject({
+      plural: "rule.fk.delete.setDefaultNeutral",
+    });
+  });
+
   it("says a 1.0 file recorded neither the missing texts nor the dropped keys", () => {
     const orders = detailsOf(asFormatOne(full), "sales.Orders");
     expect(sectionOf(orders, "columns").items[4]?.defaultValue).toEqual({ status: "notRecorded" });
     expect(sectionOf(orders, "checks").items).toEqual([
-      { name: "CK_Orders_Status", expression: { status: "notRecorded" }, isEnabled: null },
+      {
+        name: "CK_Orders_Status",
+        expression: { status: "notRecorded" },
+        isEnabled: null,
+        reading: { status: "notRecorded" },
+      },
     ]);
     expect(sectionOf(orders, "references").completeness).toEqual({ status: "notRecorded" });
     expect(sectionOf(orders, "referencedBy").completeness).toEqual({ status: "notRecorded" });

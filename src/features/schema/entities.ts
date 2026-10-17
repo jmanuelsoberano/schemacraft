@@ -1,4 +1,4 @@
-import type { QualifiedName, SchemaSnapshot } from "@/shared/contracts";
+import type { ForeignKey, QualifiedName, SchemaSnapshot } from "@/shared/contracts";
 
 /**
  * Identity of the entities a diagram shows. The canvas, the exports, the lists and the viewer
@@ -12,6 +12,15 @@ export const ENTITY_KINDS: readonly EntityKind[] = ["table", "view"];
 /** `schema.name`, the identity of a table or view: node id, list key and export attribute. */
 export function entityKey(name: QualifiedName): string {
   return `${name.schema}.${name.name}`;
+}
+
+/**
+ * The identity of a foreign key: its referencing table's key and its name, e.g.
+ * `sales.Orders.FK_Orders_Customers`. It is the id of the relationship on the canvas and its
+ * `data-relation` in an export, so the details of a key can point at the line drawn for it.
+ */
+export function foreignKeyId(key: Pick<ForeignKey, "referencingTable" | "name">): string {
+  return `${entityKey(key.referencingTable)}.${key.name}`;
 }
 
 /** A table or view as the lists show it. */

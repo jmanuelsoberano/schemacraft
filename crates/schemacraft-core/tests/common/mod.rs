@@ -18,7 +18,7 @@ use schemacraft_core::inspectors::{ConnectionSettings, DatabaseInspector, create
 use secrecy::SecretString;
 use tiberius::Client;
 use tokio::net::TcpStream;
-use tokio_util::compat::TokioAsyncWriteCompatExt;
+use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 
 /// A SQL Server instance and the login the tests use on it.
 #[derive(Debug, Clone)]
@@ -105,19 +105,27 @@ pub fn batches(script: &str) -> Vec<String> {
     batches
 }
 
-/// Runs `script` batch by batch with the login of `server`, failing the test on any error.
-pub async fn run_script(server: &TestServer, script: &str) {
-    let config = settings(server, None)
+/// A raw connection to the test server.
+pub type TestClient = Client<Compat<TcpStream>>;
+
+/// A raw client logged in with the login of `server`, landing in `database` when one is given,
+/// for statements the inspector never runs.
+pub async fn connect(server: &TestServer, database: Option<&str>) -> TestClient {
+    let config = settings(server, database)
         .to_tiberius_config()
         .expect("settings are valid");
     let tcp = TcpStream::connect(config.get_addr())
         .await
         .expect("TCP connection to the test server");
     tcp.set_nodelay(true).expect("nodelay");
-    let mut client = Client::connect(config, tcp.compat_write())
+    Client::connect(config, tcp.compat_write())
         .await
-        .expect("login to the test server");
+        .expect("login to the test server")
+}
 
+/// Runs `script` batch by batch with the login of `server`, failing the test on any error.
+pub async fn run_script(server: &TestServer, script: &str) {
+    let mut client = connect(server, None).await;
     for batch in batches(script) {
         client
             .simple_query(batch.as_str())

@@ -31,13 +31,14 @@ interface InspectorPanelProps {
 
 /**
  * The details of the selected table or view: columns, keys, indexes, `CHECK`s and relations,
- * each fact with how far the capture vouches for it, from the same view-model the exported
- * HTML draws. The panel follows the canvas selection and holds no state of its own; it shows an
- * empty state while nothing or several entities are selected. The shell places it in a
- * complementary landmark, never a dialog, so shortcuts keep working while it is open. It takes
- * focus when the opening asks for it, which every way in but a double-click does; Escape hands
- * focus back to the inspected card and leaves the panel open; the close button and the toggle
- * shortcut close it.
+ * each fact with how far the capture vouches for it and every `CHECK` and key in words, from
+ * the same view-model the exported HTML draws. The panel follows the canvas selection and holds
+ * no state of its own; the rule a reader points at goes to the canvas store, which highlights
+ * it on the cards. It shows an empty state while nothing or several entities are selected. The
+ * shell places it in a complementary landmark, never a dialog, so shortcuts keep working while
+ * it is open. It takes focus when the opening asks for it, which every way in but a double-click
+ * does; Escape hands focus back to the inspected card and leaves the panel open; the close
+ * button and the toggle shortcut close it.
  */
 export function InspectorPanel({
   toggleShortcutHint,
@@ -124,10 +125,12 @@ export function InspectorPanel({
               <span className={styles.summary}>{view.summary}</span>
               {view.notice === null ? null : <p className={styles.notice}>{view.notice}</p>}
             </header>
+            {/* Keyed by the entity too, so another table's rules get items of their own. */}
             {view.sections.map((section) => (
               <InspectorSection
-                key={section.kind}
+                key={`${view.key}:${section.kind}`}
                 section={section}
+                entityKey={view.key}
                 onShowAccessReport={onShowAccessReport}
               />
             ))}

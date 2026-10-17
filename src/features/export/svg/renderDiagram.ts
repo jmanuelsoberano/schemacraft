@@ -1,10 +1,10 @@
 import {
   LOOP_REACH,
   MARKER_HEIGHT,
+  MARKER_ORIENT,
   MARKER_REF_Y,
   RELATION_MARKER_SHAPES,
   relationPath,
-  startMarkerKind,
 } from "@/features/canvas/edgeGeometry";
 import type {
   NodeBox,
@@ -23,13 +23,20 @@ import {
 import type { ColumnRow, EntityDescriptor } from "@/features/canvas/geometry";
 import {
   gridPosition,
-  isOptionalForeignKey,
   nodeStatesByKey,
   relationEdgeId,
+  relationEnds,
+  tablesByKey,
 } from "@/features/canvas/graph";
 import { formatDataType } from "@/features/schema/dataType";
 import { entityKey } from "@/features/schema/entities";
-import type { CanvasState, DetailLevel, ForeignKey, SchemaSnapshot } from "@/shared/contracts";
+import type {
+  CanvasState,
+  DetailLevel,
+  ForeignKey,
+  SchemaSnapshot,
+  Table,
+} from "@/shared/contracts";
 
 import { ICON_KEY, ICON_LINK, ICON_SYMBOLS, ICON_TABLE, ICON_VIEW } from "./icons";
 import { DIAGRAM_PALETTES } from "./palette";
@@ -100,15 +107,18 @@ export interface RenderedDiagram extends DiagramExtent {
 
 export const DEFAULT_PADDING = 48;
 
-/** Marker ids; the `-active` ones are the accent-coloured variants the HTML viewer switches to. */
+/**
+ * Marker ids, named by what the end says; the `-active` ones are the accent-coloured variants
+ * the HTML viewer switches to.
+ */
 export const MARKER_MANY = "sc-many";
-export const MARKER_MANY_OPTIONAL = "sc-many-optional";
 export const MARKER_ONE = "sc-one";
+export const MARKER_ZERO_OR_ONE = "sc-zero-or-one";
 export const ACTIVE_SUFFIX = "-active";
 const MARKER_IDS: Readonly<Record<RelationMarkerKind, string>> = {
   many: MARKER_MANY,
-  manyOptional: MARKER_MANY_OPTIONAL,
   one: MARKER_ONE,
+  zeroOrOne: MARKER_ZERO_OR_ONE,
 };
 
 const HEADER_PADDING_LEFT = 10;
@@ -303,7 +313,7 @@ function marker(id: string, shape: RelationMarkerShape, suffix: string): string 
     : "";
   return (
     `<marker id="${id}" viewBox="0 0 ${shape.width} ${MARKER_HEIGHT}" markerWidth="${shape.width}" markerHeight="${MARKER_HEIGHT}" ` +
-    `refX="${shape.refX}" refY="${MARKER_REF_Y}" orient="${shape.orient}" markerUnits="userSpaceOnUse">` +
+    `refX="${shape.refX}" refY="${MARKER_REF_Y}" orient="${MARKER_ORIENT}" markerUnits="userSpaceOnUse">` +
     `<path class="sc-marker${suffix}" d="${shape.path}"/>${circle}</marker>`
   );
 }
@@ -426,8 +436,10 @@ function renderEntity(
         `<text class="sc-type" x="${rightEdge}" y="${coordinate(baseline(centerY, TYPE_FONT.size))}">${escapeXml(shownType)}</text>`,
       );
     }
+    // The full name rides along with the shown one, which may be cut short, so the viewer can
+    // find a rule's columns on the diagram.
     parts.push(
-      `<text class="sc-column" x="${nameX}" y="${coordinate(baseline(centerY, COLUMN_FONT.size))}">${escapeXml(fitText(row.column.name, nameMaxWidth, COLUMN_FONT, measure))}</text>`,
+      `<text class="sc-column" data-column="${escapeXml(row.column.name)}" x="${nameX}" y="${coordinate(baseline(centerY, COLUMN_FONT.size))}">${escapeXml(fitText(row.column.name, nameMaxWidth, COLUMN_FONT, measure))}</text>`,
     );
   });
 
@@ -441,6 +453,7 @@ function renderEntity(
 function renderRelation(
   foreignKey: ForeignKey,
   placedByKey: ReadonlyMap<string, PlacedEntity>,
+  tables: ReadonlyMap<string, Table>,
 ): string {
   const sourceKey = entityKey(foreignKey.referencingTable);
   const targetKey = entityKey(foreignKey.referencedTable);
@@ -457,14 +470,14 @@ function renderRelation(
     targetOffsetY,
     sourceKey === targetKey,
   );
-  const isOptional = isOptionalForeignKey(source.entity.columns, foreignKey);
+  const ends = relationEnds(tables.get(sourceKey), foreignKey);
   const classes = ["sc-relation", foreignKey.isEnabled ? "" : "sc-relation-disabled"]
     .filter((name) => name !== "")
     .join(" ");
   return (
     `<path class="${classes}" data-relation="${escapeXml(relationEdgeId(foreignKey))}" ` +
     `data-source="${escapeXml(sourceKey)}" data-target="${escapeXml(targetKey)}" ` +
-    `marker-start="url(#${MARKER_IDS[startMarkerKind(isOptional)]})" marker-end="url(#${MARKER_IDS.one})" d="${path}"/>`
+    `marker-start="url(#${MARKER_IDS[ends.start]})" marker-end="url(#${MARKER_IDS[ends.end]})" d="${path}"/>`
   );
 }
 
@@ -500,8 +513,9 @@ export function renderDiagramSvg(input: DiagramInput, options: RenderOptions): R
     parts.push(`<rect class="sc-background" width="${extent.width}" height="${extent.height}"/>`);
   }
   parts.push('<g class="sc-relations">');
+  const tables = tablesByKey(input.snapshot);
   for (const foreignKey of relations) {
-    parts.push(renderRelation(foreignKey, placedByKey));
+    parts.push(renderRelation(foreignKey, placedByKey, tables));
   }
   parts.push("</g>");
   parts.push('<g class="sc-entities">');

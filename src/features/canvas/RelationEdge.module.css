@@ -44,3 +44,17 @@
 .labelColumns {
   color: var(--color-text-muted);
 }
+
+/* What deleting a referenced row does, wrapped so a long sentence keeps the label narrow. */
+.labelCondition,
+.labelRule {
+  max-width: 280px;
+  margin-top: 2px;
+  color: var(--color-text-secondary);
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.labelCondition + .labelRule {
+  margin-top: 0;
+}

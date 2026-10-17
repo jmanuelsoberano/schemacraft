@@ -49,7 +49,7 @@
       "preferencesBackend.ts",
       "projectBackend.ts"
     ],
-    "adrCount": 38
+    "adrCount": 39
   },
   "en": {
     "overview": {
@@ -174,7 +174,7 @@
             "id": "shared-i18n",
             "name": "Internationalisation",
             "path": "src/shared/i18n",
-            "responsibility": "en.ts is the reference catalogue; es.ts is typed as MessageCatalog. useI18n() and translate(locale, key). translator.ts holds createCatalogTranslator, which builds t, tCount and template over any catalogue with formatMessage and Intl.PluralRules and no store behind it: useI18n builds it over the whole catalogue of the chosen language, and the exported viewer over the subset embedded in its file, so both say the same words (ADR-007). catalogs.test.ts checks keys, empty messages and placeholders, the viewer's strings included. formatDate.ts formats the UTC timestamps Rust sends in the current language.",
+            "responsibility": "en.ts is the reference catalogue; es.ts is typed as MessageCatalog. useI18n() and translate(locale, key). translator.ts holds createCatalogTranslator, which builds t, tCount and template over any catalogue with formatMessage and Intl.PluralRules and no store behind it: useI18n builds it over the whole catalogue of the chosen language, and the exported viewer over the subset embedded in its file, so both say the same words (ADR-007). messages/rules/en.ts and es.ts hold the words of the readable rules (englishRuleMessages, RuleMessageKey), spread into en.ts and es.ts, so they are part of MessageKey and the exported viewer embeds them by the rule. prefix (ADR-039). formatMessage.ts also has formatMessageParts, which splits a template into text and the arguments of its placeholders, so a sentence can draw a column as a chip without concatenation. catalogs.test.ts checks keys, empty messages and placeholders, the viewer's and the rules' strings included. formatDate.ts formats the UTC timestamps Rust sends in the current language.",
             "patterns": ["Typed message catalogues (ADR-007)"]
           },
           {
@@ -261,7 +261,7 @@
             "id": "feature-canvas",
             "name": "canvas",
             "path": "src/features/canvas",
-            "responsibility": "Diagram state transforms (canvasState.ts), geometry, edges, nodes, context menu, transient UI store (canvasUiStore.ts), canvas commands (canvasActions.ts), layouts/ (layered with ELK in a worker, organic with d3-force, radial) and, since 1.1, the two canvas regions the shell places: DiagramCanvas and EntitiesSidebar, with entitiesSearch.ts. The saved diagram state lives in projectStore; canvas commands change it through updateCanvas: setHidden serves the sidebar eye and the context menu, setCollapsed the card chevron. canvasUiStore also holds whether the Inspector is open and its request for focus (openInspector, closeInspector, toggleInspector), and a FocusRequest can select without panning (center: false), which 'Show details' uses; canvasFocus.ts moves focus between the canvas and the Inspector (focusEntityNode, returnFocusFromInspector), the one place that knows how React Flow names a card. edgeGeometry.ts holds the one marker table (RELATION_MARKER_SHAPES) and relationPath, shared with the SVG renderer; relationMarkerIds.ts names the canvas markers. EntityNode draws a view with the Glasses icon, the VIEW label and the view tokens, and shows the collapse chevron only when isCollapsible finds rows to hide (ADR-036). describeEntities counts the columns of keys to invisible tables as key columns, so they keep the key badge without an edge.",
+            "responsibility": "Diagram state transforms (canvasState.ts), geometry, edges, nodes, context menu, transient UI store (canvasUiStore.ts), canvas commands (canvasActions.ts), layouts/ (layered with ELK in a worker, organic with d3-force, radial) and, since 1.1, the two canvas regions the shell places: DiagramCanvas and EntitiesSidebar, with entitiesSearch.ts. The saved diagram state lives in projectStore; canvas commands change it through updateCanvas: setHidden serves the sidebar eye and the context menu, setCollapsed the card chevron. canvasUiStore also holds whether the Inspector is open and its request for focus (openInspector, closeInspector, toggleInspector), and a FocusRequest can select without panning (center: false), which 'Show details' uses; canvasFocus.ts moves focus between the canvas and the Inspector (focusEntityNode, returnFocusFromInspector), the one place that knows how React Flow names a card. edgeGeometry.ts holds the one marker table (RELATION_MARKER_SHAPES, named by meaning: many, one and zeroOrOne, each drawn facing its table and turned by MARKER_ORIENT), startMarkerKind, endMarkerKind and relationPath, shared with the SVG renderer; relationMarkerIds.ts names the canvas markers. graph.ts relationEnds picks both ends of a key from the rule reader's foreignKeyChildCardinality and foreignKeyOptionality, so the standard crow's foot notation never contradicts the sentences (ADR-039), and RelationEdgeData carries the ends and the cached explanation. A self-reference loops from the referencing row to the referenced row; when its ends share a point, each moves LOOP_SPREAD off it, the referencing end up and the referenced end down. canvasUiStore holds the rule the Inspector points at (ruleHighlight: owner, columns by entity, edge id), which only its owner, closeInspector or a real change of selection clears; EntityNode reads only its own entry, outlines the card and tints the rule's rows, and RelationEdge emphasises the key's line and adds the ON DELETE sentence to its hover label, under 'When enabled:' for a disabled key. EntityNode draws a view with the Glasses icon, the VIEW label and the view tokens, and shows the collapse chevron only when isCollapsible finds rows to hide (ADR-036). describeEntities counts the columns of keys to invisible tables as key columns, so they keep the key badge without an edge.",
             "patterns": [
               "Pure transforms applied via updateCanvas",
               "Strategy as tagged union + exhaustive switch (ADR-022)",
@@ -315,7 +315,7 @@
             "id": "feature-export",
             "name": "export",
             "path": "src/features/export",
-            "responsibility": "Export dialog and store. ExportSpecificationBuilder validates choices. svg/renderDiagram.ts draws the SVG with the marker table of canvas/edgeGeometry.ts and the labels the caller passes (RenderOptions.labels: the VIEW label, which exportStore translates in the interface language); a view card gets the view tint, the Glasses symbol, the label pill and a secondary schema text, as on the canvas. svg/palette.ts is the sRGB derivation of tokens.css (PALETTE_TOKENS, checked by src/app/styles/tokens.test.ts), and viewerPaletteStyles() writes it as --sc-* custom properties that html/buildStandalonePage puts before the viewer's stylesheet. html/ builds the standalone page; html/viewerMessages.ts picks, by key prefix, the subset of the catalogue the file embeds for the viewer (ViewerData.messages) and viewerMessages.test.ts checks it; fontFaces.ts supplies the fonts that are measured and embedded. visibleProjection is an allowlist: the visible tables, views and keys, the keys to invisible tables of visible tables, the access verdicts (AccessSummary: level and coverage, never the probe or the database user) and, apart from the snapshot, the kept facts of the objects on the diagram with their read dates (ViewerData.carriedOver), a key's only while the key itself is exported, never a hidden table's facts or unknown keys. A partial capture adds a one-line note: a footnote in SVG, PDF and PNG (RenderOptions.footnote, included in the measured size) and a header line in the HTML viewer. Only the document string goes to Rust.",
+            "responsibility": "Export dialog and store. ExportSpecificationBuilder validates choices. svg/renderDiagram.ts draws the SVG with the marker table of canvas/edgeGeometry.ts, the ends relationEnds picks (sc-many, sc-one and sc-zero-or-one, each with an -active variant) and the labels the caller passes (RenderOptions.labels: the VIEW label, which exportStore translates in the interface language); a view card gets the view tint, the Glasses symbol, the label pill and a secondary schema text, as on the canvas; each column name carries its full name in data-column, for the viewer's rule highlight. svg/palette.ts is the sRGB derivation of tokens.css (PALETTE_TOKENS, checked by src/app/styles/tokens.test.ts), and viewerPaletteStyles() writes it as --sc-* custom properties that html/buildStandalonePage puts before the viewer's stylesheet. html/ builds the standalone page; html/viewerMessages.ts picks, by key prefix, the subset of the catalogue the file embeds for the viewer (ViewerData.messages, the rule words included) and viewerMessages.test.ts checks it; fontFaces.ts supplies the fonts that are measured and embedded. visibleProjection is an allowlist: the visible tables, views and keys, the keys to invisible tables of visible tables, the access verdicts (AccessSummary: level and coverage, never the probe or the database user) and, apart from the snapshot, the kept facts of the objects on the diagram with their read dates (ViewerData.carriedOver), a key's only while the key itself is exported, never a hidden table's facts or unknown keys. A partial capture adds a one-line note: a footnote in SVG, PDF and PNG (RenderOptions.footnote, included in the measured size) and a header line in the HTML viewer. Only the document string goes to Rust.",
             "patterns": [
               "Builder",
               "TS draws, Rust writes (ADR-023, ADR-024)",
@@ -358,18 +358,23 @@
             "id": "feature-schema",
             "name": "schema",
             "path": "src/features/schema",
-            "responsibility": "Pure helpers over SchemaSnapshot: formatDataType and describeColumn (dataType.ts), which prints 'DEFAULT (not available)' or '(default not recorded)' instead of dropping a default it cannot read; the one home of entity identity (entities.ts): EntityKind, ENTITY_KINDS, entityKey, listEntities, groupEntities (schemas, then Tables and Views sections), filterEntityGroups, countEntities and entityListShape; definitionText and isUnknownDefinition (definition.ts), the only readers of the raw Definition statuses; objectsCoverage, definitionsCoverage, listsEveryObject, emptySchemaReason and the export-safe AccessSummary (coverage.ts); quoteIdentifier (sqlIdentifiers.ts); objectDetails.ts (describeObjectDetails: the facts of one table or view with how far the capture vouches for each, FactText and ListCompleteness) and objectDetailsView.ts (presentObjectDetails: the same as translated text, DetailsView), the view-model the Inspector and the viewer's detail panel share (ADR-038). No store. A leaf: ESLint lets it import only shared/ and itself, so every feature and the viewer bundle can import it (ADR-037).",
-            "patterns": ["Leaf module, enforced by lint, safe for the viewer bundle"]
+            "responsibility": "Pure helpers over SchemaSnapshot: formatDataType and describeColumn (dataType.ts), which prints 'DEFAULT (not available)' or '(default not recorded)' instead of dropping a default it cannot read; the one home of entity identity (entities.ts): EntityKind, ENTITY_KINDS, entityKey, listEntities, groupEntities (schemas, then Tables and Views sections), filterEntityGroups, countEntities and entityListShape; definitionText and isUnknownDefinition (definition.ts), the only readers of the raw Definition statuses; objectsCoverage, definitionsCoverage, listsEveryObject, emptySchemaReason and the export-safe AccessSummary (coverage.ts); quoteIdentifier (sqlIdentifiers.ts); foreignKeyId (entities.ts), the id of a key's relationship on the canvas, in the SVG and in the details; objectDetails.ts (describeObjectDetails: the facts of one table or view with how far the capture vouches for each, FactText and ListCompleteness, each CHECK's reading and each key's explanation) and objectDetailsView.ts (presentObjectDetails: the same as translated text, DetailsView, with a RuleView per CHECK and key and the notes of each section), the view-model the Inspector and the viewer's detail panel share (ADR-038). rules/ holds the readable rules (ADR-039): checkTokens.ts (tokenizeCheck), checkParser.ts (parseCheck, recursive descent with T-SQL precedence) and checkReader.ts (readCheckConstraint over the stored text: a closed set of forms read all or nothing, as a CheckReading that is read, unread, notAvailable or notRecorded); foreignKeyReader.ts (foreignKeyOptionality, foreignKeyChildCardinality, explainForeignKey and explainForeignKeyToInvisibleTable, foreignKeyExplanations cached per snapshot in a WeakMap, ExplanationScope and foreignKeyDefinitionSql); and ruleText.ts (RuleNode trees of message keys with typed arguments, and formatRuleText, which turns them into text, column, table and code parts). The golden forms of crates/schemacraft-core/tests/fixtures/sqlserver/check_forms.json drive checkReader.test.ts. No store, no React. A leaf: ESLint lets it import only shared/ (contracts and i18n) and itself, so every feature and the viewer bundle can import it (ADR-037).",
+            "patterns": [
+              "Leaf module, enforced by lint, safe for the viewer bundle",
+              "Interpreter over a closed grammar with conservative fallback (ADR-039)",
+              "Sentences as data"
+            ]
           },
           {
             "id": "feature-inspector",
             "name": "inspector",
             "path": "src/features/inspector",
-            "responsibility": "The Inspector panel (ADR-038): the details of the selected table or view beside the canvas. InspectorPanel.tsx reads the snapshot, the canvas nodes and the inspection options from projectStore and the selection, the focus request and closeInspector from canvasUiStore; inspectorScope.ts builds the DetailsScope (hidden keys, the coverage from accessSummary, the carried facts, the schema filter) and inspectedKey picks the one selected entity, so none or several selected is an empty state. It memoises describeObjectDetails and presentObjectDetails with useI18n's translator. A permanent header (the title and a close button with the Ctrl+I hint) gives the empty states a focus target; the entity heading takes focus on a focus request; the resizer the shell passes in (resizer slot) is drawn inside the element that handles Escape, so Escape anywhere in the panel, the handle included, runs focusEntityNode and leaves the panel open. InspectorSections.tsx draws the DetailsView as the viewer does, one component per section kind, with count chips, the one honest empty line and the referenced-by footnote; a relation target with a key is a link that runs focusEntity then openInspector; a value the capture could not vouch for carries an icon and its hint, and a not-available value, a not-visible target and a not-visible empty line add a 'Why?' link that opens the Access report through the action the shell passes in. No store, no role=dialog; tokens only.",
+            "responsibility": "The Inspector panel (ADR-038): the details of the selected table or view beside the canvas. InspectorPanel.tsx reads the snapshot, the canvas nodes and the inspection options from projectStore and the selection, the focus request and closeInspector from canvasUiStore; inspectorScope.ts builds the DetailsScope (hidden keys, the coverage from accessSummary, the carried facts, the schema filter) and inspectedKey picks the one selected entity, so none or several selected is an empty state. It memoises describeObjectDetails and presentObjectDetails with useI18n's translator. A permanent header (the title and a close button with the Ctrl+I hint) gives the empty states a focus target; the entity heading takes focus on a focus request; the resizer the shell passes in (resizer slot) is drawn inside the element that handles Escape, so Escape anywhere in the panel, the handle included, runs focusEntityNode and leaves the panel open. InspectorSections.tsx draws the DetailsView as the viewer does, one component per section kind, with count chips, the one honest empty line and the referenced-by footnote; a relation target with a key is a link that runs focusEntity then openInspector; a value the capture could not vouch for carries an icon and its hint, and a not-available value, a not-visible target and a not-visible empty line add a 'Why?' link that opens the Access report through the action the shell passes in. RuleItem.tsx draws a CHECK or a key as its sentences, with column, table and code chips and group headings, or the line that says it cannot be put into words, and a Show SQL toggle (aria-expanded, aria-controls) at the end of its head with the SQL, its note and Copy SQL behind it; an unread CHECK starts with its SQL open, and sqlDisclosure.ts starts the toggle over when a refresh changes the rule's SQL or its readability; the panel keys its sections by entity, so another table's rules get items of their own. Hovering the item or focusing any of its controls calls setRuleHighlight with an owner from useId, and leaving it calls clearRuleHighlight(owner) once neither the pointer nor the focus is inside; the columns table tints the rows of the highlighted rule. A table chip opens only the item's other table and stays out of the tab order, since the target link is the keyboard's way there; each section ends with its notes (pattern, collation, derived). No store, no role=dialog; tokens only.",
             "patterns": [
               "Shared view-model, two renderers (ADR-038)",
               "Follows the selection, holds no state",
-              "Non-modal landmark, never a dialog"
+              "Non-modal landmark, never a dialog",
+              "Highlight owned by the item that set it, no extra tab stop"
             ]
           }
         ]
@@ -384,8 +389,8 @@
           {
             "id": "viewer-app",
             "name": "Viewer",
-            "path": "src/viewer/main.ts",
-            "responsibility": "Reads the embedded JSON, draws with renderDiagramSvg, passing the VIEW label of the embedded catalogue, and offers pan and zoom, three detail levels, a search whose results name the kind (Table or View, in the view colour), neighbour highlight, a detail panel whose kind line is coloured for views, and a theme toggle. Its colours are the --sc-* properties buildStandalonePage writes from the palette; viewer.css declares none beyond its two translucent shadows. Its words are the catalogue subset embedded in the file (ViewerData.messages), read with createCatalogTranslator, so it has no catalogue of its own (ADR-007). The detail panel is the view-model of features/schema, describeObjectDetails and presentObjectDetails, with the scope of a file: no hidden entities, the embedded access verdicts and kept facts, and only the diagram known; it draws every section in the fixed order with the Inspector's words and states, for what is on the diagram: keys to tables off the diagram are not in the file (nor the FK mark they give their columns), an empty relation list reads 'None on the diagram', a list that is not empty carries no note that a key may be missing, and there is no 'Why?' link. A relation target on the diagram is a link that selects, centres and focuses the panel's heading (ADR-038). Choosing a search result focuses the heading too; there is no aria-live. An export of a partial capture shows a note line under the header bar. Imports canvasState and geometry from canvas, entityKey and the view-model from schema, the renderer and ViewerData from export and the translator from shared/i18n, but no React and no stores.",
+            "path": "src/viewer/main.ts, src/viewer/rules.ts, src/viewer/dom.ts",
+            "responsibility": "Reads the embedded JSON, draws with renderDiagramSvg, passing the VIEW label of the embedded catalogue, and offers pan and zoom, three detail levels, a search whose results name the kind (Table or View, in the view colour), neighbour highlight, a detail panel whose kind line is coloured for views, and a theme toggle. Its colours are the --sc-* properties buildStandalonePage writes from the palette; viewer.css declares none beyond its two translucent shadows. Its words are the catalogue subset embedded in the file (ViewerData.messages), read with createCatalogTranslator, so it has no catalogue of its own (ADR-007). The detail panel is the view-model of features/schema, describeObjectDetails and presentObjectDetails, with the scope of a file: no hidden entities, the embedded access verdicts and kept facts, and only the diagram known; it draws every section in the fixed order with the Inspector's words and states, for what is on the diagram: keys to tables off the diagram are not in the file (nor the FK mark they give their columns), an empty relation list reads 'None on the diagram', a list that is not empty carries no note that a key may be missing, and there is no 'Why?' link. A relation target on the diagram is a link that selects, centres and focuses the panel's heading (ADR-038). Every CHECK and key reads out as in the Inspector: rules.ts draws the RuleView (sentences with column, table and code chips, group headings) and its SQL in a <details>, open from the start for a rule that cannot be put into words, and main.ts draws the section notes (sc-rule-note); dom.ts holds h(). Pointing at or focusing a rule highlights it (ADR-039): paintRuleHighlight inserts an outline rect beside each card involved (sc-rule-outline) and a tint and a bar behind each of its rows (sc-rule-tint, sc-rule-bar), found through the SVG's data-column, marks the names and types (sc-rule-column, sc-rule-type) and the key's relation (sc-rule-relation with sc-active), and main.ts's paintRuleRows tints the panel's own rows (sc-rule-row); only the item that set it clears it, the neighbour highlight waits while it lasts, and pointer moves inside the panel are not moves over the diagram. render() replaces only the SVG and repaints the selection and the rule, so a theme, a detail level or the late fonts never take keyboard focus out of the panel. A card is selected from the press, because the stage captures the pointer and the release lands on it. Choosing a search result focuses the heading too; there is no aria-live. An export of a partial capture shows a note line under the header bar. Imports canvasState and geometry (with rowCenterY and ROW_HEIGHT for the highlight) from canvas, entityKey, the view-model and the rule part types from schema, the renderer and ViewerData from export and the translator from shared/i18n, but no React and no stores.",
             "patterns": ["Reuses the app renderer (ADR-025)"]
           },
           {
@@ -743,8 +748,12 @@
             "id": "integration-tests",
             "name": "SQL Server integration tests",
             "path": "crates/schemacraft-core/tests",
-            "responsibility": "sqlserver_integration.rs creates databases from fixtures/sqlserver/fixture.sql, changes.sql and stress_200_tables.sql, then checks connection errors (the untrusted certificate included), describe_database, inspection, progress, cancellation and refresh against a real server. sqlserver_permissions.rs seeds permissions.sql (the fixture schema, an empty database and a database with denials made to public) and creates nine low-privilege logins with permission_logins.sql (db_owner, db_datareader, VIEW DEFINITION only, reader plus a schema's VIEW DEFINITION, two tables, CONNECT only, two schema-DENY variants and a column DENY) with a password made up for the run, then checks every access verdict, hidden text and refresh rule, and that a denial to public never reaches dbo. tests/common holds the shared helpers. The stress test must read 200 tables within 5 s (STRESS_BUDGET; the product target is 3 s). Every test is skipped when SCHEMACRAFT_TEST_MSSQL_HOST is not set.",
-            "patterns": ["Gated by environment variables", "Performance budget as a test"]
+            "responsibility": "sqlserver_integration.rs creates databases from fixtures/sqlserver/fixture.sql, changes.sql and stress_200_tables.sql, then checks connection errors (the untrusted certificate included), describe_database, inspection, progress, cancellation and refresh against a real server. It also builds SchemaCraftCheckForms from fixtures/sqlserver/check_forms.json (72 golden CHECK forms, which the rule reader's vitest suite reads too) and rule_facts.sql, asserts every stored form, column list and enabled state against the engine, and pins on scratch tables the CHECK and foreign key behaviour the rule sentences rest on (ADR-039). sqlserver_permissions.rs seeds permissions.sql (the fixture schema, an empty database and a database with denials made to public) and creates nine low-privilege logins with permission_logins.sql (db_owner, db_datareader, VIEW DEFINITION only, reader plus a schema's VIEW DEFINITION, two tables, CONNECT only, two schema-DENY variants and a column DENY) with a password made up for the run, then checks every access verdict, hidden text and refresh rule, and that a denial to public never reaches dbo. tests/common holds the shared helpers. The stress test must read 200 tables within 5 s (STRESS_BUDGET; the product target is 3 s). Every test is skipped when SCHEMACRAFT_TEST_MSSQL_HOST is not set.",
+            "patterns": [
+              "Gated by environment variables",
+              "Performance budget as a test",
+              "Golden table shared with the frontend tests"
+            ]
           },
           {
             "id": "prepare-fonts",
@@ -943,14 +952,14 @@
         "id": "feature-canvas-to-feature-schema",
         "from": "feature-canvas",
         "to": "feature-schema",
-        "label": "entityKey and EntityKind (geometry, graph, canvasState); formatDataType (EntityNode)",
+        "label": "entityKey, foreignKeyId and EntityKind (geometry, graph, canvasState); formatDataType (EntityNode); foreignKeyOptionality, foreignKeyChildCardinality and the cached foreignKeyExplanation (graph); formatRuleText for the hover label (RelationEdge)",
         "kind": "call"
       },
       {
         "id": "feature-export-to-feature-canvas",
         "from": "feature-export",
         "to": "feature-canvas",
-        "label": "geometry, spreadForDetailLevel, the marker table and relationPath",
+        "label": "geometry, spreadForDetailLevel, the marker table, relationPath and relationEnds",
         "kind": "call"
       },
       {
@@ -1608,14 +1617,14 @@
         "id": "viewer-app-to-feature-canvas",
         "from": "viewer-app",
         "to": "feature-canvas",
-        "label": "canvasState, geometry",
+        "label": "canvasState, geometry (rowCenterY and ROW_HEIGHT for the rule highlight)",
         "kind": "call"
       },
       {
         "id": "viewer-app-to-feature-schema",
         "from": "viewer-app",
         "to": "feature-schema",
-        "label": "entityKey; describeObjectDetails and presentObjectDetails for the detail panel",
+        "label": "entityKey; describeObjectDetails and presentObjectDetails for the detail panel, with its rules (RuleView, hasRuleTargets, RulePart)",
         "kind": "call"
       },
       {
@@ -1657,7 +1666,7 @@
         "id": "integration-tests-to-ext-sqlserver",
         "from": "integration-tests",
         "to": "ext-sqlserver",
-        "label": "seeds the fixture databases and the low-privilege logins",
+        "label": "seeds the fixture databases, the golden CHECK forms and the low-privilege logins",
         "kind": "network"
       },
       {
@@ -1902,14 +1911,14 @@
         "id": "feature-inspector-to-feature-schema",
         "from": "feature-inspector",
         "to": "feature-schema",
-        "label": "describeObjectDetails, presentObjectDetails, accessSummary, entityKey",
+        "label": "describeObjectDetails, presentObjectDetails (RuleView, hasRuleTargets), accessSummary, entityKey; RulePart for the rule chips",
         "kind": "call"
       },
       {
         "id": "feature-inspector-to-feature-canvas",
         "from": "feature-inspector",
         "to": "feature-canvas",
-        "label": "selectedKeys, inspectorFocusRequest, closeInspector, focusEntity, openInspector; focusEntityNode",
+        "label": "selectedKeys, inspectorFocusRequest, closeInspector, focusEntity, openInspector, setRuleHighlight and clearRuleHighlight; focusEntityNode",
         "kind": "call"
       },
       {
@@ -1930,7 +1939,14 @@
         "id": "viewer-app-to-shared-i18n",
         "from": "viewer-app",
         "to": "shared-i18n",
-        "label": "createCatalogTranslator over the embedded messages",
+        "label": "createCatalogTranslator over the embedded messages, the rule words included",
+        "kind": "call"
+      },
+      {
+        "id": "feature-schema-to-shared-i18n",
+        "from": "feature-schema",
+        "to": "shared-i18n",
+        "label": "formatMessageParts and pluralKey (ruleText), the rule message keys, the translator types and formatDate (objectDetailsView)",
         "kind": "call"
       }
     ],
@@ -2366,6 +2382,43 @@
             "detail": "Escape anywhere in the panel, its resize handle included, returns focus to the inspected card (focusEntityNode) and leaves the panel open; the close button or Ctrl+I closes it, and returnFocusFromInspector hands focus back to the card or the canvas before the aside turns inert."
           }
         ]
+      },
+      {
+        "id": "read-rule",
+        "name": "Read a rule in words",
+        "summary": "From a CHECK or a foreign key to its sentences, with its columns highlighted on the canvas and its SQL one click away.",
+        "steps": [
+          {
+            "actor": "features/schema",
+            "action": "Reads the rules",
+            "detail": "While building the details, describeObjectDetails reads each CHECK with readCheckConstraint (tokenizeCheck, parseCheck, then the closed set of forms, all or nothing, under 'When … has a value:' for nullable columns and 'When enabled:' for a disabled constraint) and explains each key with foreignKeyExplanation (whether it is required, how many rows can point to one row, ON DELETE and ON UPDATE, cached per snapshot). presentObjectDetails words both with formatRuleText into a RuleView per item and adds the section notes."
+          },
+          {
+            "actor": "RuleItem",
+            "action": "Draws a rule",
+            "detail": "The sentences with column, table and code chips and their group headings, or the line that says the rule cannot be put into words, with its stored SQL open; Show SQL reveals the SQL, its note and Copy SQL."
+          },
+          {
+            "actor": "User",
+            "action": "Points at the rule",
+            "detail": "Hovers the item, or reaches one of its controls with Tab (the SQL toggle, Copy SQL, the target link): the highlight adds no tab stop."
+          },
+          {
+            "actor": "canvasUiStore",
+            "action": "Holds the highlight",
+            "detail": "setRuleHighlight({owner, columns, edgeId}) replaces any earlier one; clearRuleHighlight(owner) clears it only for the item that set it, once neither the pointer nor the focus is inside; closeInspector and a real change of selection clear it as well."
+          },
+          {
+            "actor": "EntityNode and RelationEdge",
+            "action": "Paint the canvas",
+            "detail": "Each card reads only its own entry: an accent outline 3 px off the card, and the rule's shown rows tinted with an accent bar; a key's line is emphasised without opening its label. The Inspector's columns table tints the same rows."
+          },
+          {
+            "actor": "Viewer",
+            "action": "Does the same in the file",
+            "detail": "rules.ts draws the same RuleView with a <details> for the SQL; pointing at a rule paints the sc-rule-* outline, tint and classes, found through data-column and data-relation, and render() repaints them after a change of theme or detail level."
+          }
+        ]
       }
     ],
     "commands": [
@@ -2620,6 +2673,21 @@
         "name": "Shared view-model, two renderers",
         "where": "src/features/schema/objectDetails.ts and objectDetailsView.ts; src/features/inspector/InspectorSections.tsx; src/viewer/main.ts",
         "why": "The Inspector and the viewer's detail panel draw one DetailsView, so the application and the exported file say the same about an object and 'None' is printed only for a complete list (ADR-038)."
+      },
+      {
+        "name": "Interpreter over a closed grammar with conservative fallback",
+        "where": "src/features/schema/rules/checkTokens.ts, checkParser.ts, checkReader.ts",
+        "why": "A CHECK is put into words only when every part of it is a known form; anything else shows the stored SQL, so a reading can say too little but never something false (ADR-039)."
+      },
+      {
+        "name": "Sentences as data",
+        "where": "src/features/schema/rules/ruleText.ts, src/shared/i18n/formatMessage.ts",
+        "why": "The readers return message keys with typed arguments, never text, so both languages and both renderers word one reading and a column becomes a chip without concatenation (ADR-007, ADR-039)."
+      },
+      {
+        "name": "Golden table checked against the engine",
+        "where": "crates/schemacraft-core/tests/fixtures/sqlserver/check_forms.json, tests/sqlserver_integration.rs, src/features/schema/rules/checkReader.test.ts",
+        "why": "One file of written, stored and expected forms drives the Rust test against SQL Server and the reader's tests, so a normal form that changes fails CI before a sentence goes wrong (ADR-039)."
       }
     ],
     "recipes": {
@@ -2995,7 +3063,7 @@
       "crossCutting": [
         {
           "concern": "Bilingual text",
-          "touches": "en.ts is the reference, es.ts typed as MessageCatalog, catalogs.test.ts. The viewer says the subset an export embeds (viewerMessages, by key prefix; viewerMessages.test.ts checks it) through the same createCatalogTranslator and has no catalogue of its own (ADR-007); the WebView2 dialog text is in src-tauri/src/main.rs."
+          "touches": "en.ts is the reference, es.ts typed as MessageCatalog, catalogs.test.ts. The viewer says the subset an export embeds (viewerMessages, by key prefix; viewerMessages.test.ts checks it) through the same createCatalogTranslator and has no catalogue of its own (ADR-007); the WebView2 dialog text is in src-tauri/src/main.rs. The words of the readable rules are a sub-catalogue, messages/rules/en.ts and es.ts, spread into both and embedded by the rule. prefix; sentences are built from templates with formatMessageParts and Intl.ListFormat, never concatenated, and name tables as tables, never as nouns guessed from their names (ADR-039)."
         },
         {
           "concern": "Light and dark theme",
@@ -3003,11 +3071,11 @@
         },
         {
           "concern": "Keyboard and action registry",
-          "touches": "src/app/actions; dialogs block shortcuts, a non-modal panel such as the Inspector does not; plain keys never fire in text fields; Enter on a card is handled by the canvas and per-entity gestures call feature functions, not actions (ADR-008)."
+          "touches": "src/app/actions; dialogs block shortcuts, a non-modal panel such as the Inspector does not; plain keys never fire in text fields; Enter on a card is handled by the canvas and per-entity gestures call feature functions, not actions, and the controls of a rule are local to its item, whose highlight follows the focus without an extra tab stop (ADR-008, ADR-039)."
         },
         {
           "concern": "Undo and unsaved changes",
-          "touches": "Only CanvasState is undoable, through projectStore.updateCanvas; transient state (the selection, the Inspector's open state) goes in canvasUiStore. The window title shows '•' and closing asks first (useProjectWindow)."
+          "touches": "Only CanvasState is undoable, through projectStore.updateCanvas; transient state (the selection, the Inspector's open state, the rule it highlights) goes in canvasUiStore. The window title shows '•' and closing asks first (useProjectWindow)."
         },
         {
           "concern": ".scraft versioning",
@@ -3019,7 +3087,7 @@
         },
         {
           "concern": "Export parity and privacy",
-          "touches": "Shared geometry, one marker and routing table (canvas/edgeGeometry.ts) and one palette; the renderer takes its labels from the caller, so a view reads VIEW or VISTA in the export's language; visibleProjection is an allowlist that decides what reaches HTML (never the probe, the database user, a hidden table's facts or unknown keys; the verdicts, the read dates of the kept facts of the objects on the diagram and the viewer's message subset travel apart from the snapshot); the viewer's detail panel is the Inspector's view-model, so both use the same words and states, the file only for what is on the diagram (ADR-038); a partial capture carries one note line."
+          "touches": "Shared geometry, one marker and routing table (canvas/edgeGeometry.ts) whose ends relationEnds picks for every surface, and one palette; the renderer takes its labels from the caller, so a view reads VIEW or VISTA in the export's language; visibleProjection is an allowlist that decides what reaches HTML (never the probe, the database user, a hidden table's facts or unknown keys; the verdicts, the read dates of the kept facts of the objects on the diagram and the viewer's message subset travel apart from the snapshot); the viewer's detail panel is the Inspector's view-model, so both use the same words and states, the file only for what is on the diagram (ADR-038); a partial capture carries one note line; the viewer reads the rules with the same readers and finds their columns through data-column (ADR-039)."
         },
         {
           "concern": "Preview backends",
@@ -3055,7 +3123,11 @@
         },
         {
           "concern": "Partial access",
-          "touches": "A login may see part of a database (ADR-034). Whatever lists or counts schema facts asks src/features/schema/coverage.ts before it says 'none', and an unreadable text reads 'not available'; the Inspector and the viewer's detail panel print 'None' only for a complete list and mark every fact the capture could not vouch for (ADR-038). The server side is covered by the logins in sqlserver_permissions.rs; the browser preview reproduces it with a server name that contains partial."
+          "touches": "A login may see part of a database (ADR-034). Whatever lists or counts schema facts asks src/features/schema/coverage.ts before it says 'none', and an unreadable text reads 'not available'; the Inspector and the viewer's detail panel print 'None' only for a complete list and mark every fact the capture could not vouch for (ADR-038); a key to a table the login cannot see is worded against 'the referenced table', with no SQL (ADR-039). The server side is covered by the logins in sqlserver_permissions.rs; the browser preview reproduces it with a server name that contains partial."
+        },
+        {
+          "concern": "Teach the rule reader a CHECK form",
+          "touches": "Add a case to crates/schemacraft-core/tests/fixtures/sqlserver/check_forms.json: as written, as stored, the columns it reads in order and the expected reading, or 'unread' with why. Run the SQL Server integration test against the local container (dev-sqlserver.ps1), which pins the stored form; add the rule.check.* keys to src/shared/i18n/messages/rules/en.ts and es.ts; teach checkReader.ts the form, leaving it unread wherever NULL, the collation, the session or a conversion could make the sentence false; run checkReader.test.ts, which reads every golden case (ADR-039)."
         }
       ],
       "definitionOfDone": [
@@ -3114,11 +3186,11 @@
       },
       {
         "topic": "Unknown is not none",
-        "rule": "A fact the login could not read is recorded as such (Definition notVisible, foreignKeysToInvisibleTables, partial coverage) and shown as 'not available'; a list says 'none' only under complete coverage. Wording: 'not visible to this login', never 'hidden', which means hidden on the canvas (ADR-034)."
+        "rule": "A fact the login could not read is recorded as such (Definition notVisible, foreignKeysToInvisibleTables, partial coverage) and shown as 'not available'; a list says 'none' only under complete coverage. Wording: 'not visible to this login', never 'hidden', which means hidden on the canvas (ADR-034). A rule SchemaCraft cannot read in full shows its SQL, never a partial sentence (ADR-039)."
       },
       {
         "topic": "i18n",
-        "rule": "All user text in en.ts and es.ts; plurals with .one/.other and tCount; no string concatenation."
+        "rule": "All user text in en.ts and es.ts (the rule words in the messages/rules sub-catalogue they spread in); plurals with .one/.other and tCount; no string concatenation: a sentence with chips is built with formatMessageParts."
       },
       {
         "topic": "Styling",
@@ -3203,7 +3275,7 @@
         {
           "what": "Crow's foot marker paths and edge routing options are copied between the canvas and the SVG renderer.",
           "where": "src/features/canvas/RelationMarkers.tsx vs src/features/export/svg/renderDiagram.ts",
-          "fix": "Fixed: RELATION_MARKER_SHAPES, relationPath and startMarkerKind live in canvas/edgeGeometry.ts and relationOffsets in geometry.ts; RelationMarkers.tsx, RelationEdge.tsx and renderDiagram.ts use them, and the renderer's output was compared byte for byte (ADR-037).",
+          "fix": "Fixed: RELATION_MARKER_SHAPES (named by meaning: many, one and zeroOrOne), MARKER_ORIENT, startMarkerKind, endMarkerKind and relationPath live in canvas/edgeGeometry.ts, relationEnds in graph.ts and relationOffsets in geometry.ts; RelationMarkers.tsx, RelationEdge.tsx and renderDiagram.ts use them, the renderer's output was compared byte for byte during the move (ADR-037), and viewerStyles.test.ts checks that viewer.css swaps every marker id at each end for its -active variant (ADR-039).",
           "severity": "minor",
           "status": "fixed"
         },
@@ -3383,7 +3455,7 @@
         "The page carries one manifest, at the top level of model.json and shared by both languages. CI checks it against the code with scripts/check-architecture-page.mjs (npm run docs:check).",
         "New command: add it to manifest.commands and to the commands table in both languages.",
         "New feature folder, core module or IPC backend: add it to the manifest, the layer list and the diagram edges.",
-        "New decision: add an ADR (ADR-039 is next), raise manifest.adrCount and link the ADR from the pattern or recipe it changes.",
+        "New decision: add an ADR (ADR-040 is next), raise manifest.adrCount and link the ADR from the pattern or recipe it changes.",
         "Scope change: update both PRD copies (docs/ and 02_Docs/), add a dated line to section 6, commit as docs(prd), only with the user's approval.",
         "Fixed deviation: mark it fixed in the same PR. New known deviation: add it with a severity and status open.",
         "New data store or localStorage key: add a row to the data table.",
@@ -3610,6 +3682,36 @@
         "id": "details-view",
         "term": "ObjectDetails / DetailsView",
         "meaning": "The view-model of one table or view: the facts from describeObjectDetails (each text a FactText, each list with a ListCompleteness) and their translated text from presentObjectDetails. The Inspector and the viewer's detail panel draw it (ADR-038)."
+      },
+      {
+        "id": "readable-rule",
+        "term": "Readable rule",
+        "meaning": "A CHECK constraint or a foreign key put into sentences in the interface language by src/features/schema/rules, with its SQL one click away. A CHECK is read all or nothing: one SchemaCraft cannot read in full shows its stored SQL (ADR-039)."
+      },
+      {
+        "id": "stored-definition",
+        "term": "Stored definition",
+        "meaning": "The text SQL Server keeps for a CHECK in sys.check_constraints.definition, in a normal form: columns in brackets, numbers in parentheses, BETWEEN expanded, IN as a reversed OR chain. The CHECK reader reads this form, which the golden forms pin."
+      },
+      {
+        "id": "golden-forms",
+        "term": "Golden forms",
+        "meaning": "check_forms.json beside the SQL Server fixtures: CHECKs as written, as stored and as they must be read. The integration test checks the stored forms against the engine, and the reader's tests read them."
+      },
+      {
+        "id": "match-simple",
+        "term": "Composite key rule (MATCH SIMPLE)",
+        "meaning": "SQL Server checks a foreign key only when every one of its columns has a value, so a row with a NULL in any key column points to no row. A key with any nullable column is therefore optional, and its referenced end is drawn zero or one."
+      },
+      {
+        "id": "crows-foot",
+        "term": "Crow's foot notation",
+        "meaning": "The relationship ends, drawn in standard (Information Engineering) notation: at the referencing table a crow's foot, or zero or one for a one-to-one key; at the referenced table a bar, or a bar and a circle (zero or one) when the key is optional. relationEnds picks both from the facts the rule reader states (ADR-039)."
+      },
+      {
+        "id": "rule-highlight",
+        "term": "Rule highlight",
+        "meaning": "canvasUiStore.ruleHighlight: the columns and relationship of the rule pointed at in the Inspector, owned by the item that set it; the cards outline and tint them. The viewer paints the same with its sc-rule-* classes."
       }
     ]
   },
@@ -3739,7 +3841,7 @@
             "id": "shared-i18n",
             "name": "Internacionalización",
             "path": "src/shared/i18n",
-            "responsibility": "en.ts es el catálogo de referencia; es.ts está tipado como MessageCatalog. useI18n() y translate(locale, key). translator.ts tiene createCatalogTranslator, que arma t, tCount y template sobre cualquier catálogo con formatMessage e Intl.PluralRules y sin ningún store detrás: useI18n lo arma sobre el catálogo completo del idioma elegido, y el visor exportado sobre el subconjunto incrustado en su archivo, así ambos dicen las mismas palabras (ADR-007). catalogs.test.ts revisa claves, mensajes vacíos y placeholders, también los textos del visor. formatDate.ts da formato, en el idioma actual, a las marcas de tiempo UTC que envía Rust.",
+            "responsibility": "en.ts es el catálogo de referencia; es.ts está tipado como MessageCatalog. useI18n() y translate(locale, key). translator.ts tiene createCatalogTranslator, que arma t, tCount y template sobre cualquier catálogo con formatMessage e Intl.PluralRules y sin ningún store detrás: useI18n lo arma sobre el catálogo completo del idioma elegido, y el visor exportado sobre el subconjunto incrustado en su archivo, así ambos dicen las mismas palabras (ADR-007). messages/rules/en.ts y es.ts tienen las palabras de las reglas legibles (englishRuleMessages, RuleMessageKey), que en.ts y es.ts incorporan, así forman parte de MessageKey y el visor exportado las incrusta por el prefijo rule. (ADR-039). formatMessage.ts tiene además formatMessageParts, que divide una plantilla en texto y los argumentos de sus placeholders, para que una frase dibuje una columna como chip sin concatenar. catalogs.test.ts revisa claves, mensajes vacíos y placeholders, también los textos del visor y de las reglas. formatDate.ts da formato, en el idioma actual, a las marcas de tiempo UTC que envía Rust.",
             "patterns": ["Catálogos de mensajes tipados (ADR-007)"]
           },
           {
@@ -3826,7 +3928,7 @@
             "id": "feature-canvas",
             "name": "canvas",
             "path": "src/features/canvas",
-            "responsibility": "Transformaciones del estado del diagrama (canvasState.ts), geometría, aristas, nodos, menú contextual, store de estado transitorio de la interfaz (canvasUiStore.ts), comandos del lienzo (canvasActions.ts), layouts/ (jerárquica con ELK en un worker, orgánica con d3-force, radial) y, desde 1.1, las dos regiones del lienzo que el shell coloca: DiagramCanvas y EntitiesSidebar, con entitiesSearch.ts. El estado guardado del diagrama vive en projectStore; los comandos del lienzo lo cambian con updateCanvas: setHidden atiende el ojo del panel y el menú contextual, setCollapsed el chevrón de la tarjeta. canvasUiStore guarda también si el Inspector está abierto y su petición de foco (openInspector, closeInspector, toggleInspector), y un FocusRequest puede seleccionar sin desplazar el lienzo (center: false), que usa 'Mostrar detalles'; canvasFocus.ts mueve el foco entre el lienzo y el Inspector (focusEntityNode, returnFocusFromInspector), el único lugar que sabe cómo nombra React Flow una tarjeta. edgeGeometry.ts tiene la única tabla de marcadores (RELATION_MARKER_SHAPES) y relationPath, compartidas con el renderizador SVG; relationMarkerIds.ts nombra los marcadores del lienzo. EntityNode dibuja una vista con el icono de gafas, la etiqueta VISTA y los tokens de vista, y muestra el chevrón de plegado solo cuando isCollapsible encuentra filas que ocultar (ADR-036). describeEntities cuenta las columnas de las llaves hacia tablas no visibles como columnas de llave, así conservan su distintivo de llave sin dibujar arista.",
+            "responsibility": "Transformaciones del estado del diagrama (canvasState.ts), geometría, aristas, nodos, menú contextual, store de estado transitorio de la interfaz (canvasUiStore.ts), comandos del lienzo (canvasActions.ts), layouts/ (jerárquica con ELK en un worker, orgánica con d3-force, radial) y, desde 1.1, las dos regiones del lienzo que el shell coloca: DiagramCanvas y EntitiesSidebar, con entitiesSearch.ts. El estado guardado del diagrama vive en projectStore; los comandos del lienzo lo cambian con updateCanvas: setHidden atiende el ojo del panel y el menú contextual, setCollapsed el chevrón de la tarjeta. canvasUiStore guarda también si el Inspector está abierto y su petición de foco (openInspector, closeInspector, toggleInspector), y un FocusRequest puede seleccionar sin desplazar el lienzo (center: false), que usa 'Mostrar detalles'; canvasFocus.ts mueve el foco entre el lienzo y el Inspector (focusEntityNode, returnFocusFromInspector), el único lugar que sabe cómo nombra React Flow una tarjeta. edgeGeometry.ts tiene la única tabla de marcadores (RELATION_MARKER_SHAPES, con nombres por significado: many, one y zeroOrOne, cada uno dibujado de cara a su tabla y girado por MARKER_ORIENT), startMarkerKind, endMarkerKind y relationPath, compartidos con el renderizador SVG; relationMarkerIds.ts nombra los marcadores del lienzo. relationEnds de graph.ts elige los dos extremos de una llave con foreignKeyChildCardinality y foreignKeyOptionality del lector de reglas, así la notación estándar de pata de gallo nunca contradice las frases (ADR-039), y RelationEdgeData lleva los extremos y la explicación en caché. Una autorreferencia va de la fila que referencia a la fila referenciada; cuando sus extremos comparten punto, cada uno se aparta LOOP_SPREAD de él, el que referencia hacia arriba y el referenciado hacia abajo. canvasUiStore guarda la regla que señala el Inspector (ruleHighlight: dueño, columnas por entidad, id de arista), que solo su dueño, closeInspector o un cambio real de selección quitan; EntityNode lee solo su propia entrada, rodea la tarjeta con un contorno y tiñe las filas de la regla, y RelationEdge enfatiza la línea de la llave y agrega a su etiqueta al pasar el puntero la frase de ON DELETE, bajo 'Cuando se habilite:' si la llave está deshabilitada. EntityNode dibuja una vista con el icono de gafas, la etiqueta VISTA y los tokens de vista, y muestra el chevrón de plegado solo cuando isCollapsible encuentra filas que ocultar (ADR-036). describeEntities cuenta las columnas de las llaves hacia tablas no visibles como columnas de llave, así conservan su distintivo de llave sin dibujar arista.",
             "patterns": [
               "Transformaciones puras aplicadas con updateCanvas",
               "Strategy como unión etiquetada + switch exhaustivo (ADR-022)",
@@ -3880,7 +3982,7 @@
             "id": "feature-export",
             "name": "export",
             "path": "src/features/export",
-            "responsibility": "Diálogo y store de exportación. ExportSpecificationBuilder valida las opciones. svg/renderDiagram.ts dibuja el SVG con la tabla de marcadores de canvas/edgeGeometry.ts y las etiquetas que le pasa quien llama (RenderOptions.labels: la etiqueta VISTA, que exportStore traduce en el idioma de la interfaz); una tarjeta de vista lleva el tinte de vista, el símbolo de gafas, la pastilla con la etiqueta y el esquema en texto secundario, como en el lienzo. svg/palette.ts es la derivación sRGB de tokens.css (PALETTE_TOKENS, revisada por src/app/styles/tokens.test.ts) y viewerPaletteStyles() la escribe como propiedades --sc-* que html/buildStandalonePage pone antes de la hoja de estilos del visor. html/ arma la página autónoma; html/viewerMessages.ts elige, por prefijo de clave, el subconjunto del catálogo que el archivo incrusta para el visor (ViewerData.messages) y viewerMessages.test.ts lo revisa; fontFaces.ts aporta las fuentes que se miden e incrustan. visibleProjection es una lista de permitidos: las tablas, vistas y llaves visibles, las llaves hacia tablas no visibles de las tablas visibles, los veredictos de acceso (AccessSummary: nivel y cobertura, nunca el sondeo ni el usuario de base de datos) y, aparte del snapshot, los hechos conservados de los objetos del diagrama con sus fechas de lectura (ViewerData.carriedOver), los de una llave solo mientras la llave se exporta, nunca los hechos de una tabla oculta ni las claves desconocidas. Una lectura parcial agrega una nota de una línea: una nota al pie en SVG, PDF y PNG (RenderOptions.footnote, incluida en el tamaño medido) y una línea bajo el encabezado del visor HTML. Solo la cadena del documento va a Rust.",
+            "responsibility": "Diálogo y store de exportación. ExportSpecificationBuilder valida las opciones. svg/renderDiagram.ts dibuja el SVG con la tabla de marcadores de canvas/edgeGeometry.ts, los extremos que elige relationEnds (sc-many, sc-one y sc-zero-or-one, cada uno con su variante -active) y las etiquetas que le pasa quien llama (RenderOptions.labels: la etiqueta VISTA, que exportStore traduce en el idioma de la interfaz); una tarjeta de vista lleva el tinte de vista, el símbolo de gafas, la pastilla con la etiqueta y el esquema en texto secundario, como en el lienzo; cada nombre de columna lleva su nombre completo en data-column, para el resaltado de reglas del visor. svg/palette.ts es la derivación sRGB de tokens.css (PALETTE_TOKENS, revisada por src/app/styles/tokens.test.ts) y viewerPaletteStyles() la escribe como propiedades --sc-* que html/buildStandalonePage pone antes de la hoja de estilos del visor. html/ arma la página autónoma; html/viewerMessages.ts elige, por prefijo de clave, el subconjunto del catálogo que el archivo incrusta para el visor (ViewerData.messages, con las palabras de las reglas) y viewerMessages.test.ts lo revisa; fontFaces.ts aporta las fuentes que se miden e incrustan. visibleProjection es una lista de permitidos: las tablas, vistas y llaves visibles, las llaves hacia tablas no visibles de las tablas visibles, los veredictos de acceso (AccessSummary: nivel y cobertura, nunca el sondeo ni el usuario de base de datos) y, aparte del snapshot, los hechos conservados de los objetos del diagrama con sus fechas de lectura (ViewerData.carriedOver), los de una llave solo mientras la llave se exporta, nunca los hechos de una tabla oculta ni las claves desconocidas. Una lectura parcial agrega una nota de una línea: una nota al pie en SVG, PDF y PNG (RenderOptions.footnote, incluida en el tamaño medido) y una línea bajo el encabezado del visor HTML. Solo la cadena del documento va a Rust.",
             "patterns": [
               "Builder",
               "TS dibuja, Rust escribe (ADR-023, ADR-024)",
@@ -3923,18 +4025,23 @@
             "id": "feature-schema",
             "name": "schema",
             "path": "src/features/schema",
-            "responsibility": "Helpers puros sobre SchemaSnapshot: formatDataType y describeColumn (dataType.ts), que escribe 'DEFAULT (no disponible)' o '(valor por defecto no registrado)' en vez de omitir un valor por defecto que no puede leer; el único hogar de la identidad de las entidades (entities.ts): EntityKind, ENTITY_KINDS, entityKey, listEntities, groupEntities (esquemas y, dentro, secciones Tablas y Vistas), filterEntityGroups, countEntities y entityListShape; definitionText e isUnknownDefinition (definition.ts), los únicos lectores de los estados crudos de Definition; objectsCoverage, definitionsCoverage, listsEveryObject, emptySchemaReason y el AccessSummary que se puede exportar (coverage.ts); quoteIdentifier (sqlIdentifiers.ts); objectDetails.ts (describeObjectDetails: los hechos de una tabla o vista con cuánto respalda la lectura cada uno, FactText y ListCompleteness) y objectDetailsView.ts (presentObjectDetails: lo mismo como texto traducido, DetailsView), el modelo que comparten el Inspector y el panel de detalle del visor (ADR-038). Sin store. Es una hoja: ESLint solo le deja importar shared/ y a sí mismo, así cualquier funcionalidad y el bundle del visor pueden importarlo (ADR-037).",
-            "patterns": ["Módulo hoja, exigido por lint, seguro para el bundle del visor"]
+            "responsibility": "Helpers puros sobre SchemaSnapshot: formatDataType y describeColumn (dataType.ts), que escribe 'DEFAULT (no disponible)' o '(valor por defecto no registrado)' en vez de omitir un valor por defecto que no puede leer; el único hogar de la identidad de las entidades (entities.ts): EntityKind, ENTITY_KINDS, entityKey, listEntities, groupEntities (esquemas y, dentro, secciones Tablas y Vistas), filterEntityGroups, countEntities y entityListShape; definitionText e isUnknownDefinition (definition.ts), los únicos lectores de los estados crudos de Definition; objectsCoverage, definitionsCoverage, listsEveryObject, emptySchemaReason y el AccessSummary que se puede exportar (coverage.ts); quoteIdentifier (sqlIdentifiers.ts); foreignKeyId (entities.ts), el id de la relación de una llave en el lienzo, en el SVG y en los detalles; objectDetails.ts (describeObjectDetails: los hechos de una tabla o vista con cuánto respalda la lectura cada uno, FactText y ListCompleteness, la lectura de cada CHECK y la explicación de cada llave) y objectDetailsView.ts (presentObjectDetails: lo mismo como texto traducido, DetailsView, con un RuleView por CHECK y por llave y las notas de cada sección), el modelo que comparten el Inspector y el panel de detalle del visor (ADR-038). rules/ tiene las reglas legibles (ADR-039): checkTokens.ts (tokenizeCheck), checkParser.ts (parseCheck, descenso recursivo con la precedencia de T-SQL) y checkReader.ts (readCheckConstraint sobre el texto almacenado: un conjunto cerrado de formas que se lee todo o nada, como un CheckReading read, unread, notAvailable o notRecorded); foreignKeyReader.ts (foreignKeyOptionality, foreignKeyChildCardinality, explainForeignKey y explainForeignKeyToInvisibleTable, foreignKeyExplanations en caché por snapshot en un WeakMap, ExplanationScope y foreignKeyDefinitionSql); y ruleText.ts (árboles de RuleNode con claves de mensaje y argumentos tipados, y formatRuleText, que los convierte en partes de texto, columna, tabla y código). Las formas de referencia de crates/schemacraft-core/tests/fixtures/sqlserver/check_forms.json alimentan checkReader.test.ts. Sin store ni React. Es una hoja: ESLint solo le deja importar shared/ (contracts e i18n) y a sí mismo, así cualquier funcionalidad y el bundle del visor pueden importarlo (ADR-037).",
+            "patterns": [
+              "Módulo hoja, exigido por lint, seguro para el bundle del visor",
+              "Intérprete de una gramática cerrada con alternativa conservadora (ADR-039)",
+              "Frases como datos"
+            ]
           },
           {
             "id": "feature-inspector",
             "name": "inspector",
             "path": "src/features/inspector",
-            "responsibility": "El panel Inspector (ADR-038): los detalles de la tabla o vista seleccionada junto al lienzo. InspectorPanel.tsx lee el snapshot, los nodos del lienzo y las opciones de inspección de projectStore, y la selección, la petición de foco y closeInspector de canvasUiStore; inspectorScope.ts arma el DetailsScope (claves ocultas, la cobertura de accessSummary, los hechos conservados, el filtro de esquemas) e inspectedKey elige la única entidad seleccionada, así nada o varias seleccionadas es un estado vacío. Memoriza describeObjectDetails y presentObjectDetails con el traductor de useI18n. Un encabezado permanente (el título y un botón de cerrar con la pista Ctrl+I) da a los estados vacíos un destino de foco; el encabezado de la entidad toma el foco ante una petición de foco; el asa que le pasa el shell (ranura resizer) se dibuja dentro del elemento que atiende Escape, así Escape en cualquier parte del panel, el asa incluida, ejecuta focusEntityNode y deja el panel abierto. InspectorSections.tsx dibuja el DetailsView como lo hace el visor, un componente por tipo de sección, con chips de conteo, la única línea vacía honesta y la nota al pie de 'Referenciada por'; un destino de relación con clave es un enlace que ejecuta focusEntity y luego openInspector; un valor que la lectura no pudo respaldar lleva un icono y su pista, y un valor no disponible, un destino no visible y una línea vacía por no visible agregan un enlace '¿Por qué?' que abre el informe de acceso con la acción que el shell le pasa. Sin store, sin role=dialog; solo tokens.",
+            "responsibility": "El panel Inspector (ADR-038): los detalles de la tabla o vista seleccionada junto al lienzo. InspectorPanel.tsx lee el snapshot, los nodos del lienzo y las opciones de inspección de projectStore, y la selección, la petición de foco y closeInspector de canvasUiStore; inspectorScope.ts arma el DetailsScope (claves ocultas, la cobertura de accessSummary, los hechos conservados, el filtro de esquemas) e inspectedKey elige la única entidad seleccionada, así nada o varias seleccionadas es un estado vacío. Memoriza describeObjectDetails y presentObjectDetails con el traductor de useI18n. Un encabezado permanente (el título y un botón de cerrar con la pista Ctrl+I) da a los estados vacíos un destino de foco; el encabezado de la entidad toma el foco ante una petición de foco; el asa que le pasa el shell (ranura resizer) se dibuja dentro del elemento que atiende Escape, así Escape en cualquier parte del panel, el asa incluida, ejecuta focusEntityNode y deja el panel abierto. InspectorSections.tsx dibuja el DetailsView como lo hace el visor, un componente por tipo de sección, con chips de conteo, la única línea vacía honesta y la nota al pie de 'Referenciada por'; un destino de relación con clave es un enlace que ejecuta focusEntity y luego openInspector; un valor que la lectura no pudo respaldar lleva un icono y su pista, y un valor no disponible, un destino no visible y una línea vacía por no visible agregan un enlace '¿Por qué?' que abre el informe de acceso con la acción que el shell le pasa. RuleItem.tsx dibuja un CHECK o una llave como sus frases, con chips de columna, tabla y código y encabezados de grupo, o la línea que dice que no se puede expresar con palabras, y un botón Mostrar SQL (aria-expanded, aria-controls) al final de su encabezado con el SQL, su nota y Copiar SQL detrás; un CHECK sin leer empieza con su SQL abierto, y sqlDisclosure.ts reinicia el botón cuando una actualización cambia el SQL de la regla o su legibilidad; el panel incluye la entidad en la clave de sus secciones, así las reglas de otra tabla reciben elementos propios. Pasar el puntero por el elemento o enfocar cualquiera de sus controles llama a setRuleHighlight con un dueño de useId, y salir de él llama a clearRuleHighlight(dueño) cuando ni el puntero ni el foco siguen dentro; la tabla de columnas tiñe las filas de la regla resaltada. Un chip de tabla abre solo la otra tabla del elemento y queda fuera del orden de tabulación, porque el enlace del destino es el camino del teclado hasta ella; cada sección termina con sus notas (patrón, intercalación, derivadas). Sin store, sin role=dialog; solo tokens.",
             "patterns": [
               "Modelo compartido, dos renderizadores (ADR-038)",
               "Sigue la selección, no guarda estado",
-              "Landmark no modal, nunca un diálogo"
+              "Landmark no modal, nunca un diálogo",
+              "Resaltado cuyo dueño es el elemento que lo puso, sin otra parada de tabulación"
             ]
           }
         ]
@@ -3949,8 +4056,8 @@
           {
             "id": "viewer-app",
             "name": "Visor",
-            "path": "src/viewer/main.ts",
-            "responsibility": "Lee el JSON incrustado, dibuja con renderDiagramSvg pasándole la etiqueta VISTA del catálogo incrustado y ofrece desplazamiento y zoom, tres niveles de detalle, una búsqueda cuyos resultados indican el tipo (Tabla o Vista, en el color de vista), resaltado de vecinos, un panel de detalle cuya línea de tipo se colorea en las vistas y cambio de tema. Sus colores son las propiedades --sc-* que buildStandalonePage escribe desde la paleta; viewer.css no declara ninguno más allá de sus dos sombras translúcidas. Sus palabras son el subconjunto del catálogo incrustado en el archivo (ViewerData.messages), leído con createCatalogTranslator, así que no tiene catálogo propio (ADR-007). El panel de detalle es el modelo de features/schema, describeObjectDetails y presentObjectDetails, con el alcance de un archivo: sin entidades ocultas, con los veredictos de acceso y los hechos conservados incrustados, y solo el diagrama conocido; dibuja cada sección en el orden fijo con las palabras y los estados del Inspector, para lo que está en el diagrama: las llaves a tablas fuera del diagrama no están en el archivo (ni la marca FK que dan a sus columnas), una lista de relaciones vacía dice 'Ninguna en el diagrama', una lista que no está vacía no avisa que pueda faltar una llave y no hay enlace '¿Por qué?'. Un destino de relación que está en el diagrama es un enlace que selecciona, centra y enfoca el encabezado del panel (ADR-038). Elegir un resultado de la búsqueda también enfoca el encabezado; no hay aria-live. La exportación de una lectura parcial muestra una línea de nota bajo la barra del encabezado. Importa canvasState y geometry de canvas, entityKey y el modelo de schema, el renderizador y ViewerData de export y el traductor de shared/i18n, pero nada de React ni de stores.",
+            "path": "src/viewer/main.ts, src/viewer/rules.ts, src/viewer/dom.ts",
+            "responsibility": "Lee el JSON incrustado, dibuja con renderDiagramSvg pasándole la etiqueta VISTA del catálogo incrustado y ofrece desplazamiento y zoom, tres niveles de detalle, una búsqueda cuyos resultados indican el tipo (Tabla o Vista, en el color de vista), resaltado de vecinos, un panel de detalle cuya línea de tipo se colorea en las vistas y cambio de tema. Sus colores son las propiedades --sc-* que buildStandalonePage escribe desde la paleta; viewer.css no declara ninguno más allá de sus dos sombras translúcidas. Sus palabras son el subconjunto del catálogo incrustado en el archivo (ViewerData.messages), leído con createCatalogTranslator, así que no tiene catálogo propio (ADR-007). El panel de detalle es el modelo de features/schema, describeObjectDetails y presentObjectDetails, con el alcance de un archivo: sin entidades ocultas, con los veredictos de acceso y los hechos conservados incrustados, y solo el diagrama conocido; dibuja cada sección en el orden fijo con las palabras y los estados del Inspector, para lo que está en el diagrama: las llaves a tablas fuera del diagrama no están en el archivo (ni la marca FK que dan a sus columnas), una lista de relaciones vacía dice 'Ninguna en el diagrama', una lista que no está vacía no avisa que pueda faltar una llave y no hay enlace '¿Por qué?'. Un destino de relación que está en el diagrama es un enlace que selecciona, centra y enfoca el encabezado del panel (ADR-038). Cada CHECK y cada llave se leen como en el Inspector: rules.ts dibuja el RuleView (frases con chips de columna, tabla y código, encabezados de grupo) y su SQL en un <details>, abierto desde el principio para una regla que no se puede expresar con palabras, y main.ts dibuja las notas de la sección (sc-rule-note); dom.ts tiene h(). Señalar o enfocar una regla la resalta (ADR-039): paintRuleHighlight inserta un rectángulo de contorno junto a cada tarjeta implicada (sc-rule-outline) y un tinte y una barra detrás de cada una de sus filas (sc-rule-tint, sc-rule-bar), que encuentra por el data-column del SVG, marca los nombres y los tipos (sc-rule-column, sc-rule-type) y la relación de la llave (sc-rule-relation con sc-active), y paintRuleRows de main.ts tiñe las filas de la tabla del propio panel (sc-rule-row); solo el elemento que lo puso lo quita, el resaltado de vecinos espera mientras dura y mover el puntero dentro del panel no cuenta como moverlo sobre el diagrama. render() reemplaza solo el SVG y vuelve a pintar la selección y la regla, así un tema, un nivel de detalle o las fuentes que llegan tarde nunca sacan del panel el foco del teclado. Una tarjeta se selecciona desde la pulsación, porque el escenario captura el puntero y la liberación cae en él. Elegir un resultado de la búsqueda también enfoca el encabezado; no hay aria-live. La exportación de una lectura parcial muestra una línea de nota bajo la barra del encabezado. Importa canvasState y geometry (con rowCenterY y ROW_HEIGHT para el resaltado) de canvas, entityKey, el modelo y los tipos de las partes de una regla de schema, el renderizador y ViewerData de export y el traductor de shared/i18n, pero nada de React ni de stores.",
             "patterns": ["Reutiliza el renderizador de la app (ADR-025)"]
           },
           {
@@ -4311,10 +4418,11 @@
             "id": "integration-tests",
             "name": "Pruebas de integración con SQL Server",
             "path": "crates/schemacraft-core/tests",
-            "responsibility": "sqlserver_integration.rs crea bases de datos a partir de fixtures/sqlserver/fixture.sql, changes.sql y stress_200_tables.sql y luego prueba contra un servidor real los errores de conexión (incluido el certificado no confiable), describe_database, la inspección, el progreso, la cancelación y la actualización. sqlserver_permissions.rs siembra permissions.sql (el esquema de prueba, una base de datos vacía y una con DENY hechos a public) y crea con permission_logins.sql nueve inicios de sesión con pocos permisos (db_owner, db_datareader, solo VIEW DEFINITION, lector más el VIEW DEFINITION de un esquema, dos tablas, solo CONNECT, dos variantes de DENY sobre un esquema y un DENY sobre una columna) con una contraseña inventada para la corrida, y luego revisa cada veredicto de acceso, cada texto no visible y cada regla de la actualización, y que un DENY a public nunca alcanza a dbo. tests/common tiene los helpers compartidos. La prueba de carga debe leer 200 tablas en menos de 5 s (STRESS_BUDGET; la meta del producto es 3 s). Todas se omiten si SCHEMACRAFT_TEST_MSSQL_HOST no está definida.",
+            "responsibility": "sqlserver_integration.rs crea bases de datos a partir de fixtures/sqlserver/fixture.sql, changes.sql y stress_200_tables.sql y luego prueba contra un servidor real los errores de conexión (incluido el certificado no confiable), describe_database, la inspección, el progreso, la cancelación y la actualización. También crea SchemaCraftCheckForms a partir de fixtures/sqlserver/check_forms.json (72 formas CHECK de referencia, que también lee la suite vitest del lector de reglas) y rule_facts.sql, comprueba contra el motor cada forma almacenada, lista de columnas y estado de habilitación, y fija sobre tablas auxiliares el comportamiento de CHECK y llaves foráneas en que se apoyan las frases de las reglas (ADR-039). sqlserver_permissions.rs siembra permissions.sql (el esquema de prueba, una base de datos vacía y una con DENY hechos a public) y crea con permission_logins.sql nueve inicios de sesión con pocos permisos (db_owner, db_datareader, solo VIEW DEFINITION, lector más el VIEW DEFINITION de un esquema, dos tablas, solo CONNECT, dos variantes de DENY sobre un esquema y un DENY sobre una columna) con una contraseña inventada para la corrida, y luego revisa cada veredicto de acceso, cada texto no visible y cada regla de la actualización, y que un DENY a public nunca alcanza a dbo. tests/common tiene los helpers compartidos. La prueba de carga debe leer 200 tablas en menos de 5 s (STRESS_BUDGET; la meta del producto es 3 s). Todas se omiten si SCHEMACRAFT_TEST_MSSQL_HOST no está definida.",
             "patterns": [
               "Controladas por variables de entorno",
-              "Presupuesto de rendimiento como prueba"
+              "Presupuesto de rendimiento como prueba",
+              "Tabla de referencia compartida con las pruebas del frontend"
             ]
           },
           {
@@ -4518,14 +4626,14 @@
         "id": "feature-canvas-to-feature-schema",
         "from": "feature-canvas",
         "to": "feature-schema",
-        "label": "entityKey y EntityKind (geometry, graph, canvasState); formatDataType (EntityNode)",
+        "label": "entityKey, foreignKeyId y EntityKind (geometry, graph, canvasState); formatDataType (EntityNode); foreignKeyOptionality, foreignKeyChildCardinality y foreignKeyExplanation en caché (graph); formatRuleText para la etiqueta (RelationEdge)",
         "kind": "call"
       },
       {
         "id": "feature-export-to-feature-canvas",
         "from": "feature-export",
         "to": "feature-canvas",
-        "label": "geometría, spreadForDetailLevel, la tabla de marcadores y relationPath",
+        "label": "geometría, spreadForDetailLevel, la tabla de marcadores, relationPath y relationEnds",
         "kind": "call"
       },
       {
@@ -5183,14 +5291,14 @@
         "id": "viewer-app-to-feature-canvas",
         "from": "viewer-app",
         "to": "feature-canvas",
-        "label": "canvasState, geometry",
+        "label": "canvasState, geometry (rowCenterY y ROW_HEIGHT para el resaltado de reglas)",
         "kind": "call"
       },
       {
         "id": "viewer-app-to-feature-schema",
         "from": "viewer-app",
         "to": "feature-schema",
-        "label": "entityKey; describeObjectDetails y presentObjectDetails para el panel de detalle",
+        "label": "entityKey; describeObjectDetails y presentObjectDetails para el panel de detalle, con sus reglas (RuleView, hasRuleTargets, RulePart)",
         "kind": "call"
       },
       {
@@ -5232,7 +5340,7 @@
         "id": "integration-tests-to-ext-sqlserver",
         "from": "integration-tests",
         "to": "ext-sqlserver",
-        "label": "crea las bases de datos de prueba y los inicios de sesión con pocos permisos",
+        "label": "crea las bases de datos de prueba, las formas CHECK de referencia y los inicios de sesión con pocos permisos",
         "kind": "network"
       },
       {
@@ -5477,14 +5585,14 @@
         "id": "feature-inspector-to-feature-schema",
         "from": "feature-inspector",
         "to": "feature-schema",
-        "label": "describeObjectDetails, presentObjectDetails, accessSummary, entityKey",
+        "label": "describeObjectDetails, presentObjectDetails (RuleView, hasRuleTargets), accessSummary, entityKey; RulePart para los chips de las reglas",
         "kind": "call"
       },
       {
         "id": "feature-inspector-to-feature-canvas",
         "from": "feature-inspector",
         "to": "feature-canvas",
-        "label": "selectedKeys, inspectorFocusRequest, closeInspector, focusEntity, openInspector; focusEntityNode",
+        "label": "selectedKeys, inspectorFocusRequest, closeInspector, focusEntity, openInspector, setRuleHighlight y clearRuleHighlight; focusEntityNode",
         "kind": "call"
       },
       {
@@ -5505,7 +5613,14 @@
         "id": "viewer-app-to-shared-i18n",
         "from": "viewer-app",
         "to": "shared-i18n",
-        "label": "createCatalogTranslator sobre los mensajes incrustados",
+        "label": "createCatalogTranslator sobre los mensajes incrustados, con las palabras de las reglas",
+        "kind": "call"
+      },
+      {
+        "id": "feature-schema-to-shared-i18n",
+        "from": "feature-schema",
+        "to": "shared-i18n",
+        "label": "formatMessageParts y pluralKey (ruleText), las claves de los mensajes de reglas, los tipos del traductor y formatDate (objectDetailsView)",
         "kind": "call"
       }
     ],
@@ -5941,6 +6056,43 @@
             "detail": "Escape en cualquier parte del panel, su asa incluida, devuelve el foco a la tarjeta inspeccionada (focusEntityNode) y deja el panel abierto; el botón de cerrar o Ctrl+I lo cierran, y returnFocusFromInspector devuelve el foco a la tarjeta o al lienzo antes de que el aside se vuelva inert."
           }
         ]
+      },
+      {
+        "id": "read-rule",
+        "name": "Leer una regla con palabras",
+        "summary": "De un CHECK o una llave foránea a sus frases, con sus columnas resaltadas en el lienzo y su SQL a un clic.",
+        "steps": [
+          {
+            "actor": "features/schema",
+            "action": "Lee las reglas",
+            "detail": "Al armar los detalles, describeObjectDetails lee cada CHECK con readCheckConstraint (tokenizeCheck, parseCheck y luego el conjunto cerrado de formas, todo o nada, bajo 'Cuando … tiene un valor:' para las columnas que aceptan NULL y 'Cuando se habilite:' para una restricción deshabilitada) y explica cada llave con foreignKeyExplanation (si es obligatoria, cuántas filas pueden apuntar a una fila, ON DELETE y ON UPDATE, en caché por snapshot). presentObjectDetails redacta ambas con formatRuleText en un RuleView por elemento y agrega las notas de la sección."
+          },
+          {
+            "actor": "RuleItem",
+            "action": "Dibuja una regla",
+            "detail": "Las frases con chips de columna, tabla y código y sus encabezados de grupo, o la línea que dice que la regla no se puede expresar con palabras, con su SQL almacenado abierto; Mostrar SQL descubre el SQL, su nota y Copiar SQL."
+          },
+          {
+            "actor": "Usuario",
+            "action": "Señala la regla",
+            "detail": "Pasa el puntero por el elemento, o llega con Tab a uno de sus controles (el botón del SQL, Copiar SQL, el enlace del destino): el resaltado no agrega ninguna parada de tabulación."
+          },
+          {
+            "actor": "canvasUiStore",
+            "action": "Guarda el resaltado",
+            "detail": "setRuleHighlight({owner, columns, edgeId}) reemplaza cualquier resaltado anterior; clearRuleHighlight(owner) lo quita solo para el elemento que lo puso, cuando ni el puntero ni el foco siguen dentro; closeInspector y un cambio real de selección también lo quitan."
+          },
+          {
+            "actor": "EntityNode y RelationEdge",
+            "action": "Pintan el lienzo",
+            "detail": "Cada tarjeta lee solo su propia entrada: un contorno de acento a 3 px de la tarjeta y las filas visibles de la regla teñidas con una barra de acento; la línea de una llave se enfatiza sin abrir su etiqueta. La tabla de columnas del Inspector tiñe las mismas filas."
+          },
+          {
+            "actor": "Visor",
+            "action": "Hace lo mismo en el archivo",
+            "detail": "rules.ts dibuja el mismo RuleView con un <details> para el SQL; señalar una regla pinta el contorno, el tinte y las clases sc-rule-*, que encuentra por data-column y data-relation, y render() los vuelve a pintar tras un cambio de tema o de nivel de detalle."
+          }
+        ]
       }
     ],
     "commands": [
@@ -6195,6 +6347,21 @@
         "name": "Modelo compartido, dos renderizadores",
         "where": "src/features/schema/objectDetails.ts and objectDetailsView.ts; src/features/inspector/InspectorSections.tsx; src/viewer/main.ts",
         "why": "El Inspector y el panel de detalle del visor dibujan un único DetailsView, así la aplicación y el archivo exportado dicen lo mismo de un objeto y 'ninguno' se escribe solo para una lista completa (ADR-038)."
+      },
+      {
+        "name": "Intérprete de una gramática cerrada con alternativa conservadora",
+        "where": "src/features/schema/rules/checkTokens.ts, checkParser.ts, checkReader.ts",
+        "why": "Un CHECK se expresa con palabras solo cuando cada una de sus partes es una forma conocida; todo lo demás muestra el SQL almacenado, así una lectura puede decir de menos pero nunca algo falso (ADR-039)."
+      },
+      {
+        "name": "Frases como datos",
+        "where": "src/features/schema/rules/ruleText.ts, src/shared/i18n/formatMessage.ts",
+        "why": "Los lectores devuelven claves de mensaje con argumentos tipados, nunca texto, así ambos idiomas y ambos renderizadores redactan una misma lectura y una columna se vuelve un chip sin concatenar (ADR-007, ADR-039)."
+      },
+      {
+        "name": "Tabla de referencia comprobada contra el motor",
+        "where": "crates/schemacraft-core/tests/fixtures/sqlserver/check_forms.json, tests/sqlserver_integration.rs, src/features/schema/rules/checkReader.test.ts",
+        "why": "Un solo archivo de formas escritas, almacenadas y esperadas alimenta la prueba de Rust contra SQL Server y las pruebas del lector, así una forma normal que cambia hace fallar la CI antes de que una frase se equivoque (ADR-039)."
       }
     ],
     "recipes": {
@@ -6570,7 +6737,7 @@
       "crossCutting": [
         {
           "concern": "Texto bilingüe",
-          "touches": "en.ts es la referencia, es.ts tipado como MessageCatalog, catalogs.test.ts. El visor dice el subconjunto que incrusta una exportación (viewerMessages, por prefijo de clave; viewerMessages.test.ts lo revisa) con el mismo createCatalogTranslator y no tiene catálogo propio (ADR-007); el texto del diálogo de WebView2 está en src-tauri/src/main.rs."
+          "touches": "en.ts es la referencia, es.ts tipado como MessageCatalog, catalogs.test.ts. El visor dice el subconjunto que incrusta una exportación (viewerMessages, por prefijo de clave; viewerMessages.test.ts lo revisa) con el mismo createCatalogTranslator y no tiene catálogo propio (ADR-007); el texto del diálogo de WebView2 está en src-tauri/src/main.rs. Las palabras de las reglas legibles son un subcatálogo, messages/rules/en.ts y es.ts, que ambos incorporan y que se incrusta por el prefijo rule.; las frases se arman desde plantillas con formatMessageParts e Intl.ListFormat, nunca concatenando, y nombran las tablas como tablas, nunca como sustantivos adivinados a partir de su nombre (ADR-039)."
         },
         {
           "concern": "Tema claro y oscuro",
@@ -6578,11 +6745,11 @@
         },
         {
           "concern": "Teclado y registro de acciones",
-          "touches": "src/app/actions; los diálogos bloquean atajos, un panel no modal como el Inspector no; las teclas sin modificador nunca se disparan en campos de texto; Enter sobre una tarjeta lo maneja el lienzo y los gestos por entidad llaman a funciones de la funcionalidad, no a acciones (ADR-008)."
+          "touches": "src/app/actions; los diálogos bloquean atajos, un panel no modal como el Inspector no; las teclas sin modificador nunca se disparan en campos de texto; Enter sobre una tarjeta lo maneja el lienzo y los gestos por entidad llaman a funciones de la funcionalidad, no a acciones, y los controles de una regla son locales a su elemento, cuyo resaltado sigue al foco sin otra parada de tabulación (ADR-008, ADR-039)."
         },
         {
           "concern": "Deshacer y cambios sin guardar",
-          "touches": "Solo CanvasState se puede deshacer, vía projectStore.updateCanvas; el estado transitorio (la selección, si el Inspector está abierto) va en canvasUiStore. El título de la ventana muestra '•' y cerrar pregunta antes (useProjectWindow)."
+          "touches": "Solo CanvasState se puede deshacer, vía projectStore.updateCanvas; el estado transitorio (la selección, si el Inspector está abierto, la regla que resalta) va en canvasUiStore. El título de la ventana muestra '•' y cerrar pregunta antes (useProjectWindow)."
         },
         {
           "concern": "Versionado de .scraft",
@@ -6594,7 +6761,7 @@
         },
         {
           "concern": "Paridad y privacidad de exportación",
-          "touches": "Geometría compartida, una sola tabla de marcadores y ruteo (canvas/edgeGeometry.ts) y una sola paleta; el renderizador recibe sus etiquetas de quien llama, así una vista dice VIEW o VISTA en el idioma de la exportación; visibleProjection es una lista de permitidos que decide qué llega al HTML (nunca el sondeo, el usuario de base de datos, los hechos de una tabla oculta ni las claves desconocidas; los veredictos, las fechas de lectura de los hechos conservados de los objetos del diagrama y el subconjunto de mensajes del visor viajan aparte del snapshot); el panel de detalle del visor es el modelo del Inspector, así ambos usan las mismas palabras y estados, el archivo solo para lo que está en el diagrama (ADR-038); una lectura parcial lleva una línea de nota."
+          "touches": "Geometría compartida, una sola tabla de marcadores y ruteo (canvas/edgeGeometry.ts) cuyos extremos elige relationEnds para todas las superficies, y una sola paleta; el renderizador recibe sus etiquetas de quien llama, así una vista dice VIEW o VISTA en el idioma de la exportación; visibleProjection es una lista de permitidos que decide qué llega al HTML (nunca el sondeo, el usuario de base de datos, los hechos de una tabla oculta ni las claves desconocidas; los veredictos, las fechas de lectura de los hechos conservados de los objetos del diagrama y el subconjunto de mensajes del visor viajan aparte del snapshot); el panel de detalle del visor es el modelo del Inspector, así ambos usan las mismas palabras y estados, el archivo solo para lo que está en el diagrama (ADR-038); una lectura parcial lleva una línea de nota; el visor lee las reglas con los mismos lectores y encuentra sus columnas por data-column (ADR-039)."
         },
         {
           "concern": "Backends preview",
@@ -6630,7 +6797,11 @@
         },
         {
           "concern": "Acceso parcial",
-          "touches": "Un inicio de sesión puede ver solo parte de una base de datos (ADR-034). Todo lo que lista o cuenta hechos del esquema consulta src/features/schema/coverage.ts antes de decir 'ninguno', y un texto ilegible dice 'no disponible'; el Inspector y el panel de detalle del visor escriben 'ninguno' solo para una lista completa y marcan cada hecho que la lectura no pudo respaldar (ADR-038). Del lado del servidor lo cubren los inicios de sesión de sqlserver_permissions.rs; el preview del navegador lo reproduce con un nombre de servidor que contenga partial."
+          "touches": "Un inicio de sesión puede ver solo parte de una base de datos (ADR-034). Todo lo que lista o cuenta hechos del esquema consulta src/features/schema/coverage.ts antes de decir 'ninguno', y un texto ilegible dice 'no disponible'; el Inspector y el panel de detalle del visor escriben 'ninguno' solo para una lista completa y marcan cada hecho que la lectura no pudo respaldar (ADR-038); una llave hacia una tabla que el inicio de sesión no ve se redacta contra 'la tabla referenciada', sin SQL (ADR-039). Del lado del servidor lo cubren los inicios de sesión de sqlserver_permissions.rs; el preview del navegador lo reproduce con un nombre de servidor que contenga partial."
+        },
+        {
+          "concern": "Enseñar al lector de reglas una forma de CHECK",
+          "touches": "Agrega un caso a crates/schemacraft-core/tests/fixtures/sqlserver/check_forms.json: como se escribe, como se almacena, las columnas que lee en orden y la lectura esperada, o 'unread' con el motivo. Ejecuta la prueba de integración con SQL Server contra el contenedor local (dev-sqlserver.ps1), que fija la forma almacenada; agrega las claves rule.check.* a src/shared/i18n/messages/rules/en.ts y es.ts; enseña la forma a checkReader.ts, sin leerla siempre que NULL, la intercalación, la sesión o una conversión puedan volver falsa la frase; ejecuta checkReader.test.ts, que lee cada caso de referencia (ADR-039)."
         }
       ],
       "definitionOfDone": [
@@ -6689,11 +6860,11 @@
       },
       {
         "topic": "Desconocido no es inexistente",
-        "rule": "Un hecho que el inicio de sesión no pudo leer se registra como tal (Definition notVisible, foreignKeysToInvisibleTables, cobertura parcial) y se muestra como 'no disponible'; una lista dice 'ninguno' solo con cobertura completa. Redacción: 'no visible para este inicio de sesión', nunca 'oculto', que significa oculto en el lienzo (ADR-034)."
+        "rule": "Un hecho que el inicio de sesión no pudo leer se registra como tal (Definition notVisible, foreignKeysToInvisibleTables, cobertura parcial) y se muestra como 'no disponible'; una lista dice 'ninguno' solo con cobertura completa. Redacción: 'no visible para este inicio de sesión', nunca 'oculto', que significa oculto en el lienzo (ADR-034). Una regla que SchemaCraft no puede leer entera muestra su SQL, nunca una frase a medias (ADR-039)."
       },
       {
         "topic": "i18n",
-        "rule": "Todo texto de usuario en en.ts y es.ts; plurales con .one/.other y tCount; sin concatenar cadenas."
+        "rule": "Todo texto de usuario en en.ts y es.ts (las palabras de las reglas en el subcatálogo messages/rules que incorporan); plurales con .one/.other y tCount; sin concatenar cadenas: una frase con chips se arma con formatMessageParts."
       },
       {
         "topic": "Estilos",
@@ -6778,7 +6949,7 @@
         {
           "what": "Los trazos de la pata de gallo y las opciones de ruteo de aristas están copiados entre el lienzo y el renderizador SVG.",
           "where": "src/features/canvas/RelationMarkers.tsx vs src/features/export/svg/renderDiagram.ts",
-          "fix": "Corregido: RELATION_MARKER_SHAPES, relationPath y startMarkerKind viven en canvas/edgeGeometry.ts y relationOffsets en geometry.ts; RelationMarkers.tsx, RelationEdge.tsx y renderDiagram.ts los usan, y la salida del renderizador se comparó byte a byte (ADR-037).",
+          "fix": "Corregido: RELATION_MARKER_SHAPES (con nombres por significado: many, one y zeroOrOne), MARKER_ORIENT, startMarkerKind, endMarkerKind y relationPath viven en canvas/edgeGeometry.ts, relationEnds en graph.ts y relationOffsets en geometry.ts; RelationMarkers.tsx, RelationEdge.tsx y renderDiagram.ts los usan, la salida del renderizador se comparó byte a byte durante el traslado (ADR-037) y viewerStyles.test.ts comprueba que viewer.css cambia cada id de marcador de cada extremo por su variante -active (ADR-039).",
           "severity": "minor",
           "status": "fixed"
         },
@@ -6958,7 +7129,7 @@
         "La página lleva un solo manifiesto, en el nivel superior de model.json y compartido por ambos idiomas. CI lo compara con el código con scripts/check-architecture-page.mjs (npm run docs:check).",
         "Comando nuevo: agrégalo a manifest.commands y a la tabla de comandos en ambos idiomas.",
         "Carpeta de funcionalidad, módulo del core o backend IPC nuevo: agrégalo al manifiesto, a la lista de capas y a las aristas del diagrama.",
-        "Decisión nueva: agrega un ADR (el siguiente es ADR-039), sube manifest.adrCount y enlaza el ADR desde el patrón o la receta que cambia.",
+        "Decisión nueva: agrega un ADR (el siguiente es ADR-040), sube manifest.adrCount y enlaza el ADR desde el patrón o la receta que cambia.",
         "Cambio de alcance: actualiza ambas copias del PRD (docs/ y 02_Docs/), agrega una línea fechada en la sección 6 y haz commit como docs(prd), solo con aprobación del usuario.",
         "Desviación corregida: márcala como corregida en el mismo PR. Desviación conocida nueva: agrégala con su severidad y estado open.",
         "Almacén de datos o clave de localStorage nueva: agrega una fila a la tabla de datos.",
@@ -7185,6 +7356,36 @@
         "id": "details-view",
         "term": "ObjectDetails / DetailsView",
         "meaning": "El modelo de una tabla o vista: los hechos de describeObjectDetails (cada texto un FactText, cada lista con su ListCompleteness) y su texto traducido de presentObjectDetails. Lo dibujan el Inspector y el panel de detalle del visor (ADR-038)."
+      },
+      {
+        "id": "readable-rule",
+        "term": "Regla legible",
+        "meaning": "Una restricción CHECK o una llave foránea expresada en frases en el idioma de la interfaz por src/features/schema/rules, con su SQL a un clic. Un CHECK se lee todo o nada: uno que SchemaCraft no puede leer entero muestra su SQL almacenado (ADR-039)."
+      },
+      {
+        "id": "stored-definition",
+        "term": "Definición almacenada",
+        "meaning": "El texto que SQL Server guarda para un CHECK en sys.check_constraints.definition, en una forma normal: columnas entre corchetes, números entre paréntesis, BETWEEN expandido, IN como una cadena de OR invertida. El lector de CHECK lee esa forma, que fijan las formas de referencia."
+      },
+      {
+        "id": "golden-forms",
+        "term": "Formas de referencia",
+        "meaning": "check_forms.json, junto a los fixtures de SQL Server: restricciones CHECK como se escriben, como se almacenan y como deben leerse. La prueba de integración comprueba las formas almacenadas contra el motor, y las pruebas del lector las leen."
+      },
+      {
+        "id": "match-simple",
+        "term": "Regla de las llaves compuestas (MATCH SIMPLE)",
+        "meaning": "SQL Server comprueba una llave foránea solo cuando todas sus columnas tienen valor, así una fila con NULL en cualquier columna de la llave no apunta a ninguna fila. Por eso una llave con alguna columna que acepta NULL es opcional, y su extremo referenciado se dibuja como cero o uno."
+      },
+      {
+        "id": "crows-foot",
+        "term": "Notación de pata de gallo",
+        "meaning": "Los extremos de una relación, dibujados en la notación estándar (Information Engineering): en la tabla que referencia, una pata de gallo, o cero o uno para una llave uno a uno; en la tabla referenciada, una barra, o una barra y un círculo (cero o uno) cuando la llave es opcional. relationEnds elige ambos a partir de los hechos que expresa el lector de reglas (ADR-039)."
+      },
+      {
+        "id": "rule-highlight",
+        "term": "Resaltado de reglas",
+        "meaning": "canvasUiStore.ruleHighlight: las columnas y la relación de la regla señalada en el Inspector, con el elemento que lo puso como dueño; las tarjetas las rodean y las tiñen. El visor pinta lo mismo con sus clases sc-rule-*."
       }
     ]
   }

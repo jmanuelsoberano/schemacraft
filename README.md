@@ -18,15 +18,19 @@ the same diagram, and renders fast, interactive diagrams with high-fidelity sing
 - **Portable projects.** A `.scraft` file keeps the schema and the diagram, reopens without a
   database and refreshes from it with a reviewed diff that keeps your layout.
 - **Interactive diagrams.** Entity cards at three detail levels, views told apart from tables by
-  label, icon and colour, an entities panel with schema and kind sections, crow's foot
-  relationships, layered, organic and radial layouts, isolation of a table with its neighbours,
-  undo and redo, and a command palette.
+  label, icon and colour, an entities panel with schema and kind sections, relationships in
+  standard crow's foot notation, layered, organic and radial layouts, isolation of a table with
+  its neighbours, undo and redo, and a command palette.
 - **Inspector.** A panel beside the canvas with the selected table or view: columns with type,
   nullability, identity, computed and default, primary key, indexes, check constraints and the
   relationships in both directions, each fact marked when the login could not read it. The HTML
   viewer's detail panel is built from the same view-model, with the same sections, order and
   words, for what is on the exported diagram: it leaves out relationships to tables that are not
   on it, says "None on the diagram" for an empty relationship list and has no "Why?" links.
+- **Readable rules.** Check constraints and foreign keys read as sentences in English or Spanish
+  ("Each row in sales.Orders belongs to exactly one row in dbo.Customers"), with their columns
+  highlighted on the diagram as you point at them and the SQL one click away. A rule SchemaCraft
+  cannot read in full shows its SQL instead of a guess, in the app and in the HTML viewer alike.
 - **Exports.** SVG with selectable text, a self-contained interactive HTML viewer, single-page
   PDF and PNG at 1x, 2x and 4x, all drawn by one renderer with bundled fonts.
 - **Desktop quality.** English and Spanish, light and dark themes, keyboard access throughout, a
@@ -163,15 +167,19 @@ unless the `SCHEMACRAFT_TEST_MSSQL_*` variables are set. With Docker Desktop run
 cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions -- --nocapture
 ```
 
-`sqlserver_integration` seeds two databases on the container: a fixture covering keys, indexes,
-constraints, alias types and views, and a 200-table database used to check the extraction time
-budget. `sqlserver_permissions` seeds a database of its own plus an empty one and reads them as
-low-privilege logins: `db_owner`, `db_datareader`, `VIEW DEFINITION` only, a reader with the
-`VIEW DEFINITION` of one schema, `SELECT` on two tables, `CONNECT` only, two variants of a
-schema `DENY` and a column `DENY`. It creates these server logins itself, with the
-`schemacraft_` prefix and a password made up for each run, so run it only against a disposable
-server such as this container. Windows Authentication cannot run in the Linux container; it is
-validated manually against a Windows instance.
+`sqlserver_integration` seeds four databases on the container: `SchemaCraftFixture`, covering
+keys, indexes, constraints, alias types and views; `SchemaCraftFixtureChanged`, the same fixture
+with the changes of `changes.sql`, which the refresh test reads; `SchemaCraftStress`, 200 tables
+used to check the extraction time budget; and `SchemaCraftCheckForms`, built from the golden
+check constraints in `check_forms.json` and the scratch tables of `rule_facts.sql`, which pins the
+forms SQL Server stores and the engine behaviour the readable rules rely on.
+`sqlserver_permissions` seeds a database of its own, an empty one and one with denials made to
+`public`, and reads them as low-privilege logins: `db_owner`, `db_datareader`, `VIEW DEFINITION`
+only, a reader with the `VIEW DEFINITION` of one schema, `SELECT` on two tables, `CONNECT` only,
+two variants of a schema `DENY` and a column `DENY`. It creates these server logins itself, with
+the `schemacraft_` prefix and a password made up for each run, so run it only against a
+disposable server such as this container. Windows Authentication cannot run in the Linux
+container; it is validated manually against a Windows instance.
 
 ## Browser preview
 

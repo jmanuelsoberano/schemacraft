@@ -1,4 +1,4 @@
-import { MARKER_HEIGHT, MARKER_REF_Y, RELATION_MARKER_SHAPES } from "./edgeGeometry";
+import { MARKER_HEIGHT, MARKER_ORIENT, MARKER_REF_Y, RELATION_MARKER_SHAPES } from "./edgeGeometry";
 import type { RelationMarkerKind } from "./edgeGeometry";
 import { MARKER_IDS } from "./relationMarkerIds";
 
@@ -24,7 +24,7 @@ export function RelationMarkers() {
               markerHeight={MARKER_HEIGHT}
               refX={shape.refX}
               refY={MARKER_REF_Y}
-              orient={shape.orient}
+              orient={MARKER_ORIENT}
               markerUnits="userSpaceOnUse"
             >
               <path d={shape.path} fill="none" stroke="context-stroke" strokeWidth="1.5" />

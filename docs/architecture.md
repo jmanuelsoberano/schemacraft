@@ -25,7 +25,7 @@ schemacraft/
 │   ├── src/export/            SVG to PNG and PDF rendering with bundled fonts
 │   ├── src/fs.rs              atomic file writes shared by projects, preferences and exports
 │   ├── assets/fonts/          TTF fonts embedded in the exports
-│   └── tests/                 integration tests, SQL fixtures and low-privilege logins (run against a real server)
+│   └── tests/                 integration tests, SQL fixtures, golden CHECK forms and low-privilege logins (run against a real server)
 ├── src-tauri/                 Rust binary: Tauri host, IPC commands, job registry, logging, configuration
 ├── src/                       React + TypeScript frontend
 │   ├── app/                   composition root: shell, actions, palette, global styles, dev hooks
@@ -39,19 +39,20 @@ schemacraft/
 │   │   ├── canvas/            diagram canvas, entities panel, nodes, edges and markers, layouts and their worker, geometry, focus between canvas and Inspector
 │   │   ├── connection/        connection dialog, history, flow store, progress, change review
 │   │   ├── export/            export dialog and store, SVG renderer, standalone HTML packaging with the viewer's catalogue subset
-│   │   ├── inspector/         Inspector panel: the selected entity's details beside the canvas
+│   │   ├── inspector/         Inspector panel: the selected entity's details beside the canvas, its rules in words with their SQL
 │   │   ├── preferences/       mirror of the preferences file: history and recent projects
 │   │   ├── project/           open project store, open/save flows, unsaved-changes guard, undo
 │   │   └── schema/            entity identity and kinds, entity lists, data types, expression texts, coverage, object details view-model
+│   │       └── rules/         readable rules: the CHECK tokenizer, parser and reader, the foreign key reader, sentences as data
 │   ├── shared/                cross-cutting modules
 │   │   ├── brand/             logo and author credits
 │   │   ├── contracts/         TypeScript types generated from Rust (ts-rs)
 │   │   ├── errors/            title, hint and remedy for every error kind
-│   │   ├── i18n/              message catalogues, catalogue translator (shared with the viewer), translation hook
+│   │   ├── i18n/              message catalogues with the rules sub-catalogue, catalogue translator (shared with the viewer), translation hook
 │   │   ├── ipc/               the only door to Tauri: commands, dialogs, window, runtime; preview backends
 │   │   ├── settings/          per-window UI settings (theme, language, panel widths, closed access notices)
 │   │   └── ui/                accessible UI primitives (Radix based), the resizer of both side panels
-│   └── viewer/                standalone viewer embedded in exported HTML files, drawing the shared details view-model
+│   └── viewer/                standalone viewer embedded in exported HTML files, drawing the shared details view-model and its rules
 ├── assets/brand/              source artwork for the application icon
 ├── scripts/                   SQL Server container, font preparation, smoke test, page check, CI change filter
 ├── docs/                      PRD, decision records, UX principles, release checklist
@@ -149,12 +150,22 @@ Since 1.1 one translator serves the application and the standalone viewer.
 over any catalogue with `formatMessage` and `Intl.PluralRules`, with no store or framework behind
 it. The application builds it over the whole catalogue of the chosen language (`useI18n`); an
 exported HTML file embeds the subset the viewer needs (`viewerMessages`, chosen by key prefix:
-`viewer.`, `details.`, `entity.`, `viewMode.`, `referentialAction.`, `indexKind.` and
-`definition.`, plus the search placeholder and the partial-access note), and the viewer builds
-the same translator over it. The viewer's own catalogue and its interpolation are gone, so every
-string lives in `en.ts` and `es.ts` and the catalogue test covers the viewer's placeholders too
-(ADR-025, ADR-038). A translator over a wider catalogue is assignable to one over a subset of it,
-which is how the shared details view-model accepts either.
+`viewer.`, `details.`, `entity.`, `viewMode.`, `indexKind.`, `definition.` and `rule.`, plus
+the search placeholder and the partial-access note), and the viewer builds the same translator
+over it. The viewer's own catalogue and its interpolation are gone, so every string lives in
+`en.ts` and `es.ts` and the catalogue test covers the viewer's placeholders too (ADR-025,
+ADR-038). A translator over a wider catalogue is assignable to one over a subset of it, which is
+how the shared details view-model accepts either, and the rule readers take a narrower one still
+(`RuleTranslator`).
+
+The words of the readable rules (ADR-039) are a sub-catalogue, `messages/rules/en.ts` and
+`messages/rules/es.ts`, which `en.ts` and `es.ts` spread in: the keys are part of `MessageKey`,
+the catalogue test checks their parity and placeholders like any other, and the `rule.` prefix
+carries them into an exported file. The names of the referential actions no longer travel there,
+since the sentences say what each action does. A sentence that draws a column or a table as a
+chip is not formatted to a string: `formatMessageParts` (`formatMessage.ts`) splits a template
+into text and the arguments of its placeholders, an unknown placeholder staying visible as text,
+so a renderer can draw each argument as it likes without concatenating pieces of a sentence.
 
 Why: two languages and a few hundred strings do not justify an i18n framework. The typed approach
 gives compile-time completeness checks that most libraries lack.
@@ -179,10 +190,12 @@ card chevron, and the double-click and Enter on a card call the feature function
 would call (`canvasActions.setHidden` and `setCollapsed`, `focusEntity`, `openInspector`), and
 the one entity-free item of the context menu, "Show all", runs the registry action the shell
 passes in. Enter on a focused card is handled by the canvas, not as a global shortcut, because
-an Enter captured at the window would take activation from every button. The four layout
-strategies, collapse all, expand all, the three themes and the two languages have no shortcut:
-they live in the layout menu, the top bar and the palette, and Ctrl+Shift+L repeats the last
-layout.
+an Enter captured at the window would take activation from every button. The controls of a
+rule in the Inspector (ADR-039) are local to it, like a disclosure: its Show SQL toggle and Copy
+SQL button, the table chips of its sentences, and the highlight that pointing at the rule or
+focusing one of its controls sets on the canvas. The four layout strategies, collapse all, expand
+all, the three themes and the two languages have no shortcut: they live in the layout menu, the
+top bar and the palette, and Ctrl+Shift+L repeats the last layout.
 
 Why: labels, icons and shortcuts shown in tooltips can never disagree with what the keyboard does,
 and adding a feature means adding one action rather than touching every surface.
@@ -404,13 +417,20 @@ DOM to decide where an edge goes: nodes are built with their computed size, and 
 at the row of its first column pair on each table. Anchors (`edgeGeometry.ts`) float with the
 nodes: tables stacked vertically connect through their facing top and bottom edges, tables side
 by side through their facing sides at the key row, overlapping tables leave through the same
-side and bend around, and a self-reference loops out of the right side. Crow's foot markers are
-described once as data, `RELATION_MARKER_SHAPES` in `edgeGeometry.ts` (ADR-037):
-`RelationMarkers.tsx` renders them as SVG markers painted with `context-stroke`, so they inherit
-the colour and the emphasis of their edge, and the exporter renders the same table.
-`relationPath` routes every edge with one set of smooth-step options or draws the self-reference
-loop, `relationOffsets` picks the attachment row at each end, and `isCollapsible` says whether a
-card has rows to hide at a detail level, which is when it shows a collapse toggle.
+side and bend around, and a self-reference loops out of the right side from the referencing row
+to the referenced row; when both ends attach at the same point, the header of a card whose rows
+are hidden, each moves `LOOP_SPREAD` off it, the referencing end up and the referenced end down.
+Crow's foot markers are described once as data, `RELATION_MARKER_SHAPES` in `edgeGeometry.ts`
+(ADR-037), named by what an end says (`many`, `one`, `zeroOrOne`) and each drawn facing its
+table, so one orientation, `MARKER_ORIENT` (`auto-start-reverse`), lets any shape serve at either
+end: `RelationMarkers.tsx` renders them as
+SVG markers painted with `context-stroke`, so they inherit the colour and the emphasis of their
+edge, and the exporter renders the same table. Which marker each end gets is decided once, by
+`relationEnds` in `graph.ts` from the facts the rule reader states (ADR-039), and drawn in
+standard crow's foot notation. `relationPath` routes every edge with one set of smooth-step
+options or draws the self-reference loop, `relationOffsets` picks the attachment row at each end,
+and `isCollapsible` says whether a card has rows to hide at a detail level, which is when it
+shows a collapse toggle.
 
 Why: Step 5 renders the same diagram to SVG, HTML and PDF without a browser layout pass. When
 geometry is a function of the project file, the export is the canvas, pixel for pixel, and the
@@ -428,8 +448,9 @@ neither an edit nor an undo step. Changing the detail level is saved with the pr
 becomes an undo step only when the taller nodes have to move apart; on its own it is a view
 setting, like the viewport. Transient interaction state (selection, hover, zoom level,
 refresh highlights, context menu, layout in progress, whether the Inspector is open and its
-request for focus) lives in `canvasUiStore` and is never saved; the Inspector derives what it
-shows from the selection and holds no state of its own (ADR-038). After a refresh,
+request for focus, the rule the Inspector highlights) lives in `canvasUiStore` and is never
+saved; the Inspector derives what it shows from the selection and holds no state of its own
+(ADR-038, ADR-039). After a refresh,
 `refreshPlacement.ts` places new tables in free space next to the
 tables they reference, or in a row below the diagram, and highlights them; surviving positions
 never move.
@@ -465,18 +486,21 @@ code path, and Step 5 can reuse the strategies without a canvas.
 ### ADR-023: One SVG renderer in TypeScript draws the canvas's diagram for every export
 
 The export never screenshots the DOM. `src/features/export/svg/renderDiagram.ts` builds an SVG
-document from the project data with the geometry of ADR-020 (`geometry.ts`, `edgeGeometry.ts`)
-and the marker table of `edgeGeometry.ts`, so the file is the canvas drawn again: the visible
-entities at their positions, collapsed ones collapsed, at the chosen detail level and theme, with
-views marked as on the canvas (ADR-036). Colours are the design tokens converted to sRGB hex
-(`palette.ts`), because renderers outside the browser understand neither `oklch()` nor
-`light-dark()`; a test recomputes the conversion, so the palette cannot drift from `tokens.css`
-(ADR-037). Styles are plain class rules without combinators, the subset every SVG consumer
-shares. The renderer holds no text of its own: the caller passes the labels it needs already
-translated (`RenderOptions.labels`, today the VIEW label), so the exports speak the interface
-language and the viewer its own. Text stays text, selectable in SVG and PDF; names that do not
-fit are shortened with an ellipsis, measured with a canvas in the webview and estimated in tests.
-The renderer is deterministic for a given input, which the unit tests check.
+document from the project data with the geometry of ADR-020 (`geometry.ts`, `edgeGeometry.ts`),
+the marker table of `edgeGeometry.ts` and the ends `relationEnds` chooses (markers `sc-many`,
+`sc-one` and `sc-zero-or-one`, each with the `-active` variant the viewer switches to), so the
+file is the canvas drawn again: the visible entities at their positions, collapsed ones
+collapsed, at the chosen detail level and theme, with views marked as on the canvas (ADR-036).
+Every column name carries its full name in a `data-column` attribute, since the text shown may be
+cut short, so the viewer can find the columns of a rule on the drawing (ADR-039). Colours are
+the design tokens converted to sRGB hex (`palette.ts`), because renderers outside the browser
+understand neither `oklch()` nor `light-dark()`; a test recomputes the conversion, so the palette
+cannot drift from `tokens.css` (ADR-037). Styles are plain class rules without combinators, the
+subset every SVG consumer shares. The renderer holds no text of its own: the caller passes the
+labels it needs already translated (`RenderOptions.labels`, today the VIEW label), so the exports
+speak the interface language and the viewer its own. Text stays text, selectable in SVG and PDF;
+names that do not fit are shortened with an ellipsis, measured with a canvas in the webview and
+estimated in tests. The renderer is deterministic for a given input, which the unit tests check.
 
 Why: the PRD asks for continuous vector output with selectable text that matches the screen.
 One renderer, shared with the standalone viewer, keeps the drawing rules in a single place.
@@ -509,7 +533,8 @@ those objects and the subset of the message catalogue the viewer says, ADR-038) 
 small vanilla TypeScript viewer (`src/viewer`) that draws with the renderer of ADR-023 in the
 browser: pan and zoom, the three detail levels, a search whose results name the kind of each
 entity, neighbour highlighting, a detail panel per table and view drawn from the view-model the
-Inspector draws, and light and dark themes. Its colours are the
+Inspector draws, its `CHECK`s and keys read out in words with their columns highlighted on the
+diagram (ADR-039), and light and dark themes. Its colours are the
 application's: `buildStandalonePage` writes the palette of ADR-023 into the page as `--sc-*`
 custom properties for both themes, ahead of the viewer's stylesheet, which therefore declares no
 colour of its own beyond its shadows (ADR-037). A plugin in `vite.config.ts` bundles the viewer on
@@ -725,8 +750,8 @@ The model keeps unknown apart from none. `CHECK` and `DEFAULT` texts are a `Defi
 comes from `sys.columns.default_object_id`, which every login sees, and legacy bound defaults are
 read with `OBJECT_DEFINITION`. A foreign key whose referenced table the login cannot see is kept
 in `foreignKeysToInvisibleTables` with its local columns, actions and enabled flag: its columns
-keep the key badge, and no edge is drawn. A refresh that sees less keeps what it cannot check
-(ADR-016).
+keep the key badge, no edge is drawn, and its rules are worded against "the referenced table"
+(ADR-039). A refresh that sees less keeps what it cannot check (ADR-016).
 
 The interface discloses in grades (`src/features/access`). Full access adds nothing. Partial
 access adds one polite line in the connection dialog; a dismissible bar above the entities list,
@@ -862,13 +887,17 @@ import only `shared/` and itself (ADR-031), so the viewer bundle can always take
 helper can grow a dependency on a store.
 
 Markers and routing: `canvas/edgeGeometry.ts` holds `RELATION_MARKER_SHAPES` (the width,
-reference point, orientation, path and optional circle of each marker kind), `MARKER_HEIGHT`,
-`MARKER_REF_Y`, `startMarkerKind` and `relationPath`, which routes an edge with one set of
-smooth-step options or draws the self-reference loop; `geometry.ts` holds `relationOffsets`, the
-row at which each end attaches. `RelationMarkers.tsx` renders its `<marker>` elements from the
-table under the ids of `canvas/relationMarkerIds.ts`, and `RelationEdge.tsx` and
-`renderDiagram.ts` call the same functions. The refactor was checked by comparing the renderer's
-output byte for byte before and after it.
+reference point, path and optional circle of each marker kind), `MARKER_HEIGHT`,
+`MARKER_REF_Y`, `MARKER_ORIENT`, `startMarkerKind`, `endMarkerKind` and `relationPath`, which
+routes an edge with one set of smooth-step options or draws the self-reference loop;
+`geometry.ts` holds `relationOffsets`, the row at which each end attaches, and `graph.ts`
+`relationEnds`, the marker kind of each end of a key. `RelationMarkers.tsx` renders its
+`<marker>` elements from the table under the ids of `canvas/relationMarkerIds.ts`, and
+`RelationEdge.tsx` and `renderDiagram.ts` call the same functions. The refactor was checked by
+comparing the renderer's output byte for byte before and after it. The standard notation of
+ADR-039 later changed what the table draws and named its kinds by meaning, not where it lives;
+`src/viewer/viewerStyles.test.ts` checks that `viewer.css` swaps every marker the renderer puts
+at either end for its own `-active` variant.
 
 Colours: `src/app/styles/tokens.css` is the only place a theme colour is written (ADR-006).
 `palette.ts` is its sRGB derivation, and `PALETTE_TOKENS` names the token each entry converts;
@@ -904,13 +933,13 @@ statuses) and the carried facts through the scope, and `objectDetailsView.ts` th
 (`presentObjectDetails(details, translator)`), every title, badge, value, empty line and
 footnote already translated. The React panel (`features/inspector`) and the vanilla viewer
 (`src/viewer/main.ts`) only lay that text out, one renderer per section kind, so both show the
-same sections in the same order with the same words and states, and the next part can extend
-the sections without a third path. The `scope` argument states what the renderer knows beyond
-the snapshot: the entities hidden on the canvas, the access coverage, the carried facts,
-whether the read was limited to some schemas and whether only the diagram is known, as in an
-exported file. That is where the two differ: the file knows only the diagram (ADR-025), so it
-leaves out keys to tables that are not on it, an empty relation list reads "None on the
-diagram", and it offers no "Why?" link.
+same sections in the same order with the same words and states, and the readable rules of
+ADR-039 extend the `CHECK` and key items without a third path. The `scope` argument states what
+the renderer knows beyond the snapshot: the entities hidden on the canvas, the access coverage,
+the carried facts, whether the read was limited to some schemas and whether only the diagram is
+known, as in an exported file. That is where the two differ: the file knows only the diagram
+(ADR-025), so it leaves out keys to tables that are not on it, an empty relation list reads
+"None on the diagram", and it offers no "Why?" link.
 
 Every applicable section appears, in a fixed order, and an empty one prints one line whose
 wording follows the completeness of the list: "None" only when the list is known to be
@@ -952,6 +981,161 @@ says, with the same honesty about what the login could not see. One module and t
 is the rule ADR-020 and ADR-023 already apply to the diagram. A non-modal panel that mirrors
 the selection has no state to fall out of step with the canvas, and keeping Enter inside the
 canvas keeps every other button in the interface working.
+
+### ADR-039: Readable rules are derived in TypeScript from the stored definitions
+
+Since 1.1 the Inspector and the viewer's detail panel read `CHECK` constraints and foreign keys
+out in sentences in the interface language, with the SQL one click away. The readers are pure
+TypeScript in `src/features/schema/rules`, inside the `features/schema` leaf (ADR-037), so the
+Inspector and the viewer run the same code over the same snapshot. Nothing is computed in Rust
+and neither the `.scraft` file nor the JSON an HTML export embeds gains a field: the sentences are
+worked out where they are shown.
+
+The `CHECK` reader reads the text SQL Server stores in `sys.check_constraints.definition`,
+through `definition.ts` (ADR-038), in three steps: `tokenizeCheck` (`checkTokens.ts`),
+`parseCheck` (`checkParser.ts`, recursive descent with T-SQL precedence, where NOT binds looser
+than a comparison, as SQL Server stores it, with a depth bound) and `readCheckConstraint`
+(`checkReader.ts`). It knows a closed set of forms: comparisons with a literal, with the time
+now or between two columns, with date wording for date and time columns; inclusive ranges;
+`IN` and `NOT IN` lists, which SQL Server stores as a reversed OR chain and the reader gives back
+in the written order; `IS [NOT] NULL`; `LIKE` shapes (starts with, ends with, contains, digits
+only, any other pattern with a note on how patterns read); `LEN` and `DATALENGTH` limits and the
+not-blank idioms; AND lists; explicit NULL guards; and an OR, worded as "at least one of these
+must hold", only when no branch can be unknown. Reading is all or nothing: a function it does not
+know, arithmetic, a name that is not a column of the table, or any other form outside the set
+reads none of the expression. The item then says the rule cannot be put into words and shows the
+stored SQL, open from the start, and the columns its tokens name still highlight. An item starts
+over when a refresh changes its rule's SQL or readability (`sqlDisclosure.ts`), and the Inspector
+mounts new items for each entity, so two tables' `CHECK`s that share a name never share a state.
+
+A wrong sentence is worse than none, so every sentence states only what SQL Server enforces when
+a value is written. A `CHECK` accepts a row whose expression is unknown, so a rule over a
+nullable column sits under "When … has a value:", an OR other than a list of values is left
+unread when NULL could make one of its branches unknown, and so is any comparison with a NULL
+literal (`Status IN ('A', NULL)` accepts every value). A disabled `CHECK` reads under "When
+enabled:", and one from a 1.0 file, which did not record its state, under "If enabled (this file
+did not record whether it is):". Text comparisons and patterns carry a note that they follow the
+column's collation, which the model captures only from v1.2, and that two texts differing only
+in trailing spaces are equal; lengths say "not counting trailing spaces". Patterns are subtler:
+a `char` or `varchar` value with trailing spaces still ends with a suffix, while an `nvarchar`
+one, or any value against an `N'…'` pattern, does not, so a suffix says which applies, and a
+trailing space is refused by digits only like any other character. `char` and `nchar` pad a
+shorter value with spaces, and `LIKE` sees them. A prefix, a text contained and a suffix outside
+Unicode read as on `varchar`, since the padding comes after the value and is taken by the closing
+`%` or need not match; everything else is left unread on these types: a Unicode suffix (an
+`nchar` column or an `N'…'` pattern) refuses every value shorter than the column, a `_` can match
+a padding space (`'A'` passes `LIKE 'A_'` on `char(5)`), a Unicode pattern can fail on one
+(`'AB'` fails `LIKE N'[A-Z][A-Z]'` on `nchar(5)`), and digits only refuses the empty value its
+sentence accepts. The time now reads "the
+server's date and time when the value is saved", because SQL Server checks a `CHECK` again only
+when a statement writes one of its columns.
+Comparisons whose meaning depends on the session or on a conversion stay unread: a `'YYYY-MM-DD'`
+literal against `datetime`, which `DATEFORMAT` changes, a `date` column against `getdate()`, text
+ordering and float literals among them. Each section with rules in words ends with one note that
+SchemaCraft words them from their definitions and that SQL Server checks them when values are
+written, so rows saved before a rule existed may not follow it.
+
+The foreign key reader (`foreignKeyReader.ts`) uses row phrasing with the tables as chips, always
+`schema.name`: "Each row in sales.Orders belongs to exactly one row in dbo.Customers", "Cada fila
+de sales.Orders pertenece exactamente a una fila de dbo.Customers". No table name is turned into
+a noun, so no sentence guesses a singular or a Spanish gender. Whether the link is required
+(`foreignKeyOptionality`) follows SQL Server's rule for composite keys, MATCH SIMPLE: a key is
+checked only when every one of its columns has a value, so it is optional as soon as any column
+accepts NULL. How many referencing rows a referenced row can have (`foreignKeyChildCardinality`)
+is at most one only when the primary key or a unique constraint of the referencing table lies
+within the key's columns; a unique index alone leaves that sentence out, because the snapshot
+does not record whether an index is filtered, and a filtered one allows several. Nor does the
+snapshot record whether an index is disabled, a known limitation: a unique constraint or a
+nonclustered primary key whose index is disabled limits nothing, yet still yields "at most one"
+and the one-to-one marker until the snapshot captures index state, as the engine tests pin.
+Then come what deleting and changing a referenced row do, for each action. NO ACTION is checked
+once the statement has run, cascades included, so one statement can delete a row with the rows
+that point to it, re-key a row that points to itself along with its own column or swap two keys:
+its sentences say a delete is blocked if, once the statement has run, rows still point to the
+row, and a change if they still point to its old value and no row has it. SET DEFAULT says the
+columns take their default values, or NULL when they have none, and takes a neutral wording when
+a default is not available, not recorded or kept from an earlier read; when the referenced key
+is one identity column, which never changes, the update sentence is left out for NO ACTION and
+says the action has no effect otherwise; a self-reference says "of the same table, which may be
+itself", and its NO ACTION sentences speak of the rows of the same table.
+A key to a table the login cannot see (ADR-034) gets a sentence that it belongs to a row in a
+table not visible to this login and its actions against "the referenced table", with no
+parent-side sentence. Explanations are cached per snapshot in a `WeakMap`; an `ExplanationScope`
+brings what the exported snapshot travels without (whether an access profile exists and the kept
+facts), so the viewer words SET DEFAULT as the application does. The SQL of a key is scripted
+from the catalog as an `ALTER TABLE … ADD CONSTRAINT … FOREIGN KEY … REFERENCES …` statement
+with `quoteIdentifier` (`sqlIdentifiers.ts`); a disabled key is added `WITH NOCHECK`, since
+adding a key checks the rows already there and a disabled one may have let in rows that do not
+follow it, then disabled with a `NOCHECK CONSTRAINT` statement. A note under the SQL says it is
+not the statement that created the key; a key to an invisible table has no SQL and no
+disclosure, since there is nothing to reveal.
+
+Sentences are data (`ruleText.ts`): a reading is a tree of `RuleNode`s, sentences and groups with
+a heading, whose texts are message keys with typed arguments (a column, a list of columns, a
+table, a literal, a list of values, the time now, a keyword, a count), never text.
+`formatRuleText` turns one into text, column, table and code parts through the translator's
+`template`, `formatMessageParts` and the plural rules of ADR-007 and `Intl.ListFormat`, so
+"'A', 'I', or 'S'" reads "'A', 'I' o 'S'" in Spanish and nothing is concatenated. The view-model
+of ADR-038 carries each `CHECK`'s reading and each key's explanation as a `RuleView` (sentences,
+the line for a rule it cannot read, the SQL and its note, and the columns and relationship it
+involves) and each section's notes; `RuleItem.tsx` in the Inspector and `src/viewer/rules.ts`
+draw it.
+
+Pointing at a rule with the pointer, or focusing one of its controls (the highlight adds no tab
+stop of its own), sets `canvasUiStore.ruleHighlight` with an owner: only the item that set it
+clears it, and closing the Inspector or a real change of selection clears it too. Each card
+reads only its own entry. A card the rule involves gets a 2 px accent outline 3 px off the card,
+which never reads as the selection ring that hugs it, so both show on a selected card; the rule's
+rows get the subtle accent tint, a 2 px accent bar at their start and the name in the accent text
+colour, with the type in secondary text for AA contrast. Only colours change, never the weight
+or the size, so rows and anchors stay where they are; at the Keys or compact level, or on a
+collapsed card, the outline alone says it. A key's relationship is emphasised without opening its
+label, which would cover the columns, and the Inspector's columns table tints the same rows. A
+table chip is a button only for the item's other table, out of the tab order (`tabIndex` -1),
+because the item's target link already takes the keyboard there. The viewer does the same with
+its own classes and inserted shapes (`sc-rule-outline`, `sc-rule-tint`, `sc-rule-bar`,
+`sc-rule-column`, `sc-rule-relation`), as compound selectors that win over the SVG's own rules,
+finds the columns through `data-column` (ADR-023), suspends its neighbour highlight while a rule
+holds the emphasis, ignores pointer moves inside the panel and repaints the highlight when
+`render()` replaces the SVG, which no longer rebuilds the panel, so a change of theme or detail
+level keeps the keyboard where it was. The relationship's hover label on the canvas adds its ON
+DELETE sentence, under "When enabled:" for a disabled key. Each HTML export grows by about 43 KB:
+some 31 KB of viewer script, mostly the readers, 2 KB of styles and 10 KB of rule messages.
+
+The diagram draws the same facts in standard crow's foot notation: `relationEnds` (`graph.ts`)
+calls `foreignKeyChildCardinality` and `foreignKeyOptionality` on the referencing table, so the
+markers and the sentences cannot disagree. The referencing end is a crow's foot, or zero or one
+for a one-to-one key; the referenced end is a bar, or a bar and a circle (zero or one) when any
+key column accepts NULL. 1.0 meant a circle at the referencing end when every key column
+accepted NULL, and drew it and the crow's foot under the referencing card, where neither showed;
+existing diagrams and exports therefore look different in 1.1.
+
+The golden forms keep the reader honest. `fixtures/sqlserver/check_forms.json`, in
+`crates/schemacraft-core/tests`, holds 72 synthetic cases on one table with structured columns,
+each as written, as stored and as it must be read, 21 of them unread. `sqlserver_integration.rs`
+builds `SchemaCraftCheckForms` from it and asserts every stored form, column list and enabled
+state against SQL Server 2022, and `checkReader.test.ts` reads every stored form against the same
+columns. Two more integration tests pin, on scratch tables (`rule_facts.sql`), the engine facts
+the wording rests on: a `CHECK` accepts unknown and a NULL in `IN` accepts every value, equality
+ignores trailing spaces, `LIKE` ignores them only outside Unicode and a pattern can refuse them,
+`char` and `nchar` pad with them and `LIKE` sees the padding (suffixes, exact patterns, `_` and
+`NOT LIKE`, against Unicode and plain patterns), a disabled key checks nothing and cascades
+nothing, adding a key checks the rows already there unless it is added `WITH NOCHECK`, NO ACTION
+is checked once the statement has run (a self-referencing subtree deleted at once, a row that
+points to itself re-keyed with its pointer, swapped keys, a row deleted by another key's
+cascade), a row with a NULL in a column of a composite key is not checked, an identity column
+cannot be updated, SET DEFAULT sets NULL where a column has no default, and neither a filtered
+unique index nor a unique constraint whose index is disabled keeps a referenced row to one
+referencing row. A new form starts as a golden case.
+
+Why: interpreting the stored definitions where they are shown keeps one module for two renderers
+and leaves both file formats alone, while a reader in Rust would freeze sentences of one language
+into the snapshot or need a second implementation for the viewer. A closed grammar with a
+conservative fallback can only say too little, never something false, and a golden table checked
+against the engine catches a normal form that changes before a sentence goes wrong; a later
+consumer outside the frontend can port the table rather than the reasoning. Row phrasing reads
+right for any table name in either language, and markers chosen by the functions that word the
+sentences cannot contradict them.
 
 ## Milestones
 

@@ -16,25 +16,29 @@ import type {
   RelationFacts,
   RelationTarget,
 } from "./objectDetails";
+import type { RuleNote } from "./rules/checkReader";
+import { formatRuleText } from "./rules/ruleText";
+import type { RuleGroup, RuleNode, RulePart } from "./rules/ruleText";
 
 /**
- * The object details as text: every title, badge, value and empty line translated, so the
- * Inspector and the viewer's detail panel draw the same words from the same facts. Nothing
- * here knows the DOM, React or a store; the renderers only lay the text out.
+ * The object details as text: every title, badge, value and empty line translated, and every
+ * `CHECK` and key put into words, so the Inspector and the viewer's detail panel draw the same
+ * words from the same facts. Nothing here knows the DOM, React or a store; the renderers only
+ * lay the text out.
  */
 
 /**
- * The words the details are said in: the `details.*` strings, the entity words and the names
- * of referential actions, index kinds and definition states. The application's translator
+ * The words the details are said in: the `details.*` strings, the entity words, the names of
+ * index kinds and definition states, and the readable rules. The application's translator
  * narrows to it, and so does the viewer's over the subset embedded in an HTML file.
  */
 export type DetailsMessageKey = Extract<
   MessageKey,
   | `details.${string}`
   | `entity.${string}`
-  | `referentialAction.${string}`
   | `indexKind.${string}`
   | `definition.${string}`
+  | `rule.${string}`
 >;
 
 export type DetailsTranslator = CatalogTranslator<DetailsMessageKey>;
@@ -58,6 +62,47 @@ export interface BadgeView {
   label: string;
 }
 
+/**
+ * A sentence of a rule, or a group of them under a heading such as "When Discount has a
+ * value:", in parts a renderer draws as text, column and table chips, and code.
+ */
+export type RuleNodeView =
+  | { kind: "sentence"; parts: readonly RulePart[] }
+  | {
+      kind: "group";
+      group: RuleGroup["kind"];
+      heading: readonly RulePart[];
+      items: readonly RuleNodeView[];
+    };
+
+/** What a rule involves on the diagram, highlighted while the reader points at the rule. */
+export interface RuleTargets {
+  /** Column names by entity key; a self-reference lists both ends under its one table. */
+  columns: ReadonlyMap<string, readonly string[]>;
+  /** Id of the relationship drawn for a key; `null` for a `CHECK` or a key no diagram draws. */
+  relation: string | null;
+}
+
+/** Whether pointing at a rule highlights anything: a column, or a relationship to emphasise. */
+export function hasRuleTargets(targets: RuleTargets): boolean {
+  return (
+    targets.relation !== null || [...targets.columns.values()].some((names) => names.length > 0)
+  );
+}
+
+/** A `CHECK` constraint or a foreign key in words, with its SQL one click away. */
+export interface RuleView {
+  /** The sentences in order; empty when the rule cannot be put into words. */
+  sentences: readonly RuleNodeView[];
+  /** Says the rule cannot be put into words, before its SQL; `null` when it is in words. */
+  unread: string | null;
+  /** The rule as SQL; `null` when it is unknown, as for a key to a table the login cannot see. */
+  sql: string | null;
+  /** Where the SQL comes from when it is not the stored text; `null` otherwise. */
+  sqlNote: string | null;
+  targets: RuleTargets;
+}
+
 export interface ColumnItemView {
   name: string;
   /** SQL declaration of the type, e.g. `nvarchar(120)`. */
@@ -76,8 +121,13 @@ export interface ConstraintItemView {
   /** Key columns in key order; empty for a `CHECK`. */
   columns: readonly string[];
   badges: readonly BadgeView[];
-  /** The `CHECK` expression; `null` for keys and indexes. */
+  /**
+   * The `CHECK` text, or the words for its missing text with why it is missing; `null` for keys
+   * and indexes. A renderer shows it when there is no {@link rule}, and its hint otherwise.
+   */
   expression: ValueView | null;
+  /** The `CHECK` in words or as SQL; `null` for keys, indexes and a `CHECK` without its text. */
+  rule: RuleView | null;
 }
 
 export type RelationTargetState = RelationTarget["status"];
@@ -99,12 +149,12 @@ export interface RelationItemView {
   name: string;
   /** "Child → Parent" column pairs in key order; the child column alone when the parent side is unknown. */
   columns: readonly string[];
-  /** "On delete: cascade" lines, only for actions other than NO ACTION. */
-  actions: readonly string[];
   badges: readonly BadgeView[];
   target: RelationTargetView;
   /** Why the key may be stale; `null` when this capture read it. */
   hint: string | null;
+  /** The key in words, its actions included, with its scripted SQL. */
+  rule: RuleView;
 }
 
 interface SectionViewBase<Kind extends DetailSectionKind> {
@@ -117,6 +167,12 @@ interface SectionViewBase<Kind extends DetailSectionKind> {
   emptyText: string | null;
   /** What a section with items may still be missing; `null` otherwise. */
   footnote: string | null;
+  /**
+   * What the rules of the section need said once under them: how a pattern reads, that text
+   * follows the collation, and that the words are derived from the definitions. Empty for a
+   * section without rules in words.
+   */
+  notes: readonly string[];
 }
 
 export interface ColumnsSectionView extends SectionViewBase<"columns"> {
@@ -169,10 +225,97 @@ interface Words {
   t: DetailsTranslator["t"];
   /** A read moment as a local date, e.g. "12 Oct 2026". */
   date: (readAt: string) => string;
+  /** The whole translator, which words the rules through their templates. */
+  translator: DetailsTranslator;
 }
 
 function badge(kind: BadgeKind, label: string): BadgeView {
   return { kind, label };
+}
+
+/** A reader's sentences and groups, each worded in the translator's language. */
+function ruleNodes(nodes: readonly RuleNode[], translator: DetailsTranslator): RuleNodeView[] {
+  return nodes.map((node) =>
+    node.kind === "sentence"
+      ? { kind: "sentence", parts: formatRuleText(node.text, translator) }
+      : {
+          kind: "group",
+          group: node.group.kind,
+          heading: formatRuleText(node.heading, translator),
+          items: ruleNodes(node.items, translator),
+        },
+  );
+}
+
+/**
+ * A `CHECK` of the entity `entity` in words, or its stored SQL under the line that says it
+ * cannot be put into words; `null` when its text is missing, which the expression says.
+ */
+function checkRule(constraint: CheckFacts, entity: string, words: Words): RuleView | null {
+  const { reading } = constraint;
+  if (reading.status === "notAvailable" || reading.status === "notRecorded") {
+    return null;
+  }
+  const targets: RuleTargets = {
+    columns: new Map(reading.columns.length === 0 ? [] : [[entity, reading.columns]]),
+    relation: null,
+  };
+  return reading.status === "read"
+    ? {
+        sentences: ruleNodes(reading.rules, words.translator),
+        unread: null,
+        sql: reading.sql,
+        sqlNote: null,
+        targets,
+      }
+    : {
+        sentences: [],
+        unread: words.t("rule.check.unread"),
+        sql: reading.sql,
+        sqlNote: null,
+        targets,
+      };
+}
+
+/** A key in words, with its SQL scripted from the catalog when both of its tables are known. */
+function relationRule(relation: RelationFacts, words: Words): RuleView {
+  const { explanation } = relation;
+  return {
+    sentences: ruleNodes(explanation.rules, words.translator),
+    unread: null,
+    sql: explanation.sql,
+    sqlNote: explanation.sql === null ? null : words.t("rule.fk.sqlNote"),
+    targets: { columns: explanation.columns, relation: relation.relation },
+  };
+}
+
+/** The notes in the order a section shows them; `derived` applies to every rule in words. */
+type SectionNote = RuleNote | "derived";
+
+const SECTION_NOTES: readonly SectionNote[] = ["pattern", "collation", "derived"];
+
+/**
+ * The notes under a section: for `CHECK`s, those their readings need and the derived note when
+ * any is in words; for keys, which are always in words, the derived note.
+ */
+function sectionNotes(section: DetailSection, { t }: Words): string[] {
+  const needed = new Set<SectionNote>();
+  if (section.kind === "checks") {
+    for (const { reading } of section.items) {
+      if (reading.status === "read") {
+        needed.add("derived");
+        for (const note of reading.notes) {
+          needed.add(note);
+        }
+      }
+    }
+  } else if (
+    (section.kind === "references" || section.kind === "referencedBy") &&
+    section.items.length > 0
+  ) {
+    needed.add("derived");
+  }
+  return SECTION_NOTES.filter((note) => needed.has(note)).map((note) => t(`rule.note.${note}`));
 }
 
 /** The `DEFAULT` of a column: its text, or the words that say why it is missing. */
@@ -262,6 +405,7 @@ function keyItem(key: KeyFacts, { t }: Words): ConstraintItemView {
     columns: key.columns,
     badges: key.isClustered ? [badge("clustered", t("indexKind.clustered"))] : [],
     expression: null,
+    rule: null,
   };
 }
 
@@ -273,16 +417,17 @@ function indexItem(index: IndexFacts, { t }: Words): ConstraintItemView {
   if (index.isClustered) {
     badges.push(badge("clustered", t("indexKind.clustered")));
   }
-  return { name: index.name, columns: index.columns, badges, expression: null };
+  return { name: index.name, columns: index.columns, badges, expression: null, rule: null };
 }
 
-function checkItem(constraint: CheckFacts, words: Words): ConstraintItemView {
+function checkItem(constraint: CheckFacts, entity: string, words: Words): ConstraintItemView {
   return {
     name: constraint.name,
     columns: [],
     badges:
       constraint.isEnabled === false ? [badge("disabled", words.t("details.badge.disabled"))] : [],
     expression: expressionView(constraint.expression, words),
+    rule: checkRule(constraint, entity, words),
   };
 }
 
@@ -331,31 +476,24 @@ function targetView(target: RelationTarget, { t }: Words): RelationTargetView {
   }
 }
 
+/**
+ * A key: its name and column pairs, the other table, and its sentences, which say what its
+ * actions do in place of the bare action names.
+ */
 function relationItem(relation: RelationFacts, words: Words): RelationItemView {
   const { t, date } = words;
-  const actions: string[] = [];
-  if (relation.onDelete !== "noAction") {
-    actions.push(
-      t("details.relation.onDelete", { action: t(`referentialAction.${relation.onDelete}`) }),
-    );
-  }
-  if (relation.onUpdate !== "noAction") {
-    actions.push(
-      t("details.relation.onUpdate", { action: t(`referentialAction.${relation.onUpdate}`) }),
-    );
-  }
   return {
     name: relation.name,
     columns: relation.columns.map((pair) =>
       pair.referenced === null ? pair.referencing : `${pair.referencing} → ${pair.referenced}`,
     ),
-    actions,
     badges: relation.isEnabled ? [] : [badge("disabled", t("details.badge.disabled"))],
     target: targetView(relation.target, words),
     hint:
       relation.notCheckedSince === null
         ? null
         : t("details.hint.notChecked", { date: date(relation.notCheckedSince) }),
+    rule: relationRule(relation, words),
   };
 }
 
@@ -396,7 +534,8 @@ function footnote(section: DetailSection, { t }: Words): string | null {
     : null;
 }
 
-function sectionView(section: DetailSection, words: Words): SectionView {
+/** A section of the entity `entity`, whose `CHECK`s highlight their columns on its card. */
+function sectionView(section: DetailSection, entity: string, words: Words): SectionView {
   const { t } = words;
   const base = {
     title: t(`details.section.${section.kind}`),
@@ -405,6 +544,7 @@ function sectionView(section: DetailSection, words: Words): SectionView {
     emptyText:
       section.items.length === 0 ? emptyText(section.kind, section.completeness, words) : null,
     footnote: footnote(section, words),
+    notes: sectionNotes(section, words),
   };
   switch (section.kind) {
     case "columns":
@@ -434,7 +574,7 @@ function sectionView(section: DetailSection, words: Words): SectionView {
       return {
         ...base,
         kind: "checks",
-        items: section.items.map((constraint) => checkItem(constraint, words)),
+        items: section.items.map((constraint) => checkItem(constraint, entity, words)),
       };
     case "references":
       return {
@@ -459,6 +599,7 @@ export function presentObjectDetails(
   const words: Words = {
     t: translator.t,
     date: (readAt) => formatDate(readAt, translator.locale),
+    translator,
   };
   const { t } = words;
   return {
@@ -472,6 +613,6 @@ export function presentObjectDetails(
       details.notCheckedSince === null
         ? null
         : t("details.notice.notChecked", { date: words.date(details.notCheckedSince) }),
-    sections: details.sections.map((section) => sectionView(section, words)),
+    sections: details.sections.map((section) => sectionView(section, details.key, words)),
   };
 }
