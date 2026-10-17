@@ -37,7 +37,15 @@ export interface OpenProject {
   liveSettings: ConnectionSettings | null;
   /** When the file was last written, as reported by the Rust side. */
   savedAt: string | null;
-  /** Whether the file on disk is behind the project in memory. */
+  /** Application and version that last wrote the file, as recorded in it. */
+  savedWith: string | null;
+  /**
+   * Whether the file follows a newer format that this version can show but must not write:
+   * saving or refreshing it would lose what the newer version recorded. The diagram can still
+   * be rearranged, but the project is never marked unsaved.
+   */
+  isReadOnly: boolean;
+  /** Whether the file on disk is behind the project in memory; never for a read-only project. */
   isDirty: boolean;
   /** Changes whenever a different document is loaded, so the canvas can reset its viewport. */
   loadToken: number;
@@ -110,13 +118,35 @@ function suggestedFileName(content: ProjectContent): string {
   return `${base}.${PROJECT_FILE_EXTENSION}`;
 }
 
+/** Keys of the file header, which the Rust side writes afresh on every save. */
+const HEADER_KEYS: ReadonlySet<string> = new Set([
+  "formatVersion",
+  "minReaderVersion",
+  "savedAt",
+  "savedWith",
+]);
+
+/**
+ * The content of a file without its header. Keys this version does not know are kept, so that
+ * saving writes back what a newer version added to the document.
+ */
 function contentOf(file: Project): ProjectContent {
+  const extras = Object.fromEntries(Object.entries(file).filter(([key]) => !HEADER_KEYS.has(key)));
   return {
+    ...extras,
     connection: file.connection,
     inspection: file.inspection,
     snapshot: file.snapshot,
     canvas: file.canvas,
   };
+}
+
+/**
+ * Whether an edit leaves the project unsaved. A read-only project never is: it cannot be saved,
+ * so nothing could clear the mark, and closing it would ask about changes for nothing.
+ */
+function isDirtyAfterEdit(project: OpenProject, marksDirty = true): boolean {
+  return !project.isReadOnly && (project.isDirty || marksDirty);
 }
 
 function dialogLabels(key: "project.dialog.open" | "project.dialog.save"): FileDialogLabels {
@@ -147,6 +177,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
                 path,
                 content: contentOf(saved),
                 savedAt: saved.savedAt,
+                savedWith: saved.savedWith,
                 isDirty: false,
               },
             },
@@ -167,7 +198,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
         set({ phase: "idle" });
         return;
       }
-      const file = await backend.readProject(chosen);
+      const { project: file, isReadOnly } = await backend.readProject(chosen);
       const content = contentOf(file);
       set((state) => ({
         phase: "idle",
@@ -177,6 +208,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
           content: { ...content, canvas: ensurePlaced(content.canvas, content.snapshot) },
           liveSettings: null,
           savedAt: file.savedAt,
+          savedWith: file.savedWith,
+          isReadOnly,
           isDirty: false,
           loadToken: (state.project?.loadToken ?? 0) + 1,
         },
@@ -215,6 +248,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
           content: { connection: toSavedConnection(settings), inspection, snapshot, canvas },
           liveSettings: settings,
           savedAt: null,
+          savedWith: null,
+          isReadOnly: false,
           isDirty: false,
           loadToken: (previous?.loadToken ?? 0) + 1,
         },
@@ -232,7 +267,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
 
     saveProject: async () => {
       const { project, phase } = get();
-      if (project === null || phase !== "idle") {
+      if (project === null || project.isReadOnly || phase !== "idle") {
         return;
       }
       if (project.path === null) {
@@ -244,7 +279,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
 
     saveProjectAs: async () => {
       const { project, phase } = get();
-      if (project === null || phase !== "idle") {
+      // Another path would not help: this version would still write what it understands only.
+      if (project === null || project.isReadOnly || phase !== "idle") {
         return;
       }
       set({ failure: null });
@@ -292,7 +328,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
         return {
           project: {
             ...state.project,
-            isDirty: state.project.isDirty || dirty,
+            isDirty: isDirtyAfterEdit(state.project, dirty),
             content: { ...state.project.content, canvas: next },
           },
           history: undoable
@@ -311,7 +347,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
         return {
           project: {
             ...state.project,
-            isDirty: true,
+            isDirty: isDirtyAfterEdit(state.project),
             content: { ...state.project.content, canvas: previous },
           },
           history: {
@@ -331,7 +367,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
         return {
           project: {
             ...state.project,
-            isDirty: true,
+            isDirty: isDirtyAfterEdit(state.project),
             content: { ...state.project.content, canvas: next },
           },
           history: {
@@ -353,7 +389,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
                 ...state.project,
                 content: { ...content, canvas: ensurePlaced(placement.canvas, content.snapshot) },
                 liveSettings: settings,
-                isDirty: true,
+                isDirty: isDirtyAfterEdit(state.project),
                 loadToken: state.project.loadToken + 1,
               },
             },

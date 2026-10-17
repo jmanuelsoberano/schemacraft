@@ -2,6 +2,7 @@ import { Channel } from "@tauri-apps/api/core";
 
 import type {
   ConnectionSettings,
+  DatabaseDescription,
   InspectionEvent,
   InspectionOptions,
   SchemaSnapshot,
@@ -16,7 +17,11 @@ import { ipcUnavailableError } from "./operationError";
 export interface ConnectionBackend {
   testConnection(settings: ConnectionSettings): Promise<ServerInformation>;
   listDatabases(settings: ConnectionSettings): Promise<string[]>;
-  listSchemas(settings: ConnectionSettings): Promise<string[]>;
+  /**
+   * Schemas of the selected database and what the login is predicted to see there. Runs the
+   * access probe only; nothing is read yet.
+   */
+  describeDatabase(settings: ConnectionSettings): Promise<DatabaseDescription>;
   inspectDatabase(
     settings: ConnectionSettings,
     options: InspectionOptions,
@@ -28,7 +33,7 @@ export interface ConnectionBackend {
 const tauriConnectionBackend: ConnectionBackend = {
   testConnection: (settings) => invokeCommand("test_connection", { settings }),
   listDatabases: (settings) => invokeCommand("list_databases", { settings }),
-  listSchemas: (settings) => invokeCommand("list_schemas", { settings }),
+  describeDatabase: (settings) => invokeCommand("describe_database", { settings }),
   inspectDatabase: (settings, options, onEvent) => {
     const channel = new Channel<InspectionEvent>();
     channel.onmessage = onEvent;
@@ -40,7 +45,7 @@ const tauriConnectionBackend: ConnectionBackend = {
 const unavailableConnectionBackend: ConnectionBackend = {
   testConnection: () => Promise.reject(ipcUnavailableError()),
   listDatabases: () => Promise.reject(ipcUnavailableError()),
-  listSchemas: () => Promise.reject(ipcUnavailableError()),
+  describeDatabase: () => Promise.reject(ipcUnavailableError()),
   inspectDatabase: () => Promise.reject(ipcUnavailableError()),
   cancelInspection: () => Promise.reject(ipcUnavailableError()),
 };

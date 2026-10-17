@@ -40,18 +40,6 @@ WHERE d.state = 0
 ORDER BY d.name;",
 };
 
-/// Schemas that hold at least one user table or view. Ownership is not a usable signal: the
-/// schemas of fixed database roles (`db_datareader`, ...) are re-owned in some real databases,
-/// and an empty schema has nothing to filter anyway.
-pub(super) const SCHEMAS: CatalogQuery = CatalogQuery {
-    name: "schemas",
-    sql: "SELECT s.name AS schema_name
-FROM sys.schemas AS s
-WHERE EXISTS (SELECT 1 FROM sys.objects AS o
-              WHERE o.schema_id = s.schema_id AND o.type IN ('U', 'V') AND o.is_ms_shipped = 0)
-ORDER BY s.name;",
-};
-
 const OBJECTS: CatalogQuery = CatalogQuery {
     name: "objects",
     sql: "SELECT o.object_id, s.name AS schema_name, o.name AS object_name, o.type AS object_type
@@ -61,6 +49,11 @@ WHERE o.type IN ('U', 'V') AND o.is_ms_shipped = 0
 ORDER BY s.name, o.name;",
 };
 
+/// Columns with their types and defaults. Whether a column has a default comes from
+/// `default_object_id`, which every login that sees the column can read; the text of a
+/// `DEFAULT` constraint needs `VIEW DEFINITION` and is `NULL` without it. A legacy default bound
+/// with `sp_bindefault` has no row in `sys.default_constraints`, so its text is read with
+/// `OBJECT_DEFINITION`.
 const COLUMNS: CatalogQuery = CatalogQuery {
     name: "columns",
     sql: "SELECT c.object_id, c.column_id, c.name AS column_name,
@@ -68,7 +61,10 @@ const COLUMNS: CatalogQuery = CatalogQuery {
        CASE WHEN declared_type.is_user_defined = 1
             THEN SCHEMA_NAME(declared_type.schema_id) + '.' + declared_type.name END AS user_type_name,
        c.max_length, c.precision, c.scale, c.is_nullable, c.is_identity, c.is_computed,
-       dc.definition AS default_definition
+       CAST(CASE WHEN c.default_object_id <> 0 THEN 1 ELSE 0 END AS bit) AS has_default,
+       dc.definition AS default_definition,
+       CASE WHEN c.default_object_id <> 0 AND dc.object_id IS NULL
+            THEN OBJECT_DEFINITION(c.default_object_id) END AS bound_default_definition
 FROM sys.columns AS c
 JOIN sys.objects AS o ON o.object_id = c.object_id AND o.type IN ('U', 'V') AND o.is_ms_shipped = 0
 JOIN sys.types AS declared_type ON declared_type.user_type_id = c.user_type_id
@@ -107,6 +103,8 @@ WHERE fk.is_ms_shipped = 0
 ORDER BY fk.parent_object_id, fk.name;",
 };
 
+/// Column pairs of foreign keys. The columns of a referenced table the login cannot see are
+/// not visible either, so they are joined optionally and the pair survives without them.
 const FOREIGN_KEY_COLUMNS: CatalogQuery = CatalogQuery {
     name: "foreign key columns",
     sql: "SELECT fkc.constraint_object_id, fkc.constraint_column_id,
@@ -114,14 +112,15 @@ const FOREIGN_KEY_COLUMNS: CatalogQuery = CatalogQuery {
 FROM sys.foreign_key_columns AS fkc
 JOIN sys.columns AS parent_column
      ON parent_column.object_id = fkc.parent_object_id AND parent_column.column_id = fkc.parent_column_id
-JOIN sys.columns AS referenced_column
+LEFT JOIN sys.columns AS referenced_column
      ON referenced_column.object_id = fkc.referenced_object_id AND referenced_column.column_id = fkc.referenced_column_id
 ORDER BY fkc.constraint_object_id, fkc.constraint_column_id;",
 };
 
+/// `CHECK` constraints. `definition` is `NULL` for a login without `VIEW DEFINITION`.
 const CHECK_CONSTRAINTS: CatalogQuery = CatalogQuery {
     name: "check constraints",
-    sql: "SELECT cc.parent_object_id, cc.name AS constraint_name, cc.definition
+    sql: "SELECT cc.parent_object_id, cc.name AS constraint_name, cc.definition, cc.is_disabled
 FROM sys.check_constraints AS cc
 WHERE cc.is_ms_shipped = 0
 ORDER BY cc.parent_object_id, cc.name;",
@@ -146,6 +145,8 @@ pub(super) struct ObjectRow {
 }
 
 /// One row of `sys.columns` joined with its type and default.
+// The flags mirror independent catalog columns; none of them implies another.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ColumnRow {
     pub object_id: i32,
@@ -159,7 +160,12 @@ pub(super) struct ColumnRow {
     pub is_nullable: bool,
     pub is_identity: bool,
     pub is_computed: bool,
+    /// Whether the column has a default, readable or not.
+    pub has_default: bool,
+    /// Text of the `DEFAULT` constraint; `None` without one or without `VIEW DEFINITION`.
     pub default_definition: Option<String>,
+    /// `CREATE DEFAULT` statement of a legacy bound default.
+    pub bound_default_definition: Option<String>,
 }
 
 /// One row of `sys.indexes` for clustered and nonclustered indexes.
@@ -204,7 +210,8 @@ pub(super) struct ForeignKeyColumnRow {
     pub constraint_object_id: i32,
     pub constraint_column_id: i32,
     pub referencing_column: String,
-    pub referenced_column: String,
+    /// `None` when the referenced table is not visible to the login.
+    pub referenced_column: Option<String>,
 }
 
 /// One row of `sys.check_constraints`.
@@ -212,7 +219,9 @@ pub(super) struct ForeignKeyColumnRow {
 pub(super) struct CheckConstraintRow {
     pub parent_object_id: i32,
     pub constraint_name: String,
-    pub definition: String,
+    /// `None` when the login cannot read the text.
+    pub definition: Option<String>,
+    pub is_disabled: bool,
 }
 
 /// Everything the catalog queries return for one database.
@@ -244,6 +253,20 @@ pub(super) async fn run_query<T>(
     rows.iter().map(map_row).collect()
 }
 
+/// Runs a catalog batch that returns several result sets and keeps the rows of each, in order.
+pub(super) async fn run_batch(
+    connection: &mut SqlServerConnection,
+    query: &CatalogQuery,
+) -> Result<Vec<Vec<Row>>, InspectorError> {
+    connection
+        .simple_query(query.sql)
+        .await
+        .map_err(|error| query_error(query.name, &error))?
+        .into_results()
+        .await
+        .map_err(|error| query_error(query.name, &error))
+}
+
 /// Identifies the server and the database the session landed in.
 pub(super) async fn fetch_server_information(
     connection: &mut SqlServerConnection,
@@ -264,16 +287,6 @@ pub(super) async fn fetch_database_names(
 ) -> Result<Vec<String>, InspectorError> {
     run_query(connection, &DATABASES, |row| {
         required_text(row, "database_name", DATABASES.name)
-    })
-    .await
-}
-
-/// Names of the user schemas of the current database.
-pub(super) async fn fetch_schema_names(
-    connection: &mut SqlServerConnection,
-) -> Result<Vec<String>, InspectorError> {
-    run_query(connection, &SCHEMAS, |row| {
-        required_text(row, "schema_name", SCHEMAS.name)
     })
     .await
 }
@@ -448,7 +461,9 @@ fn map_column_row(row: &Row) -> Result<ColumnRow, InspectorError> {
         is_nullable: optional(row, "is_nullable", query)?.unwrap_or(true),
         is_identity: required(row, "is_identity", query)?,
         is_computed: required(row, "is_computed", query)?,
+        has_default: required(row, "has_default", query)?,
         default_definition: optional_text(row, "default_definition", query)?,
+        bound_default_definition: optional_text(row, "bound_default_definition", query)?,
     })
 }
 
@@ -495,7 +510,7 @@ fn map_foreign_key_column_row(row: &Row) -> Result<ForeignKeyColumnRow, Inspecto
         constraint_object_id: required(row, "constraint_object_id", query)?,
         constraint_column_id: required(row, "constraint_column_id", query)?,
         referencing_column: required_text(row, "referencing_column", query)?,
-        referenced_column: required_text(row, "referenced_column", query)?,
+        referenced_column: optional_text(row, "referenced_column", query)?,
     })
 }
 
@@ -504,11 +519,12 @@ fn map_check_constraint_row(row: &Row) -> Result<CheckConstraintRow, InspectorEr
     Ok(CheckConstraintRow {
         parent_object_id: required(row, "parent_object_id", query)?,
         constraint_name: required_text(row, "constraint_name", query)?,
-        definition: optional_text(row, "definition", query)?.unwrap_or_default(),
+        definition: optional_text(row, "definition", query)?,
+        is_disabled: required(row, "is_disabled", query)?,
     })
 }
 
-fn required<'a, T: FromSql<'a>>(
+pub(super) fn required<'a, T: FromSql<'a>>(
     row: &'a Row,
     column: &'static str,
     query: &'static str,
@@ -519,7 +535,7 @@ fn required<'a, T: FromSql<'a>>(
     })
 }
 
-fn optional<'a, T: FromSql<'a>>(
+pub(super) fn optional<'a, T: FromSql<'a>>(
     row: &'a Row,
     column: &'static str,
     query: &'static str,
@@ -531,7 +547,7 @@ fn optional<'a, T: FromSql<'a>>(
         })
 }
 
-fn required_text(
+pub(super) fn required_text(
     row: &Row,
     column: &'static str,
     query: &'static str,
@@ -539,7 +555,7 @@ fn required_text(
     required::<&str>(row, column, query).map(str::to_string)
 }
 
-fn optional_text(
+pub(super) fn optional_text(
     row: &Row,
     column: &'static str,
     query: &'static str,

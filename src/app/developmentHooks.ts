@@ -1,3 +1,4 @@
+import { useAccessReportStore } from "@/features/access/accessReportStore";
 import * as canvasActions from "@/features/canvas/canvasActions";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { useConnectionStore } from "@/features/connection/connectionStore";
@@ -17,6 +18,7 @@ export interface DevelopmentHooks {
   canvasActions: typeof canvasActions;
   palette: typeof usePaletteStore;
   exportStore: typeof useExportStore;
+  accessReport: typeof useAccessReportStore;
   /** The React Flow instance once the canvas initialised, for scripted checks. */
   flow: unknown;
 }
@@ -46,6 +48,7 @@ export function installDevelopmentHooks(): void {
     canvasActions,
     palette: usePaletteStore,
     exportStore: useExportStore,
+    accessReport: useAccessReportStore,
   };
 }
 

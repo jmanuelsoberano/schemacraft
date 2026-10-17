@@ -1,10 +1,11 @@
 import type { ELK } from "elkjs/lib/elk-api";
 
 import { useProjectStore } from "@/features/project/projectStore";
+import { entityKey } from "@/features/schema/entities";
 
 import { withCollapsed, withHidden, withLayout, withOnlyVisible } from "./canvasState";
 import { useCanvasUiStore } from "./canvasUiStore";
-import { describeEntities, entityKey } from "./geometry";
+import { describeEntities } from "./geometry";
 import { visibleEntityKeys } from "./graph";
 import { buildLayoutInput, runLayout } from "./layouts";
 import type { LayoutRequest } from "./layouts";
@@ -101,8 +102,9 @@ export function isolateEntity(key: string, depth: number): void {
   useCanvasUiStore.getState().requestFit();
 }
 
-export function hideEntities(keys: readonly string[]): void {
-  useProjectStore.getState().updateCanvas((canvas) => withHidden(canvas, keys, true));
+/** Hides or shows entities; the sidebar eye and the context menu both come through here. */
+export function setHidden(keys: readonly string[], isHidden: boolean): void {
+  useProjectStore.getState().updateCanvas((canvas) => withHidden(canvas, keys, isHidden));
 }
 
 export function showAllEntities(): void {

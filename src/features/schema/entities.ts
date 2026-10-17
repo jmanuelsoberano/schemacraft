@@ -1,8 +1,29 @@
-import type { SchemaSnapshot } from "@/shared/contracts";
+import type { ForeignKey, QualifiedName, SchemaSnapshot } from "@/shared/contracts";
 
+/**
+ * Identity of the entities a diagram shows. The canvas, the exports, the lists and the viewer
+ * all name a table or view through this module, so a key is computed one way only.
+ */
 export type EntityKind = "table" | "view";
 
-/** A table or view as listed in the entities panel. */
+/** The kinds in the order lists show them: tables before views. */
+export const ENTITY_KINDS: readonly EntityKind[] = ["table", "view"];
+
+/** `schema.name`, the identity of a table or view: node id, list key and export attribute. */
+export function entityKey(name: QualifiedName): string {
+  return `${name.schema}.${name.name}`;
+}
+
+/**
+ * The identity of a foreign key: its referencing table's key and its name, e.g.
+ * `sales.Orders.FK_Orders_Customers`. It is the id of the relationship on the canvas and its
+ * `data-relation` in an export, so the details of a key can point at the line drawn for it.
+ */
+export function foreignKeyId(key: Pick<ForeignKey, "referencingTable" | "name">): string {
+  return `${entityKey(key.referencingTable)}.${key.name}`;
+}
+
+/** A table or view as the lists show it. */
 export interface EntityListItem {
   /** Stable identity, e.g. `sales.Orders`. */
   key: string;
@@ -12,51 +33,76 @@ export interface EntityListItem {
   columnCount: number;
 }
 
-export interface EntityGroup {
-  schema: string;
+/** The entities of one kind inside a schema group. */
+export interface EntitySection {
+  kind: EntityKind;
   entities: EntityListItem[];
 }
 
-/** Entities grouped by schema, both levels sorted alphabetically, tables before views. */
-export function groupEntitiesBySchema(snapshot: SchemaSnapshot): EntityGroup[] {
-  const items: EntityListItem[] = [
+/** The entities of one schema, split by kind in {@link ENTITY_KINDS} order. */
+export interface EntityGroup {
+  schema: string;
+  sections: EntitySection[];
+}
+
+/** Which levels of a grouped list tell entities apart; a level that does not is left out. */
+export interface EntityListShape {
+  /** More than one schema is listed. */
+  showsSchemas: boolean;
+  /** Both tables and views are listed. */
+  showsKinds: boolean;
+}
+
+/** Every table and view of the snapshot, tables first, each in snapshot order. */
+export function listEntities(snapshot: SchemaSnapshot): EntityListItem[] {
+  return [
     ...snapshot.tables.map((table) => ({
-      key: `${table.name.schema}.${table.name.name}`,
+      key: entityKey(table.name),
       schema: table.name.schema,
       name: table.name.name,
       kind: "table" as const,
       columnCount: table.columns.length,
     })),
     ...snapshot.views.map((view) => ({
-      key: `${view.name.schema}.${view.name.name}`,
+      key: entityKey(view.name),
       schema: view.name.schema,
       name: view.name.name,
       kind: "view" as const,
       columnCount: view.columns.length,
     })),
   ];
+}
 
-  const groups = new Map<string, EntityListItem[]>();
+/**
+ * Groups entities by schema, then by kind, every level sorted alphabetically. A schema holds
+ * only the sections it has entities for, so a schema without views has one section.
+ */
+export function groupEntities(items: readonly EntityListItem[]): EntityGroup[] {
+  const bySchema = new Map<string, EntityListItem[]>();
   for (const item of items) {
-    const group = groups.get(item.schema) ?? [];
+    const group = bySchema.get(item.schema) ?? [];
     group.push(item);
-    groups.set(item.schema, group);
+    bySchema.set(item.schema, group);
   }
 
-  return [...groups.entries()]
+  return [...bySchema.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([schema, entities]) => ({
       schema,
-      entities: entities.sort(
-        (left, right) =>
-          Number(left.kind === "view") - Number(right.kind === "view") ||
-          left.name.localeCompare(right.name),
-      ),
+      sections: ENTITY_KINDS.map((kind) => ({
+        kind,
+        entities: entities
+          .filter((entity) => entity.kind === kind)
+          .sort((left, right) => left.name.localeCompare(right.name)),
+      })).filter((section) => section.entities.length > 0),
     }));
 }
 
-/** Keeps the entities whose name or schema contains `query`, dropping empty groups. */
-export function filterEntityGroups(groups: EntityGroup[], query: string): EntityGroup[] {
+/** Keeps the entities whose `schema.name` contains `query`, dropping empty sections and groups. */
+export function filterEntityGroups(
+  groups: readonly EntityGroup[],
+  query: string,
+): readonly EntityGroup[] {
   const needle = query.trim().toLowerCase();
   if (needle === "") {
     return groups;
@@ -64,13 +110,29 @@ export function filterEntityGroups(groups: EntityGroup[], query: string): Entity
   return groups
     .map((group) => ({
       schema: group.schema,
-      entities: group.entities.filter((entity) =>
-        `${entity.schema}.${entity.name}`.toLowerCase().includes(needle),
-      ),
+      sections: group.sections
+        .map((section) => ({
+          kind: section.kind,
+          entities: section.entities.filter((entity) => entity.key.toLowerCase().includes(needle)),
+        }))
+        .filter((section) => section.entities.length > 0),
     }))
-    .filter((group) => group.entities.length > 0);
+    .filter((group) => group.sections.length > 0);
 }
 
-export function countEntities(groups: EntityGroup[]): number {
-  return groups.reduce((total, group) => total + group.entities.length, 0);
+export function countEntities(groups: readonly EntityGroup[]): number {
+  return groups.reduce(
+    (total, group) =>
+      total + group.sections.reduce((count, section) => count + section.entities.length, 0),
+    0,
+  );
+}
+
+/**
+ * Which levels the grouped list shows. Decided on the unfiltered groups, so the structure
+ * stays put while a search narrows the list.
+ */
+export function entityListShape(groups: readonly EntityGroup[]): EntityListShape {
+  const kinds = new Set(groups.flatMap((group) => group.sections.map((section) => section.kind)));
+  return { showsSchemas: groups.length > 1, showsKinds: kinds.size > 1 };
 }

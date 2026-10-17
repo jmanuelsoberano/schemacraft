@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use super::Definition;
+
 /// Primary key constraint of a table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -56,8 +58,12 @@ impl Index {
 pub struct CheckConstraint {
     /// Constraint name, e.g. `CK_Orders_Quantity`.
     pub name: String,
-    /// Boolean expression, e.g. `([Quantity]>(0))`.
-    pub expression: String,
+    /// Boolean expression, e.g. `([Quantity]>(0))`, or why its text is missing.
+    pub expression: Definition,
+    /// `false` when the constraint exists but is disabled (`NOCHECK`) in the database; `None`
+    /// when the file that holds it did not record the state.
+    #[serde(default)]
+    pub is_enabled: Option<bool>,
 }
 
 #[cfg(test)]

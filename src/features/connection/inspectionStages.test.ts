@@ -12,6 +12,7 @@ describe("stageStatus", () => {
   it("activates connecting first and the catalog stages once connected", () => {
     const progress = { connecting: null };
     expect(stageStatus(progress, "connecting")).toBe("active");
+    expect(stageStatus(progress, "checkingAccess")).toBe("active");
     expect(stageStatus(progress, "readingColumns")).toBe("active");
     expect(stageStatus(progress, "assembling")).toBe("pending");
   });
@@ -19,6 +20,8 @@ describe("stageStatus", () => {
   it("marks catalog stages done as they report counts, in any order", () => {
     const progress = { connecting: null, readingForeignKeys: 8, readingObjects: 7 };
     expect(stageStatus(progress, "connecting")).toBe("done");
+    expect(stageStatus(progress, "checkingAccess")).toBe("active");
+    expect(stageStatus({ ...progress, checkingAccess: null }, "checkingAccess")).toBe("done");
     expect(stageStatus(progress, "readingForeignKeys")).toBe("done");
     expect(stageStatus(progress, "readingObjects")).toBe("done");
     expect(stageStatus(progress, "readingColumns")).toBe("active");

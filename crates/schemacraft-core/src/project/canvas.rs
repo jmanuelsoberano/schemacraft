@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::model::{QualifiedName, SchemaSnapshot};
+use crate::model::{QualifiedName, SchemaSnapshot, UnknownFields};
 
 /// How much of each table a node shows.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -82,6 +82,10 @@ pub struct NodeState {
     /// Whether the entity is hidden from the diagram.
     #[serde(default)]
     pub is_hidden: bool,
+    /// Keys written by a newer version, kept as they are.
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub unknown: UnknownFields,
 }
 
 /// The diagram as a value: the Memento the canvas produces when a project is saved and restores
@@ -102,6 +106,10 @@ pub struct CanvasState {
     /// Per-entity state, sorted by qualified name.
     #[serde(default)]
     pub nodes: Vec<NodeState>,
+    /// Keys written by a newer version, kept as they are.
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub unknown: UnknownFields,
 }
 
 impl CanvasState {
@@ -151,8 +159,8 @@ mod tests {
     )]
 
     use super::{CanvasState, NodeState, Point, Viewport};
-    use crate::model::QualifiedName;
     use crate::model::test_fixtures::sample_snapshot;
+    use crate::model::{QualifiedName, UnknownFields};
 
     fn node(schema: &str, name: &str, x: f64) -> NodeState {
         NodeState {
@@ -160,6 +168,7 @@ mod tests {
             position: Point { x, y: 0.0 },
             is_collapsed: false,
             is_hidden: false,
+            unknown: UnknownFields::new(),
         }
     }
 
@@ -232,5 +241,32 @@ mod tests {
         assert_eq!(canvas.nodes.len(), 1);
         assert!(!canvas.nodes[0].is_collapsed);
         assert!(!canvas.nodes[0].is_hidden);
+        assert!(canvas.nodes[0].unknown.is_empty());
+    }
+
+    #[test]
+    fn refreshing_and_normalizing_keep_keys_of_newer_versions() {
+        let mut orders = node("sales", "Orders", 20.0);
+        orders
+            .unknown
+            .insert("colour".to_string(), serde_json::json!("teal"));
+        let mut canvas = CanvasState {
+            nodes: vec![orders, node("dbo", "Dropped", 40.0)],
+            ..CanvasState::default()
+        };
+        canvas
+            .unknown
+            .insert("gridSize".to_string(), serde_json::json!(16));
+
+        let kept = canvas
+            .retaining_entities_of(&sample_snapshot())
+            .normalized();
+
+        assert_eq!(kept.unknown.get("gridSize"), Some(&serde_json::json!(16)));
+        assert_eq!(kept.nodes.len(), 1);
+        assert_eq!(
+            kept.nodes[0].unknown.get("colour"),
+            Some(&serde_json::json!("teal"))
+        );
     }
 }

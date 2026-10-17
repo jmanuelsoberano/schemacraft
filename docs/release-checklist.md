@@ -41,6 +41,17 @@ on every tag (`release.yml`).
       Without the WebView2 runtime, the dialog explains it and offers the download.
 - [ ] Connect to a production database, read the schema, lay it out, save, reopen, refresh and
       export to PDF and HTML.
+- [ ] Open a project saved by the previous release and refresh it with the same login: the review
+      reports no schema change and offers to update the project. Apply, save, reopen the file
+      and check that its header says `formatVersion` 2 and `minReaderVersion` 2.
+- [ ] Connect with a login that lacks `VIEW DEFINITION` (for example a `db_datareader` member):
+      the connection dialog warns before reading, the status bar shows the access chip, the
+      access report opens with Ctrl+Shift+A and Copy GRANT script puts the script on the
+      clipboard.
+- [ ] Select a table with `CHECK` constraints and foreign keys, in English and in Spanish: the
+      Inspector and the HTML export read its rules as sentences, pointing at a rule highlights
+      its columns and relationship, and Show SQL opens its definition. The PDF and PNG exports
+      draw the same relationship markers as the canvas, the zero-or-one circles included.
 - [ ] Open the HTML export in a browser on a machine without SchemaCraft.
 - [ ] Run the installer and uninstall it; no administrator prompt appears.
 - [ ] The release notes describe the program and link the code signing policy.

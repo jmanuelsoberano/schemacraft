@@ -6,8 +6,13 @@ use super::{
 };
 use crate::inspectors::InspectionOptions;
 use crate::inspectors::sqlserver::EncryptionMode;
-use crate::model::QualifiedName;
 use crate::model::test_fixtures::sample_snapshot;
+use crate::model::{QualifiedName, UnknownFields};
+
+/// A project as SchemaCraft 1.0 wrote it, edited by hand to hold what the upgrade to format 2
+/// must handle: an empty `CHECK` text in `sales`, readable and missing defaults in both
+/// schemas, and keys 1.0 did not know at the root and in the canvas.
+pub(crate) const FORMAT_1_PROJECT: &str = include_str!("fixtures/format-1.scraft");
 
 /// The sample snapshot with a SQL login connection and two placed nodes, deliberately out of
 /// canonical order.
@@ -33,15 +38,18 @@ pub(crate) fn sample_project_content() -> ProjectContent {
                     position: Point { x: 420.0, y: 80.0 },
                     is_collapsed: false,
                     is_hidden: false,
+                    unknown: UnknownFields::new(),
                 },
                 NodeState {
                     name: QualifiedName::new("dbo", "Customers"),
                     position: Point { x: 40.0, y: 80.0 },
                     is_collapsed: true,
                     is_hidden: false,
+                    unknown: UnknownFields::new(),
                 },
             ],
             ..CanvasState::default()
         },
+        unknown: UnknownFields::new(),
     }
 }

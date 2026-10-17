@@ -50,7 +50,7 @@
 }
 
 .invalid:focus {
-  box-shadow: 0 0 0 3px light-dark(oklch(58% 0.2 25 / 0.18), oklch(70% 0.18 25 / 0.25));
+  box-shadow: 0 0 0 3px var(--color-danger-ring);
 }
 
 .hint,

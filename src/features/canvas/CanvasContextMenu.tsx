@@ -5,51 +5,76 @@ import {
   EyeOff,
   Focus,
   Layers,
+  PanelRight,
   ScanSearch,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 
 import { useProjectStore } from "@/features/project/projectStore";
+import type { MessageKey } from "@/shared/i18n/messages/en";
 import { useI18n } from "@/shared/i18n/useI18n";
+import { Kbd } from "@/shared/ui/Kbd";
 import menuStyles from "@/shared/ui/RadioMenu.module.css";
 
-import { hideEntities, isolateEntity, setCollapsed, showAllEntities } from "./canvasActions";
+import { isolateEntity, setCollapsed, setHidden } from "./canvasActions";
 import { nodeStateFor } from "./canvasState";
 import { useCanvasUiStore } from "./canvasUiStore";
+
+/**
+ * What the menu needs of a registry action. The registry lives in the app layer, which the
+ * features never import, so the shell hands the action over in this shape.
+ */
+export interface ContextMenuCommand {
+  labelKey: MessageKey;
+  isAvailable: boolean;
+  /** Formatted shortcut, shown next to the label. */
+  shortcutHint?: string;
+  run: () => void;
+}
+
+interface CanvasContextMenuProps {
+  /** The registry's "show all entities" action, so the menu and the shortcut cannot drift. */
+  showAll: ContextMenuCommand;
+}
 
 interface MenuItemProps {
   icon: LucideIcon;
   label: string;
   onSelect: () => void;
   disabled?: boolean;
+  shortcutHint?: string;
 }
 
-function MenuItem({ icon: Icon, label, onSelect, disabled = false }: MenuItemProps) {
+function MenuItem({ icon: Icon, label, onSelect, disabled = false, shortcutHint }: MenuItemProps) {
   return (
     <DropdownMenu.Item className={menuStyles.item} disabled={disabled} onSelect={onSelect}>
       <span className={menuStyles.indicator} />
       <Icon className={menuStyles.icon} aria-hidden="true" />
       {label}
+      {shortcutHint ? <Kbd>{shortcutHint}</Kbd> : null}
     </DropdownMenu.Item>
   );
 }
 
 /**
- * Right-click menu of an entity, on the canvas or in the sidebar: centre, hide, isolate with its
- * relationships, collapse or expand, and show everything again.
+ * Right-click menu of an entity, on the canvas or in the sidebar: centre, show its details,
+ * hide, isolate with its relationships, collapse or expand, and show everything again. The
+ * entity-scoped commands go through canvasActions and the canvas UI store; "show all" runs the
+ * registry action the shell passes in.
  */
-export function CanvasContextMenu() {
+export function CanvasContextMenu({ showAll }: CanvasContextMenuProps) {
   const { t } = useI18n();
   const menu = useCanvasUiStore((state) => state.contextMenu);
   const closeContextMenu = useCanvasUiStore((state) => state.closeContextMenu);
   const focusEntity = useCanvasUiStore((state) => state.focusEntity);
+  const openInspector = useCanvasUiStore((state) => state.openInspector);
   const canvas = useProjectStore((state) => state.project?.content.canvas ?? null);
 
   const key = menu?.key ?? null;
   const nodeState = key !== null && canvas !== null ? nodeStateFor(canvas, key) : undefined;
   const isCollapsed = nodeState?.isCollapsed ?? false;
-  const hasHidden = canvas?.nodes.some((node) => node.isHidden) ?? false;
+  const isHidden = nodeState?.isHidden ?? false;
 
   return (
     <DropdownMenu.Root
@@ -83,6 +108,17 @@ export function CanvasContextMenu() {
                   focusEntity(key);
                 }}
               />
+              {/* The Inspector follows the selection, so a hidden entity, which has no card to select, cannot be shown. */}
+              <MenuItem
+                icon={PanelRight}
+                label={t("canvas.menu.details")}
+                disabled={isHidden}
+                onSelect={() => {
+                  // Select without panning; the menu leaves focus nowhere, so the panel takes it.
+                  focusEntity(key, { center: false });
+                  openInspector({ focus: true });
+                }}
+              />
               <MenuItem
                 icon={isCollapsed ? ChevronsUpDown : ChevronsDownUp}
                 label={isCollapsed ? t("canvas.node.expand") : t("canvas.node.collapse")}
@@ -108,16 +144,17 @@ export function CanvasContextMenu() {
                 icon={EyeOff}
                 label={t("canvas.menu.hide")}
                 onSelect={() => {
-                  hideEntities([key]);
+                  setHidden([key], true);
                 }}
               />
             </>
           ) : null}
           <MenuItem
             icon={Layers}
-            label={t("canvas.menu.showAll")}
-            disabled={!hasHidden}
-            onSelect={showAllEntities}
+            label={t(showAll.labelKey)}
+            shortcutHint={showAll.shortcutHint}
+            disabled={!showAll.isAvailable}
+            onSelect={showAll.run}
           />
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

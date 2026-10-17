@@ -8,23 +8,32 @@ import {
   FolderOpen,
   GitFork,
   Info,
+  KeyRound,
+  Languages,
   Layers,
   Maximize2,
+  Monitor,
+  Moon,
   Network,
   Orbit,
   PanelLeft,
+  PanelRight,
   Redo2,
   RefreshCw,
+  Rows3,
   Save,
   SaveAll,
   Search,
+  ShieldHalf,
+  Sun,
+  Table2,
   Undo2,
   Workflow,
 } from "lucide-react";
 import { useMemo } from "react";
 
-import { focusEntitiesSearch } from "@/app/shell/entitiesSearch";
 import { useAboutStore } from "@/features/about/aboutStore";
+import { useAccessReportStore } from "@/features/access/accessReportStore";
 import {
   applyLastLayout,
   applyLayout,
@@ -32,6 +41,7 @@ import {
   showAllEntities,
 } from "@/features/canvas/canvasActions";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
+import { focusEntitiesSearch } from "@/features/canvas/entitiesSearch";
 import { useConnectionStore } from "@/features/connection/connectionStore";
 import { useExportStore } from "@/features/export/exportStore";
 import { useProjectStore } from "@/features/project/projectStore";
@@ -49,15 +59,20 @@ export interface AppActions {
 
 export function useAppActions(): AppActions {
   const toggleSidebar = useSettingsStore((state) => state.toggleSidebar);
+  const setThemePreference = useSettingsStore((state) => state.setThemePreference);
+  const setLocale = useSettingsStore((state) => state.setLocale);
   const openConnectionDialog = useConnectionStore((state) => state.openDialog);
   const openExportDialog = useExportStore((state) => state.open);
   const refreshFromDatabase = useConnectionStore((state) => state.refresh);
   const hasProject = useProjectStore((state) => state.project !== null);
+  const isReadOnly = useProjectStore((state) => state.project?.isReadOnly ?? false);
   const guardUnsavedChanges = useProjectStore((state) => state.guardUnsavedChanges);
   const openProject = useProjectStore((state) => state.openProject);
   const saveProject = useProjectStore((state) => state.saveProject);
   const saveProjectAs = useProjectStore((state) => state.saveProjectAs);
+  const setDetailLevel = useProjectStore((state) => state.setDetailLevel);
   const openAbout = useAboutStore((state) => state.open);
+  const openAccessReport = useAccessReportStore((state) => state.open);
   const canUndo = useProjectStore((state) => state.history.past.length > 0);
   const canRedo = useProjectStore((state) => state.history.future.length > 0);
   const hasHidden = useProjectStore(
@@ -68,13 +83,22 @@ export function useAppActions(): AppActions {
   const isLayoutRunning = useCanvasUiStore((state) => state.isLayoutRunning);
   const requestFit = useCanvasUiStore((state) => state.requestFit);
   const selectedKeys = useCanvasUiStore((state) => state.selectedKeys);
+  const toggleInspector = useCanvasUiStore((state) => state.toggleInspector);
   const togglePalette = usePaletteStore((state) => state.toggle);
   const canLayout = hasProject && !isLayoutRunning;
+  // A project a newer version wrote is shown but never written: saving would drop what this
+  // version does not understand, and a refresh would replace it.
+  const canWriteProject = hasProject && !isReadOnly;
 
   return useMemo(() => {
     const layoutUnavailableReason: MessageKey = hasProject
       ? "action.unavailable.layoutRunning"
       : "action.unavailable.noProject";
+    const writeUnavailableReason: MessageKey | undefined = canWriteProject
+      ? undefined
+      : hasProject
+        ? "action.unavailable.readOnly"
+        : "action.unavailable.noProject";
     const byId: ActionsById = {
       "project.connect": {
         id: "project.connect",
@@ -102,8 +126,8 @@ export function useAppActions(): AppActions {
         labelKey: "action.saveProject",
         icon: Save,
         shortcut: { mod: true, key: "s" },
-        isAvailable: hasProject,
-        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
+        isAvailable: canWriteProject,
+        unavailableReason: writeUnavailableReason,
         run: () => {
           void saveProject();
         },
@@ -113,8 +137,8 @@ export function useAppActions(): AppActions {
         labelKey: "action.saveProjectAs",
         icon: SaveAll,
         shortcut: { mod: true, shift: true, key: "s" },
-        isAvailable: hasProject,
-        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
+        isAvailable: canWriteProject,
+        unavailableReason: writeUnavailableReason,
         run: () => {
           void saveProjectAs();
         },
@@ -124,8 +148,8 @@ export function useAppActions(): AppActions {
         labelKey: "action.refreshFromDatabase",
         icon: RefreshCw,
         shortcut: { key: "F5" },
-        isAvailable: hasProject,
-        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
+        isAvailable: canWriteProject,
+        unavailableReason: writeUnavailableReason,
         run: () => {
           void refreshFromDatabase();
         },
@@ -189,6 +213,40 @@ export function useAppActions(): AppActions {
         isAvailable: hasProject,
         unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
         run: requestFit,
+      },
+      // Ctrl+1, 2 and 3 follow the segmented control from left to right, next to Ctrl+0 for fit.
+      "view.detailCompact": {
+        id: "view.detailCompact",
+        labelKey: "action.detailCompact",
+        icon: Rows3,
+        shortcut: { mod: true, key: "1" },
+        isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
+        run: () => {
+          setDetailLevel("compact");
+        },
+      },
+      "view.detailKeys": {
+        id: "view.detailKeys",
+        labelKey: "action.detailKeys",
+        icon: KeyRound,
+        shortcut: { mod: true, key: "2" },
+        isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
+        run: () => {
+          setDetailLevel("keys");
+        },
+      },
+      "view.detailFull": {
+        id: "view.detailFull",
+        labelKey: "action.detailFull",
+        icon: Table2,
+        shortcut: { mod: true, key: "3" },
+        isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
+        run: () => {
+          setDetailLevel("full");
+        },
       },
       "diagram.showAll": {
         id: "diagram.showAll",
@@ -279,6 +337,16 @@ export function useAppActions(): AppActions {
         unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
         run: focusEntitiesSearch,
       },
+      // Available with full access too: the report then says that the whole schema was read.
+      "view.accessReport": {
+        id: "view.accessReport",
+        labelKey: "action.accessReport",
+        icon: ShieldHalf,
+        shortcut: { mod: true, shift: true, key: "a" },
+        isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
+        run: openAccessReport,
+      },
       "view.toggleSidebar": {
         id: "view.toggleSidebar",
         labelKey: "action.toggleSidebar",
@@ -286,6 +354,65 @@ export function useAppActions(): AppActions {
         shortcut: { mod: true, key: "b" },
         isAvailable: true,
         run: toggleSidebar,
+      },
+      // Opened by the shortcut, the top-bar button or the palette, the Inspector takes focus;
+      // closing it hands focus back.
+      "view.toggleInspector": {
+        id: "view.toggleInspector",
+        labelKey: "action.toggleInspector",
+        icon: PanelRight,
+        shortcut: { mod: true, key: "i" },
+        isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
+        run: () => {
+          toggleInspector({ focus: true });
+        },
+      },
+      // Preferences are commands too, so the palette can switch them without a shortcut.
+      "settings.theme.system": {
+        id: "settings.theme.system",
+        labelKey: "action.themeSystem",
+        icon: Monitor,
+        isAvailable: true,
+        run: () => {
+          setThemePreference("system");
+        },
+      },
+      "settings.theme.light": {
+        id: "settings.theme.light",
+        labelKey: "action.themeLight",
+        icon: Sun,
+        isAvailable: true,
+        run: () => {
+          setThemePreference("light");
+        },
+      },
+      "settings.theme.dark": {
+        id: "settings.theme.dark",
+        labelKey: "action.themeDark",
+        icon: Moon,
+        isAvailable: true,
+        run: () => {
+          setThemePreference("dark");
+        },
+      },
+      "settings.language.en": {
+        id: "settings.language.en",
+        labelKey: "action.languageEn",
+        icon: Languages,
+        isAvailable: true,
+        run: () => {
+          setLocale("en");
+        },
+      },
+      "settings.language.es": {
+        id: "settings.language.es",
+        labelKey: "action.languageEs",
+        icon: Languages,
+        isAvailable: true,
+        run: () => {
+          setLocale("es");
+        },
       },
       "help.about": {
         id: "help.about",
@@ -300,15 +427,20 @@ export function useAppActions(): AppActions {
     return { byId, list: Object.values(byId) };
   }, [
     toggleSidebar,
+    setThemePreference,
+    setLocale,
     openConnectionDialog,
     openExportDialog,
     refreshFromDatabase,
     hasProject,
+    canWriteProject,
     guardUnsavedChanges,
     openProject,
     saveProject,
     saveProjectAs,
+    setDetailLevel,
     openAbout,
+    openAccessReport,
     canUndo,
     canRedo,
     hasHidden,
@@ -317,6 +449,7 @@ export function useAppActions(): AppActions {
     canLayout,
     requestFit,
     selectedKeys,
+    toggleInspector,
     togglePalette,
   ]);
 }

@@ -10,9 +10,9 @@ import { Dialog } from "@/shared/ui/Dialog";
 import { ConnectionForm } from "./ConnectionForm";
 import { InspectionProgressPanel } from "./InspectionProgressPanel";
 import { ReviewChangesPanel } from "./ReviewChangesPanel";
-import { useConnectionStore } from "./connectionStore";
+import { canReadSchema, useConnectionStore } from "./connectionStore";
 import { describeOperationError } from "@/shared/errors/describeOperationError";
-import { countChanges } from "./reviewChanges";
+import { countChanges, isUpToDate } from "./reviewChanges";
 
 /**
  * Connect to a SQL Server instance and read its schema, with progress and cancellation. The
@@ -27,7 +27,7 @@ export function ConnectionDialog() {
   const inspection = useConnectionStore((state) => state.inspection);
   const review = useConnectionStore((state) => state.review);
   const failure = useConnectionStore((state) => state.failure);
-  const database = useConnectionStore((state) => state.draft.database);
+  const canRead = useConnectionStore(canReadSchema);
   const authenticationMode = useConnectionStore((state) => state.draft.authenticationMode);
   const closeDialog = useConnectionStore((state) => state.closeDialog);
   const testConnection = useConnectionStore((state) => state.testConnection);
@@ -45,7 +45,11 @@ export function ConnectionDialog() {
   const isReviewing = (phase === "reviewing" || phase === "applying") && review !== null;
   const isApplying = phase === "applying";
   const isBusy = phase !== "idle";
-  const reviewIsEmpty = review !== null && countChanges(review.diff.summary) === 0;
+  // A review with no schema change can still teach the project something: items it could not
+  // check, texts that became readable or another access verdict. Only a review with none of
+  // these is up to date and offers nothing to apply.
+  const reviewIsEmpty = review !== null && isUpToDate(review.diff);
+  const reviewHasChanges = review !== null && countChanges(review.diff.summary) > 0;
 
   const title = isReviewing
     ? t("review.title", { database: review.snapshot.databaseName })
@@ -86,7 +90,11 @@ export function ConnectionDialog() {
             void applyReview();
           }}
         >
-          {isApplying ? t("review.status.applying") : t("review.action.apply")}
+          {isApplying
+            ? t("review.status.applying")
+            : reviewHasChanges
+              ? t("review.action.apply")
+              : t("review.action.update")}
         </Button>
       </>
     )
@@ -104,7 +112,7 @@ export function ConnectionDialog() {
       <Button
         variant="primary"
         leadingIcon={DatabaseZap}
-        disabled={isBusy || database === null}
+        disabled={isBusy || !canRead}
         onClick={() => {
           void inspect();
         }}
@@ -148,7 +156,7 @@ export function ConnectionDialog() {
               {reviewFailure.hint}
             </Alert>
           ) : null}
-          <ReviewChangesPanel diff={review.diff} />
+          <ReviewChangesPanel diff={review.diff} capture={review.snapshot} />
         </>
       ) : (
         <ConnectionForm serverFieldRef={serverFieldRef} passwordFieldRef={passwordFieldRef} />

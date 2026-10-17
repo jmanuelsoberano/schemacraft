@@ -149,5 +149,7 @@ jobs:
         if: steps.changes.outputs.core == 'true'
 
       - name: Inspector integration tests
+        # sqlserver_permissions creates its own low-privilege logins with a password generated
+        # for the run, so no password beyond the service's sa one is configured here.
         if: steps.changes.outputs.core == 'true'
-        run: cargo test -p schemacraft-core --test sqlserver_integration -- --nocapture
+        run: cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions -- --nocapture

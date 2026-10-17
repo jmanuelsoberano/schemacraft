@@ -1,3 +1,4 @@
+import { entityKey } from "@/features/schema/entities";
 import type {
   CanvasState,
   DetailLevel,
@@ -6,7 +7,7 @@ import type {
   SchemaSnapshot,
 } from "@/shared/contracts";
 
-import { describeEntities, entityKey, nodeHeight, NODE_WIDTH, rowsFor } from "./geometry";
+import { describeEntities, nodeHeight, NODE_WIDTH, rowsFor } from "./geometry";
 import { gridPosition } from "./graph";
 import { resolveOverlaps } from "./layouts/overlaps";
 import type { PlacedBox } from "./layouts/overlaps";

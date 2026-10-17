@@ -69,12 +69,29 @@ the top of the dialog: one click fills the form, and each entry can be removed. 
 password" keeps a SQL login's password in the operating system store, so a history entry or a
 reopened project reconnects without typing it; the field says when a remembered password will be
 used. Passwords are never stored in project files or in the history. Errors are specific and
-actionable.
+actionable. Choosing a database also checks what the login can see there: full access adds
+nothing, partial access adds one polite line under the database section, and a login that sees
+no table or view gets a clear notice with reading disabled.
 
 ### Introspection
 
-A progress indicator names the current stage (tables, columns, keys, indexes) and the counts so
-far. The user can cancel. On completion the diagram appears already laid out.
+A progress indicator names the current stage (permissions, tables, columns, keys, indexes) and
+the counts so far. The user can cancel at any moment, even while connecting. On completion the
+diagram appears already laid out.
+
+### Reading with partial access
+
+With full access nothing extra appears. When the login sees only part of the schema, everything
+it can read is shown and the rest is marked where the user looks: a `CHECK` or `DEFAULT` it
+cannot read says "not available", a relationship to a table the login cannot see keeps the key
+badge on its columns, and one muted line under the entities list says that other tables or
+views may exist. Nothing says "none" or "0 tables" unless the list is complete. One quiet chip
+in the status bar and one dismissible bar above the entities lead to the Access report
+(Ctrl+Shift+A), which names the cause and offers a `GRANT VIEW DEFINITION` script to copy for
+the DBA. Closing the bar moves focus to the entities search, and the bar stays closed for the
+same server, database and verdict. The canvas carries no warnings. An empty database gets a
+neutral empty state. The words are "not visible to this login" and "no visible para este inicio
+de sesión"; "hidden" and "oculto" stay reserved for tables hidden on the canvas.
 
 ### Opening and saving a project
 
@@ -84,17 +101,71 @@ would throw unsaved changes away (opening another project, connecting, closing t
 asks first, with the safe choice focused. A failed open or save is reported over the canvas
 with the cause and the next step; a recent project whose file disappeared leaves the list.
 
+### Opening a project from a newer version
+
+A project saved by a newer SchemaCraft that allows older readers opens read-only. It can be
+rearranged and exported, but nothing marks it unsaved and closing it asks nothing. A Read-only
+chip in the status bar names the version that wrote it, and Save, Save as and Refresh say in
+their tooltips why they are unavailable. A file that this version must not open is refused with
+the reason.
+
 ### Working on the canvas
 
-The entities panel lists tables and views with instant search, column counters, a visibility
-toggle and "center in view" per entity, and the same context menu as the canvas. The canvas
-offers three detail levels (compact, keys, full; switching to a taller level moves tables apart
-so none covers another, undoably), automatic layouts (layered top-down or left-to-right, organic,
-radial around a table), free dragging, multi-select with Shift, isolation
-of a table with its neighbours one or two levels deep, hide, show all, collapse and expand, a
-minimap and semantic zoom (cards turn compact below 40 %). Relationships use crow's foot
-notation, attach at the key column and reveal their name and columns on hover. Every change is
-undoable (Ctrl+Z, Ctrl+Y), and the command palette (Ctrl+K) reaches every action by name.
+The entities panel lists tables and views by schema and, inside each schema, in Tables and Views
+sections with their counts; a level that distinguishes nothing is left out (one schema, one
+kind), and schemas and sections collapse with a chevron for the session, all expanded while a
+search is active. Each entity has instant search, a column counter, a visibility toggle and
+"center on screen", and the same context menu as the canvas. Views are unmistakable: a VIEW label
+(VISTA in Spanish), their own icon and colour in the panel, on the canvas and its minimap, in the
+command palette and in every export, never a dashed border; at the Keys level a view is a compact
+card with its label and column count. The canvas offers three detail levels (compact, keys, full,
+on Ctrl+1 to Ctrl+3; switching to a taller level moves tables apart so none covers another,
+undoably), automatic
+layouts (layered top-down or left-to-right, organic, radial around a table), free dragging,
+multi-select with Shift, isolation of a table with its neighbours one or two levels deep, hide,
+show all, collapse and expand (the card chevron shows only when there are rows to hide), a
+minimap and semantic zoom (cards turn compact below 40 %). Relationships use standard crow's
+foot notation: at the referencing table a crow's foot, or zero or one for a one-to-one key; at
+the referenced table a bar, or a bar and a circle (zero or one) when a key column accepts NULL.
+They attach at the key column and reveal on hover their name, their columns and what deleting a
+referenced row does. Every change is undoable (Ctrl+Z, Ctrl+Y), and the command palette (Ctrl+K)
+reaches every action by name and names the kind of every entity it lists.
+
+The Inspector, a panel on the right of the canvas, shows the selected table or view: its columns
+with type, nullability, identity, computed and default, its primary key, indexes and `CHECK`
+constraints, and the relationships out of it and into it. It starts closed and opens with a
+double-click on a card or on an entities row, with Enter on a focused card, with Ctrl+I or with
+"Show details" in the context menu; from an entities row the keyboard route is the context-menu
+key and "Show details", or selecting the row and pressing Ctrl+I. Once open it follows the
+selection: nothing or several entities selected shows an empty state, and an entity hidden on the
+canvas cannot be inspected. A double-click on a card or an entities row leaves focus where it
+was; Ctrl+I, the top-bar button, the palette, Enter on a focused card, "Show details" and
+following a relationship move focus to the panel's heading. Escape anywhere in the panel, its
+resize handle included, returns focus to the card and leaves the panel open; Ctrl+I or its close
+button closes it and focus goes back to the canvas. Every section appears in the same order, an
+empty one says "None" only when the list is complete, a fact the login could not read is marked,
+a value not available to this login or a table not visible to it carries a "Why?" link to the
+Access report, and a relationship to a table on the canvas is a link that moves the panel to it.
+The panel resizes from its edge and remembers its width; in a window too narrow for both side
+panels at their width they narrow, so the canvas and the top bar keep their room.
+
+### Reading rules
+
+`CHECK` constraints and relationships in the Inspector read as sentences in the interface
+language: "Quantity must be greater than 0", "Each row in sales.Orders belongs to exactly one row
+in dbo.Customers", "Deleting a row in dbo.Customers is blocked if, once the statement has run,
+rows in sales.Orders still point to it". Tables are named as tables, never turned into nouns, so
+every sentence reads right in both languages, and columns and tables appear as chips. A sentence
+says only what SQL Server enforces: a rule over a column that accepts NULL sits under "When
+Discount has a value:", a disabled rule under "When enabled:", what a key blocks is judged once
+the statement has run, as SQL Server judges it, and a note under the section says that the
+sentences are derived from the definitions and checked when values are written, and, for text,
+that comparisons follow the column's collation. Pointing at a rule, or tabbing to one of its
+controls, outlines the cards it involves, tints its columns on the cards and in the panel's
+columns table and, for a relationship, emphasises its line; the highlight adds no tab stop and
+leaves the selection ring alone. The SQL is one click away behind Show SQL, with Copy SQL. A rule
+SchemaCraft cannot read in full says so and shows its SQL, never half a sentence. The HTML viewer
+reads and highlights rules the same way.
 
 ### Refreshing from the database
 
@@ -102,6 +173,11 @@ The diff is presented before it is applied: new, changed and removed tables, vie
 keys, indexes, constraints and relationships, with before and after values. Applying it
 preserves the positions of surviving tables. A project opened from a file reconnects through
 the connection dialog, prefilled from the saved connection, so only the password is typed again.
+A login that sees less never makes anything look removed: what it could not check is kept and
+listed as not checked, with the date it was read, and what became readable is listed as now
+available. A refresh that changed no object but learned something offers "Update project"; one
+with nothing to report says the project is up to date, or, under partial access, that nothing
+changed in what this login can read.
 
 ### Exporting
 
@@ -109,15 +185,26 @@ A single dialog chooses the format (SVG, standalone HTML, single-page PDF, PNG a
 detail level and the theme, and shows the size in pixels or millimetres with an estimated weight
 before anything is written. It exports what is visible on the canvas. A PNG scale beyond the
 renderer's limit is refused with the reason, progress names the stage and can be cancelled, and a
-finished export offers to show the file in its folder. The HTML file opens in any browser with
-pan, zoom, the three views, search and a detail panel per table.
+finished export offers to show the file in its folder. Every export draws views and
+relationships as the canvas does, with the label in the language the interface had when the file
+was written. The HTML file opens in any browser with pan, zoom, the three detail levels, a search
+that names the kind of each result and a detail panel per table and view built from the
+Inspector's view-model, with the same sections in the same order, the same words and states and
+the same rules in words, highlighted on the diagram as they are pointed at, for what is on the
+exported diagram: relationships to tables left off the diagram are not listed, an empty
+relationship list says "None on the diagram", and there are no "Why?" links to the Access report;
+choosing a result or following a relationship moves focus to the panel. A diagram read with
+partial access says so in one line, under the diagram or under the viewer's header. In the
+interface, "view" names a database view and nothing else: the viewport is the window or the
+screen, and compact, keys and full are detail levels.
 
 ## Visual language
 
 - **Mark.** Two entity cards joined by a relationship curve on a violet-to-blue gradient
   (`assets/brand/schemacraft-icon.svg`).
 - **Accent.** A violet-blue (`oklch(55% 0.19 278)` on light, lighter on dark) used sparingly for
-  primary actions, selection and focus. Neutrals carry a trace of the same hue.
+  primary actions, selection, focus and the rule being read: selection hugs a card, while a
+  rule's outline stands off it. Neutrals carry a trace of the same hue.
 - **Typography.** Inter Variable for the interface, JetBrains Mono Variable for identifiers and
   SQL types. Both are bundled, so the portable executable and the exports render identically on
   any machine.

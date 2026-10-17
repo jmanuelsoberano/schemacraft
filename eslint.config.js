@@ -7,8 +7,10 @@ import tseslint from "typescript-eslint";
 
 /*
  * Layer boundaries (docs/architecture.md, ADR-031): app -> features -> shared, the viewer reuses
- * features but never app, and only src/shared/ipc talks to the Tauri API. One rule per folder,
- * because a later no-restricted-imports entry replaces an earlier one for the same file.
+ * features but never app, and only src/shared/ipc talks to the Tauri API. features/schema is a
+ * leaf among the features: it holds entity identity and schema facts that every other feature
+ * and the viewer read, so it imports only shared/ and itself. One rule per folder, because a
+ * later no-restricted-imports entry replaces an earlier one for the same file.
  */
 const forbid = {
   app: {
@@ -18,6 +20,10 @@ const forbid = {
   features: {
     group: ["@/features/*"],
     message: "shared/ sits below the features; move the code down or pass it in.",
+  },
+  otherFeatures: {
+    group: ["@/features/*", "!@/features/schema"],
+    message: "features/schema is a leaf; it imports only shared/ and itself.",
   },
   viewer: {
     group: ["@/viewer/*"],
@@ -61,6 +67,10 @@ export default tseslint.config(
   },
   layer(["src/app/**/*.{ts,tsx}", "src/main.tsx"], [forbid.viewer, forbid.tauri]),
   layer(["src/features/**/*.{ts,tsx}"], [forbid.app, forbid.viewer, forbid.tauri]),
+  layer(
+    ["src/features/schema/**/*.{ts,tsx}"],
+    [forbid.app, forbid.otherFeatures, forbid.viewer, forbid.tauri],
+  ),
   layer(["src/shared/ipc/**/*.{ts,tsx}"], [forbid.app, forbid.features, forbid.viewer]),
   layer(
     ["src/shared/**/*.{ts,tsx}"],

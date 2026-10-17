@@ -15,6 +15,7 @@ import type { SelectOption } from "@/shared/ui/Select";
 import { Spinner } from "@/shared/ui/Spinner";
 import { TextField } from "@/shared/ui/TextField";
 
+import { AccessCheckNotice } from "./AccessCheckNotice";
 import { describeSavedConnection, savedConnectionKey } from "./fromSavedConnection";
 import styles from "./ConnectionForm.module.css";
 import type { AuthenticationMode } from "./connectionDraft";
@@ -35,6 +36,7 @@ export function ConnectionForm({ serverFieldRef, passwordFieldRef }: ConnectionF
   const phase = useConnectionStore((state) => state.phase);
   const tested = useConnectionStore((state) => state.tested);
   const failure = useConnectionStore((state) => state.failure);
+  const blockedInspection = useConnectionStore((state) => state.blockedInspection);
   const validation = useConnectionStore((state) => state.validation);
   const updateDraft = useConnectionStore((state) => state.updateDraft);
   const applyRecentConnection = useConnectionStore((state) => state.applyRecentConnection);
@@ -46,6 +48,9 @@ export function ConnectionForm({ serverFieldRef, passwordFieldRef }: ConnectionF
   const forgetConnection = usePreferencesStore((state) => state.forgetConnection);
 
   const isBusy = phase !== "idle";
+  // What the access probe predicts for the chosen database; a read that found nothing to see
+  // replaces it with its own notice.
+  const predictedAccess = tested?.access ?? null;
   const showsHistory = mode === "connect" && recentConnections.length > 0;
   const passwordHint =
     draft.passwordIsStored && draft.password === ""
@@ -293,6 +298,12 @@ export function ConnectionForm({ serverFieldRef, passwordFieldRef }: ConnectionF
             updateDraft({ includeViews });
           }}
         />
+        {predictedAccess !== null &&
+        draft.database !== null &&
+        phase !== "loadingSchemas" &&
+        blockedInspection === null ? (
+          <AccessCheckNotice access={predictedAccess} database={draft.database} />
+        ) : null}
       </section>
 
       {phase === "testing" ? (
@@ -300,6 +311,13 @@ export function ConnectionForm({ serverFieldRef, passwordFieldRef }: ConnectionF
           <Spinner size={14} />
           {t("connection.status.testing")}
         </div>
+      ) : null}
+
+      {blockedInspection !== null ? (
+        <AccessCheckNotice
+          access={blockedInspection.access}
+          database={blockedInspection.database}
+        />
       ) : null}
 
       {failure !== null

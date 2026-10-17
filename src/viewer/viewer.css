@@ -1,36 +1,16 @@
-/* Standalone viewer: a single page with no external resources. Colours mirror the application tokens. */
+/*
+ * Standalone viewer: a single page with no external resources. Its colours are the `--sc-*`
+ * properties the exporter writes into the page from the application palette (viewerPaletteStyles),
+ * so this sheet declares none of its own apart from its two translucent shadows.
+ */
 :root {
   --sc-font-sans: Inter, "Segoe UI", system-ui, sans-serif;
   --sc-font-mono: "JetBrains Mono", Consolas, monospace;
-  --sc-canvas: #f6f7f9;
-  --sc-surface: #ffffff;
-  --sc-sunken: #f1f2f5;
-  --sc-border: #dcdee3;
-  --sc-border-strong: #c8cad3;
-  --sc-text: #1a1c26;
-  --sc-text-secondary: #525561;
-  --sc-text-muted: #777a85;
-  --sc-accent: #5d5ddd;
-  --sc-accent-subtle: #e6eaff;
-  --sc-accent-text: #443dbb;
-  --sc-warning: #dc8900;
   --sc-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   color-scheme: light;
 }
 
 :root[data-theme="dark"] {
-  --sc-canvas: #101117;
-  --sc-surface: #191a20;
-  --sc-sunken: #0d0e13;
-  --sc-border: #2c2d34;
-  --sc-border-strong: #40424a;
-  --sc-text: #e3e4ea;
-  --sc-text-secondary: #a2a4ac;
-  --sc-text-muted: #787a83;
-  --sc-accent: #7075ef;
-  --sc-accent-subtle: #272a4b;
-  --sc-accent-text: #acb6ff;
-  --sc-warning: #f4a437;
   --sc-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 }
@@ -62,6 +42,20 @@ body {
   display: grid;
   grid-template-rows: 48px 1fr 28px;
   height: 100%;
+}
+
+.sc-app.sc-has-note {
+  grid-template-rows: 48px auto 1fr 28px;
+}
+
+/* One line under the bar when the schema was read with partial access. */
+.sc-note {
+  margin: 0;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--sc-border);
+  background: var(--sc-surface-sunken);
+  color: var(--sc-text-secondary);
+  font-size: 12px;
 }
 
 .sc-bar {
@@ -145,6 +139,9 @@ body {
 }
 
 .sc-result {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
   padding: 6px 8px;
   border-radius: 4px;
   font-family: var(--sc-font-mono);
@@ -156,6 +153,27 @@ body {
 .sc-result.sc-result-active {
   background: var(--sc-accent-subtle);
   color: var(--sc-accent-text);
+}
+
+.sc-result-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The kind of each result, in the view colour for a view, as the application's palette shows it. */
+.sc-result-kind {
+  flex: none;
+  color: var(--sc-text-muted);
+  font-family: var(--sc-font-sans);
+  font-size: 11px;
+}
+
+.sc-result-kind-view,
+.sc-panel-kind-view {
+  color: var(--sc-view);
 }
 
 .sc-result-empty {
@@ -241,15 +259,57 @@ body {
 .sc-relation.sc-active {
   stroke: var(--sc-accent);
   stroke-width: 2;
-  marker-end: url(#sc-one-active);
 }
 
+/* Each end swaps to the accent variant of its own marker, so a zero-or-one end keeps its circle. */
 .sc-relation.sc-active[marker-start="url(#sc-many)"] {
   marker-start: url(#sc-many-active);
 }
 
-.sc-relation.sc-active[marker-start="url(#sc-many-optional)"] {
-  marker-start: url(#sc-many-optional-active);
+.sc-relation.sc-active[marker-start="url(#sc-zero-or-one)"] {
+  marker-start: url(#sc-zero-or-one-active);
+}
+
+.sc-relation.sc-active[marker-end="url(#sc-one)"] {
+  marker-end: url(#sc-one-active);
+}
+
+.sc-relation.sc-active[marker-end="url(#sc-zero-or-one)"] {
+  marker-end: url(#sc-zero-or-one-active);
+}
+
+/*
+ * A rule pointed at in the panel, drawn as the canvas draws it: an outline standing off each
+ * card it involves, a tint and a bar behind its rows, its column names in the accent text
+ * colour and its relationship emphasised. The rules are compound, because the diagram's own
+ * stylesheet comes later in the page and would win a tie; only colours change, so the fitted
+ * names keep their width.
+ */
+.sc-rule-outline {
+  fill: none;
+  stroke: var(--sc-accent);
+  stroke-width: 2;
+}
+
+.sc-rule-tint {
+  fill: var(--sc-accent-subtle);
+}
+
+.sc-rule-bar {
+  fill: var(--sc-accent);
+}
+
+.sc-column.sc-rule-column {
+  fill: var(--sc-accent-text);
+}
+
+/* The muted type falls short of AA on the tint; the secondary text does not. */
+.sc-type.sc-rule-type {
+  fill: var(--sc-text-secondary);
+}
+
+.sc-relation.sc-rule-relation {
+  stroke-width: 2.5;
 }
 
 .sc-panel {
@@ -278,6 +338,11 @@ body {
   margin-bottom: 10px;
 }
 
+.sc-panel-heading {
+  flex: 1;
+  min-width: 0;
+}
+
 .sc-panel-kind {
   margin-top: 2px;
   color: var(--sc-text-muted);
@@ -300,6 +365,29 @@ body {
   font-weight: 400;
 }
 
+/* The heading takes focus after a search or a relation link, so it shows where focus went. */
+.sc-panel-title:focus-visible {
+  outline: 2px solid var(--sc-accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.sc-panel-summary {
+  margin-top: 2px;
+  color: var(--sc-text-secondary);
+  font-size: 12px;
+}
+
+/* The whole object was kept from an earlier read, which the panel says before any fact. */
+.sc-panel-notice {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--sc-warning-subtle);
+  color: var(--sc-warning-text);
+  font-size: 12px;
+}
+
 .sc-close {
   width: 26px;
   padding: 0;
@@ -318,6 +406,59 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.sc-section-count {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--sc-surface-sunken);
+  color: var(--sc-text-secondary);
+  font-size: 10px;
+  letter-spacing: 0;
+  line-height: 15px;
+  vertical-align: 1px;
+}
+
+/*
+ * The one line of an empty section and the note under a list that may be missing keys. They
+ * read in the secondary colour, not the muted one, because they carry the honest wording.
+ */
+.sc-empty,
+.sc-footnote {
+  margin: 0;
+  color: var(--sc-text-secondary);
+  font-size: 12px;
+}
+
+.sc-footnote {
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+/* A CHECK or DEFAULT text under the name or the type it belongs to. */
+.sc-value {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+/* Words that stand in for a fact: not available, not checked, hidden. The hint is the title. */
+.sc-state {
+  color: var(--sc-text-secondary);
+}
+
+.sc-state[title] {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+
+/* Why a key may be stale, said under it. */
+.sc-hint {
+  margin-top: 2px;
+  color: var(--sc-text-secondary);
+  font-size: 11px;
 }
 
 .sc-table {
@@ -354,7 +495,7 @@ body {
   margin-left: 4px;
   padding: 0 5px;
   border-radius: 8px;
-  background: var(--sc-sunken);
+  background: var(--sc-surface-sunken);
   color: var(--sc-text-secondary);
   font-size: 10px;
   font-weight: 600;
@@ -363,18 +504,13 @@ body {
 }
 
 .sc-badge-key {
-  background: #fff1d6;
-  color: #8a5300;
+  background: var(--sc-warning-subtle);
+  color: var(--sc-warning-text);
 }
 
 .sc-badge-link {
   background: var(--sc-accent-subtle);
   color: var(--sc-accent-text);
-}
-
-:root[data-theme="dark"] .sc-badge-key {
-  background: #3d2c0d;
-  color: #f4a437;
 }
 
 .sc-list {
@@ -395,6 +531,126 @@ body {
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/*
+ * A CHECK or a key in words. A bar at its start while it is pointed at says that its columns
+ * and relationship are highlighted on the diagram; the padding is given back by the margin.
+ */
+.sc-list .sc-rule {
+  margin: 0 -8px;
+  padding: 4px 8px;
+}
+
+.sc-rule:hover,
+.sc-rule:focus-within {
+  box-shadow: inset 2px 0 0 var(--sc-accent);
+}
+
+/* Discs, then circles for a group's sentences, although the list sits inside another one. */
+.sc-rule-sentences {
+  margin: 2px 0 0;
+  padding: 0 0 0 14px;
+  list-style: disc;
+}
+
+.sc-rule-sentences .sc-rule-sentences {
+  margin-top: 1px;
+  list-style: circle;
+}
+
+.sc-list .sc-rule-sentences li {
+  padding: 1px 0;
+}
+
+.sc-rule-sentences li::marker {
+  color: var(--sc-text-muted);
+}
+
+/* "When Discount has a value:", "When enabled:": the condition the nested sentences hold under. */
+.sc-rule-heading {
+  color: var(--sc-text-secondary);
+}
+
+.sc-chip,
+.sc-code {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--sc-surface-sunken);
+  font-family: var(--sc-font-mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+/* The table a sentence names and the item links to reads as the link it is. */
+.sc-chip-link {
+  border: 0;
+  background: var(--sc-accent-subtle);
+  color: var(--sc-accent-text);
+  line-height: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.sc-rule-unread {
+  margin: 2px 0 0;
+  color: var(--sc-text-secondary);
+}
+
+.sc-rule-sql {
+  margin-top: 4px;
+}
+
+.sc-rule-sql summary {
+  width: fit-content;
+  color: var(--sc-text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.sc-rule-sql summary:hover {
+  color: var(--sc-text);
+}
+
+.sc-rule-sql summary:focus-visible {
+  outline: 2px solid var(--sc-accent);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+
+.sc-rule-sql pre {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--sc-surface-sunken);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Says a key's SQL was scripted from the catalog rather than kept as written. */
+.sc-rule-sql-note {
+  margin: 4px 0 0;
+  color: var(--sc-text-secondary);
+  font-size: 11px;
+}
+
+/* What the rules of a section need said once: how patterns read, collation, where words come from. */
+.sc-rule-note {
+  margin: 6px 0 0;
+  color: var(--sc-text-secondary);
+  font-size: 11px;
+}
+
+/* A column of the rule pointed at, in the panel's table as on the diagram. */
+.sc-table .sc-rule-row td {
+  background: var(--sc-accent-subtle);
+}
+
+.sc-table .sc-rule-row td:first-child {
+  box-shadow: inset 2px 0 0 var(--sc-accent);
+  color: var(--sc-accent-text);
 }
 
 .sc-footer {

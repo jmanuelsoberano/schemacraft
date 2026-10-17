@@ -38,6 +38,7 @@
   --topbar-height: 44px;
   --statusbar-height: 28px;
   --sidebar-width: 280px;
+  --inspector-width: 360px;
   --control-height: 28px;
 
   /* Motion */
@@ -66,11 +67,31 @@
   --color-accent-subtle: light-dark(oklch(94% 0.03 278), oklch(30% 0.06 278));
   --color-accent-text: light-dark(oklch(45% 0.19 278), oklch(80% 0.12 278));
   --color-on-accent: oklch(99% 0 0);
+  /* White drawn over the accent: the sheen of the primary button and the keys shown on it. */
+  --color-on-accent-highlight: oklch(100% 0 0 / 0.14);
+  --color-on-accent-border: oklch(100% 0 0 / 0.22);
+  --color-on-accent-subtle: oklch(100% 0 0 / 0.12);
+  --color-brand-glow: oklch(55% 0.19 278 / 0.35);
 
-  /* Semantic */
+  /* Views: a teal far from the violet of selection, so a view never reads as selected. */
+  --color-view: light-dark(oklch(50% 0.1 195), oklch(74% 0.1 195));
+  --color-view-subtle: light-dark(oklch(96% 0.02 195), oklch(28% 0.035 195));
+  --color-on-view: light-dark(oklch(99% 0 0), oklch(18% 0.02 195));
+
+  /* Semantic: a strong colour per tone, the text that reads on a tint, and the tint and hairline of alerts. */
+  --color-info-subtle: light-dark(oklch(96% 0.02 278), oklch(26% 0.04 278));
+  --color-info-border: light-dark(oklch(85% 0.06 278), oklch(40% 0.08 278));
   --color-success: light-dark(oklch(60% 0.16 150), oklch(72% 0.17 150));
+  --color-success-subtle: light-dark(oklch(96% 0.03 150), oklch(24% 0.04 150));
+  --color-success-border: light-dark(oklch(85% 0.08 150), oklch(38% 0.08 150));
   --color-warning: light-dark(oklch(70% 0.16 70), oklch(78% 0.15 70));
+  --color-warning-text: light-dark(oklch(50% 0.12 70), oklch(78% 0.15 70));
+  --color-warning-subtle: light-dark(oklch(97% 0.04 70), oklch(26% 0.05 70));
+  --color-warning-border: light-dark(oklch(86% 0.1 70), oklch(42% 0.09 70));
   --color-danger: light-dark(oklch(58% 0.2 25), oklch(70% 0.18 25));
+  --color-danger-subtle: light-dark(oklch(97% 0.025 25), oklch(26% 0.05 25));
+  --color-danger-border: light-dark(oklch(85% 0.09 25), oklch(40% 0.1 25));
+  --color-danger-ring: light-dark(oklch(58% 0.2 25 / 0.18), oklch(70% 0.18 25 / 0.25));
 
   /* Interaction */
   --color-hover: light-dark(oklch(0% 0 0 / 0.05), oklch(100% 0 0 / 0.06));
@@ -80,6 +101,10 @@
   --color-tooltip-background: light-dark(oklch(25% 0.02 275), oklch(32% 0.014 275));
   --color-tooltip-text: oklch(97% 0.004 275);
   --color-minimap-mask: light-dark(oklch(97.5% 0.004 275 / 0.7), oklch(18% 0.012 275 / 0.7));
+  /* Backdrops: dialogs dim the window; the command palette, opened and closed in a breath, less so. */
+  --color-overlay: light-dark(oklch(20% 0.02 275 / 0.35), oklch(0% 0 0 / 0.6));
+  --color-overlay-soft: light-dark(oklch(0% 0 0 / 0.2), oklch(0% 0 0 / 0.5));
+  --color-code-background: light-dark(oklch(0% 0 0 / 0.04), oklch(0% 0 0 / 0.3));
 
   /* Elevation: a hairline border plus a soft shadow reads well on both themes. */
   --shadow-sm:

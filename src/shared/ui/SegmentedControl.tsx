@@ -9,6 +9,8 @@ export interface SegmentedOption<Value extends string> {
   label: string;
   /** Tooltip explaining the option. */
   hint?: string;
+  /** Formatted keyboard shortcut, shown in the tooltip next to the hint. */
+  shortcutHint?: string;
   icon?: LucideIcon;
 }
 
@@ -52,7 +54,7 @@ export function SegmentedControl<Value extends string>({
           </ToggleGroup.Item>
         );
         return option.hint ? (
-          <Tooltip key={option.value} label={option.hint}>
+          <Tooltip key={option.value} label={option.hint} shortcutHint={option.shortcutHint}>
             {item}
           </Tooltip>
         ) : (

@@ -1,12 +1,20 @@
 .resizer {
   position: absolute;
   top: 0;
-  right: -3px;
   z-index: 2;
   width: 7px;
   height: 100%;
   cursor: col-resize;
   touch-action: none;
+}
+
+/* The handle straddles the panel's edge: the right one of a panel on the left, and the reverse. */
+.end {
+  right: -3px;
+}
+
+.start {
+  left: -3px;
 }
 
 .resizer::after {

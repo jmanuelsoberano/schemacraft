@@ -1,18 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { formatMessage, pluralKey } from "@/shared/i18n/formatMessage";
 import { messageCatalogs } from "@/shared/i18n/messages/catalogs";
-import type { Translator } from "@/shared/i18n/useI18n";
+import { createCatalogTranslator } from "@/shared/i18n/translator";
 import { OperationError } from "@/shared/ipc/operationError";
 
 import { describeOperationError } from "./describeOperationError";
 
-const english: Translator = {
-  locale: "en",
-  t: (key, parameters) => formatMessage(messageCatalogs.en[key], parameters),
-  tCount: (base, count) =>
-    formatMessage(messageCatalogs.en[pluralKey(base, count, "en")], { count }),
-};
+const english = createCatalogTranslator(messageCatalogs.en, "en");
 
 const rejectedLogin = new OperationError(
   { type: "inspector", value: "authenticationFailed" },

@@ -1,0 +1,15 @@
+.copy {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Stays in the accessibility tree while empty, so the confirmation is announced when it appears. */
+.feedback {
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.feedback:not(:empty) {
+  margin-left: var(--space-2);
+}

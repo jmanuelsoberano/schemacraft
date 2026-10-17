@@ -137,7 +137,7 @@ fn run_application() -> tauri::Result<()> {
             commands::app_info::get_app_info,
             commands::connection::test_connection,
             commands::connection::list_databases,
-            commands::connection::list_schemas,
+            commands::connection::describe_database,
             commands::connection::inspect_database,
             commands::connection::cancel_inspection,
             commands::project::read_project,

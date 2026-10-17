@@ -1,4 +1,5 @@
 import type { ActionId } from "@/app/actions/action";
+import type { EntityListItem } from "@/features/schema/entities";
 
 /** An action as the palette lists it: already translated, with its shortcut rendered. */
 export interface PaletteAction {
@@ -9,12 +10,7 @@ export interface PaletteAction {
 }
 
 /** An entity the palette can centre on. */
-export interface PaletteEntity {
-  key: string;
-  schema: string;
-  name: string;
-  kind: "table" | "view";
-}
+export type PaletteEntity = Pick<EntityListItem, "key" | "schema" | "name" | "kind">;
 
 export type PaletteResult =
   { kind: "action"; action: PaletteAction } | { kind: "entity"; entity: PaletteEntity };

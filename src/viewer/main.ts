@@ -1,28 +1,60 @@
 /**
  * Standalone viewer embedded in exported HTML files. It renders the schema with the same SVG
  * renderer as the application, adds pan and zoom, the three detail levels, search, neighbour
- * highlighting and a detail panel, and depends on nothing outside the file.
+ * highlighting and a detail panel that reads `CHECK`s and keys out as the Inspector does, and
+ * depends on nothing outside the file.
  */
 import "./viewer.css";
 
 import { spreadForDetailLevel, withPositions } from "@/features/canvas/canvasState";
-import { describeEntities, entityKey } from "@/features/canvas/geometry";
+import { describeEntities } from "@/features/canvas/geometry";
 import type { EntityDescriptor } from "@/features/canvas/geometry";
-import { VIEWER_DATA_ELEMENT_ID, VIEWER_ROOT_ELEMENT_ID } from "@/features/export/html/viewerData";
+import {
+  VIEWER_DATA_ELEMENT_ID,
+  VIEWER_ROOT_ELEMENT_ID,
+  carriesAccessNote,
+} from "@/features/export/html/viewerData";
 import type { ViewerData } from "@/features/export/html/viewerData";
+import type { ViewerMessageKey } from "@/features/export/html/viewerMessages";
 import { renderDiagramSvg } from "@/features/export/svg/renderDiagram";
 import type { ExportTheme } from "@/features/export/svg/palette";
 import { createCanvasMeasurer } from "@/features/export/svg/text";
-import { formatDataType } from "@/features/schema/dataType";
-import type { DetailLevel, ForeignKey } from "@/shared/contracts";
+import { entityKey } from "@/features/schema/entities";
+import { describeObjectDetails } from "@/features/schema/objectDetails";
+import type { DetailsScope } from "@/features/schema/objectDetails";
+import { hasRuleTargets, presentObjectDetails } from "@/features/schema/objectDetailsView";
+import type {
+  BadgeView,
+  ColumnsSectionView,
+  ConstraintSectionView,
+  DetailsView,
+  RelationSectionView,
+  RelationTargetView,
+  RuleTargets,
+  SectionView,
+  ValueView,
+} from "@/features/schema/objectDetailsView";
+import type { DetailLevel } from "@/shared/contracts";
+import { createCatalogTranslator } from "@/shared/i18n/translator";
+import type { CatalogTranslator } from "@/shared/i18n/translator";
 
-import { createViewerTranslator, pluralKey } from "./messages";
-import type { ViewerTranslator } from "./messages";
+import { h } from "./dom";
+import { clearRuleHighlight, paintRuleHighlight, ruleBody, ruleSql } from "./rules";
+import type { TableLink } from "./rules";
 
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 4;
 const FIT_MARGIN = 40;
 const DETAIL_LEVELS: readonly DetailLevel[] = ["compact", "keys", "full"];
+
+/** The badges with a colour of their own; the rest are plain. */
+const BADGE_TONES: Partial<Record<BadgeView["kind"], string>> = {
+  primaryKey: "sc-badge-key",
+  foreignKey: "sc-badge-link",
+};
+
+/** The words of the file, translated as the application translates its own. */
+type ViewerTranslator = CatalogTranslator<ViewerMessageKey>;
 
 interface Transform {
   x: number;
@@ -30,28 +62,10 @@ interface Transform {
   k: number;
 }
 
-type Attributes = Record<string, string | boolean | undefined>;
-
-/** Creates an element with attributes and children; text children are never parsed as HTML. */
-function h<Tag extends keyof HTMLElementTagNameMap>(
-  tag: Tag,
-  attributes: Attributes = {},
-  ...children: (Node | string | null)[]
-): HTMLElementTagNameMap[Tag] {
-  const element = document.createElement(tag);
-  for (const [name, value] of Object.entries(attributes)) {
-    if (value === true) {
-      element.setAttribute(name, "");
-    } else if (typeof value === "string") {
-      element.setAttribute(name, value);
-    }
-  }
-  for (const child of children) {
-    if (child !== null) {
-      element.append(child);
-    }
-  }
-  return element;
+/** The rule item the reader points at in the panel, and what it involves. */
+interface PointedRule {
+  item: HTMLElement;
+  targets: RuleTargets;
 }
 
 function readData(): ViewerData | null {
@@ -62,9 +76,28 @@ function readData(): ViewerData | null {
   return JSON.parse(text) as ViewerData;
 }
 
+function badgeElement(badge: BadgeView): HTMLElement {
+  return h("span", { class: `sc-badge ${BADGE_TONES[badge.kind] ?? ""}`.trim() }, badge.label);
+}
+
+/** A `CHECK` or `DEFAULT` text; a missing or unchecked one is marked and explains itself on hover. */
+function valueElement(value: ValueView): HTMLElement {
+  return h(
+    "div",
+    {
+      class: value.state === "readable" ? "sc-value sc-mono" : "sc-value sc-mono sc-state",
+      title: value.hint ?? undefined,
+    },
+    value.text,
+  );
+}
+
 class Viewer {
   private readonly data: ViewerData;
-  private readonly t: ViewerTranslator;
+  private readonly translator: ViewerTranslator;
+  private readonly t: ViewerTranslator["t"];
+  /** What the panel knows beyond the snapshot: only the diagram, with the capture's verdicts. */
+  private readonly scope: DetailsScope;
   private readonly entities: Map<string, EntityDescriptor>;
   private readonly measure = createCanvasMeasurer() ?? undefined;
   private readonly stage: HTMLElement;
@@ -77,13 +110,23 @@ class Viewer {
   private theme: ExportTheme;
   private transform: Transform = { x: 0, y: 0, k: 1 };
   private selected: string | null = null;
+  /** The rule pointed at in the panel, which holds the diagram's emphasis while it lasts. */
+  private pointed: PointedRule | null = null;
   private diagramSize = { width: 1, height: 1 };
   private resultKeys: string[] = [];
   private activeResult = -1;
 
   constructor(root: HTMLElement, data: ViewerData) {
     this.data = data;
-    this.t = createViewerTranslator(data.locale);
+    this.translator = createCatalogTranslator(data.messages, data.locale);
+    this.t = this.translator.t;
+    this.scope = {
+      hiddenKeys: new Set(),
+      coverage: data.access?.coverage ?? null,
+      carriedOver: data.carriedOver,
+      isSchemaFiltered: false,
+      isDiagramOnly: true,
+    };
     this.entities = describeEntities(data.snapshot);
     this.detailLevel = data.detailLevel;
     this.theme = data.theme;
@@ -91,26 +134,30 @@ class Viewer {
     this.search = h("input", {
       class: "sc-search",
       type: "search",
-      placeholder: this.t("search.placeholder"),
-      "aria-label": this.t("search.placeholder"),
+      placeholder: this.t("sidebar.search"),
+      "aria-label": this.t("sidebar.search"),
       autocomplete: "off",
     });
     this.results = h("ul", { class: "sc-results", role: "listbox", hidden: true });
     this.stage = h("main", { class: "sc-stage" });
     this.world = h("div", { class: "sc-world" });
-    this.panel = h("aside", { class: "sc-panel", hidden: true, "aria-live": "polite" });
+    this.panel = h("aside", {
+      class: "sc-panel",
+      hidden: true,
+      "aria-label": this.t("viewer.panel.label"),
+    });
     this.stage.append(this.world, this.panel);
 
     const levelGroup = h("div", {
       class: "sc-segment",
       role: "group",
-      "aria-label": this.t("level.label"),
+      "aria-label": this.t("viewMode.label"),
     });
     for (const level of DETAIL_LEVELS) {
       const button = h(
         "button",
         { class: "sc-button", type: "button", "aria-pressed": String(level === this.detailLevel) },
-        this.t(`level.${level}`),
+        this.t(`viewMode.${level}`),
       );
       button.addEventListener("click", () => {
         this.setDetailLevel(level);
@@ -121,7 +168,7 @@ class Viewer {
     const fitButton = h(
       "button",
       { class: "sc-button sc-button-outline", type: "button" },
-      this.t("action.fit"),
+      this.t("viewer.action.fit"),
     );
     fitButton.addEventListener("click", () => {
       this.fit();
@@ -131,7 +178,7 @@ class Viewer {
       {
         class: "sc-button sc-button-outline",
         type: "button",
-        "aria-label": this.t("action.theme"),
+        "aria-label": this.t("viewer.action.theme"),
       },
       "◐",
     );
@@ -140,14 +187,11 @@ class Viewer {
     });
 
     const { snapshot } = data;
+    // The file holds the keys between the entities on the diagram, so that is what it counts.
     const summary = [
-      this.t(pluralKey("summary.tables", snapshot.tables.length), {
-        count: snapshot.tables.length,
-      }),
-      this.t(pluralKey("summary.views", snapshot.views.length), { count: snapshot.views.length }),
-      this.t(pluralKey("summary.relations", snapshot.foreignKeys.length), {
-        count: snapshot.foreignKeys.length,
-      }),
+      this.translator.tCount("viewer.summary.tables", snapshot.tables.length),
+      this.translator.tCount("viewer.summary.views", snapshot.views.length),
+      this.translator.tCount("viewer.summary.relations", snapshot.foreignKeys.length),
     ].join(" · ");
     const bar = h(
       "header",
@@ -172,7 +216,7 @@ class Viewer {
       h(
         "span",
         {},
-        this.t("footer.exported", {
+        this.t("viewer.footer.exported", {
           date: Number.isNaN(exportedAt.getTime())
             ? data.exportedAt
             : exportedAt.toLocaleString(data.locale),
@@ -182,7 +226,21 @@ class Viewer {
       h("span", { class: "sc-spacer" }),
       h("span", { class: "sc-zoom" }),
     );
-    root.replaceChildren(h("div", { class: "sc-app" }, bar, this.stage, footer));
+    // The file travels without the application, so it says itself when the login that read
+    // the schema could not see all of it.
+    const note = carriesAccessNote(data.access)
+      ? h("p", { class: "sc-note", role: "note" }, this.t("export.note.partial"))
+      : null;
+    root.replaceChildren(
+      h(
+        "div",
+        { class: note === null ? "sc-app" : "sc-app sc-has-note" },
+        bar,
+        note,
+        this.stage,
+        footer,
+      ),
+    );
 
     this.bindStage();
     this.bindSearch();
@@ -209,6 +267,7 @@ class Viewer {
       {
         detailLevel: this.detailLevel,
         theme: this.theme,
+        labels: { view: this.t("entity.view.label") },
         background: false,
         measureText: this.measure,
       },
@@ -216,7 +275,9 @@ class Viewer {
     this.diagramSize = { width: rendered.width, height: rendered.height };
     // The markup is produced by the renderer from escaped data, never from the page.
     this.world.innerHTML = rendered.svg;
-    this.applySelection();
+    // The new drawing gets the selection and a rule pointed at back; the panel is left as it is,
+    // so a theme, a detail level or the late fonts never take the keyboard's place in it.
+    this.paintSelection();
     for (const [level, button] of this.levelButtons) {
       button.setAttribute("aria-pressed", String(level === this.detailLevel));
     }
@@ -298,6 +359,8 @@ class Viewer {
       originX: number;
       originY: number;
       moved: boolean;
+      /** The entity pressed on; the release goes to the stage, which captures the pointer. */
+      entity: string | null;
     } | null = null;
     this.stage.addEventListener("pointerdown", (event) => {
       if (event.button !== 0 || this.panel.contains(event.target as Node)) {
@@ -310,6 +373,8 @@ class Viewer {
         originX: this.transform.x,
         originY: this.transform.y,
         moved: false,
+        entity:
+          (event.target as Element).closest<SVGGElement>("[data-entity]")?.dataset.entity ?? null,
       };
       this.stage.setPointerCapture(event.pointerId);
     });
@@ -335,12 +400,11 @@ class Viewer {
       if (pointer?.id !== event.pointerId) {
         return;
       }
-      const wasClick = !pointer.moved;
+      const { moved, entity } = pointer;
       pointer = null;
       this.stage.classList.remove("sc-dragging");
-      if (wasClick) {
-        const entity = (event.target as Element).closest<SVGGElement>("[data-entity]");
-        this.select(entity?.dataset.entity ?? null);
+      if (!moved) {
+        this.select(entity);
       }
     };
     this.stage.addEventListener("pointerup", release);
@@ -355,16 +419,27 @@ class Viewer {
       },
       { passive: false },
     );
+    // The panel sits on the stage, but moving over it is not moving over the diagram.
     this.stage.addEventListener("pointerover", (event) => {
+      if (this.panel.contains(event.target as Node)) {
+        return;
+      }
       const entity = (event.target as Element).closest<SVGGElement>("[data-entity]");
       this.highlight(entity?.dataset.entity ?? this.selected);
     });
-    this.stage.addEventListener("pointerout", () => {
+    this.stage.addEventListener("pointerout", (event) => {
+      if (this.panel.contains(event.target as Node)) {
+        return;
+      }
       this.highlight(this.selected);
     });
   }
 
+  /** Emphasises the relations and neighbours of `key`, unless a rule in the panel holds the emphasis. */
   private highlight(key: string | null): void {
+    if (this.pointed !== null) {
+      return;
+    }
     for (const path of this.world.querySelectorAll<SVGPathElement>(".sc-relation")) {
       const active = key !== null && (path.dataset.source === key || path.dataset.target === key);
       path.classList.toggle("sc-active", active);
@@ -389,219 +464,296 @@ class Viewer {
 
   private select(key: string | null): void {
     this.selected = key;
-    this.applySelection();
-  }
-
-  private applySelection(): void {
-    for (const group of this.world.querySelectorAll<SVGGElement>(".sc-entity")) {
-      group.classList.toggle("sc-selected", group.dataset.entity === this.selected);
-    }
-    this.highlight(this.selected);
+    // The panel's items are replaced, and with them the rule pointed at.
+    this.pointed = null;
+    this.paintSelection();
     this.renderPanel();
   }
 
+  /** Marks the selection on the diagram, with its neighbours or the rule pointed at in the panel. */
+  private paintSelection(): void {
+    for (const group of this.world.querySelectorAll<SVGGElement>(".sc-entity")) {
+      group.classList.toggle("sc-selected", group.dataset.entity === this.selected);
+    }
+    if (this.pointed === null) {
+      clearRuleHighlight(this.world);
+      this.highlight(this.selected);
+    } else {
+      paintRuleHighlight(this.world, this.pointed.targets);
+    }
+    this.paintRuleRows();
+  }
+
+  /**
+   * Points at a rule of the panel: its columns and relationship are highlighted on the diagram,
+   * and its columns in the panel's own table, until the pointer and the focus both leave it.
+   */
+  private bindRule(item: HTMLElement, targets: RuleTargets): void {
+    if (!hasRuleTargets(targets)) {
+      return;
+    }
+    const point = () => {
+      this.pointed = { item, targets };
+      paintRuleHighlight(this.world, targets);
+      this.paintRuleRows();
+    };
+    const release = () => {
+      if (this.pointed?.item !== item) {
+        return;
+      }
+      this.pointed = null;
+      clearRuleHighlight(this.world);
+      this.highlight(this.selected);
+      this.paintRuleRows();
+    };
+    item.addEventListener("pointerenter", point);
+    item.addEventListener("focusin", point);
+    item.addEventListener("pointerleave", () => {
+      if (!item.contains(document.activeElement)) {
+        release();
+      }
+    });
+    item.addEventListener("focusout", (event) => {
+      if (!item.contains(event.relatedTarget as Node | null) && !item.matches(":hover")) {
+        release();
+      }
+    });
+  }
+
+  /** Tints the rows of the panel's columns table that the rule pointed at involves. */
+  private paintRuleRows(): void {
+    const names = this.pointed?.targets.columns.get(this.selected ?? "") ?? [];
+    for (const row of this.panel.querySelectorAll<HTMLTableRowElement>("tr[data-column]")) {
+      row.classList.toggle("sc-rule-row", names.includes(row.dataset.column ?? ""));
+    }
+  }
+
+  /** Moves focus to the panel's heading, so a keyboard user lands on what was just chosen. */
+  private focusPanel(): void {
+    this.panel.querySelector<HTMLElement>(".sc-panel-title")?.focus();
+  }
+
+  /**
+   * Shows the selected entity as the application's Inspector shows it: the same facts, in the
+   * same sections and the same words, with "None" only where the list is known to be complete.
+   */
   private renderPanel(): void {
-    const entity = this.selected === null ? undefined : this.entities.get(this.selected);
-    if (entity === undefined) {
+    const details =
+      this.selected === null
+        ? null
+        : describeObjectDetails(this.data.snapshot, this.selected, this.scope);
+    if (details === null) {
       this.panel.hidden = true;
       this.panel.replaceChildren();
       return;
     }
+    const view = presentObjectDetails(details, this.translator);
+    this.panel.replaceChildren(
+      this.panelHeader(view),
+      ...view.sections.map((section) => this.sectionElement(section)),
+    );
+    this.panel.hidden = false;
+  }
+
+  private panelHeader(view: DetailsView): HTMLElement {
     const closeButton = h(
       "button",
-      { class: "sc-button sc-close", type: "button", "aria-label": this.t("action.close") },
+      { class: "sc-button sc-close", type: "button", "aria-label": this.t("viewer.action.close") },
       "×",
     );
     closeButton.addEventListener("click", () => {
       this.select(null);
     });
-    const header = h(
+    return h(
       "div",
       { class: "sc-panel-header" },
       h(
         "div",
-        {},
+        { class: "sc-panel-heading" },
         h(
           "div",
-          { class: "sc-panel-kind" },
-          this.t(entity.kind === "view" ? "panel.view" : "panel.table"),
+          { class: view.kind === "view" ? "sc-panel-kind sc-panel-kind-view" : "sc-panel-kind" },
+          view.kindLabel,
         ),
         h(
           "h2",
-          { class: "sc-panel-title" },
-          h("span", { class: "sc-schema" }, `${entity.name.schema}.`),
-          entity.name.name,
+          { class: "sc-panel-title", tabindex: "-1" },
+          h("span", { class: "sc-schema" }, `${view.schema}.`),
+          view.name,
         ),
+        h("div", { class: "sc-panel-summary" }, view.summary),
+        view.notice === null ? null : h("p", { class: "sc-panel-notice" }, view.notice),
       ),
       closeButton,
     );
-    this.panel.replaceChildren(
-      header,
-      this.columnsSection(entity),
-      ...this.constraintSections(entity),
-    );
-    this.panel.hidden = false;
   }
 
-  private columnsSection(entity: EntityDescriptor): HTMLElement {
-    const rows = entity.columns.map((column) => {
-      const badges: HTMLElement[] = [];
-      if (entity.primaryKeyColumns.has(column.name)) {
-        badges.push(h("span", { class: "sc-badge sc-badge-key" }, "PK"));
+  /**
+   * A section with its title and count, its items or its one honest empty line, a footnote, and
+   * the notes its rules need.
+   */
+  private sectionElement(section: SectionView): HTMLElement {
+    const heading = h("h3", {}, section.title);
+    if (section.count > 0) {
+      heading.append(h("span", { class: "sc-section-count" }, String(section.count)));
+    }
+    return h(
+      "section",
+      { class: "sc-section" },
+      heading,
+      section.emptyText === null
+        ? this.sectionBody(section)
+        : h("p", { class: "sc-empty" }, section.emptyText),
+      section.footnote === null ? null : h("p", { class: "sc-footnote" }, section.footnote),
+      ...section.notes.map((note) => h("p", { class: "sc-rule-note" }, note)),
+    );
+  }
+
+  private sectionBody(section: SectionView): HTMLElement {
+    switch (section.kind) {
+      case "columns":
+        return this.columnsTable(section);
+      case "primaryKey":
+      case "indexes":
+      case "checks":
+        return this.constraintList(section);
+      case "references":
+      case "referencedBy":
+        return this.relationList(section);
+    }
+  }
+
+  private columnsTable(section: ColumnsSectionView): HTMLElement {
+    const rows = section.items.map((column) => {
+      const details = h("td", {}, h("span", { class: "sc-mono" }, column.type));
+      if (column.defaultValue !== null) {
+        details.append(valueElement(column.defaultValue));
       }
-      if (entity.foreignKeyColumns.has(column.name)) {
-        badges.push(h("span", { class: "sc-badge sc-badge-link" }, "FK"));
-      }
-      if (column.isIdentity) {
-        badges.push(h("span", { class: "sc-badge" }, this.t("panel.identity")));
-      }
-      if (column.isComputed) {
-        badges.push(h("span", { class: "sc-badge" }, this.t("panel.computed")));
-      }
-      const type = h("span", { class: "sc-mono" }, formatDataType(column.dataType));
-      const details = h("td", {}, type);
-      if (column.defaultExpression !== null) {
-        details.append(
-          h(
-            "div",
-            { class: "sc-muted sc-mono" },
-            `${this.t("panel.default")} ${column.defaultExpression}`,
-          ),
-        );
-      }
+      // A rule pointed at tints its columns here as on the diagram, found by their full name.
       return h(
         "tr",
-        {},
-        h("td", { class: "sc-mono" }, column.name, ...badges),
+        { "data-column": column.name },
+        h("td", { class: "sc-mono" }, column.name, ...column.badges.map(badgeElement)),
         details,
-        h("td", { class: "sc-muted" }, this.t(column.isNullable ? "panel.yes" : "panel.no")),
+        h("td", { class: "sc-muted" }, column.nullable),
       );
     });
     return h(
-      "section",
-      { class: "sc-section" },
-      h("h3", {}, this.t("panel.columns")),
+      "table",
+      { class: "sc-table" },
       h(
-        "table",
-        { class: "sc-table" },
+        "thead",
+        {},
         h(
-          "thead",
+          "tr",
           {},
-          h(
-            "tr",
-            {},
-            h("th", {}, this.t("panel.column")),
-            h("th", {}, this.t("panel.type")),
-            h("th", {}, this.t("panel.nullable")),
-          ),
+          h("th", {}, section.headers.name),
+          h("th", {}, section.headers.type),
+          h("th", {}, section.headers.nullable),
         ),
-        h("tbody", {}, ...rows),
       ),
+      h("tbody", {}, ...rows),
     );
   }
 
-  private constraintSections(entity: EntityDescriptor): HTMLElement[] {
-    const sections: HTMLElement[] = [];
-    const table = this.data.snapshot.tables.find(
-      (candidate) => entityKey(candidate.name) === entity.key,
-    );
-    if (table?.primaryKey) {
-      sections.push(
-        this.listSection(this.t("panel.primaryKey"), [
-          h(
-            "li",
-            { class: "sc-mono" },
-            `${table.primaryKey.name} (${table.primaryKey.columns.join(", ")})`,
-          ),
-        ]),
-      );
-    }
-    if (table !== undefined && table.indexes.length > 0) {
-      sections.push(
-        this.listSection(
-          this.t("panel.indexes"),
-          table.indexes.map((index) =>
-            h(
-              "li",
-              { class: "sc-mono" },
-              `${index.name} (${index.columns.join(", ")})`,
-              index.kind === "nonUnique"
-                ? null
-                : h("span", { class: "sc-badge" }, this.t("panel.unique")),
-              index.isClustered
-                ? h("span", { class: "sc-badge" }, this.t("panel.clustered"))
-                : null,
-            ),
-          ),
-        ),
-      );
-    }
-    const outgoing = this.data.snapshot.foreignKeys.filter(
-      (key) => entityKey(key.referencingTable) === entity.key,
-    );
-    if (outgoing.length > 0) {
-      sections.push(
-        this.listSection(
-          this.t("panel.foreignKeys"),
-          outgoing.map((key) => this.relationItem(key, entityKey(key.referencedTable))),
-        ),
-      );
-    }
-    const incoming = this.data.snapshot.foreignKeys.filter(
-      (key) =>
-        entityKey(key.referencedTable) === entity.key &&
-        entityKey(key.referencingTable) !== entity.key,
-    );
-    if (incoming.length > 0) {
-      sections.push(
-        this.listSection(
-          this.t("panel.referencedBy"),
-          incoming.map((key) => this.relationItem(key, entityKey(key.referencingTable))),
-        ),
-      );
-    }
-    if (table !== undefined && table.checkConstraints.length > 0) {
-      sections.push(
-        this.listSection(
-          this.t("panel.checks"),
-          table.checkConstraints.map((check) =>
-            h("li", { class: "sc-mono" }, `${check.name}: ${check.expression}`),
-          ),
-        ),
-      );
-    }
-    return sections;
-  }
-
-  private relationItem(key: ForeignKey, otherKey: string): HTMLElement {
-    const link = h("button", { class: "sc-link sc-mono", type: "button" }, otherKey);
-    link.addEventListener("click", () => {
-      this.select(otherKey);
-      this.centerOn(otherKey);
-    });
-    const columns = key.columnPairs
-      .map((pair) => `${pair.referencingColumn} → ${pair.referencedColumn}`)
-      .join(", ");
+  /**
+   * Primary key, indexes and `CHECK`s: the name with its columns and badges, then for a `CHECK`
+   * its rule in words with the SQL behind a disclosure, or the marked words for a missing text.
+   */
+  private constraintList(section: ConstraintSectionView): HTMLElement {
     return h(
-      "li",
+      "ul",
+      { class: "sc-list" },
+      ...section.items.map((item) => {
+        const head = h(
+          "div",
+          { class: "sc-mono" },
+          item.name,
+          item.columns.length === 0
+            ? null
+            : h("span", { class: "sc-muted" }, ` (${item.columns.join(", ")})`),
+          ...item.badges.map(badgeElement),
+        );
+        if (item.rule === null) {
+          return h("li", {}, head, item.expression === null ? null : valueElement(item.expression));
+        }
+        // A text kept from an earlier read is worded too; its date says how far it holds.
+        const hint = item.expression?.state === "notChecked" ? item.expression.hint : null;
+        const element = h(
+          "li",
+          { class: "sc-rule" },
+          head,
+          ruleBody(item.rule, null),
+          hint === null ? null : h("div", { class: "sc-hint" }, hint),
+          ruleSql(item.rule, this.t),
+        );
+        this.bindRule(element, item.rule.targets);
+        return element;
+      }),
+    );
+  }
+
+  /**
+   * Foreign keys out of or into the table: the name and badges, the column pairs, the sentences
+   * that say what the key means and what its actions do, the other table, since when a kept key
+   * is unchecked, and the scripted SQL.
+   */
+  private relationList(section: RelationSectionView): HTMLElement {
+    return h(
+      "ul",
+      { class: "sc-list" },
+      ...section.items.map((item) => {
+        const { key, goLabel } = item.target;
+        const link: TableLink | null =
+          key === null
+            ? null
+            : {
+                key,
+                label: goLabel ?? key,
+                onFollow: (target) => {
+                  this.goTo(target);
+                },
+              };
+        const element = h(
+          "li",
+          { class: "sc-rule" },
+          h("div", { class: "sc-mono" }, item.name, ...item.badges.map(badgeElement)),
+          h("div", { class: "sc-muted sc-mono" }, item.columns.join(", ")),
+          ruleBody(item.rule, link),
+          this.targetElement(item.target),
+          item.hint === null ? null : h("div", { class: "sc-hint" }, item.hint),
+          ruleSql(item.rule, this.t),
+        );
+        this.bindRule(element, item.rule.targets);
+        return element;
+      }),
+    );
+  }
+
+  /** The other table of a relation: a link when it is on the diagram, otherwise why it is not. */
+  private targetElement(target: RelationTargetView): HTMLElement {
+    const { key } = target;
+    if (key !== null) {
+      const link = h(
+        "button",
+        { class: "sc-link sc-mono", type: "button", "aria-label": target.goLabel ?? undefined },
+        target.label,
+      );
+      link.addEventListener("click", () => {
+        this.goTo(key);
+      });
+      return link;
+    }
+    if (target.state === "notVisible") {
+      return h("div", { class: "sc-state" }, target.label);
+    }
+    return h(
+      "div",
       {},
-      h(
-        "div",
-        { class: "sc-mono" },
-        key.name,
-        key.isEnabled ? null : h("span", { class: "sc-badge" }, this.t("panel.disabled")),
-      ),
-      h("div", { class: "sc-muted sc-mono" }, columns),
-      link,
-    );
-  }
-
-  private listSection(title: string, items: HTMLElement[]): HTMLElement {
-    return h(
-      "section",
-      { class: "sc-section" },
-      h("h3", {}, title),
-      h("ul", { class: "sc-list" }, ...items),
+      h("span", { class: "sc-mono" }, target.label),
+      target.stateLabel === null
+        ? null
+        : h("span", { class: "sc-state" }, ` · ${target.stateLabel}`),
     );
   }
 
@@ -657,11 +809,15 @@ class Viewer {
 
   private paintResults(): void {
     if (this.resultKeys.length === 0) {
-      this.results.replaceChildren(h("li", { class: "sc-result-empty" }, this.t("search.empty")));
+      this.results.replaceChildren(
+        h("li", { class: "sc-result-empty" }, this.t("viewer.search.empty")),
+      );
       return;
     }
     this.results.replaceChildren(
       ...this.resultKeys.map((key, index) => {
+        // Each result says whether it is a table or a view, as the application's palette does.
+        const isView = this.entities.get(key)?.kind === "view";
         const item = h(
           "li",
           {
@@ -669,7 +825,12 @@ class Viewer {
             role: "option",
             "aria-selected": String(index === this.activeResult),
           },
-          key,
+          h("span", { class: "sc-result-name" }, key),
+          h(
+            "span",
+            { class: isView ? "sc-result-kind sc-result-kind-view" : "sc-result-kind" },
+            this.t(isView ? "entity.view" : "entity.table"),
+          ),
         );
         item.addEventListener("mousedown", (event) => {
           event.preventDefault();
@@ -680,11 +841,12 @@ class Viewer {
     );
   }
 
+  /** Selects and centres an entity chosen by name, and hands focus to its panel. */
   private goTo(key: string): void {
     this.results.hidden = true;
-    this.search.blur();
     this.select(key);
     this.centerOn(key);
+    this.focusPanel();
   }
 
   private onKeyDown(event: KeyboardEvent): void {

@@ -2,13 +2,16 @@ import { create } from "zustand";
 
 import { spreadForDetailLevel, withPositions } from "@/features/canvas/canvasState";
 import { useProjectStore } from "@/features/project/projectStore";
+import { accessSummary } from "@/features/schema/coverage";
 import type {
   DetailLevel,
   ExportEvent,
   ExportOutcome,
   ExportRequest,
   ExportStage,
+  SchemaSnapshot,
 } from "@/shared/contracts";
+import { translate } from "@/shared/i18n/useI18n";
 import { getExportBackend } from "@/shared/ipc/exportBackend";
 import { toOperationError } from "@/shared/ipc/operationError";
 import type { OperationError } from "@/shared/ipc/operationError";
@@ -24,7 +27,8 @@ import {
 import type { ExportChoices, ExportSpecification } from "./exportSpecification";
 import { loadEmbeddedFontFaces } from "./fontFaces";
 import { buildStandalonePage } from "./html/buildStandalonePage";
-import { visibleProjection } from "./html/viewerData";
+import { carriesAccessNote, visibleProjection } from "./html/viewerData";
+import { viewerMessages } from "./html/viewerMessages";
 import type { ExportTheme } from "./svg/palette";
 import { measureDiagram, renderDiagramSvg } from "./svg/renderDiagram";
 import type { DiagramExtent, DiagramInput } from "./svg/renderDiagram";
@@ -89,6 +93,23 @@ function diagramForLevel(diagram: DiagramInput, detailLevel: DetailLevel): Diagr
     : { snapshot: diagram.snapshot, canvas: withPositions(diagram.canvas, moved) };
 }
 
+/**
+ * The line an SVG, PDF or PNG export of a partial capture carries under the diagram, in the
+ * application's language; the HTML viewer says the same in its header.
+ */
+function accessFootnote(snapshot: SchemaSnapshot): string | undefined {
+  return carriesAccessNote(accessSummary(snapshot))
+    ? translate(useSettingsStore.getState().locale, "export.note.partial")
+    : undefined;
+}
+
+/** The size of the drawn document, the footnote included, for the summary and the limits. */
+function measure(diagram: DiagramInput, detailLevel: DetailLevel): DiagramExtent {
+  return measureDiagram(diagramForLevel(diagram, detailLevel), detailLevel, {
+    footnote: accessFootnote(diagram.snapshot),
+  });
+}
+
 function currentTheme(): ExportTheme {
   return resolveTheme(
     useSettingsStore.getState().themePreference,
@@ -125,13 +146,16 @@ async function buildDocument(
   if (specification.format === "html") {
     // The viewer spreads nodes itself for whichever level the reader picks.
     const { viewerScript, viewerStyles } = await import("virtual:schemacraft-viewer");
+    // The file carries the application's words in the language it was exported in.
+    const { locale } = useSettingsStore.getState();
     return buildStandalonePage({
       data: {
         generator: labels.generator,
         exportedAt,
-        locale: useSettingsStore.getState().locale,
+        locale,
         theme,
         detailLevel,
+        messages: viewerMessages(locale),
         ...visibleProjection(diagram.snapshot, diagram.canvas),
       },
       viewerScript,
@@ -139,12 +163,16 @@ async function buildDocument(
       fontFaces,
     });
   }
+  // The view label is drawn into the file, so it follows the application's language like the
+  // footnote does.
   return renderDiagramSvg(diagramForLevel(diagram, detailLevel), {
     detailLevel,
     theme,
+    labels: { view: translate(useSettingsStore.getState().locale, "entity.view.label") },
     fontFaces,
     measureText,
     description: `Exported ${exportedAt} with ${labels.generator}`,
+    footnote: accessFootnote(diagram.snapshot),
   }).svg;
 }
 
@@ -172,7 +200,7 @@ export const useExportStore = create<ExportState>()((set, get) => ({
     set({
       isOpen: true,
       choices,
-      extent: measureDiagram(diagramForLevel(diagram, choices.detailLevel), choices.detailLevel),
+      extent: measure(diagram, choices.detailLevel),
       phase: "idle",
       progress: null,
       outcome: null,
@@ -194,7 +222,7 @@ export const useExportStore = create<ExportState>()((set, get) => ({
       choices,
       extent:
         patch.detailLevel !== undefined && diagram !== null
-          ? measureDiagram(diagramForLevel(diagram, choices.detailLevel), choices.detailLevel)
+          ? measure(diagram, choices.detailLevel)
           : get().extent,
       failure: null,
     });

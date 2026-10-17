@@ -1,6 +1,11 @@
+import { englishRuleMessages } from "./rules/en";
+
 /**
  * English catalogue. It is the reference: its keys define the `MessageKey` type, so a message
  * missing from another language fails type-checking instead of showing up blank at runtime.
+ * The standalone viewer embeds a subset of it, chosen by key prefix (`viewer.`, `details.`,
+ * `entity.`, `rule.` and the other prefixes `viewerMessages` lists), so it says what the
+ * application says. The words of the readable rules live in `rules/en.ts` and are spread in.
  */
 export const englishMessages = {
   "app.name": "SchemaCraft",
@@ -17,7 +22,7 @@ export const englishMessages = {
   "action.layoutLayeredHorizontal": "Hierarchical, left to right",
   "action.layoutOrganic": "Organic",
   "action.layoutRadial": "Radial around the selected table",
-  "action.fitView": "Fit diagram to view",
+  "action.fitView": "Fit diagram to window",
   "action.showAll": "Show all entities",
   "action.collapseAll": "Collapse all tables",
   "action.expandAll": "Expand all tables",
@@ -29,6 +34,16 @@ export const englishMessages = {
   "action.about": "About SchemaCraft",
   "action.exportPdf": "Export diagram as PDF",
   "action.searchEntities": "Search entities",
+  "action.accessReport": "Show access report",
+  "action.toggleInspector": "Toggle Inspector",
+  "action.detailCompact": "Detail level: Compact",
+  "action.detailKeys": "Detail level: Keys",
+  "action.detailFull": "Detail level: Full",
+  "action.themeSystem": "Theme: System",
+  "action.themeLight": "Theme: Light",
+  "action.themeDark": "Theme: Dark",
+  "action.languageEn": "Language: English",
+  "action.languageEs": "Language: Español",
 
   "credits.developedBy": "Developed by {name}",
   "about.title": "About SchemaCraft",
@@ -69,6 +84,8 @@ export const englishMessages = {
   "export.warning.tooLarge":
     "At {scale}x the image would be {width} × {height} px; the limit is {limit} px per side. Choose a smaller scale.",
   "export.warning.empty": "Nothing is visible on the canvas, so there is nothing to export.",
+  "export.note.partial":
+    "Partial capture: some tables, views or expressions weren't visible to the login that read the schema.",
   "export.action.export": "Export",
   "export.action.cancel": "Cancel",
   "export.action.close": "Close",
@@ -92,6 +109,7 @@ export const englishMessages = {
   "action.unavailable.nothingHidden": "No table is hidden in the diagram",
   "action.unavailable.nothingToUndo": "Nothing to undo",
   "action.unavailable.nothingToRedo": "Nothing to redo",
+  "action.unavailable.readOnly": "A newer SchemaCraft saved this project, so it is read-only",
 
   "menu.theme": "Theme",
   "theme.system": "System",
@@ -111,15 +129,37 @@ export const englishMessages = {
   "viewMode.full.hint": "All columns and types",
 
   "sidebar.title": "Entities",
-  "sidebar.search": "Search tables",
+  "sidebar.search": "Search tables and views",
   "sidebar.resize": "Resize the entities panel",
+  "sidebar.section.tables": "Tables",
+  "sidebar.section.views": "Views",
   "sidebar.search.noMatches": 'No entities match "{query}"',
   "sidebar.empty.title": "No entities yet",
   "sidebar.empty.description":
-    "Connect to a database or open a .scraft project to list its tables here.",
+    "Connect to a database or open a .scraft project to list its tables and views here.",
+  "sidebar.empty.database.title": "No tables or views",
+  "sidebar.empty.database.description": "{database} has no tables or views yet.",
+  "sidebar.empty.selection.description":
+    "The schemas and options chosen for {database} include no tables or views.",
+  "sidebar.empty.notVisible.title": "No tables or views visible to this login",
+  "sidebar.empty.notVisible.description": "Others may exist in {database}.",
+  "sidebar.footer.notVisible": "Other tables or views may exist that aren't visible to this login.",
+
+  "inspector.title": "Inspector",
+  "inspector.resize": "Resize the Inspector panel",
+  "inspector.close": "Close the Inspector",
+  "inspector.empty.title": "Nothing selected",
+  "inspector.empty.description":
+    "Select a table or view on the canvas to see its details here, or double-click a card or press Enter on it. {shortcut} closes this panel.",
+  "inspector.multiple.title.one": "{count} entity selected",
+  "inspector.multiple.title.other": "{count} entities selected",
+  "inspector.multiple.description": "Select only one to see its details.",
+  "inspector.why": "Why?",
+  "inspector.why.label": "Why? Show the access report",
 
   "entity.table": "Table",
   "entity.view": "View",
+  "entity.view.label": "VIEW",
   "sidebar.center": "Center on {name}",
   "sidebar.hide": "Hide {name}",
   "sidebar.show": "Show {name}",
@@ -135,18 +175,18 @@ export const englishMessages = {
 
   "canvas.node.collapse": "Collapse",
   "canvas.node.expand": "Expand",
-  "canvas.menu.center": "Center in view",
+  "canvas.menu.center": "Center on screen",
+  "canvas.menu.details": "Show details",
   "canvas.menu.hide": "Hide",
   "canvas.menu.isolateOne": "Isolate with direct relationships",
   "canvas.menu.isolateTwo": "Isolate with relationships, two levels",
-  "canvas.menu.showAll": "Show all entities",
   "canvas.layout.menu": "Automatic layout",
   "canvas.layout.running": "Laying out the diagram…",
 
   "palette.title": "Command palette",
-  "palette.placeholder": "Type a command or a table name…",
+  "palette.placeholder": "Type a command, a table or a view…",
   "palette.noResults": 'Nothing matches "{query}"',
-  "palette.centerOn": "Center in view",
+  "palette.centerOn": "Center on screen",
 
   "statusBar.notConnected": "Not connected",
   "statusBar.connected": "{target} · {database}",
@@ -209,6 +249,7 @@ export const englishMessages = {
     "Catalog queries run in parallel, so stages can finish in any order.",
   "connection.progress.cancelling": "Cancelling…",
   "connection.stage.connecting": "Connecting",
+  "connection.stage.checkingAccess": "Permissions of this login",
   "connection.stage.readingObjects": "Tables and views",
   "connection.stage.readingColumns": "Columns and types",
   "connection.stage.readingIndexes": "Keys and indexes",
@@ -268,6 +309,9 @@ export const englishMessages = {
   "project.notice.openFailed": "The project could not be opened",
   "project.notice.saveFailed": "The project could not be saved",
   "project.notice.dismiss": "Dismiss",
+  "project.readOnly": "Read-only",
+  "project.readOnly.description":
+    "Saved by {generator} in a newer format. You can rearrange the diagram, but this version can't save or refresh the project.",
 
   "welcome.recent.title": "Recent projects",
   "welcome.recent.open": "Open {name}",
@@ -286,6 +330,23 @@ export const englishMessages = {
     "Nothing is applied until you confirm. Positions of unchanged tables are kept.",
   "review.empty.title": "The project is up to date",
   "review.empty.description": "The database schema matches the project.",
+  "review.empty.partial.title": "No changes in what this login can read",
+  "review.empty.partial.description":
+    "Tables, views or expressions that aren't visible to this login could not be compared.",
+  "review.noChanges.title": "No changes in the schema",
+  "review.noChanges.nowAvailable": "Some details can now be read. Update the project to keep them.",
+  "review.noChanges.notChecked":
+    "Update the project to record this read; what could not be checked keeps its saved value.",
+  "review.noChanges.accessChanged": "Update the project to record what this login can see.",
+  "review.notChecked.title": "Not everything could be checked",
+  "review.notChecked.body.one":
+    "{count} item isn't visible to this login, so it was not checked and keeps its saved value.",
+  "review.notChecked.body.other":
+    "{count} items aren't visible to this login, so they were not checked and keep their saved values.",
+  "review.section.notChecked": "Not checked",
+  "review.section.nowAvailable": "Now available",
+  "review.accessChanged": "This refresh also records what this login can see.",
+  "review.foreignKey.invisibleTable": "{table} ({columns}) → a table not visible to this login",
   "review.summary.added.one": "{count} added",
   "review.summary.added.other": "{count} added",
   "review.summary.removed.one": "{count} removed",
@@ -303,6 +364,7 @@ export const englishMessages = {
   "review.primaryKey": "Primary key",
   "review.index": "Index",
   "review.checkConstraint": "Check",
+  "review.checkConstraint.disabled": "{name} {expression} (disabled)",
   "review.property.dataType": "Type",
   "review.property.nullability": "Nullable",
   "review.property.defaultExpression": "Default",
@@ -317,6 +379,7 @@ export const englishMessages = {
   "review.value.no": "no",
   "review.value.none": "none",
   "review.action.apply": "Apply changes",
+  "review.action.update": "Update project",
   "review.action.discard": "Discard",
   "review.action.close": "Close",
   "review.status.applying": "Applying…",
@@ -329,6 +392,63 @@ export const englishMessages = {
   "indexKind.uniqueIndex": "unique index",
   "indexKind.nonUnique": "index",
   "indexKind.clustered": "clustered",
+  "definition.notAvailable": "not available",
+  "definition.notRecorded": "not recorded",
+  "definition.default.notAvailable": "DEFAULT (not available)",
+  "definition.default.notRecorded": "(default not recorded)",
+
+  "viewer.search.empty": "Nothing matches",
+  "viewer.action.fit": "Fit",
+  "viewer.action.theme": "Switch theme",
+  "viewer.action.close": "Close",
+  "viewer.panel.label": "Details",
+  "viewer.summary.tables.one": "{count} table",
+  "viewer.summary.tables.other": "{count} tables",
+  "viewer.summary.views.one": "{count} view",
+  "viewer.summary.views.other": "{count} views",
+  "viewer.summary.relations.one": "{count} relation",
+  "viewer.summary.relations.other": "{count} relations",
+  "viewer.footer.exported": "Exported {date} with {generator}",
+
+  "details.section.columns": "Columns",
+  "details.section.primaryKey": "Primary key",
+  "details.section.indexes": "Indexes",
+  "details.section.checks": "Check constraints",
+  "details.section.references": "References",
+  "details.section.referencedBy": "Referenced by",
+  "details.column.name": "Column",
+  "details.column.type": "Type",
+  "details.column.nullable": "Nullable",
+  "details.value.yes": "Yes",
+  "details.value.no": "No",
+  "details.badge.primaryKey": "PK",
+  "details.badge.foreignKey": "FK",
+  "details.badge.identity": "identity",
+  "details.badge.computed": "computed",
+  "details.badge.disabled": "disabled",
+  "details.default": "DEFAULT {expression}",
+  "details.hint.notAvailable": "The text isn't visible to this login.",
+  "details.hint.notRecorded":
+    "Saved by SchemaCraft 1.0, which didn't record it. Refresh from the database to read it.",
+  "details.hint.notChecked": "Read on {date}; this login couldn't check it since.",
+  "details.notice.notChecked": "Kept from a read on {date}: this login couldn't check it.",
+  "details.target.go": "Go to {name}",
+  "details.target.self": "This table",
+  "details.target.hidden": "Hidden on the canvas",
+  "details.target.unknown": "Not in this project",
+  "details.target.notVisible": "A table not visible to this login",
+  "details.empty.columns": "No columns",
+  "details.empty.primaryKey": "No primary key",
+  "details.empty.indexes": "No indexes",
+  "details.empty.checks": "No check constraints",
+  "details.empty.references": "References no table",
+  "details.empty.referencedBy": "No table references it",
+  "details.empty.notVisible": "None visible to this login",
+  "details.empty.notRecorded": "None recorded; refresh from the database to check",
+  "details.empty.notChecked": "Not checked since {date}",
+  "details.empty.diagram": "None on the diagram",
+  "details.empty.inspectedSchemas": "None in the inspected schemas",
+  "details.footnote.notVisible": "Other tables that aren't visible to this login may reference it.",
 
   "error.project.notFound.title": "The project file was not found",
   "error.project.notFound.hint":
@@ -378,17 +498,93 @@ export const englishMessages = {
   "error.export.cancelled.hint": "Nothing was written.",
   "error.invalidArgument.title": "That cannot be done",
   "error.invalidArgument.hint": "The application asked for something impossible. Please report it.",
+
+  "access.chip": "Partial access",
+  "access.chip.label": "Partial access. Show the access report.",
+  "access.bar.title": "Part of the schema isn't visible",
+  "access.bar.dismiss": "Dismiss the access notice",
+  "access.action.details": "Details",
+  "access.action.copyGrant": "Copy GRANT script",
+  "access.action.copied": "Copied",
+  "access.action.copyFailed": "Could not copy",
+  "access.cause.nothingVisible.noGrant":
+    "This login has no permission on any table or view. Ask your DBA for VIEW DEFINITION.",
+  "access.cause.nothingVisible.hidden":
+    "This login sees no tables or views. The database may be empty, or an explicit DENY may keep them out of sight; ask your DBA.",
+  "access.cause.empty": "The database has no tables or views.",
+  "access.cause.denied.one": "{count} explicit DENY limits what this login can see.",
+  "access.cause.denied.other": "{count} explicit DENYs limit what this login can see.",
+  "access.cause.denialsUnknown":
+    "This login can't see its own DENY rules, so some tables or views may not be visible to it.",
+  "access.cause.noDefinitions":
+    "This login lacks VIEW DEFINITION, so CHECK and DEFAULT expressions aren't visible.",
+  "access.cause.someSchemas":
+    "Without VIEW DEFINITION on {schemas}, their CHECK and DEFAULT expressions aren't visible.",
+  "access.cause.someDefinitions":
+    "Some CHECK and DEFAULT expressions aren't visible to this login.",
+  "access.cause.someObjects": "Other tables or views may exist that aren't visible to this login.",
+  "access.notice.partial.title": "Partial access to {database}",
+  "access.notice.partial.readAnyway.definitions":
+    "Everything visible is read; expressions that aren't are marked as not available.",
+  "access.notice.partial.readAnyway.objects":
+    "Everything visible is read; tables and views that aren't stay out of the diagram.",
+  "access.notice.partial.readAnyway.both":
+    "Everything visible is read; tables and views that aren't stay out of the diagram, and expressions that aren't are marked as not available.",
+  "access.notice.empty.title": "{database} has no tables or views",
+  "access.notice.empty.description":
+    "This login can see every object, and there are none yet. Reading gives an empty diagram.",
+  "access.none.title": "There is nothing to read with this login in {database}",
+  "access.script.header":
+    "SchemaCraft: read-only access to the schema of {database} for {principal}.",
+  "access.script.readOnly": "VIEW DEFINITION gives no access to data and allows no changes.",
+  "access.script.sqlServer2022":
+    "On SQL Server 2022 and later it also shows users, roles and permissions.",
+  "access.script.replace": "Replace {placeholder} with the database user of this login.",
+  "access.script.placeholder": "<database user>",
+  "access.fact.table": "Table",
+  "access.fact.view": "View",
+  "access.fact.columnDefault": "Default of {column}",
+  "access.fact.checkConstraint": "Check {name}",
+  "access.fact.foreignKey": "Relation {name}",
+  "access.state.complete": "Complete",
+  "access.state.partial": "Partial",
+  "access.state.notAvailable": "Not available",
+  "access.report.title": "Access report for {database}",
+  "access.report.description": "What this login could read on {date}.",
+  "access.report.description.notRecorded": "Schema read on {date}.",
+  "access.report.notRecorded":
+    "This project was saved before SchemaCraft recorded access. Refresh from the database to check it.",
+  "access.report.full": "This login read the whole schema.",
+  "access.report.empty":
+    "This login could see every object, and the database had no tables or views.",
+  "access.report.partial": "This login couldn't read the whole schema.",
+  "access.report.nothingVisible": "This login couldn't see any table or view.",
+  "access.report.section.coverage": "What was read",
+  "access.report.objects": "Tables and views",
+  "access.report.objects.partial": "{objects}; others may exist that aren't visible to this login",
+  "access.report.definitions": "CHECK and DEFAULT expressions",
+  "access.report.definitions.count": "{readable} of {total} available",
+  "access.report.definitions.none": "None in what was read",
+  "access.report.invisibleKeys.one": "{count} relation to a table not visible to this login",
+  "access.report.invisibleKeys.other": "{count} relations to tables not visible to this login",
+  "access.report.carried.one": "{count} fact kept from an earlier read",
+  "access.report.carried.other": "{count} facts kept from an earlier read",
+  "access.report.carried.hint":
+    "This login could not check them, so they keep the values read before.",
+  "access.report.carried.entry": "{fact} · read on {date}",
+  "access.report.section.schemas": "Permissions",
+  "access.report.schemas.name": "Schema",
+  "access.report.schemas.database": "Whole database",
+  "access.report.schemas.unknown": "unknown",
+  "access.report.section.fix": "What can be done",
+  "access.report.fix":
+    "To read everything, your DBA can run this script. SchemaCraft only copies it and never runs it.",
+  "access.report.dbaOnly":
+    "A GRANT may not help here. Your DBA can review the permissions of this login.",
+
+  ...englishRuleMessages,
 } as const;
 
 export type MessageKey = keyof typeof englishMessages;
 
 export type MessageCatalog = Readonly<Record<MessageKey, string>>;
-
-/** Message keys that come in `one`/`other` plural forms, referred to by their common prefix. */
-export type PluralMessageBase = {
-  [Key in MessageKey]: Key extends `${infer Base}.one`
-    ? `${Base}.other` extends MessageKey
-      ? Base
-      : never
-    : never;
-}[MessageKey];

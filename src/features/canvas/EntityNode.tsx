@@ -1,6 +1,6 @@
 import { Handle, Position } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
-import { ChevronDown, ChevronRight, Columns3, KeyRound, Link2, Table2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Glasses, KeyRound, Link2, Table2 } from "lucide-react";
 import { memo } from "react";
 
 import { formatDataType } from "@/features/schema/dataType";
@@ -8,6 +8,7 @@ import { useI18n } from "@/shared/i18n/useI18n";
 import { classNames } from "@/shared/ui/classNames";
 
 import styles from "./EntityNode.module.css";
+import { useCanvasUiStore } from "./canvasUiStore";
 import type { ColumnRole } from "./geometry";
 import type { EntityNode as EntityNodeType } from "./graph";
 
@@ -23,19 +24,30 @@ function RoleIcon({ role }: { role: ColumnRole }) {
   );
 }
 
+/**
+ * A table or view on the canvas. A view is told apart by its icon, its VIEW label and its own
+ * colour, never by a dashed border; at the keys level it has no rows, so it is a header-only
+ * card with the label and the column count. While the Inspector points at a rule that involves
+ * the card, the card is outlined and the rule's rows it shows are tinted; the outline still
+ * says so when the rows are collapsed or not shown at this level. Only the card's own entry of
+ * the highlight is read, so pointing at a rule redraws the cards it involves and no others.
+ */
 function EntityNodeComponent({ id, data, selected }: NodeProps<EntityNodeType>) {
   const { t, tCount } = useI18n();
-  const { entity, rows, detailLevel, isCollapsed, isHighlighted } = data;
+  const ruleColumns = useCanvasUiStore((state) => state.ruleHighlight?.columns.get(id));
+  const { entity, rows, detailLevel, isCollapsed, isCollapsible, isHighlighted } = data;
+  const isView = entity.kind === "view";
+  const isRuleTarget = ruleColumns !== undefined && ruleColumns.size > 0;
   const CollapseIcon = isCollapsed ? ChevronRight : ChevronDown;
-  const showsCollapseToggle = detailLevel !== "compact";
 
   return (
     <div
       className={classNames(
         styles.node,
-        entity.kind === "view" && styles.view,
+        isView && styles.view,
         selected && styles.selected,
         isHighlighted && styles.highlighted,
+        isRuleTarget && styles.ruleTarget,
       )}
       title={entity.key}
     >
@@ -52,8 +64,9 @@ function EntityNodeComponent({ id, data, selected }: NodeProps<EntityNodeType>) 
         isConnectable={false}
       />
       <header className={styles.header}>
-        {entity.kind === "view" ? (
-          <Columns3 className={styles.kindIcon} aria-label={t("entity.view")} />
+        {isView ? (
+          // The visible label names the kind, so the icon says nothing more.
+          <Glasses className={styles.kindIcon} aria-hidden="true" />
         ) : (
           <Table2 className={styles.kindIcon} aria-label={t("entity.table")} />
         )}
@@ -61,10 +74,11 @@ function EntityNodeComponent({ id, data, selected }: NodeProps<EntityNodeType>) 
           <span className={styles.schema}>{entity.name.schema}.</span>
           <span className={styles.name}>{entity.name.name}</span>
         </span>
+        {isView ? <span className={styles.kindLabel}>{t("entity.view.label")}</span> : null}
         <span className={styles.count} aria-label={tCount("entity.columns", entity.columns.length)}>
           {entity.columns.length}
         </span>
-        {showsCollapseToggle ? (
+        {isCollapsible ? (
           <button
             type="button"
             className={classNames(styles.collapse, "nodrag")}
@@ -79,7 +93,13 @@ function EntityNodeComponent({ id, data, selected }: NodeProps<EntityNodeType>) 
       {rows.length > 0 ? (
         <ul className={styles.rows}>
           {rows.map((row) => (
-            <li key={row.column.name} className={styles.row}>
+            <li
+              key={row.column.name}
+              className={classNames(
+                styles.row,
+                ruleColumns?.has(row.column.name) === true && styles.ruleColumn,
+              )}
+            >
               <RoleIcon role={row.role} />
               <span className={styles.columnName}>{row.column.name}</span>
               {detailLevel === "full" ? (

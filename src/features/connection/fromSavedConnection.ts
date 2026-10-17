@@ -9,7 +9,7 @@ import type {
 
 import { DEFAULT_CONNECT_TIMEOUT_SECONDS, emptyConnectionDraft } from "./connectionDraft";
 import type { ConnectionDraft } from "./connectionDraft";
-import { formatServerAddress } from "./serverAddress";
+import { formatServerAddress, formatTarget } from "./serverAddress";
 
 /** A dialog draft that reproduces a saved connection; the password is always empty. */
 export function savedConnectionToDraft(
@@ -32,7 +32,7 @@ export function savedConnectionToDraft(
 
 /** Pieces of a saved connection as the history and the status bar show them. */
 export interface SavedConnectionDescription {
-  /** Server as the user wrote it, e.g. `localhost\SQLEXPRESS`. */
+  /** Canonical server name, e.g. `localhost\SQLEXPRESS` or `db.example.com,1433`. */
   target: string;
   database: string | null;
   /** Login name, or `null` for Windows Authentication. */
@@ -41,7 +41,7 @@ export interface SavedConnectionDescription {
 
 export function describeSavedConnection(saved: SavedConnection): SavedConnectionDescription {
   return {
-    target: formatServerAddress({ host: saved.host, instance: saved.instance, port: saved.port }),
+    target: formatTarget({ host: saved.host, instance: saved.instance, port: saved.port }),
     database: saved.database,
     login: saved.authentication.mode === "sqlLogin" ? saved.authentication.username : null,
   };

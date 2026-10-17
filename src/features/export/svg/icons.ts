@@ -20,9 +20,10 @@ export const ICON_SYMBOLS = [
     ICON_TABLE,
     '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 3v18"/>',
   ),
+  // Lucide "glasses", the icon the canvas and the sidebar give a view.
   symbol(
     ICON_VIEW,
-    '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/>',
+    '<circle cx="6" cy="15" r="4"/><circle cx="18" cy="15" r="4"/><path d="M14 15a2 2 0 0 0-2-2 2 2 0 0 0-2 2"/><path d="M2.5 13 5 7c.7-1.3 1.4-2 3-2"/><path d="M21.5 13 19 7c-.7-1.3-1.5-2-3-2"/>',
   ),
   symbol(
     ICON_KEY,

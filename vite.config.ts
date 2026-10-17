@@ -11,7 +11,8 @@ const sourceAlias = { "@": fileURLToPath(new URL("./src", import.meta.url)) };
 
 const VIEWER_MODULE_ID = "virtual:schemacraft-viewer";
 const RESOLVED_VIEWER_ID = `\0${VIEWER_MODULE_ID}`;
-const VIEWER_SOURCES = /[\\/]src[\\/](viewer|features[\\/](export|canvas|schema))[\\/]/u;
+const VIEWER_SOURCES =
+  /[\\/]src[\\/](viewer|features[\\/](export|canvas|schema)|shared[\\/]i18n)[\\/]/u;
 
 interface ViewerBundle {
   script: string;
@@ -113,5 +114,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
+    // A stylesheet imported as text (`?raw`) reaches the tests whole; vitest blanks CSS otherwise.
+    css: { include: [/\?raw$/u] },
   },
 });

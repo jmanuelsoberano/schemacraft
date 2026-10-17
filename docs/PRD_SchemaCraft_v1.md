@@ -39,7 +39,7 @@ Permite conectarse a una base de datos mediante autenticación mixta, extraer me
 
 ---
 
-## 3. Alcance Funcional de la Versión 1.0 (MVP)
+## 3. Alcance Funcional de la Versión 1.0 (MVP) y Ampliaciones
 
 ### 3.1 Conector Prioritario: Microsoft SQL Server
 - **Modos de Autenticación Soportados**:
@@ -70,15 +70,15 @@ Permite conectarse a una base de datos mediante autenticación mixta, extraer me
 - **Aislamiento de Subgrafos (Vecindarios Relacionales)**:
   - Opción de clic derecho en una tabla: "Aislar tabla y relaciones directas" (1 o 2 niveles de profundidad) para analizar módulos específicos sin saturarse con el resto de la base de datos.
 
-### 3.4 Modos de Visualización del Diagrama (Vistas)
-Para facilitar la lectura en bases de datos con muchas tablas, el canvas ofrecerá 3 niveles de detalle:
-1. **Vista Compacta (Header Only)**:
+### 3.4 Niveles de Detalle del Diagrama
+Para facilitar la lectura en bases de datos con muchas tablas, el canvas ofrecerá 3 niveles de detalle (en la interfaz, "vista" nombra únicamente una vista de base de datos):
+1. **Nivel Compacto (Header Only)**:
    - Muestra únicamente el nombre de la tabla, esquema y badge con el conteo total de columnas.
    - Ideal para obtener un mapa conceptual macro de la base de datos.
-2. **Vista Estándar (Claves)**:
+2. **Nivel Estándar (Claves)**:
    - Muestra el encabezado + solo las columnas que son PK o FK con iconos identificadores.
    - Ideal para comprender la topología relacional sin exceso de texto.
-3. **Vista Completa (Full Specification)**:
+3. **Nivel Completo (Full Specification)**:
    - Muestra el encabezado, todas las columnas, tipos de datos completos y badges de nulabilidad/atributos.
 
 ### 3.5 Algoritmos de Disposición (Layout Engines)
@@ -111,11 +111,44 @@ Se prohíben expresamente exportaciones en múltiples páginas cortadas que requ
    - Canvas vectorial infinito con estilos CSS limpios y texto seleccionable.
 2. **HTML Standalone Interactivo**:
    - Archivo único `.html` autocontenido (con scripts y estilos embebidos).
-   - Permite a cualquier persona abrir el archivo en su navegador y hacer pan, zoom y conmutar vistas (compacta/completa) sin tener SchemaCraft instalado.
+   - Permite a cualquier persona abrir el archivo en su navegador y hacer pan, zoom y cambiar el nivel de detalle (compacto/claves/completo) sin tener SchemaCraft instalado.
 3. **PDF Vectorial de Página Única (Póster)**:
    - Un solo lienzo continuo con dimensiones calculadas a partir del tamaño real del diagrama, garantizando nitidez total en cualquier nivel de aumento.
 4. **PNG en Ultra-Alta Resolución (1x, 2x, 4x)**:
    - Exportación rasterizada nítida para presentaciones o documentación.
+
+### 3.8 Ampliaciones de la Versión 1.1
+Lo que la versión 1.1 añade al alcance de las secciones 3.1 a 3.7, ya publicadas en la versión 1.0.0.
+
+- **Acceso Parcial Explicado (amplía 3.1 y 3.2)**:
+  - Al elegir la base de datos, SchemaCraft comprueba qué puede ver el inicio de sesión, con una sola consulta de permisos, y lo indica antes de leer el esquema.
+  - Muestra todo lo que el inicio de sesión puede leer. Las expresiones `CHECK` y `DEFAULT` que no puede leer se marcan como "no disponible", nunca como vacías o inexistentes, y las llaves foráneas hacia tablas no visibles para este inicio de sesión se conservan.
+  - Con acceso completo no añade nada a la interfaz. Con acceso parcial muestra un indicador discreto en la barra de estado, un aviso descartable sobre la lista de entidades y un informe de acceso con lo que se leyó, lo que falta y por qué.
+  - El informe ofrece copiar un script de mínimo privilegio (`GRANT VIEW DEFINITION`) para que un DBA lo ejecute; SchemaCraft nunca lo ejecuta. El script advierte que, desde SQL Server 2022, ese permiso también deja ver usuarios, roles y permisos, y no se ofrece cuando un `DENY` explícito explica lo que falta.
+  - Si el inicio de sesión no ve ninguna tabla ni vista, lo explica y no permite leer el esquema. Una base de datos vacía, con permisos completos, sí se lee y muestra un estado vacío neutral.
+  - Las exportaciones de una lectura parcial lo indican en una línea.
+- **Formato `.scraft` 2 (amplía 3.6)**:
+  - El archivo registra qué podía ver el inicio de sesión que leyó el esquema, incluido el nombre del usuario de base de datos, que nunca pasa a las exportaciones.
+  - Los proyectos de la versión 1.0 se abren y se convierten al guardarlos; un proyecto guardado con la versión 1.1 necesita la 1.1 o posterior.
+  - El encabezado indica también la versión mínima de lector (`minReaderVersion`). Un proyecto guardado por una versión más nueva se abre en solo lectura cuando esa versión lo permite (se puede reorganizar y exportar, pero no guardar ni actualizar) y se rechaza con un mensaje claro en caso contrario.
+  - Los datos que esta versión no entiende se conservan al guardar.
+- **Actualización con Menos Permisos (amplía 3.6)**: actualizar desde la base de datos con un inicio de sesión que ve menos nunca presenta como eliminado lo que no puede ver: lo conserva, lo marca como no comprobado con la fecha en que se leyó y lo muestra en la revisión. Lo que se vuelve legible, por ejemplo después de conceder `VIEW DEFINITION`, también aparece en la revisión y se guarda al aplicarla.
+- **Tablas y Vistas Diferenciadas (amplía 3.3, 3.4 y 3.7)**:
+  - El panel lateral agrupa las entidades por esquema y, dentro de cada esquema, en las secciones Tablas y Vistas con su conteo. Un nivel se muestra solo cuando distingue algo: con un único esquema no hay nivel de esquema y con un único tipo no hay nivel de tipo; la forma se decide sobre la lista completa, así no cambia mientras se escribe en el buscador. Los esquemas y las secciones se pliegan con un chevrón, se recuerdan durante la sesión y se muestran todos desplegados mientras hay una búsqueda activa.
+  - Las vistas de base de datos se distinguen de las tablas en los tres niveles de detalle con la etiqueta VISTA, un icono y un color propios, nunca con un borde discontinuo. En el nivel Claves una vista aparece como tarjeta compacta con la etiqueta y su número de columnas; el chevrón de plegado aparece solo en las tarjetas que tienen filas que ocultar.
+  - La paleta de comandos indica el tipo (tabla o vista) de cada entidad. Todas las exportaciones (SVG, PDF, PNG) y el visor HTML muestran la misma distinción que el lienzo, con la etiqueta en el idioma de la interfaz; la búsqueda del visor indica el tipo de cada resultado.
+  - En la interfaz, "vista" nombra únicamente una vista de base de datos: los comandos del encuadre pasan a llamarse "Centrar en pantalla" y "Ajustar el diagrama a la ventana", y compacto, claves y completo son niveles de detalle (3.4 y 3.7 se redactan así).
+- **Panel Inspector (amplía 3.3 y 3.7)**:
+  - Un panel a la derecha del lienzo muestra los detalles de la tabla o vista seleccionada: columnas (tipo, nulabilidad, identidad, calculada y valor por defecto), clave primaria, índices, restricciones `CHECK` y llaves foráneas en ambos sentidos, y junto a cada dato lo que el inicio de sesión pudo ver: "no disponible" para un texto que no puede leer, "no registrado" en un proyecto convertido de la 1.0, "sin comprobar desde" una fecha para un dato conservado de una lectura anterior y "una tabla no visible para este inicio de sesión" como destino de una llave. Todas las secciones aparecen siempre, en un orden fijo; una sección vacía dice "ninguno" solo cuando la lista es completa, y un enlace "¿Por qué?" abre el informe de acceso.
+  - Empieza cerrado y se abre con doble clic en una tarjeta o en una fila del panel de entidades, con Enter sobre una tarjeta enfocada, con Ctrl+I o con "Mostrar detalles" en el menú contextual. Una vez abierto sigue la selección del lienzo: nada o varias entidades seleccionadas muestran un estado vacío, y una entidad oculta en el lienzo no se puede inspeccionar. Abierto desde el teclado toma el foco; Escape devuelve el foco a la tarjeta y deja el panel abierto; Ctrl+I o su botón de cerrar lo cierran. Se redimensiona desde su borde y recuerda su ancho; si estaba abierto no se guarda.
+  - Los niveles de detalle tienen atajo (Ctrl+1, Ctrl+2 y Ctrl+3) y, junto con el tema y el idioma, son comandos de la paleta. En español los niveles se llaman Compacto, Claves y Completo.
+  - El panel de detalle del visor HTML se construye con el mismo modelo que el Inspector y muestra las mismas secciones, en el mismo orden, con las mismas palabras y los mismos estados, pero solo para lo que está en el diagrama exportado: no lista las relaciones con tablas que quedaron fuera del diagrama, una lista de relaciones vacía dice "Ninguna en el diagrama" y no hay enlaces "¿Por qué?"; el archivo HTML lleva los textos del visor en el idioma de la exportación, y elegir un resultado de la búsqueda o seguir una relación mueve el foco al panel.
+- **Reglas Legibles (amplía 3.2, 3.3 y 3.7)**:
+  - El Inspector y el panel de detalle del visor HTML explican en frases, en inglés y en español, las restricciones `CHECK` habituales: comparaciones, listas de valores, rangos, patrones `LIKE`, valores obligatorios (`NOT NULL`), longitudes y sus combinaciones. Una regla sobre una columna que acepta NULL se presenta bajo "Cuando … tiene un valor:", porque SQL Server acepta la fila cuando la columna es NULL, y una regla deshabilitada bajo "Cuando se habilite:"; para ello la extracción registra también si cada `CHECK` está habilitada (amplía 3.2).
+  - Las llaves foráneas se explican por filas, nombrando las tablas tal como son y sin convertir sus nombres en sustantivos ("Cada fila de sales.Orders pertenece exactamente a una fila de dbo.Customers"): si la relación es obligatoria (una llave con alguna columna que acepta NULL es opcional, porque SQL Server no comprueba la llave en las filas donde alguna de sus columnas es NULL), cuántas filas pueden apuntar a una misma fila y qué hacen sus acciones `ON DELETE` y `ON UPDATE`. La etiqueta de una relación en el lienzo muestra además qué ocurre al borrar una fila referenciada.
+  - La lectura es todo o nada: lo que SchemaCraft no puede leer entero se muestra como SQL, nunca como una frase a medias, y las frases solo afirman lo que SQL Server hace cumplir al escribir los valores; las comparaciones de texto llevan una nota sobre la intercalación de la columna. El SQL queda a un clic, con un botón para copiarlo en la aplicación: la definición almacenada de un `CHECK` o, para una llave, una sentencia generada a partir del catálogo; una llave hacia una tabla no visible no tiene SQL.
+  - Señalar una regla con el puntero o con el teclado resalta sus columnas en las tarjetas y en el panel y, si es una llave, su relación en el lienzo, sin cambiar la selección; el visor HTML hace lo mismo sobre el diagrama exportado.
+  - Las relaciones se dibujan en la notación estándar de pata de gallo, en el lienzo y en todas las exportaciones: en la tabla que referencia, una pata de gallo, o cero o uno para una llave uno a uno; en la tabla referenciada, una barra, o una barra y un círculo (cero o uno) cuando alguna columna de la llave acepta NULL. Los diagramas y las exportaciones existentes cambian de aspecto.
 
 ---
 
@@ -154,7 +187,7 @@ Se prohíben expresamente exportaciones en múltiples páginas cortadas que requ
 - [ ] Se conecta a SQL Server usando tanto SQL Server Authentication como Windows Authentication.
 - [ ] Extrae esquemas completos con PKs, FKs y tipos de datos nativos.
 - [ ] Permite ocultar/mostrar tablas manualmente y aislar vecindarios relacionales.
-- [ ] Ofrece al menos 3 modos de visualización (Compacta, Claves, Completa).
+- [ ] Ofrece al menos 3 niveles de detalle (Compacto, Claves, Completo).
 - [ ] Ofrece al menos 2 layouts automáticos (Jerárquico y Orgánico) más posicionamiento manual.
 - [ ] Guarda el proyecto en `.scraft` y se vuelve a abrir instantáneamente sin conexión a la BD.
 - [ ] Permite refrescar el esquema contra la BD preservando las coordenadas del diagrama.
@@ -169,3 +202,7 @@ Se prohíben expresamente exportaciones en múltiples páginas cortadas que requ
 - **2026-10-13**: Se añade el requisito no funcional 4 (Experiencia de Usuario) y su criterio de aceptación, acordados al cierre del Paso 1 de construcción.
 - **2026-10-13**: Se añaden el historial de conexiones recientes (3.1) y los proyectos recientes (3.6), acordados al planificar el Paso 3.
 - **2026-10-15**: Se precisa en 2.1 que el ejecutable portable usa el runtime WebView2 de Windows, como ya hace la versión 1.0.0.
+- **2026-10-15**: Se crea la sección 3.8 para las ampliaciones de la versión 1.1 y se añade su primera parte: el acceso parcial explicado (comprobación de permisos, informe de acceso) y el formato `.scraft` 2 con lectura compatible hacia adelante.
+- **2026-10-16**: Se añade a 3.8 la segunda parte de la versión 1.1: secciones por esquema y tipo en el panel de entidades, y vistas diferenciadas con etiqueta, icono y color propios en el lienzo, la paleta de comandos y todas las exportaciones. 3.4 pasa a llamarse "Niveles de Detalle del Diagrama" y 3.4 y 3.7 dejan de usar "vista" para los niveles de detalle, porque en la interfaz esa palabra nombra únicamente una vista de base de datos.
+- **2026-10-16**: Se añade a 3.8 la tercera parte de la versión 1.1: el panel Inspector, que comparte con el panel de detalle del visor HTML un único modelo de datos, los atajos de los niveles de detalle y los comandos de tema e idioma en la paleta. El criterio de la sección 5 sobre los niveles pasa a decir "niveles de detalle (Compacto, Claves, Completo)".
+- **2026-10-16**: Se añade a 3.8 la cuarta parte de la versión 1.1: las reglas legibles (restricciones `CHECK` y llaves foráneas explicadas en frases en inglés y español, con sus columnas resaltadas al señalarlas y el SQL a un clic, también en el visor HTML), el registro de si cada `CHECK` está habilitada y la notación estándar de pata de gallo en el lienzo y en todas las exportaciones.

@@ -1,6 +1,12 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 
-import type { Project, ProjectContent, SchemaDiff, SchemaSnapshot } from "@/shared/contracts";
+import type {
+  OpenedProject,
+  Project,
+  ProjectContent,
+  SchemaDiff,
+  SchemaSnapshot,
+} from "@/shared/contracts";
 
 import { createBackendResolver } from "./backendResolver";
 import { invokeCommand } from "./invokeCommand";
@@ -15,7 +21,11 @@ export interface ProjectBackend {
   pickProjectToOpen(labels: FileDialogLabels): Promise<string | null>;
   /** Lets the user choose where to save; `null` when the dialog is cancelled. */
   pickProjectToSave(labels: FileDialogLabels, suggestedFileName: string): Promise<string | null>;
-  readProject(path: string): Promise<Project>;
+  /**
+   * Reads a project file, upgraded to the current format when it is older. A file of a newer
+   * format that allows older readers comes back read-only.
+   */
+  readProject(path: string): Promise<OpenedProject>;
   writeProject(path: string, content: ProjectContent): Promise<Project>;
   computeSchemaDiff(previous: SchemaSnapshot, current: SchemaSnapshot): Promise<SchemaDiff>;
   refreshProjectContent(content: ProjectContent, snapshot: SchemaSnapshot): Promise<ProjectContent>;

@@ -1,0 +1,238 @@
+.section {
+  padding: var(--space-3) var(--space-4) 0;
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+/* The one honest line of an empty section, and what a full one may still be missing. */
+.note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+/* What the rules of a section need said once: how patterns read, collation, where words come from. */
+.ruleNote {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.secondary {
+  color: var(--color-text-secondary);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.table th {
+  padding: 0 var(--space-2) var(--space-1) 0;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: var(--space-1) var(--space-2) var(--space-1) 0;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+  line-height: 1.4;
+}
+
+.table th:last-child,
+.table td:last-child {
+  padding-right: 0;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/*
+ * A column of the rule pointed at: the tint, bar and accent name of its row on the canvas card.
+ * Shadows carry the tint and the bar past the row's ends, so nothing in the table moves.
+ */
+.ruleRow td {
+  background: var(--color-accent-subtle);
+}
+
+.ruleRow td:first-child {
+  box-shadow:
+    -4px 0 0 var(--color-accent-subtle),
+    -6px 0 0 var(--color-accent);
+}
+
+.ruleRow td:last-child {
+  box-shadow: 4px 0 0 var(--color-accent-subtle);
+}
+
+.ruleRow .nameCell > .mono {
+  color: var(--color-accent-text);
+}
+
+/* Long identifiers and types break anywhere rather than widen the table past the panel. */
+.nameCell,
+.typeCell {
+  overflow-wrap: anywhere;
+}
+
+.typeCell,
+.nullableCell {
+  color: var(--color-text-secondary);
+}
+
+.subLine {
+  margin-top: 2px;
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+.item {
+  padding: var(--space-1) 0 var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.item:last-child {
+  border-bottom: 0;
+}
+
+.itemHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* The same tones as the viewer's badges: keys on the warning pair, links on the accent pair. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 15px;
+  margin-left: var(--space-1);
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  white-space: nowrap;
+}
+
+.badgeKey {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning-text);
+}
+
+.badgeLink {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-text);
+}
+
+/* A fact the capture could not vouch for: marked, with its reason one hover or focus away. */
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-text-secondary);
+}
+
+.state[title],
+.state[tabindex] {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+
+.stateIcon {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+
+.valueRow {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-2);
+}
+
+/* Links read as links: the accent text colour, underlined, in the panel's own type sizes. */
+.why,
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent-text);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.why:hover,
+.link:hover {
+  text-decoration-thickness: 2px;
+}
+
+.why {
+  font-size: var(--text-sm);
+}
+
+.link {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.hint {
+  margin-top: 2px;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+}

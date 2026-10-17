@@ -1,4 +1,4 @@
-import { Columns3, CornerDownLeft, Search, Table2 } from "lucide-react";
+import { CornerDownLeft, Glasses, Search, Table2 } from "lucide-react";
 import { Dialog, VisuallyHidden } from "radix-ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -6,6 +6,7 @@ import { formatShortcut, isApplePlatform } from "@/app/actions/shortcut";
 import type { AppActions } from "@/app/actions/useAppActions";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { useProjectStore } from "@/features/project/projectStore";
+import { listEntities } from "@/features/schema/entities";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { Kbd } from "@/shared/ui/Kbd";
 import { classNames } from "@/shared/ui/classNames";
@@ -79,25 +80,10 @@ function PaletteSearch({ actions, onDone }: PaletteSearchProps) {
       })),
     [actions.list, t],
   );
-  const paletteEntities = useMemo<PaletteEntity[]>(() => {
-    if (snapshot === null) {
-      return [];
-    }
-    return [
-      ...snapshot.tables.map((table) => ({
-        key: `${table.name.schema}.${table.name.name}`,
-        schema: table.name.schema,
-        name: table.name.name,
-        kind: "table" as const,
-      })),
-      ...snapshot.views.map((view) => ({
-        key: `${view.name.schema}.${view.name.name}`,
-        schema: view.name.schema,
-        name: view.name.name,
-        kind: "view" as const,
-      })),
-    ];
-  }, [snapshot]);
+  const paletteEntities = useMemo<PaletteEntity[]>(
+    () => (snapshot === null ? [] : listEntities(snapshot)),
+    [snapshot],
+  );
   const results = useMemo(
     () => searchPalette(query, paletteActions, paletteEntities),
     [query, paletteActions, paletteEntities],
@@ -177,15 +163,27 @@ function PaletteSearch({ actions, onDone }: PaletteSearchProps) {
                   {result.action.shortcut ? <Kbd>{result.action.shortcut}</Kbd> : null}
                 </>
               ) : (
+                // The kind is written out, so a view is told apart with the colour alone.
                 <>
                   {result.entity.kind === "view" ? (
-                    <Columns3 className={styles.itemIcon} aria-hidden="true" />
+                    <Glasses
+                      className={classNames(styles.itemIcon, styles.viewIcon)}
+                      aria-hidden="true"
+                    />
                   ) : (
                     <Table2 className={styles.itemIcon} aria-hidden="true" />
                   )}
                   <span className={styles.itemLabel}>
                     <span className={styles.schema}>{result.entity.schema}.</span>
                     {result.entity.name}
+                  </span>
+                  <span
+                    className={classNames(
+                      styles.kind,
+                      result.entity.kind === "view" && styles.kindView,
+                    )}
+                  >
+                    {t(result.entity.kind === "view" ? "entity.view" : "entity.table")}
                   </span>
                   <span className={styles.hint}>{t("palette.centerOn")}</span>
                 </>

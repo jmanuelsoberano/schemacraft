@@ -16,7 +16,7 @@
 }
 
 .inverse {
-  border-color: oklch(100% 0 0 / 0.22);
-  background: oklch(100% 0 0 / 0.12);
+  border-color: var(--color-on-accent-border);
+  background: var(--color-on-accent-subtle);
   color: inherit;
 }

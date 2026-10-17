@@ -8,8 +8,9 @@ import {
   attachmentY,
   describeEntities,
   effectiveDetailLevel,
-  entityKey,
+  isCollapsible,
   nodeHeight,
+  relationOffsets,
   rowsFor,
 } from "./geometry";
 
@@ -95,7 +96,33 @@ describe("describeEntities", () => {
     expect([...(orders?.primaryKeyColumns ?? [])]).toEqual(["OrderId"]);
     expect([...(orders?.foreignKeyColumns ?? [])]).toEqual(["CustomerId"]);
     expect(entities.get("sales.RecentOrders")?.kind).toBe("view");
-    expect(entityKey({ schema: "a", name: "b" })).toBe("a.b");
+  });
+
+  it("keeps the badge of a key to a table the login cannot see", () => {
+    const entities = describeEntities({
+      ...snapshot,
+      foreignKeysToInvisibleTables: [
+        {
+          name: "FK_Orders_Regions",
+          referencingTable: { schema: "sales", name: "Orders" },
+          columns: ["PlacedAt"],
+          onDelete: "noAction",
+          onUpdate: "noAction",
+          isEnabled: true,
+        },
+      ],
+    });
+    const orders = entities.get("sales.Orders");
+    if (orders === undefined) {
+      throw new Error("fixture entity expected");
+    }
+
+    expect([...orders.foreignKeyColumns]).toEqual(["CustomerId", "PlacedAt"]);
+    expect(rowsFor(orders, "keys", false).map((row) => `${row.column.name}:${row.role}`)).toEqual([
+      "OrderId:primary",
+      "CustomerId:foreign",
+      "PlacedAt:foreign",
+    ]);
   });
 });
 
@@ -127,9 +154,61 @@ describe("rowsFor", () => {
     expect(attachmentY([], "OrderId")).toBe(HEADER_HEIGHT / 2);
   });
 
+  it("attaches a relationship at the first column pair of each end", () => {
+    const customers = entities.get("dbo.Customers");
+    const foreignKey = snapshot.foreignKeys[0];
+    if (customers === undefined || foreignKey === undefined) {
+      throw new Error("fixture expected");
+    }
+    const orderRows = rowsFor(orders, "keys", false);
+    const customerRows = rowsFor(customers, "keys", false);
+    expect(relationOffsets(foreignKey, orderRows, customerRows)).toEqual([
+      attachmentY(orderRows, "CustomerId"),
+      attachmentY(customerRows, "CustomerId"),
+    ]);
+    // Collapsed or compact ends attach at the middle of the header.
+    expect(relationOffsets(foreignKey, [], [])).toEqual([HEADER_HEIGHT / 2, HEADER_HEIGHT / 2]);
+  });
+
   it("falls back to compact nodes when zoomed out", () => {
     expect(effectiveDetailLevel("full", 0.3)).toBe("compact");
     expect(effectiveDetailLevel("full", 0.4)).toBe("full");
     expect(effectiveDetailLevel("keys", 1)).toBe("keys");
+  });
+});
+
+describe("isCollapsible", () => {
+  const entities = describeEntities(snapshot);
+  const orders = entities.get("sales.Orders");
+  const recentOrders = entities.get("sales.RecentOrders");
+  const foreignKey = snapshot.foreignKeys[0];
+  if (orders === undefined || recentOrders === undefined || foreignKey === undefined) {
+    throw new Error("fixture expected");
+  }
+
+  it("draws a view at the keys level as a header-only card of the usual height", () => {
+    const rows = rowsFor(recentOrders, "keys", false);
+    expect(rows).toEqual([]);
+    expect(nodeHeight(rows.length)).toBe(HEADER_HEIGHT);
+    // With no rows, a relationship meets the card at the middle of its header.
+    expect(relationOffsets(foreignKey, rows, rows)).toEqual([HEADER_HEIGHT / 2, HEADER_HEIGHT / 2]);
+    expect(rowsFor(recentOrders, "full", false)).toHaveLength(1);
+  });
+
+  it("offers the collapse toggle only where there are rows to hide", () => {
+    expect(isCollapsible(recentOrders, "keys")).toBe(false);
+    expect(isCollapsible(recentOrders, "full")).toBe(true);
+    expect(isCollapsible(orders, "keys")).toBe(true);
+    expect(isCollapsible(orders, "full")).toBe(true);
+    // Nothing folds at compact, nor a table without keys at the keys level.
+    expect(isCollapsible(orders, "compact")).toBe(false);
+    expect(isCollapsible(recentOrders, "compact")).toBe(false);
+    const keyless = {
+      ...orders,
+      primaryKeyColumns: new Set<string>(),
+      foreignKeyColumns: new Set<string>(),
+    };
+    expect(isCollapsible(keyless, "keys")).toBe(false);
+    expect(isCollapsible(keyless, "full")).toBe(true);
   });
 });

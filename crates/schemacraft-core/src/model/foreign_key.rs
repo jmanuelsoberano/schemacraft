@@ -53,6 +53,29 @@ pub struct ForeignKey {
     pub is_enabled: bool,
 }
 
+/// Foreign key from a visible table to a table the login cannot see.
+///
+/// The server hides the name and the columns of the referenced table, so the key cannot be an
+/// edge of the diagram. What it does reveal is kept, because a key that silently vanished would
+/// say the relationship does not exist.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "model/")]
+pub struct ForeignKeyToInvisibleTable {
+    /// Constraint name, e.g. `FK_Orders_Regions`.
+    pub name: String,
+    /// Table that holds the foreign key columns.
+    pub referencing_table: QualifiedName,
+    /// Referencing columns in key order.
+    pub columns: Vec<String>,
+    /// Action on delete of the referenced row.
+    pub on_delete: ReferentialAction,
+    /// Action on update of the referenced key.
+    pub on_update: ReferentialAction,
+    /// `false` when the constraint exists but is disabled (`NOCHECK`) in the database.
+    pub is_enabled: bool,
+}
+
 impl ForeignKey {
     /// Whether the key points back to its own table, e.g. `Employees.ManagerId`.
     pub fn is_self_referencing(&self) -> bool {

@@ -1,10 +1,11 @@
 //! Turns catalog rows into a [`SchemaSnapshot`]. Pure and deterministic, so it is unit tested
 //! without a database.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Utc};
 
+use super::bound_defaults::bound_default_expression;
 use super::catalog::{
     CatalogRows, CheckConstraintRow, ColumnRow, ForeignKeyColumnRow, ForeignKeyRow, IndexColumnRow,
     IndexRow, ObjectKind, ObjectRow,
@@ -12,8 +13,9 @@ use super::catalog::{
 use super::data_types::{CatalogTypeInformation, data_type_from_catalog};
 use crate::inspectors::InspectionOptions;
 use crate::model::{
-    CheckConstraint, Column, ForeignKey, ForeignKeyColumnPair, Index, IndexKind, PrimaryKey,
-    QualifiedName, ReferentialAction, SchemaSnapshot, Table, View,
+    AccessCounts, AccessProbe, AccessProfile, CaptureScope, CheckConstraint, Column, Definition,
+    ForeignKey, ForeignKeyColumnPair, ForeignKeyToInvisibleTable, Index, IndexKind, PrimaryKey,
+    QualifiedName, ReferentialAction, SchemaSnapshot, Table, UnknownFields, View,
 };
 
 const CLUSTERED_INDEX_TYPE: u8 = 1;
@@ -28,12 +30,17 @@ pub(super) struct SnapshotIdentity {
     pub extracted_at: DateTime<Utc>,
 }
 
-/// Builds the snapshot, applying the schema and view filters of `options`.
+/// Builds the snapshot, applying the schema and view filters of `options`, and records what the
+/// login could see: the `probe` it was read with and what it found.
 ///
-/// Foreign keys whose other end is outside the selection are dropped: a relationship edge
-/// needs both tables in the diagram.
+/// A text the login cannot read becomes [`Definition::NotVisible`], never an empty text. A
+/// foreign key whose referenced table is visible but outside the selection is dropped: a
+/// relationship edge needs both tables in the diagram. One whose referenced table the login
+/// cannot see is kept in [`SchemaSnapshot::foreign_keys_to_invisible_tables`], because dropping
+/// it would say the relationship does not exist.
 pub(super) fn assemble_snapshot(
     rows: &CatalogRows,
+    probe: AccessProbe,
     options: &InspectionOptions,
     identity: SnapshotIdentity,
 ) -> SchemaSnapshot {
@@ -90,20 +97,36 @@ pub(super) fn assemble_snapshot(
     tables.sort_by(|left, right| left.name.cmp(&right.name));
     views.sort_by(|left, right| left.name.cmp(&right.name));
 
-    let mut foreign_keys =
-        assemble_foreign_keys(&rows.foreign_keys, &rows.foreign_key_columns, &included);
+    let AssembledForeignKeys {
+        mut foreign_keys,
+        mut to_invisible_tables,
+    } = assemble_foreign_keys(rows, &included);
     foreign_keys.sort_by(|left, right| {
         (&left.referencing_table, &left.name).cmp(&(&right.referencing_table, &right.name))
     });
+    to_invisible_tables.sort_by(|left, right| {
+        (&left.referencing_table, &left.name).cmp(&(&right.referencing_table, &right.name))
+    });
 
-    SchemaSnapshot {
+    let mut snapshot = SchemaSnapshot {
         database_name: identity.database_name,
         server_version: identity.server_version,
         extracted_at: identity.extracted_at,
+        access: None,
         tables,
         views,
         foreign_keys,
-    }
+        foreign_keys_to_invisible_tables: to_invisible_tables,
+        carried_over: Vec::new(),
+        unknown: UnknownFields::new(),
+    };
+    let counts = AccessCounts::of(&snapshot);
+    snapshot.access = Some(AccessProfile::observed(
+        probe,
+        CaptureScope::from(options),
+        counts,
+    ));
+    snapshot
 }
 
 struct IncludedObject {
@@ -175,10 +198,24 @@ fn column_from_row(row: &ColumnRow) -> Column {
             scale: row.scale,
         }),
         is_nullable: row.is_nullable,
-        default_expression: row.default_definition.clone(),
+        default_expression: default_of(row),
         is_identity: row.is_identity,
         is_computed: row.is_computed,
     }
+}
+
+/// The default of a column: none, its text, or the fact that one exists whose text the login
+/// cannot read.
+fn default_of(row: &ColumnRow) -> Option<Definition> {
+    if !row.has_default {
+        return None;
+    }
+    let text = row.default_definition.clone().or_else(|| {
+        row.bound_default_definition
+            .as_deref()
+            .map(bound_default_expression)
+    });
+    Some(text.map_or(Definition::NotVisible, Definition::readable))
 }
 
 fn group_index_columns(rows: &[IndexColumnRow]) -> BTreeMap<(i32, i32), Vec<&IndexColumnRow>> {
@@ -229,52 +266,105 @@ fn group_check_constraints(
             .or_default()
             .push(CheckConstraint {
                 name: row.constraint_name.clone(),
-                expression: row.definition.clone(),
+                expression: row
+                    .definition
+                    .clone()
+                    .map_or(Definition::NotVisible, Definition::readable),
+                is_enabled: Some(!row.is_disabled),
             });
     }
     grouped
 }
 
+/// Foreign keys of the included tables, split by whether the login sees the referenced table.
+struct AssembledForeignKeys {
+    foreign_keys: Vec<ForeignKey>,
+    to_invisible_tables: Vec<ForeignKeyToInvisibleTable>,
+}
+
 fn assemble_foreign_keys(
-    rows: &[ForeignKeyRow],
-    column_rows: &[ForeignKeyColumnRow],
+    rows: &CatalogRows,
     included: &BTreeMap<i32, IncludedObject>,
-) -> Vec<ForeignKey> {
+) -> AssembledForeignKeys {
+    let visible_objects: BTreeSet<i32> = rows.objects.iter().map(|row| row.object_id).collect();
     let mut pairs: BTreeMap<i32, Vec<&ForeignKeyColumnRow>> = BTreeMap::new();
-    for row in column_rows {
+    for row in &rows.foreign_key_columns {
         pairs.entry(row.constraint_object_id).or_default().push(row);
     }
-    for rows in pairs.values_mut() {
-        rows.sort_by_key(|row| row.constraint_column_id);
+    for key_columns in pairs.values_mut() {
+        key_columns.sort_by_key(|row| row.constraint_column_id);
     }
 
-    rows.iter()
-        .filter_map(|row| {
-            let referencing = included.get(&row.parent_object_id)?;
-            let referenced = included.get(&row.referenced_object_id)?;
-            let column_pairs = pairs
-                .get(&row.object_id)
-                .map(|rows| {
-                    rows.iter()
-                        .map(|pair| ForeignKeyColumnPair {
-                            referencing_column: pair.referencing_column.clone(),
-                            referenced_column: pair.referenced_column.clone(),
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
+    let mut assembled = AssembledForeignKeys {
+        foreign_keys: Vec::new(),
+        to_invisible_tables: Vec::new(),
+    };
+    for row in &rows.foreign_keys {
+        // Foreign key rows follow their referencing table, so a key of a table the login
+        // cannot see is never listed.
+        let Some(referencing) = included.get(&row.parent_object_id) else {
+            continue;
+        };
+        let column_rows = pairs.get(&row.object_id).map_or(&[][..], Vec::as_slice);
+        match included.get(&row.referenced_object_id) {
+            Some(referenced) => match column_pairs(column_rows) {
+                Some(column_pairs) => assembled.foreign_keys.push(ForeignKey {
+                    name: row.constraint_name.clone(),
+                    referencing_table: referencing.name.clone(),
+                    referenced_table: referenced.name.clone(),
+                    column_pairs,
+                    on_delete: referential_action(row.delete_referential_action),
+                    on_update: referential_action(row.update_referential_action),
+                    is_enabled: !row.is_disabled,
+                }),
+                // A referenced column the login cannot see leaves the edge without an end, so
+                // the key is kept the way keys to invisible tables are.
+                None => assembled.to_invisible_tables.push(to_invisible_table(
+                    row,
+                    referencing,
+                    column_rows,
+                )),
+            },
+            // Visible but outside the selection: the edge has no other end in the diagram.
+            None if visible_objects.contains(&row.referenced_object_id) => {}
+            None => assembled.to_invisible_tables.push(to_invisible_table(
+                row,
+                referencing,
+                column_rows,
+            )),
+        }
+    }
+    assembled
+}
 
-            Some(ForeignKey {
-                name: row.constraint_name.clone(),
-                referencing_table: referencing.name.clone(),
-                referenced_table: referenced.name.clone(),
-                column_pairs,
-                on_delete: referential_action(row.delete_referential_action),
-                on_update: referential_action(row.update_referential_action),
-                is_enabled: !row.is_disabled,
+/// The column pairs of a key, or `None` when a referenced column is not visible.
+fn column_pairs(rows: &[&ForeignKeyColumnRow]) -> Option<Vec<ForeignKeyColumnPair>> {
+    rows.iter()
+        .map(|pair| {
+            Some(ForeignKeyColumnPair {
+                referencing_column: pair.referencing_column.clone(),
+                referenced_column: pair.referenced_column.clone()?,
             })
         })
         .collect()
+}
+
+fn to_invisible_table(
+    row: &ForeignKeyRow,
+    referencing: &IncludedObject,
+    column_rows: &[&ForeignKeyColumnRow],
+) -> ForeignKeyToInvisibleTable {
+    ForeignKeyToInvisibleTable {
+        name: row.constraint_name.clone(),
+        referencing_table: referencing.name.clone(),
+        columns: column_rows
+            .iter()
+            .map(|pair| pair.referencing_column.clone())
+            .collect(),
+        on_delete: referential_action(row.delete_referential_action),
+        on_update: referential_action(row.update_referential_action),
+        is_enabled: !row.is_disabled,
+    }
 }
 
 /// Maps `sys.foreign_keys.*_referential_action` codes.
@@ -304,12 +394,35 @@ mod tests {
         CatalogRows, CheckConstraintRow, ColumnRow, ForeignKeyColumnRow, ForeignKeyRow,
         IndexColumnRow, IndexRow, ObjectKind, ObjectRow,
     };
-    use crate::model::{IndexKind, QualifiedName, ReferentialAction, SchemaSnapshot};
+    use crate::model::{
+        AccessCounts, AccessLevel, AccessProbe, CaptureScope, Completeness, Definition, IndexKind,
+        QualifiedName, ReferentialAction, SchemaAccess, SchemaSnapshot,
+    };
 
     const CUSTOMERS: i32 = 100;
     const ORDERS: i32 = 200;
     const EMPLOYEES: i32 = 300;
     const RECENT_ORDERS_VIEW: i32 = 400;
+    /// A table the login cannot see: referenced by keys, absent from the object rows.
+    const REGIONS: i32 = 500;
+
+    fn probe(can_read_definitions: bool) -> AccessProbe {
+        let schema = |name: &str| SchemaAccess {
+            name: name.to_string(),
+            can_read_definitions,
+            can_read_data: true,
+            is_denied: false,
+            has_visible_objects: true,
+        };
+        AccessProbe {
+            can_read_definitions,
+            can_read_data: true,
+            explicit_denials: Some(0),
+            sees_objects: true,
+            schemas: vec![schema("dbo"), schema("hr"), schema("sales")],
+            database_user: Some("reporting".to_string()),
+        }
+    }
 
     fn object(object_id: i32, schema: &str, name: &str, kind: ObjectKind) -> ObjectRow {
         ObjectRow {
@@ -333,7 +446,9 @@ mod tests {
             is_nullable: false,
             is_identity: false,
             is_computed: false,
+            has_default: false,
             default_definition: None,
+            bound_default_definition: None,
         }
     }
 
@@ -385,6 +500,7 @@ mod tests {
                 column(ORDERS, 1, "OrderId", "int"),
                 column(ORDERS, 2, "CustomerId", "int"),
                 column(ORDERS, 3, "LineNumber", "int"),
+                column(ORDERS, 4, "RegionId", "int"),
                 column(EMPLOYEES, 1, "EmployeeId", "int"),
                 column(EMPLOYEES, 2, "ManagerId", "int"),
                 column(RECENT_ORDERS_VIEW, 1, "OrderId", "int"),
@@ -428,32 +544,58 @@ mod tests {
                     update_referential_action: 3,
                     is_disabled: true,
                 },
+                ForeignKeyRow {
+                    object_id: 1002,
+                    constraint_name: "FK_Orders_Regions".to_string(),
+                    parent_object_id: ORDERS,
+                    referenced_object_id: REGIONS,
+                    delete_referential_action: 0,
+                    update_referential_action: 1,
+                    is_disabled: false,
+                },
             ],
             foreign_key_columns: vec![
                 ForeignKeyColumnRow {
                     constraint_object_id: 1000,
                     constraint_column_id: 1,
                     referencing_column: "CustomerId".to_string(),
-                    referenced_column: "CustomerId".to_string(),
+                    referenced_column: Some("CustomerId".to_string()),
                 },
                 ForeignKeyColumnRow {
                     constraint_object_id: 1001,
                     constraint_column_id: 1,
                     referencing_column: "ManagerId".to_string(),
-                    referenced_column: "EmployeeId".to_string(),
+                    referenced_column: Some("EmployeeId".to_string()),
+                },
+                // The columns of a table the login cannot see are not visible either.
+                ForeignKeyColumnRow {
+                    constraint_object_id: 1002,
+                    constraint_column_id: 1,
+                    referencing_column: "RegionId".to_string(),
+                    referenced_column: None,
                 },
             ],
             check_constraints: vec![CheckConstraintRow {
                 parent_object_id: ORDERS,
                 constraint_name: "CK_Orders_LineNumber".to_string(),
-                definition: "([LineNumber]>(0))".to_string(),
+                definition: Some("([LineNumber]>(0))".to_string()),
+                is_disabled: false,
             }],
         }
     }
 
     fn assemble(options: &InspectionOptions) -> SchemaSnapshot {
+        assemble_with(&sample_rows(), probe(true), options)
+    }
+
+    fn assemble_with(
+        rows: &CatalogRows,
+        probe: AccessProbe,
+        options: &InspectionOptions,
+    ) -> SchemaSnapshot {
         assemble_snapshot(
-            &sample_rows(),
+            rows,
+            probe,
             options,
             SnapshotIdentity {
                 database_name: "Northwind".to_string(),
@@ -514,7 +656,11 @@ mod tests {
         assert!(!orders.indexes[0].is_clustered);
 
         assert_eq!(orders.check_constraints.len(), 1);
-        assert_eq!(orders.check_constraints[0].expression, "([LineNumber]>(0))");
+        assert_eq!(
+            orders.check_constraints[0].expression,
+            Definition::readable("([LineNumber]>(0))")
+        );
+        assert_eq!(orders.check_constraints[0].is_enabled, Some(true));
 
         let customers = snapshot
             .table(&QualifiedName::new("dbo", "Customers"))
@@ -568,6 +714,160 @@ mod tests {
         assert_eq!(snapshot.views, []);
         // The Orders -> Customers key loses its referenced table and must not survive.
         assert_eq!(snapshot.foreign_keys, []);
+        // The key to a table nobody can see is not the filter's doing, so it stays.
+        let invisible: Vec<&str> = snapshot
+            .foreign_keys_to_invisible_tables
+            .iter()
+            .map(|key| key.name.as_str())
+            .collect();
+        assert_eq!(invisible, ["FK_Orders_Regions"]);
+    }
+
+    #[test]
+    fn keeps_foreign_keys_to_tables_the_login_cannot_see() {
+        let snapshot = assemble(&InspectionOptions::default());
+
+        let [regions] = snapshot.foreign_keys_to_invisible_tables.as_slice() else {
+            panic!(
+                "expected one key to an invisible table, got {:?}",
+                snapshot.foreign_keys_to_invisible_tables
+            );
+        };
+        assert_eq!(regions.name, "FK_Orders_Regions");
+        assert_eq!(
+            regions.referencing_table,
+            QualifiedName::new("sales", "Orders")
+        );
+        assert_eq!(regions.columns, ["RegionId"]);
+        assert_eq!(regions.on_delete, ReferentialAction::NoAction);
+        assert_eq!(regions.on_update, ReferentialAction::Cascade);
+        assert!(regions.is_enabled);
+        assert!(snapshot.is_foreign_key_column(&QualifiedName::new("sales", "Orders"), "RegionId"));
+    }
+
+    #[test]
+    fn a_key_whose_referenced_columns_are_hidden_is_kept_without_an_edge() {
+        let mut rows = sample_rows();
+        rows.foreign_key_columns[0].referenced_column = None;
+
+        let snapshot = assemble_with(&rows, probe(false), &InspectionOptions::default());
+
+        assert!(
+            !snapshot
+                .foreign_keys
+                .iter()
+                .any(|key| key.name == "FK_Orders_Customers")
+        );
+        assert!(
+            snapshot
+                .foreign_keys_to_invisible_tables
+                .iter()
+                .any(|key| key.name == "FK_Orders_Customers" && key.columns == ["CustomerId"])
+        );
+    }
+
+    #[test]
+    fn a_hidden_check_text_is_not_visible_and_never_empty() {
+        let mut rows = sample_rows();
+        rows.check_constraints[0].definition = None;
+        rows.check_constraints[0].is_disabled = true;
+
+        let snapshot = assemble_with(&rows, probe(false), &InspectionOptions::default());
+        let orders = snapshot
+            .table(&QualifiedName::new("sales", "Orders"))
+            .unwrap();
+
+        assert_eq!(
+            orders.check_constraints[0].expression,
+            Definition::NotVisible
+        );
+        assert_eq!(orders.check_constraints[0].is_enabled, Some(false));
+    }
+
+    #[test]
+    fn defaults_tell_a_hidden_text_from_no_default() {
+        let mut rows = sample_rows();
+        let position = |rows: &CatalogRows, object_id: i32, name: &str| {
+            rows.columns
+                .iter()
+                .position(|row| row.object_id == object_id && row.column_name == name)
+                .unwrap()
+        };
+        let hidden = position(&rows, CUSTOMERS, "Name");
+        rows.columns[hidden].has_default = true;
+        let readable = position(&rows, ORDERS, "LineNumber");
+        rows.columns[readable].has_default = true;
+        rows.columns[readable].default_definition = Some("((1))".to_string());
+        let bound = position(&rows, EMPLOYEES, "ManagerId");
+        rows.columns[bound].has_default = true;
+        rows.columns[bound].bound_default_definition =
+            Some("CREATE DEFAULT dbo.NoManager AS 0;\r\n".to_string());
+
+        let snapshot = assemble_with(&rows, probe(false), &InspectionOptions::default());
+        let default_of = |table: &str, schema: &str, column: &str| {
+            snapshot
+                .table(&QualifiedName::new(schema, table))
+                .and_then(|table| table.column(column))
+                .unwrap()
+                .default_expression
+                .clone()
+        };
+
+        assert_eq!(
+            default_of("Customers", "dbo", "Name"),
+            Some(Definition::NotVisible)
+        );
+        assert_eq!(default_of("Customers", "dbo", "CustomerId"), None);
+        assert_eq!(
+            default_of("Orders", "sales", "LineNumber"),
+            Some(Definition::readable("((1))"))
+        );
+        assert_eq!(
+            default_of("Employees", "hr", "ManagerId"),
+            Some(Definition::readable("0"))
+        );
+    }
+
+    #[test]
+    fn records_what_the_login_could_see() {
+        let mut rows = sample_rows();
+        rows.check_constraints[0].definition = None;
+        rows.columns[0].has_default = true;
+        let options = InspectionOptions {
+            schemas: vec!["dbo".to_string(), "sales".to_string()],
+            include_views: true,
+        };
+
+        let snapshot = assemble_with(&rows, probe(false), &options);
+        let access = snapshot.access.as_ref().unwrap();
+
+        assert_eq!(
+            access.counts,
+            AccessCounts {
+                definitions: 2,
+                definitions_not_visible: 2,
+                foreign_keys_to_invisible_tables: 1,
+            }
+        );
+        assert_eq!(access.scope, CaptureScope::from(&options));
+        assert_eq!(access.level, AccessLevel::Partial);
+        assert_eq!(access.coverage.objects, Completeness::Partial);
+        assert_eq!(access.coverage.definitions, Completeness::NotAvailable);
+        assert_eq!(access.probe, probe(false));
+    }
+
+    #[test]
+    fn a_login_that_reads_everything_gets_a_full_profile() {
+        let mut rows = sample_rows();
+        rows.foreign_keys
+            .retain(|row| row.referenced_object_id != REGIONS);
+
+        let snapshot = assemble_with(&rows, probe(true), &InspectionOptions::default());
+        let access = snapshot.access.as_ref().unwrap();
+
+        assert_eq!(access.level, AccessLevel::Full);
+        assert_eq!(access.counts.definitions, 1);
+        assert_eq!(snapshot.foreign_keys_to_invisible_tables, []);
     }
 
     #[test]
@@ -578,5 +878,6 @@ mod tests {
             snapshot.server_version.as_deref(),
             Some("Microsoft SQL Server 2022")
         );
+        assert_eq!(snapshot.carried_over, []);
     }
 }

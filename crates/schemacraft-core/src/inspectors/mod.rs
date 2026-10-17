@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 pub use error::{InspectorError, InspectorErrorKind};
 pub use progress::{InspectionProgress, InspectionStage, ProgressReporter, SilentProgress};
-pub use settings::{ConnectionSettings, InspectionOptions, ServerInformation};
+pub use settings::{ConnectionSettings, DatabaseDescription, InspectionOptions, ServerInformation};
 
 use crate::model::SchemaSnapshot;
 
@@ -26,6 +26,13 @@ use crate::model::SchemaSnapshot;
 /// Implementations own their connections and must be safe to share between tasks. Every method
 /// maps engine failures to [`InspectorError`], which carries enough structure for the UI to
 /// suggest a remedy.
+///
+/// A login may see only part of a database. Implementations never guess: they read what the
+/// login is allowed to see with one access probe, which [`describe_database`] reports before
+/// anything is read and [`inspect`] records in the snapshot it returns.
+///
+/// [`describe_database`]: DatabaseInspector::describe_database
+/// [`inspect`]: DatabaseInspector::inspect
 #[async_trait]
 pub trait DatabaseInspector: Send + Sync {
     /// Verifies that the server accepts the connection and returns its identity.
@@ -34,10 +41,11 @@ pub trait DatabaseInspector: Send + Sync {
     /// Online databases the login can access, excluding system databases.
     async fn list_databases(&self) -> Result<Vec<String>, InspectorError>;
 
-    /// User schemas of the configured database.
-    async fn list_schemas(&self) -> Result<Vec<String>, InspectorError>;
+    /// User schemas of the configured database and what the login is predicted to see there.
+    async fn describe_database(&self) -> Result<DatabaseDescription, InspectorError>;
 
-    /// Extracts a complete snapshot, reporting progress and stopping early when cancelled.
+    /// Extracts a snapshot of what the login can see, with its access profile, reporting
+    /// progress. Cancelling the token stops the work at any point, connecting included.
     async fn inspect(
         &self,
         options: &InspectionOptions,

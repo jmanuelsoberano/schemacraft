@@ -16,40 +16,43 @@ structure as an interactive map: layers, components, data stores, flows and how 
 ```
 schemacraft/
 ├── crates/schemacraft-core/   Rust library, free of Tauri: everything the app knows and does
-│   ├── src/model/             pure schema types (tables, columns, keys, snapshot)
-│   ├── src/inspectors/        DatabaseInspector strategy, errors, progress, SQL Server implementation
-│   ├── src/project/           .scraft documents, saved connections, canvas state
+│   ├── src/model/             pure schema types (tables, columns, keys, snapshot), access profile, carry-over
+│   ├── src/inspectors/        DatabaseInspector strategy, errors, progress, SQL Server implementation and access probe
+│   ├── src/project/           .scraft documents and their migrations, saved connections, canvas state
 │   ├── src/diff/              comparison of two snapshots behind "refresh from database"
 │   ├── src/preferences/       connection history and recent projects (per-user JSON file)
 │   ├── src/credentials/       CredentialStore strategy: Windows Credential Manager, memory
 │   ├── src/export/            SVG to PNG and PDF rendering with bundled fonts
 │   ├── src/fs.rs              atomic file writes shared by projects, preferences and exports
 │   ├── assets/fonts/          TTF fonts embedded in the exports
-│   └── tests/                 integration tests and SQL fixtures (run against a real server)
+│   └── tests/                 integration tests, SQL fixtures, golden CHECK forms and low-privilege logins (run against a real server)
 ├── src-tauri/                 Rust binary: Tauri host, IPC commands, job registry, logging, configuration
 ├── src/                       React + TypeScript frontend
 │   ├── app/                   composition root: shell, actions, palette, global styles, dev hooks
 │   │   ├── actions/           action registry, keyboard shortcuts, action buttons
 │   │   ├── palette/           command palette over the action registry
-│   │   ├── shell/             top bar, entities sidebar, diagram canvas, status bar, shell guards
-│   │   └── styles/            design tokens and base styles
+│   │   ├── shell/             top bar, status bar, welcome overlay, layout menu, shell guards, side-panel widths
+│   │   └── styles/            design tokens, base styles and the test that keeps every stylesheet on tokens
 │   ├── features/              one folder per product capability
 │   │   ├── about/             About dialog
-│   │   ├── canvas/            entity nodes, relation edges, layouts and their worker, geometry
+│   │   ├── access/            partial-access chip and bar, access report, GRANT script
+│   │   ├── canvas/            diagram canvas, entities panel, nodes, edges and markers, layouts and their worker, geometry, focus between canvas and Inspector
 │   │   ├── connection/        connection dialog, history, flow store, progress, change review
-│   │   ├── export/            export dialog and store, SVG renderer, standalone HTML packaging
+│   │   ├── export/            export dialog and store, SVG renderer, standalone HTML packaging with the viewer's catalogue subset
+│   │   ├── inspector/         Inspector panel: the selected entity's details beside the canvas, its rules in words with their SQL
 │   │   ├── preferences/       mirror of the preferences file: history and recent projects
 │   │   ├── project/           open project store, open/save flows, unsaved-changes guard, undo
-│   │   └── schema/            entity list helpers and data type formatting
+│   │   └── schema/            entity identity and kinds, entity lists, data types, expression texts, coverage, object details view-model
+│   │       └── rules/         readable rules: the CHECK tokenizer, parser and reader, the foreign key reader, sentences as data
 │   ├── shared/                cross-cutting modules
 │   │   ├── brand/             logo and author credits
 │   │   ├── contracts/         TypeScript types generated from Rust (ts-rs)
 │   │   ├── errors/            title, hint and remedy for every error kind
-│   │   ├── i18n/              message catalogues and translation hook
+│   │   ├── i18n/              message catalogues with the rules sub-catalogue, catalogue translator (shared with the viewer), translation hook
 │   │   ├── ipc/               the only door to Tauri: commands, dialogs, window, runtime; preview backends
-│   │   ├── settings/          per-window UI settings (theme, language, sidebar)
-│   │   └── ui/                accessible UI primitives (Radix based)
-│   └── viewer/                standalone viewer embedded in exported HTML files
+│   │   ├── settings/          per-window UI settings (theme, language, panel widths, closed access notices)
+│   │   └── ui/                accessible UI primitives (Radix based), the resizer of both side panels
+│   └── viewer/                standalone viewer embedded in exported HTML files, drawing the shared details view-model and its rules
 ├── assets/brand/              source artwork for the application icon
 ├── scripts/                   SQL Server container, font preparation, smoke test, page check, CI change filter
 ├── docs/                      PRD, decision records, UX principles, release checklist
@@ -59,8 +62,9 @@ schemacraft/
 
 Dependencies only point inwards: `src-tauri` depends on `schemacraft-core`, never the other way
 round. In the frontend, `app/` composes `features/`, which build on `shared/`; `shared/` never
-imports from `app/` or `features/`, and only `src/shared/ipc` imports the Tauri API, for commands,
-dialogs and the window alike. ESLint enforces these rules (ADR-031).
+imports from `app/` or `features/`, `features/schema` imports only `shared/` and itself, and only
+`src/shared/ipc` imports the Tauri API, for commands, dialogs and the window alike. ESLint
+enforces these rules (ADR-031, ADR-037).
 
 ## Decisions
 
@@ -120,6 +124,15 @@ All colours, type sizes, spacing, radii and motion live as custom properties in
 `src/app/styles/tokens.css`. Colours are declared once with `light-dark()`; the theme is chosen via
 `color-scheme` on the root element (`system`, `light` or `dark`). Components use CSS Modules.
 
+Since 1.1 no stylesheet other than `tokens.css` writes a theme colour. The tones that components once
+declared for themselves are tokens: the subtle and border colours of the four alert tones, the
+overlays, the danger ring, the highlights on the accent colour and the brand glow, together with
+the view tokens (`--color-view`, `--color-view-subtle`, `--color-on-view`, ADR-036) and
+`--color-warning-text`. CSS Modules and the viewer's stylesheet use `var(...)` for every theme
+colour, and `src/app/styles/tokens.test.ts` fails on a raw hex or `oklch()` colour in any of them
+(ADR-037); the viewer's two shadows (`--sc-shadow` and the pressed-button shadow) stay translucent
+black in `viewer.css`, the one colour the test does not police.
+
 Why: one token set means light and dark cannot drift, native controls and scrollbars follow the
 theme automatically, and there is no flash on startup because the system preference applies
 before any JavaScript runs. A utility framework would add a build step and verbose markup for a
@@ -132,6 +145,28 @@ the `MessageKey` type; other languages are typed against it, so a missing or ext
 type-checking. Plurals use `Intl.PluralRules`; interpolation is `{name}` replacement. A unit test
 verifies every catalogue has the same keys and placeholders.
 
+Since 1.1 one translator serves the application and the standalone viewer.
+`createCatalogTranslator` (`src/shared/i18n/translator.ts`) builds `t`, `tCount` and `template`
+over any catalogue with `formatMessage` and `Intl.PluralRules`, with no store or framework behind
+it. The application builds it over the whole catalogue of the chosen language (`useI18n`); an
+exported HTML file embeds the subset the viewer needs (`viewerMessages`, chosen by key prefix:
+`viewer.`, `details.`, `entity.`, `viewMode.`, `indexKind.`, `definition.` and `rule.`, plus
+the search placeholder and the partial-access note), and the viewer builds the same translator
+over it. The viewer's own catalogue and its interpolation are gone, so every string lives in
+`en.ts` and `es.ts` and the catalogue test covers the viewer's placeholders too (ADR-025,
+ADR-038). A translator over a wider catalogue is assignable to one over a subset of it, which is
+how the shared details view-model accepts either, and the rule readers take a narrower one still
+(`RuleTranslator`).
+
+The words of the readable rules (ADR-039) are a sub-catalogue, `messages/rules/en.ts` and
+`messages/rules/es.ts`, which `en.ts` and `es.ts` spread in: the keys are part of `MessageKey`,
+the catalogue test checks their parity and placeholders like any other, and the `rule.` prefix
+carries them into an exported file. The names of the referential actions no longer travel there,
+since the sentences say what each action does. A sentence that draws a column or a table as a
+chip is not formatted to a string: `formatMessageParts` (`formatMessage.ts`) splits a template
+into text and the arguments of its placeholders, an unknown placeholder staying visible as text,
+so a renderer can draw each argument as it likes without concatenating pieces of a sentence.
+
 Why: two languages and a few hundred strings do not justify an i18n framework. The typed approach
 gives compile-time completeness checks that most libraries lack.
 
@@ -140,6 +175,27 @@ gives compile-time completeness checks that most libraries lack.
 Every user operation is an `AppAction` (id, label key, icon, shortcut, availability, `run`).
 Toolbars, menus, the welcome screen and keyboard shortcuts read from the same registry; the
 command palette (milestone 4) will too.
+
+Since 1.1 the detail levels, the theme and the language are registry actions as well
+(`view.detailCompact`, `view.detailKeys` and `view.detailFull` on Ctrl+1, Ctrl+2 and Ctrl+3;
+`settings.theme.*`; `settings.language.*`), run by the top bar's segmented control and menus and
+listed in the palette, and the Inspector toggle is `view.toggleInspector` (Ctrl+I). A test over
+the registry the shell builds (`useAppActions.test.ts`) fails when two actions share a shortcut
+or one takes a browser accelerator that is not on the claimed list of ADR-026 (F5, Ctrl+P,
+Ctrl+F, Ctrl+Shift+H, Ctrl+Shift+L).
+
+The exceptions are deliberate. A gesture on one entity is not an action, because an action
+takes no argument: the context menu's items, the eye and the double-click of a sidebar row, the
+card chevron, and the double-click and Enter on a card call the feature functions the registry
+would call (`canvasActions.setHidden` and `setCollapsed`, `focusEntity`, `openInspector`), and
+the one entity-free item of the context menu, "Show all", runs the registry action the shell
+passes in. Enter on a focused card is handled by the canvas, not as a global shortcut, because
+an Enter captured at the window would take activation from every button. The controls of a
+rule in the Inspector (ADR-039) are local to it, like a disclosure: its Show SQL toggle and Copy
+SQL button, the table chips of its sentences, and the highlight that pointing at the rule or
+focusing one of its controls sets on the canvas. The four layout strategies, collapse all, expand
+all, the three themes and the two languages have no shortcut: they live in the layout menu, the
+top bar and the palette, and Ctrl+Shift+L repeats the last layout.
 
 Why: labels, icons and shortcuts shown in tooltips can never disagree with what the keyboard does,
 and adding a feature means adding one action rather than touching every surface.
@@ -151,13 +207,15 @@ the maintained line. `bb8-tiberius` still requires tiberius 0.12, so the pool us
 small `ManageConnection` implementation in `inspectors/sqlserver/pool.rs`: it resolves named
 instances through SQL Browser, bounds the TCP connection with a timeout, runs the login
 handshake and validates idle sessions with `SELECT 1`. Pools live for one operation (test,
-listing or inspection) and are dropped afterwards, so the application never keeps idle sessions
-on a server. An inspection opens up to four sessions and runs its seven set-based catalog
-queries concurrently; the schema filter is applied while assembling, and foreign keys whose
-other end falls outside the selection are dropped. The schema picker lists only schemas that
-hold user tables or views: ownership of the fixed-role schemas (`db_datareader` and friends) is
-not reliable in real databases, and an empty schema has nothing to filter. Fallback if a
-regression appears: tiberius 0.12.3 with `bb8-tiberius`.
+listing, description or inspection) and are dropped afterwards, so the application never keeps
+idle sessions on a server. An inspection opens up to four sessions and runs the access probe
+(ADR-034) and its seven set-based catalog queries concurrently; the schema filter is applied
+while assembling. A foreign key whose referenced table is visible but outside the selection is
+dropped, because an edge needs both tables on the diagram; one whose referenced table the login
+cannot see is kept apart (ADR-034). The schema picker lists the schemas in which the access
+probe finds a table or view the login can see: ownership of the fixed-role schemas
+(`db_datareader` and friends) is not reliable in real databases, and an empty schema has nothing
+to filter. Fallback if a regression appears: tiberius 0.12.3 with `bb8-tiberius`.
 
 ### ADR-010: The portable executable relies on the WebView2 runtime
 
@@ -179,8 +237,16 @@ The connection dialog has a single Server field that accepts `host`, `host\insta
 `host,port`, a `tcp:` prefix and the `.` and `(local)` aliases, parsed by
 `features/connection/serverAddress.ts`.
 
+The field keeps the notation the user typed. Everywhere else a server has one canonical name,
+the one Rust `format_target` produces: `host\instance` for a named instance, otherwise
+`host,port` with the default port 1433 spelled out. The credential keys use it, and
+`formatTarget` in `serverAddress.ts` mirrors it for the status bar, the connection history and
+the keys of saved connections, with parity tests on the Rust cases; `formatServerAddress` only
+refills the field.
+
 Why: it is what SQL Server users already type in SSMS and connection strings. Separate host,
-instance and port fields would add a mode switch and three validations for no gain.
+instance and port fields would add a mode switch and three validations for no gain. One
+canonical name makes `db` and `db,1433` the same server in every list.
 
 ### ADR-012: Errors carry a classification, and the UI owns the remedy
 
@@ -192,34 +258,52 @@ shown only as secondary detail.
 Why: the core stays free of presentation text, the frontend never parses error strings, and
 every error states what happened and what to do next, as the UX principles require.
 
-### ADR-013: Progress over an ordered channel, cooperative cancellation
+### ADR-013: Long jobs report over an ordered channel and stop on a cancellation token
 
-`inspect_database` streams `InspectionEvent` messages through `tauri::ipc::Channel`, which
-delivers in order. The first event carries a job id; `cancel_inspection` cancels the matching
-`CancellationToken`, which the inspection checks between stages and while catalog queries run.
+Inspection and export are the long jobs, and both follow one pattern. The command registers a
+`CancellationToken` under a new job id in its `Jobs` registry (`src-tauri/src/state.rs`) and
+streams events through `tauri::ipc::Channel`, which delivers in order: first `Started { jobId }`,
+then `Progress` with the job's own payload (`InspectionProgress` or `ExportStage`).
+`cancel_inspection` and `cancel_export` cancel the token of a job id and answer `UnknownJob`
+when no such job is running. An async job races all of its work against the token:
+`SqlServerInspector::inspect` runs inside `tokio::select!` with `biased`, so opening the pool
+and the login handshake can be cancelled too, and a server that accepts the TCP connection and
+never answers is abandoned at once; dropping the unfinished work closes its sessions. A blocking
+job, such as the export on `run_blocking`, checks the token between its steps and touches the
+destination only after the last check.
 
-Why: channels are the Tauri mechanism designed for ordered, high-frequency updates, and
-cooperative cancellation never leaves a session half-way through a query.
+Why: channels are the Tauri mechanism designed for ordered, high-frequency updates, and one
+shape for every long job keeps the progress views and the Cancel buttons alike. Racing the
+token makes Cancel answer at once whatever the server does, and a blocking job that stops
+between steps never leaves a half-written file.
 
 ### ADR-014: Simulated backend for browser previews
 
 Development builds running outside the desktop runtime load a simulated connection backend
 through a dynamic import (`shared/ipc/previewConnectionBackend.ts`). Server names such as
 `auth-fail`, `cert-fail`, `down` and `slow` reproduce the classified failures; anything else
-succeeds with a small fixture schema. Production builds never include it, and inside Tauri it
-is never loaded.
+succeeds with a fixture schema that holds stored-form `CHECK` and `DEFAULT` texts, unique and
+plain indexes, a computed column, a disabled and a `SET NULL` foreign key. A server name that
+contains `partial`, `nothing` or `empty` chooses what the login sees: part of the schema, no
+table or view, or an empty database. `previewAccess.ts` follows the Rust access verdicts and the
+refresh merge of ADR-034, so the notices and the review can be checked without a server. The
+preview's recent projects include a capture with partial access, an upgraded 1.0 file and a
+file of a newer format, which opens read-only (ADR-035). Production builds never include any of
+it, and inside Tauri it is never loaded.
 
 Why: the connection flow can be designed, reviewed and screenshot in a plain browser without a
 database, in both themes and languages, which is how the UX definition of done is checked.
 
 ### ADR-015: `.scraft` is versioned, pretty JSON written atomically
 
-A project file is one JSON document: a header (`formatVersion`, `savedAt`, `savedWith`)
-followed by the content the application holds in memory, `ProjectContent`: the connection
-without its password, the inspection options, the snapshot and the canvas state. Readers parse
-the header first and refuse newer format versions with a classified error; missing fields of
-older files take defaults. Files are written to a sibling temporary file, flushed to the disk
-and renamed over the destination, so a crash or a power cut never leaves a truncated project
+A project file is one JSON document: a header (`formatVersion`, `minReaderVersion`, `savedAt`,
+`savedWith`) followed by the content the application holds in memory, `ProjectContent`: the
+connection without its password, the inspection options, the snapshot with its access profile
+and the canvas state. The header decides how a file is read before its content is interpreted:
+an older format is upgraded in memory, a newer one opens read-only when its `minReaderVersion`
+allows it and is refused with a classified error otherwise, and keys this version does not know
+survive a save (ADR-035). Files are written to a sibling temporary file, flushed to the disk and
+renamed over the destination, so a crash or a power cut never leaves a truncated project
 behind; the preferences and the exports share the same helper (`src/fs.rs`). Node states are
 stored sorted by qualified name, so saving an unchanged project twice yields the same bytes
 except for `savedAt`.
@@ -247,6 +331,27 @@ snapshot and carries the canvas state over to every surviving entity, changed or
 entities wait for a layout. A project opened from a file reconnects through the same dialog,
 prefilled from the saved connection, because the password is never on disk.
 
+What the fresh capture could not see is never a change (ADR-034). The diff compares the saved
+snapshot with the fresh one merged by `SchemaSnapshot::with_unchecked_facts_from`, so a table, a
+view, a text or a foreign key the login can no longer see is listed as not checked, with the
+moment it was last read, instead of removed or changed. Texts are compared only when both sides
+are readable (`Definition::differs_from`), a default that appears or disappears counts only when
+the side that has it knew its state (`Definition::is_known`: readable or not visible), and a
+`CHECK`'s enabled flag is compared only when both sides recorded it, and the review marks the
+side that is disabled. A key whose referenced table became invisible keeps what the fresh
+capture read of its referencing side (columns, actions and enabled flag) and takes only the
+referenced table and columns from the saved key, so a change to it is still reported; when its
+referencing columns changed, the saved key is not kept at all. Facts the saved snapshot could
+not state and the fresh one reads (a text that was not visible or not recorded, a foreign key
+whose referenced table became visible, and, next to a 1.0 file, which recorded no access, a
+bound default, a default whose text is not visible or a key to an invisible table, none of which
+1.0 could hold) are listed as now available, and a new verdict on the login's access sets
+`access_changed`. A review
+is up to date only when none of these is present either (`SchemaDiff::is_up_to_date`); otherwise
+it offers to apply, worded "Update project" when no object changed. Applying runs the same merge
+(`ProjectContent::with_refreshed_snapshot`), so the project keeps every fact the review called
+not checked and lists it in `snapshot.carriedOver`.
+
 ### ADR-017: Preferences live in one Rust-owned file in the user's configuration directory
 
 The connection history (last ten endpoints, most recent first, never a password) and the
@@ -258,9 +363,22 @@ insensitive) and by path. The Rust side applies every change and returns the who
 the frontend mirrors it in a store and never writes the file itself. A damaged file is logged
 and replaced by defaults rather than blocking start-up.
 
+The webview's localStorage holds only conveniences of the window, never a secret and never
+domain history, under two keys. `schemacraft.settings` keeps the theme, the language, whether
+the entities panel is open and its width, the Inspector's width (never whether it is open: it
+starts closed on every launch), and the signatures of the partial-access notices the user closed
+(endpoint, database and verdicts; the 50 most recent). `schemacraft.connection`
+keeps the last connection draft with the password always blank. Each field of the settings is
+checked on its own when it is read back (`mergePersistedSettings`), so a damaged value or one
+from another version falls back to its default. Deleting `preferences.json` clears the history
+and the recent projects but neither key; clearing the WebView2 data under
+`%LOCALAPPDATA%\com.jmanuelsoberano.schemacraft` resets both keys and touches neither the
+history nor the remembered passwords.
+
 Why: a file the user can find and back up, consistent with the project format, independent of
 the webview's storage, and ready to take theme and language later. Keeping it in AppData rather
-than next to the executable keeps the portable build usable from read-only locations.
+than next to the executable keeps the portable build usable from read-only locations. What
+stays in localStorage only saves the user a click, so losing it costs nothing.
 
 ### ADR-018: Native dialogs through the Tauri plugin, preview backends behind a resolver
 
@@ -299,9 +417,20 @@ DOM to decide where an edge goes: nodes are built with their computed size, and 
 at the row of its first column pair on each table. Anchors (`edgeGeometry.ts`) float with the
 nodes: tables stacked vertically connect through their facing top and bottom edges, tables side
 by side through their facing sides at the key row, overlapping tables leave through the same
-side and bend around, and a self-reference loops out of the right side. Crow's foot markers are
-SVG markers defined once (`RelationMarkers.tsx`) and painted with `context-stroke`, so they
-inherit the colour and the emphasis of their edge.
+side and bend around, and a self-reference loops out of the right side from the referencing row
+to the referenced row; when both ends attach at the same point, the header of a card whose rows
+are hidden, each moves `LOOP_SPREAD` off it, the referencing end up and the referenced end down.
+Crow's foot markers are described once as data, `RELATION_MARKER_SHAPES` in `edgeGeometry.ts`
+(ADR-037), named by what an end says (`many`, `one`, `zeroOrOne`) and each drawn facing its
+table, so one orientation, `MARKER_ORIENT` (`auto-start-reverse`), lets any shape serve at either
+end: `RelationMarkers.tsx` renders them as
+SVG markers painted with `context-stroke`, so they inherit the colour and the emphasis of their
+edge, and the exporter renders the same table. Which marker each end gets is decided once, by
+`relationEnds` in `graph.ts` from the facts the rule reader states (ADR-039), and drawn in
+standard crow's foot notation. `relationPath` routes every edge with one set of smooth-step
+options or draws the self-reference loop, `relationOffsets` picks the attachment row at each end,
+and `isCollapsible` says whether a card has rows to hide at a detail level, which is when it
+shows a collapse toggle.
 
 Why: Step 5 renders the same diagram to SVG, HTML and PDF without a browser layout pass. When
 geometry is a function of the project file, the export is the canvas, pixel for pixel, and the
@@ -318,8 +447,11 @@ first layout of a fresh project is applied with `undoable: false, dirty: false`,
 neither an edit nor an undo step. Changing the detail level is saved with the project, but it
 becomes an undo step only when the taller nodes have to move apart; on its own it is a view
 setting, like the viewport. Transient interaction state (selection, hover, zoom level,
-refresh highlights, context menu, layout in progress) lives in `canvasUiStore` and is never
-saved. After a refresh, `refreshPlacement.ts` places new tables in free space next to the
+refresh highlights, context menu, layout in progress, whether the Inspector is open and its
+request for focus, the rule the Inspector highlights) lives in `canvasUiStore` and is never
+saved; the Inspector derives what it shows from the selection and holds no state of its own
+(ADR-038, ADR-039). After a refresh,
+`refreshPlacement.ts` places new tables in free space next to the
 tables they reference, or in a row below the diagram, and highlights them; surviving positions
 never move.
 
@@ -354,12 +486,19 @@ code path, and Step 5 can reuse the strategies without a canvas.
 ### ADR-023: One SVG renderer in TypeScript draws the canvas's diagram for every export
 
 The export never screenshots the DOM. `src/features/export/svg/renderDiagram.ts` builds an SVG
-document from the project data with the geometry of ADR-020 (`geometry.ts`, `edgeGeometry.ts`)
-and the same crow's foot markers, so the file is the canvas drawn again: the visible entities at
-their positions, collapsed ones collapsed, at the chosen detail level and theme. Colours are the
-design tokens converted once to sRGB hex (`palette.ts`), because renderers outside the browser
-understand neither `oklch()` nor `light-dark()`; styles are plain class rules without
-combinators, the subset every SVG consumer shares. Text stays text, selectable in SVG and PDF;
+document from the project data with the geometry of ADR-020 (`geometry.ts`, `edgeGeometry.ts`),
+the marker table of `edgeGeometry.ts` and the ends `relationEnds` chooses (markers `sc-many`,
+`sc-one` and `sc-zero-or-one`, each with the `-active` variant the viewer switches to), so the
+file is the canvas drawn again: the visible entities at their positions, collapsed ones
+collapsed, at the chosen detail level and theme, with views marked as on the canvas (ADR-036).
+Every column name carries its full name in a `data-column` attribute, since the text shown may be
+cut short, so the viewer can find the columns of a rule on the drawing (ADR-039). Colours are
+the design tokens converted to sRGB hex (`palette.ts`), because renderers outside the browser
+understand neither `oklch()` nor `light-dark()`; a test recomputes the conversion, so the palette
+cannot drift from `tokens.css` (ADR-037). Styles are plain class rules without combinators, the
+subset every SVG consumer shares. The renderer holds no text of its own: the caller passes the
+labels it needs already translated (`RenderOptions.labels`, today the VIEW label), so the exports
+speak the interface language and the viewer its own. Text stays text, selectable in SVG and PDF;
 names that do not fit are shortened with an ellipsis, measured with a canvas in the webview and
 estimated in tests. The renderer is deterministic for a given input, which the unit tests check.
 
@@ -387,14 +526,35 @@ dialog, stays out of the picture.
 
 ### ADR-025: The standalone HTML is a viewer with the schema embedded, bundled by a Vite plugin
 
-The HTML export embeds the visible part of the schema as JSON (never the server, the login or the
-server version: only the database name, the objects on the diagram and their positions) together
-with a small vanilla TypeScript viewer (`src/viewer`) that draws with the renderer of ADR-023 in
-the browser: pan and zoom, the three detail levels, search, neighbour highlighting, a detail
-panel per table and light and dark themes. A plugin in `vite.config.ts` bundles the viewer on
-demand into a virtual module (`virtual:schemacraft-viewer`), so the application build stays one
-command and the viewer never pulls React or the application stores. Fonts are embedded as
-`@font-face` data URLs while "Embed fonts" stays on, as in SVG, adding about 125 KB.
+The HTML export embeds the visible part of the schema as JSON (never the server, the login, the
+server version or the access probe: only the database name, the objects on the diagram, their
+positions, the verdicts on the login's access, ADR-034, the read dates of the facts kept for
+those objects and the subset of the message catalogue the viewer says, ADR-038) together with a
+small vanilla TypeScript viewer (`src/viewer`) that draws with the renderer of ADR-023 in the
+browser: pan and zoom, the three detail levels, a search whose results name the kind of each
+entity, neighbour highlighting, a detail panel per table and view drawn from the view-model the
+Inspector draws, its `CHECK`s and keys read out in words with their columns highlighted on the
+diagram (ADR-039), and light and dark themes. Its colours are the
+application's: `buildStandalonePage` writes the palette of ADR-023 into the page as `--sc-*`
+custom properties for both themes, ahead of the viewer's stylesheet, which therefore declares no
+colour of its own beyond its shadows (ADR-037). A plugin in `vite.config.ts` bundles the viewer on
+demand into a
+virtual module (`virtual:schemacraft-viewer`), so the application build stays one command and
+the viewer never pulls React or the application stores. Fonts are embedded as `@font-face` data
+URLs while "Embed fonts" stays on, as in SVG, adding about 125 KB.
+
+Since 1.1 the viewer has no text of its own: `ViewerData.messages` carries the export language's
+subset of `en.ts` and `es.ts` and `createCatalogTranslator` reads it (ADR-007), so an export in
+Spanish speaks Spanish in every panel line. The detail panel is `describeObjectDetails` plus
+`presentObjectDetails` over the embedded snapshot, with the scope of a file: no hidden entities,
+`ViewerData.access` (level and coverage, never the probe) and `ViewerData.carriedOver` (the kept
+facts of the objects and keys on the diagram, apart from the snapshot, so a hidden table is
+never named), and only the diagram known: a key to a table that is not on the diagram is left
+out of the file, together with the FK mark it gives its columns, an empty relation list reads
+"None on the diagram" rather than saying there is none, and a list that is not empty carries no
+note that a key may be missing. The panel no longer announces its whole content through
+`aria-live` on every click: choosing a search result or following a relation link moves focus
+to the panel's heading, so a keyboard or screen-reader user lands on the entity they chose.
 
 Why: the user chose the full viewer over pre-rendered pictures; it keeps the file lighter for
 large schemas and lets the reader explore. Sharing the renderer avoids a second drawing
@@ -408,8 +568,16 @@ text fields (the diagram and the entities panel open their own), middle-click au
 dragging images or links out of the window are prevented, and every accelerator that would
 reload, print, find, zoom, navigate history or (outside development) open the developer tools is
 swallowed, held keys included. Where the habit has an application meaning it is mapped instead:
-F5 refreshes from the database, Ctrl+P exports a PDF and Ctrl+F searches the entities. The
-entities panel resizes by dragging its edge or with the arrow keys and remembers its width.
+F5 refreshes from the database, Ctrl+P exports a PDF, Ctrl+F searches the entities, Ctrl+Shift+H
+shows every hidden entity and Ctrl+Shift+L repeats the last layout; Ctrl+I (the Inspector) and
+Ctrl+1 to Ctrl+3 (the detail levels) need no mapping, because WebView2 reserves neither (only
+Ctrl+Shift+I, the developer tools). Both side panels, the entities panel and the Inspector,
+resize by dragging their edge or with the arrow keys, Home and End, through one handle for
+either edge (`PanelResizer` in `shared/ui`), and remember their width. In a window too narrow
+for both at their width, `fitSidePanels` (`app/shell/sidePanelWidths.ts`) narrows them, the
+Inspector last and neither below its minimum, so the canvas keeps 320 px and the top bar's
+controls stay in the window; the remembered widths do not change, and the handles' widest
+width follows the room left.
 
 Why: a reload threw the open project away and the print dialog printed the page chrome; both
 reached the user. Suppressing the defaults in one place keeps every future screen covered, and
@@ -496,9 +664,19 @@ features and shared modules; `src/features` may not import `app/`; `src/shared` 
 imports the viewer. Only `src/shared/ipc` may import `@tauri-apps/*`; the rest of the frontend
 reaches commands, dialogs, the window (`nativeWindow.ts`) and the runtime check (`runtime.ts`)
 through it. Code that several features need moves down into `shared/` (brand, error
-presentation), and code that composes the application moves up into `app/` (the command
-palette). Features may still use each other's public modules where one builds on the other, such
-as canvas and project; the architecture page lists those edges.
+presentation, the resizer both side panels share), and code that composes the application moves
+up into `app/` (the command palette). Code that is a feature's behaviour moves out of the shell
+into its feature: the diagram canvas, the entities panel and the entities search live in
+`features/canvas` and the Inspector in `features/inspector`, and `AppShell` only places them,
+each side panel in a named landmark, handing over what belongs to the shell as props: the
+welcome screen (`emptyState`), the development hook (`onFlowInit`), the access bar (`notice`),
+the registry's show-all command for the context menu and its access-report command and
+shortcut hint for the Inspector. Features may still use each other's public modules where one
+builds on the other, such as canvas and project, or the Inspector on canvas, project and schema;
+the architecture page lists those edges.
+`features/schema` is the exception in the other direction: a second lint rule lets it import only
+`shared/` and itself, so every feature and the viewer can read entity identity from it without a
+cycle (ADR-037).
 
 Why: rules that live only in a document erode with every change. A lint error at the import names
 the rule and the way out, in the editor and in CI, so the structure holds as features are added.
@@ -534,6 +712,430 @@ separate job, because a job skipped through a failed dependency would count as p
 
 Why: a pull request that only touches the documentation should not wait fifteen minutes for a
 Rust build, and the required checks must still fail closed when the classification itself fails.
+
+### ADR-034: Honest access: one capability probe, and unknown is not none
+
+A login may see only part of a database, and SQL Server says so silently: the catalog views
+leave out the objects it cannot see and return `NULL` for the texts it cannot read. SchemaCraft
+1.0 showed those gaps as facts: an empty `CHECK` expression, a column without a default, no
+foreign key. Since 1.1 the application measures what the login can see and never presents a gap
+as an absence.
+
+One access probe per database (`inspectors/sqlserver/access.rs`), a single batch with two
+result sets, reads the facts: `VIEW DEFINITION`, `SELECT` and `VIEW SECURITY DEFINITION` on the
+database; the explicit `DENY` rows on `VIEW DEFINITION`, `SELECT` and `CONTROL` for the login's
+user and its roles, at the database, schema and object level (an object row only for the object
+itself, so a column `DENY` hides nothing), and none for `dbo`, which `sysadmin` members and the
+database owner enter as, since SQL Server applies no denial to it; whether any user table or
+view is visible; the
+database user when the login has one of its own; and, per schema, the two grants, a denial flag
+and whether it holds a visible table or view. `describe_database` runs it when a database is
+selected, in place of the schema listing, and every inspection runs it next to the catalog
+queries as the `CheckingAccess` stage. Pure rules in `model/access.rs` turn the facts into a
+level (`full`, `partial`, `empty`, `nothingVisible`) and a coverage per kind of fact. Only the
+object list and the `CHECK` and `DEFAULT` texts can be partial, because the columns, keys,
+indexes and foreign keys of a visible table need no further permission. A login that sees
+nothing reads as `empty` only when it could have seen everything (`VIEW DEFINITION` on the
+database and no denial); otherwise it is `nothingVisible`, since SQL Server cannot tell an empty
+database from a hidden one, so a `db_datareader` member on an empty database reads as nothing
+visible. A login with `VIEW DEFINITION` and without `VIEW SECURITY DEFINITION` cannot see its
+own denials, which then count as unknown. The profile (the facts, the scope they were judged in
+and the verdicts) is frozen in the snapshot as `SchemaSnapshot.access`, and a file without one
+says "not recorded". The prediction made at database selection and the capture can disagree,
+for instance when `OBJECT_DEFINITION` still returns a bound default to a reader.
+
+The model keeps unknown apart from none. `CHECK` and `DEFAULT` texts are a `Definition`:
+`readable { text }`, `notVisible`, `notRecorded` (an upgraded 1.0 file could not tell) or
+`unknown`, the fallback for a status written by a newer version. Whether a column has a default
+comes from `sys.columns.default_object_id`, which every login sees, and legacy bound defaults are
+read with `OBJECT_DEFINITION`. A foreign key whose referenced table the login cannot see is kept
+in `foreignKeysToInvisibleTables` with its local columns, actions and enabled flag: its columns
+keep the key badge, no edge is drawn, and its rules are worded against "the referenced table"
+(ADR-039). A refresh that sees less keeps what it cannot check (ADR-016).
+
+The interface discloses in grades (`src/features/access`). Full access adds nothing. Partial
+access adds one polite line in the connection dialog; a dismissible bar above the entities list,
+remembered per endpoint, database and verdict, which moves focus to the entities search when it
+closes; a quiet chip in the status bar; and "not available" wherever a `CHECK` or `DEFAULT` text
+is shown. Lists, counts and empty states say "none" only under complete coverage, so the sidebar
+shows one muted footer instead and the status bar leaves out a count of zero. The Access report
+(`view.accessReport`, Ctrl+Shift+A) shows the coverage, the keys to invisible tables, the facts
+kept from earlier reads with their date, the permissions per schema and a copyable
+least-privilege script, `GRANT VIEW DEFINITION TO [user]`, whose comments say that on SQL Server
+2022 and later the permission also shows users, roles and permissions. SchemaCraft never runs
+it, and does not offer it when a `DENY` explains the gap, because a grant does not lift a
+denial. A login that sees nothing gets a danger notice and cannot start a read; an empty
+database gets neutral notes and empty states. An export of a partial capture says so in one
+line (a footnote in SVG, PDF and PNG, a header line in HTML), and the HTML export embeds the
+verdicts (level and coverage), never the probe (ADR-025). The wording is "not visible to this login" and "no visible para este inicio de sesión",
+never "hidden" or "oculto", which mean hidden on the canvas. CI reads one fixture database as
+logins with each of these profiles (`tests/sqlserver_permissions.rs`).
+
+Why: SchemaCraft is used to understand a database, and a missing table, text or relationship
+that looks like an absence is a false statement the user will act on. SQL Server cannot tell
+the user, so the application must. One probe classifies every tested permission profile in one
+round trip, `VIEW DEFINITION` is the single grant that completes the schema without exposing
+data, and disclosing in grades keeps the common case, full access, free of warnings.
+
+### ADR-035: Project format 2 reads forward: two version numbers, migrations, kept unknown keys
+
+The header of a project carries two numbers, like the read and write versions of an SQLite
+file: `formatVersion`, the format the file follows, and `minReaderVersion`, the oldest format a
+reader must understand to open it. This version writes format 2 with `minReaderVersion` 2.
+`read_project` parses the JSON once and reads both before the content. A file whose
+`minReaderVersion` (by default its `formatVersion`) is above 2 is refused as
+`UnsupportedFormatVersion`; a newer format within that limit opens read-only; an older one is
+upgraded in memory. A newer file whose content this version cannot parse is refused as
+unsupported as well, never reported as damaged: a value it does not know is not damage. The
+command returns an `OpenedProject` with `isReadOnly`. A read-only project can be rearranged and
+exported, is never marked unsaved and cannot be saved, saved as or refreshed; a status-bar chip
+says so and names the version that wrote it.
+
+Upgrades live in `project/migrations.rs`, one step per format, applied to the raw JSON before
+the typed parse. They never fail and leave what they do not recognise alone, so the parser still
+reports real damage. Format 1 to 2 turns each `CHECK` and default text into a readable
+`Definition` and an empty one into `notRecorded`, and marks a missing default `notRecorded` in a
+schema that had an empty `CHECK` text, where 1.0 could not read texts; the snapshot gets no
+access profile and `CHECK` constraints no enabled flag. A 1.0 file is saved as format 2, which
+1.0 refuses with its own message.
+
+Keys this version does not know are kept at four levels, the document root, the snapshot root,
+the canvas and each node, in flattened `unknown` maps that the contracts leave out
+(`#[ts(skip)]`). The frontend carries them along, and `Project::new` drops header keys found
+among them, so the header is never written twice. Snapshot keys go when a refresh replaces the
+snapshot, and exports never embed any of them (ADR-025). `#[serde(other)]` stays in an attribute
+of its own, because ts-rs drops a serde attribute with a key it does not model, and the
+workspace enables ts-rs's `no-serde-warnings` so the fallback prints no warning on every build.
+
+The rule for adding data: a new fact inside tables, views, columns, keys, indexes or
+constraints, a new value of any persisted enum, or a changed meaning raises `formatVersion`,
+because an older version would drop or misstate it on save, and with the higher number it opens
+the file read-only instead. `minReaderVersion` rises too when an older reader would misread the
+file rather than merely miss something: a changed meaning, or a new value of a closed enum such
+as `AccessLevel`, `Completeness`, `SnapshotFact`, `IndexKind`, `ReferentialAction`,
+`DetailLevel` or `LayoutKind`, which the older parser cannot read. `Definition` is the open
+exception, since older readers show an unknown status as "not available", and a new enum may
+take the same kind of fallback. A key at one of the four kept levels that stays true whatever an
+older version does around it, such as a colour per node, needs no bump. Every bump adds a
+migration step, a fixture file of the previous format and a test that it upgrades and saves.
+
+Why: format 2 is a one-way door for 1.0 users, so the doors after it should open both ways. Two
+numbers let a later version add facts without locking 1.1 out, opening read-only keeps an older
+version from destroying what it does not understand, and migrations on raw JSON keep today's
+types free of yesterday's shapes.
+
+### ADR-036: Tables and views are told apart by section, label, icon and colour
+
+A database view is drawn as a card like a table, and 1.0 told them apart only by a tint on the
+header and a grid icon, which a grayscale print and a quick glance both lost. Since 1.1 the
+distinction is made in several ways at once, everywhere an entity appears.
+
+The entities panel (`features/canvas/EntitiesSidebar.tsx`) groups the entities by schema and,
+inside each schema, in a Tables and a Views section with a count. A level that distinguishes
+nothing is left out: one schema, no schema headers; one kind, no kind headers. The shape is
+decided on the unfiltered list (`entityListShape` in `features/schema/entities.ts`), so the panel
+keeps its structure while the user types. Headers are buttons with `aria-expanded`; a schema or
+a section collapses for the session only, never into storage, and while a search is active
+everything is expanded and the toggles are disabled, so a match is never hidden in a collapsed
+section. An absent kind omits its level the same way, and under partial coverage the single
+footer of ADR-034 stays the honest marker, so an omitted Views section never claims "none".
+
+On the canvas a view carries a solid VIEW label (VISTA in Spanish, key `entity.view.label`)
+between its name and the column count, the Lucide Glasses icon, the convention of SQL Server
+Management Studio, and the `--color-view` tokens, a teal (hue 195) well apart from the violet of
+selection; no dashed border and no italics. The schema prefix on the tinted header uses
+`--color-text-secondary`, so the text keeps AA contrast. At the Keys level a view has no key
+rows, so it is a header-only compact card with the label and its count: the same 38 px box as
+before, which leaves saved layouts and `spreadForDetailLevel` untouched. The collapse chevron
+shows only when `isCollapsible` (ADR-020) finds rows to hide, and the minimap tints views through
+React Flow's `--xy-minimap-node-background-color`. The SVG renderer draws the same header (view
+tint, label pill, Glasses symbol, secondary schema text) with the label passed in as
+`RenderOptions.labels.view`, which `exportStore` translates in the interface language, so SVG,
+PDF and PNG match the canvas; the HTML viewer passes the same `entity.view.label` from the
+catalogue subset embedded in the file (ADR-038), and names the kind next to every search result
+and in its detail panel. The command palette shows a kind icon and a Table or View label on
+every entity row.
+
+The word "view" therefore means a database view and nothing else in the interface, in both
+languages: the viewport commands read "Fit diagram to window" and "Center on screen" ("Ajustar el
+diagrama a la ventana", "Centrar en pantalla"), and compact, keys and full are detail levels.
+
+Why: WCAG 1.4.1 asks that colour never be the only signal; a label survives a grayscale print,
+and a label plus an icon survives a glance. The selection ring stays violet and the view tint
+teal, so the two never blend. Deciding the levels on the unfiltered list keeps the panel from
+reshaping on every keystroke, and keeping the box of a view unchanged keeps every existing
+project opening exactly as it did.
+
+### ADR-037: Each drawing rule has one home, and a test keeps it there
+
+Three rules of the diagram had drifted into copies: the `schema.name` identity of an entity and
+its kind lived in four modules; the crow's foot markers and the smooth-step routing were written
+once for the canvas and once for the SVG renderer; and the colours existed as `oklch()` tokens,
+as hand-converted hex in `palette.ts` and again in `viewer.css`, with stray `oklch()` values in
+several CSS Modules. Each rule now has one home, and where a rule can be checked by a machine, a
+lint rule or a test keeps it there.
+
+Entity identity: `src/features/schema/entities.ts` is the only module that spells `EntityKind`,
+`ENTITY_KINDS`, `entityKey` and the entity list (`listEntities`, `groupEntities`,
+`filterEntityGroups`, `countEntities`, `entityListShape`). The canvas, the command palette, the
+status bar, the review panel, the access report, the exports and the viewer import them from
+there; `shared/ipc`, which may not import features, compares names field by field where it filters
+canvas nodes (`previewProjectBackend.refreshProjectContent`), and the DEV-only preview fixture
+keeps a `Map` key of its own (`nameKey` in `previewAccess.ts`) that never stands in for the
+`schema.name` identity string. ESLint makes `features/schema` a leaf among the features: it may
+import only `shared/` and itself (ADR-031), so the viewer bundle can always take it and no entity
+helper can grow a dependency on a store.
+
+Markers and routing: `canvas/edgeGeometry.ts` holds `RELATION_MARKER_SHAPES` (the width,
+reference point, path and optional circle of each marker kind), `MARKER_HEIGHT`,
+`MARKER_REF_Y`, `MARKER_ORIENT`, `startMarkerKind`, `endMarkerKind` and `relationPath`, which
+routes an edge with one set of smooth-step options or draws the self-reference loop;
+`geometry.ts` holds `relationOffsets`, the row at which each end attaches, and `graph.ts`
+`relationEnds`, the marker kind of each end of a key. `RelationMarkers.tsx` renders its
+`<marker>` elements from the table under the ids of `canvas/relationMarkerIds.ts`, and
+`RelationEdge.tsx` and `renderDiagram.ts` call the same functions. The refactor was checked by
+comparing the renderer's output byte for byte before and after it. The standard notation of
+ADR-039 later changed what the table draws and named its kinds by meaning, not where it lives;
+`src/viewer/viewerStyles.test.ts` checks that `viewer.css` swaps every marker the renderer puts
+at either end for its own `-active` variant.
+
+Colours: `src/app/styles/tokens.css` is the only place a theme colour is written (ADR-006).
+`palette.ts` is its sRGB derivation, and `PALETTE_TOKENS` names the token each entry converts;
+`src/app/styles/tokens.test.ts` redoes the OKLab conversion and fails on any drift. The same test
+reads every `*.module.css` and `viewer.css` as text, which vitest hands through only for `?raw`
+imports (`test.css.include` in `vite.config.ts`), checks that it read them, and fails on a raw
+hex or `oklch()` colour (`url(#id)` references and relative `oklch(from ...)` colours excepted).
+`buildStandalonePage` writes the palette into the HTML as `--sc-*` custom properties for both
+themes (`viewerPaletteStyles`), so `viewer.css` holds no colour of its own beyond its two
+translucent shadows, which the test does not police. A new colour is a
+token first and then, when an export or the viewer needs it, a `DiagramPalette` entry with its
+`PALETTE_TOKENS` line; the test's failure message prints the expected hex.
+
+Why: a copy that is "kept in step" by hand is a bug waiting for its second editor, and the
+viewer's key badge had already drifted from the application's warning colour. One module per
+rule, a lint rule where a module boundary carries the rule and a test where a value does, keep
+the canvas, the exports and the viewer the same diagram without anyone having to remember to
+sync them.
+
+### ADR-038: The Inspector and the viewer's detail panel share one view-model
+
+Since 1.1 the application has an Inspector: a panel on the right of the canvas with the details
+of the selected table or view, its columns (type, nullability, identity, computed, default),
+primary key, indexes, `CHECK` constraints and the foreign keys out of it and into it, each fact
+with how far the capture vouches for it: readable, not available to this login, not recorded by
+a 1.0 file, or not checked since the date it was last read (ADR-034, ADR-016); a `CHECK` or
+`DEFAULT` inside a table or view kept whole carries the object's date, or its own earlier one
+when it was kept on its own before. The exported HTML viewer has had a detail panel since 1.0. Both now draw one view-model, in two modules of
+`features/schema`: `objectDetails.ts` holds the facts (`describeObjectDetails(snapshot, key,
+scope)`), the only place the details are built from the snapshot, which reads `Definition`
+through `definition.ts` (`definitionText`, `isUnknownDefinition`, the only readers of the raw
+statuses) and the carried facts through the scope, and `objectDetailsView.ts` the presentation
+(`presentObjectDetails(details, translator)`), every title, badge, value, empty line and
+footnote already translated. The React panel (`features/inspector`) and the vanilla viewer
+(`src/viewer/main.ts`) only lay that text out, one renderer per section kind, so both show the
+same sections in the same order with the same words and states, and the readable rules of
+ADR-039 extend the `CHECK` and key items without a third path. The `scope` argument states what
+the renderer knows beyond the snapshot: the entities hidden on the canvas, the access coverage,
+the carried facts, whether the read was limited to some schemas and whether only the diagram is
+known, as in an exported file. That is where the two differ: the file knows only the diagram
+(ADR-025), so it leaves out keys to tables that are not on it, an empty relation list reads
+"None on the diagram", and it offers no "Why?" link.
+
+Every applicable section appears, in a fixed order, and an empty one prints one line whose
+wording follows the completeness of the list: "None" only when the list is known to be
+complete, otherwise "None visible to this login", "None recorded", "Not checked since", "None
+on the diagram" or "None in the inspected schemas". "Referenced by" carries a footnote under
+partial coverage, because tables the login cannot see may reference the table. The target of a
+relation is a link when the table is on the canvas, "Hidden on the canvas" when it is hidden,
+"This table" for a self-reference and "A table not visible to this login" for a key kept in
+`foreignKeysToInvisibleTables`. In the Inspector every not-available value and every
+not-visible line carries a "Why?" link to the Access report; the exported file cannot offer one.
+
+The panel is a complementary landmark the shell places (`<aside aria-label="Inspector">`),
+never `role="dialog"`, so shortcuts keep working while it is open. It starts closed on every
+launch, remembers only its width (280 to 560 px, default 360, in `schemacraft.settings`,
+ADR-017; narrower in a window without room for it, ADR-026) and follows the canvas selection:
+one selected entity shows its details, none or several show an empty state, and an entity
+hidden on the canvas cannot be shown, because it has no card to select. It opens with Ctrl+I,
+the top-bar button or the palette (all three `view.toggleInspector`), a double-click on a card
+or on a sidebar row, Enter on a focused card, or "Show details" in the context menu. A
+double-click leaves focus where it was, so the pointer goes on working on the canvas; every
+other way in moves focus to the panel's heading, and so does following a relation link, "Show
+details" included when it is chosen with the mouse, because the closing menu leaves focus
+nowhere. Enter is handled by the canvas only when the focused element is the card itself, never
+as a global shortcut, so the buttons inside a card keep it. Escape anywhere in the panel, its
+resize handle included (the shell passes the handle in, and the panel draws it inside the
+element that handles Escape), returns focus to the inspected card, or to the canvas when the
+card is not rendered, and leaves the panel open; Ctrl+I and the close button close it, and
+`returnFocusFromInspector` hands focus back to the card before the panel turns inert, so focus
+never drops to the document. The open state and the focus request live in `canvasUiStore`
+(ADR-021); the panel itself holds no state.
+
+The viewer takes the embedded subset of the message catalogues through the shared translator
+(ADR-007), the access verdicts and the read dates of the kept facts of the objects on the
+diagram (ADR-025), and its own catalogue is gone.
+
+Why: a second implementation of the details would drift from the first within a release, and
+the exported file is where other people read the schema, so it must say what the application
+says, with the same honesty about what the login could not see. One module and two renderers
+is the rule ADR-020 and ADR-023 already apply to the diagram. A non-modal panel that mirrors
+the selection has no state to fall out of step with the canvas, and keeping Enter inside the
+canvas keeps every other button in the interface working.
+
+### ADR-039: Readable rules are derived in TypeScript from the stored definitions
+
+Since 1.1 the Inspector and the viewer's detail panel read `CHECK` constraints and foreign keys
+out in sentences in the interface language, with the SQL one click away. The readers are pure
+TypeScript in `src/features/schema/rules`, inside the `features/schema` leaf (ADR-037), so the
+Inspector and the viewer run the same code over the same snapshot. Nothing is computed in Rust
+and neither the `.scraft` file nor the JSON an HTML export embeds gains a field: the sentences are
+worked out where they are shown.
+
+The `CHECK` reader reads the text SQL Server stores in `sys.check_constraints.definition`,
+through `definition.ts` (ADR-038), in three steps: `tokenizeCheck` (`checkTokens.ts`),
+`parseCheck` (`checkParser.ts`, recursive descent with T-SQL precedence, where NOT binds looser
+than a comparison, as SQL Server stores it, with a depth bound) and `readCheckConstraint`
+(`checkReader.ts`). It knows a closed set of forms: comparisons with a literal, with the time
+now or between two columns, with date wording for date and time columns; inclusive ranges;
+`IN` and `NOT IN` lists, which SQL Server stores as a reversed OR chain and the reader gives back
+in the written order; `IS [NOT] NULL`; `LIKE` shapes (starts with, ends with, contains, digits
+only, any other pattern with a note on how patterns read); `LEN` and `DATALENGTH` limits and the
+not-blank idioms; AND lists; explicit NULL guards; and an OR, worded as "at least one of these
+must hold", only when no branch can be unknown. Reading is all or nothing: a function it does not
+know, arithmetic, a name that is not a column of the table, or any other form outside the set
+reads none of the expression. The item then says the rule cannot be put into words and shows the
+stored SQL, open from the start, and the columns its tokens name still highlight. An item starts
+over when a refresh changes its rule's SQL or readability (`sqlDisclosure.ts`), and the Inspector
+mounts new items for each entity, so two tables' `CHECK`s that share a name never share a state.
+
+A wrong sentence is worse than none, so every sentence states only what SQL Server enforces when
+a value is written. A `CHECK` accepts a row whose expression is unknown, so a rule over a
+nullable column sits under "When … has a value:", an OR other than a list of values is left
+unread when NULL could make one of its branches unknown, and so is any comparison with a NULL
+literal (`Status IN ('A', NULL)` accepts every value). A disabled `CHECK` reads under "When
+enabled:", and one from a 1.0 file, which did not record its state, under "If enabled (this file
+did not record whether it is):". Text comparisons and patterns carry a note that they follow the
+column's collation, which the model captures only from v1.2, and that two texts differing only
+in trailing spaces are equal; lengths say "not counting trailing spaces". Patterns are subtler:
+a `char` or `varchar` value with trailing spaces still ends with a suffix, while an `nvarchar`
+one, or any value against an `N'…'` pattern, does not, so a suffix says which applies, and a
+trailing space is refused by digits only like any other character. `char` and `nchar` pad a
+shorter value with spaces, and `LIKE` sees them. A prefix, a text contained and a suffix outside
+Unicode read as on `varchar`, since the padding comes after the value and is taken by the closing
+`%` or need not match; everything else is left unread on these types: a Unicode suffix (an
+`nchar` column or an `N'…'` pattern) refuses every value shorter than the column, a `_` can match
+a padding space (`'A'` passes `LIKE 'A_'` on `char(5)`), a Unicode pattern can fail on one
+(`'AB'` fails `LIKE N'[A-Z][A-Z]'` on `nchar(5)`), and digits only refuses the empty value its
+sentence accepts. The time now reads "the
+server's date and time when the value is saved", because SQL Server checks a `CHECK` again only
+when a statement writes one of its columns.
+Comparisons whose meaning depends on the session or on a conversion stay unread: a `'YYYY-MM-DD'`
+literal against `datetime`, which `DATEFORMAT` changes, a `date` column against `getdate()`, text
+ordering and float literals among them. Each section with rules in words ends with one note that
+SchemaCraft words them from their definitions and that SQL Server checks them when values are
+written, so rows saved before a rule existed may not follow it.
+
+The foreign key reader (`foreignKeyReader.ts`) uses row phrasing with the tables as chips, always
+`schema.name`: "Each row in sales.Orders belongs to exactly one row in dbo.Customers", "Cada fila
+de sales.Orders pertenece exactamente a una fila de dbo.Customers". No table name is turned into
+a noun, so no sentence guesses a singular or a Spanish gender. Whether the link is required
+(`foreignKeyOptionality`) follows SQL Server's rule for composite keys, MATCH SIMPLE: a key is
+checked only when every one of its columns has a value, so it is optional as soon as any column
+accepts NULL. How many referencing rows a referenced row can have (`foreignKeyChildCardinality`)
+is at most one only when the primary key or a unique constraint of the referencing table lies
+within the key's columns; a unique index alone leaves that sentence out, because the snapshot
+does not record whether an index is filtered, and a filtered one allows several. Nor does the
+snapshot record whether an index is disabled, a known limitation: a unique constraint or a
+nonclustered primary key whose index is disabled limits nothing, yet still yields "at most one"
+and the one-to-one marker until the snapshot captures index state, as the engine tests pin.
+Then come what deleting and changing a referenced row do, for each action. NO ACTION is checked
+once the statement has run, cascades included, so one statement can delete a row with the rows
+that point to it, re-key a row that points to itself along with its own column or swap two keys:
+its sentences say a delete is blocked if, once the statement has run, rows still point to the
+row, and a change if they still point to its old value and no row has it. SET DEFAULT says the
+columns take their default values, or NULL when they have none, and takes a neutral wording when
+a default is not available, not recorded or kept from an earlier read; when the referenced key
+is one identity column, which never changes, the update sentence is left out for NO ACTION and
+says the action has no effect otherwise; a self-reference says "of the same table, which may be
+itself", and its NO ACTION sentences speak of the rows of the same table.
+A key to a table the login cannot see (ADR-034) gets a sentence that it belongs to a row in a
+table not visible to this login and its actions against "the referenced table", with no
+parent-side sentence. Explanations are cached per snapshot in a `WeakMap`; an `ExplanationScope`
+brings what the exported snapshot travels without (whether an access profile exists and the kept
+facts), so the viewer words SET DEFAULT as the application does. The SQL of a key is scripted
+from the catalog as an `ALTER TABLE … ADD CONSTRAINT … FOREIGN KEY … REFERENCES …` statement
+with `quoteIdentifier` (`sqlIdentifiers.ts`); a disabled key is added `WITH NOCHECK`, since
+adding a key checks the rows already there and a disabled one may have let in rows that do not
+follow it, then disabled with a `NOCHECK CONSTRAINT` statement. A note under the SQL says it is
+not the statement that created the key; a key to an invisible table has no SQL and no
+disclosure, since there is nothing to reveal.
+
+Sentences are data (`ruleText.ts`): a reading is a tree of `RuleNode`s, sentences and groups with
+a heading, whose texts are message keys with typed arguments (a column, a list of columns, a
+table, a literal, a list of values, the time now, a keyword, a count), never text.
+`formatRuleText` turns one into text, column, table and code parts through the translator's
+`template`, `formatMessageParts` and the plural rules of ADR-007 and `Intl.ListFormat`, so
+"'A', 'I', or 'S'" reads "'A', 'I' o 'S'" in Spanish and nothing is concatenated. The view-model
+of ADR-038 carries each `CHECK`'s reading and each key's explanation as a `RuleView` (sentences,
+the line for a rule it cannot read, the SQL and its note, and the columns and relationship it
+involves) and each section's notes; `RuleItem.tsx` in the Inspector and `src/viewer/rules.ts`
+draw it.
+
+Pointing at a rule with the pointer, or focusing one of its controls (the highlight adds no tab
+stop of its own), sets `canvasUiStore.ruleHighlight` with an owner: only the item that set it
+clears it, and closing the Inspector or a real change of selection clears it too. Each card
+reads only its own entry. A card the rule involves gets a 2 px accent outline 3 px off the card,
+which never reads as the selection ring that hugs it, so both show on a selected card; the rule's
+rows get the subtle accent tint, a 2 px accent bar at their start and the name in the accent text
+colour, with the type in secondary text for AA contrast. Only colours change, never the weight
+or the size, so rows and anchors stay where they are; at the Keys or compact level, or on a
+collapsed card, the outline alone says it. A key's relationship is emphasised without opening its
+label, which would cover the columns, and the Inspector's columns table tints the same rows. A
+table chip is a button only for the item's other table, out of the tab order (`tabIndex` -1),
+because the item's target link already takes the keyboard there. The viewer does the same with
+its own classes and inserted shapes (`sc-rule-outline`, `sc-rule-tint`, `sc-rule-bar`,
+`sc-rule-column`, `sc-rule-relation`), as compound selectors that win over the SVG's own rules,
+finds the columns through `data-column` (ADR-023), suspends its neighbour highlight while a rule
+holds the emphasis, ignores pointer moves inside the panel and repaints the highlight when
+`render()` replaces the SVG, which no longer rebuilds the panel, so a change of theme or detail
+level keeps the keyboard where it was. The relationship's hover label on the canvas adds its ON
+DELETE sentence, under "When enabled:" for a disabled key. Each HTML export grows by about 43 KB:
+some 31 KB of viewer script, mostly the readers, 2 KB of styles and 10 KB of rule messages.
+
+The diagram draws the same facts in standard crow's foot notation: `relationEnds` (`graph.ts`)
+calls `foreignKeyChildCardinality` and `foreignKeyOptionality` on the referencing table, so the
+markers and the sentences cannot disagree. The referencing end is a crow's foot, or zero or one
+for a one-to-one key; the referenced end is a bar, or a bar and a circle (zero or one) when any
+key column accepts NULL. 1.0 meant a circle at the referencing end when every key column
+accepted NULL, and drew it and the crow's foot under the referencing card, where neither showed;
+existing diagrams and exports therefore look different in 1.1.
+
+The golden forms keep the reader honest. `fixtures/sqlserver/check_forms.json`, in
+`crates/schemacraft-core/tests`, holds 72 synthetic cases on one table with structured columns,
+each as written, as stored and as it must be read, 21 of them unread. `sqlserver_integration.rs`
+builds `SchemaCraftCheckForms` from it and asserts every stored form, column list and enabled
+state against SQL Server 2022, and `checkReader.test.ts` reads every stored form against the same
+columns. Two more integration tests pin, on scratch tables (`rule_facts.sql`), the engine facts
+the wording rests on: a `CHECK` accepts unknown and a NULL in `IN` accepts every value, equality
+ignores trailing spaces, `LIKE` ignores them only outside Unicode and a pattern can refuse them,
+`char` and `nchar` pad with them and `LIKE` sees the padding (suffixes, exact patterns, `_` and
+`NOT LIKE`, against Unicode and plain patterns), a disabled key checks nothing and cascades
+nothing, adding a key checks the rows already there unless it is added `WITH NOCHECK`, NO ACTION
+is checked once the statement has run (a self-referencing subtree deleted at once, a row that
+points to itself re-keyed with its pointer, swapped keys, a row deleted by another key's
+cascade), a row with a NULL in a column of a composite key is not checked, an identity column
+cannot be updated, SET DEFAULT sets NULL where a column has no default, and neither a filtered
+unique index nor a unique constraint whose index is disabled keeps a referenced row to one
+referencing row. A new form starts as a golden case.
+
+Why: interpreting the stored definitions where they are shown keeps one module for two renderers
+and leaves both file formats alone, while a reader in Rust would freeze sentences of one language
+into the snapshot or need a second implementation for the viewer. A closed grammar with a
+conservative fallback can only say too little, never something false, and a golden table checked
+against the engine catches a normal form that changes before a sentence goes wrong; a later
+consumer outside the frontend can port the table rather than the reasoning. Row phrasing reads
+right for any table name in either language, and markers chosen by the functions that word the
+sentences cannot contradict them.
 
 ## Milestones
 
