@@ -3476,7 +3476,7 @@ dependencies = [
 
 [[package]]
 name = "schemacraft"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "chrono",
  "open",
@@ -3498,7 +3498,7 @@ dependencies = [
 
 [[package]]
 name = "schemacraft-core"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "bb8",

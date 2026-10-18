@@ -6,6 +6,12 @@ All notable changes to SchemaCraft are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-18
+
+Logins with limited permissions are explained, tables and views are told apart, an Inspector
+panel shows the details of the selected entity, and check constraints and foreign keys read as
+sentences. Projects are saved in format 2, which SchemaCraft 1.0 cannot open.
+
 ### Added
 
 - Logins with limited permissions are explained instead of producing a diagram that looks
@@ -128,4 +134,6 @@ First release.
 - Bilingual interface (English and Spanish), light and dark themes, keyboard access throughout.
 - Portable Windows executable and per-user installer, with a WebView2 runtime check at startup.
 
+[Unreleased]: https://github.com/jmanuelsoberano/schemacraft/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/jmanuelsoberano/schemacraft/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/jmanuelsoberano/schemacraft/releases/tag/v1.0.0

@@ -35,7 +35,7 @@ jobs:
 
       - run: npm ci
 
-      - name: The tag is on main and matches both versions
+      - name: The tag is on main, matches both versions and has its CHANGELOG entry
         run: |
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
             echo "tag $GITHUB_REF_NAME points at $GITHUB_SHA, which is not on main"
@@ -47,6 +47,7 @@ jobs:
             echo "tag $GITHUB_REF_NAME does not match package.json $package and Cargo.toml $cargo"
             exit 1
           fi
+          node scripts/release-notes.mjs "$package" > "$RUNNER_TEMP/release-notes.md"
 
       - name: Frontend quality gates
         run: |
@@ -105,10 +106,7 @@ jobs:
         with:
           draft: true
           generate_release_notes: true
-          body: |
-            SchemaCraft reads the schema of a Microsoft SQL Server database and shows it as an interactive entity-relationship diagram, with SVG, HTML, PDF and PNG export. The [README](https://github.com/jmanuelsoberano/schemacraft#features) lists every feature.
-
-            Portable executable (`schemacraft-${{ github.ref_name }}-windows-x64.exe`) and per-user installer (`schemacraft-${{ github.ref_name }}-windows-x64-setup.exe`) for Windows 10/11 x64; verify the downloads with `SHA256SUMS.txt`. Both need the Microsoft Edge WebView2 runtime, which Windows 11 and updated Windows 10 include.
-
-            [Code signing policy](https://github.com/jmanuelsoberano/schemacraft#code-signing-policy): free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org). The application to SignPath Foundation is under review; until it is approved, release files are not signed and SmartScreen warns on the first launch.
+          # What SchemaCraft is, the assets, the code signing policy and the version's CHANGELOG
+          # entry (scripts/release-notes.mjs), followed by the generated list of pull requests.
+          body_path: ${{ runner.temp }}/release-notes.md
           files: release/*

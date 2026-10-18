@@ -126,9 +126,10 @@ The portable binary is written to `target/release/schemacraft.exe` and the insta
 Every tag `vX.Y.Z` builds the assets listed under Download, smoke-tests the real executable and
 publishes a draft GitHub release. [docs/release-checklist.md](docs/release-checklist.md) lists
 what CI verifies and what is checked by hand before the draft is published. To cut a release: set
-the version in `package.json` and `Cargo.toml`, add the entry to `CHANGELOG.md`, merge that
-change into `main` through a pull request, then tag the merge commit `vX.Y.Z` and push the tag;
-the release workflow refuses a tag that is not on `main`.
+the version in `package.json` and `Cargo.toml`, add the dated entry `## [X.Y.Z] - YYYY-MM-DD`
+and its link to `CHANGELOG.md`, merge that change into `main` through a pull request, then tag
+the merge commit `vX.Y.Z` and push the tag; the release workflow refuses a tag that is not on
+`main`. The entry goes into the notes of the draft release, and CI fails a version without one.
 
 ## Scripts
 
@@ -146,6 +147,7 @@ the release workflow refuses a tag that is not on `main`.
 | `cargo clippy --workspace --all-targets -- -D warnings` | Lint Rust with the project's strict rules                  |
 | `node scripts/prepare-fonts.mjs`                        | Regenerate the TTF fonts bundled by the export renderer    |
 | `node scripts/smoke-test-release.mjs <exe> [dir]`       | Start a release build and check its first screens          |
+| `node scripts/release-notes.mjs [version]`              | Print the notes of a release from its `CHANGELOG.md` entry |
 
 The smoke test sets `SCHEMACRAFT_REMOTE_DEBUGGING_PORT`, which makes any build of the application
 open a Chrome DevTools Protocol port on localhost, so a script can drive the real executable.
