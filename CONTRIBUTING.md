@@ -6,9 +6,11 @@ Thanks for taking the time to contribute. This page covers what you need to get 
 
 - Bugs and feature requests go in
   [GitHub issues](https://github.com/jmanuelsoberano/schemacraft/issues). For a bug, include the
-  SchemaCraft version (Help, About), the Windows version, the SQL Server version and edition
-  (`SELECT @@VERSION` prints both) and the steps that reproduce it. SchemaCraft is tested against
-  SQL Server 2019 and 2022. Never paste connection strings or passwords.
+  SchemaCraft version (in the status bar, or About with F1), the Windows version, the SQL Server
+  version and edition (`SELECT @@VERSION` prints both) and the steps that reproduce it.
+  SchemaCraft is tested against SQL Server 2019 and 2022. Attach today's diagnostic log, from the
+  folder About (F1) opens, after reading it: it holds counts, timings and error kinds, never names
+  or passwords. Never paste connection strings or passwords.
 - For anything beyond a small fix, open an issue first so the approach can be agreed before you
   write code.
 - Security problems have their own channel: see [SECURITY.md](SECURITY.md).

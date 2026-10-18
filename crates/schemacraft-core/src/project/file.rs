@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::Instant;
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -6,6 +7,7 @@ use serde_json::Value;
 use super::document::{FORMAT_VERSION, OpenedProject, Project};
 use super::error::ProjectError;
 use super::migrations;
+use crate::diagnostics;
 use crate::fs::{FileError, read_bytes, write_json_atomically};
 
 /// The two header fields that decide how a file is read, taken before the rest is parsed.
@@ -21,7 +23,10 @@ struct VersionHeader {
 /// Older formats are upgraded in memory. A newer format opens read-only when its
 /// `minReaderVersion` says this version may show it, and is refused otherwise; so is one whose
 /// content this version cannot parse, because a value it does not know is not damage.
+///
+/// A file that opens is recorded in the diagnostic log by its format, size and reading time.
 pub fn read_project(path: &Path) -> Result<OpenedProject, ProjectError> {
+    let started = Instant::now();
     let bytes = read_bytes(path).map_err(|error| match error {
         FileError::NotFound => ProjectError::NotFound {
             path: display(path),
@@ -68,18 +73,23 @@ pub fn read_project(path: &Path) -> Result<OpenedProject, ProjectError> {
             not_a_project(error.to_string())
         }
     })?;
+    diagnostics::project_opened(found, is_read_only, bytes.len(), started.elapsed());
     Ok(OpenedProject {
         project,
         is_read_only,
     })
 }
 
-/// Writes a project file atomically: the previous file survives any failure.
+/// Writes a project file atomically: the previous file survives any failure. A written file is
+/// recorded in the diagnostic log by its format, size and writing time.
 pub fn write_project(path: &Path, project: &Project) -> Result<(), ProjectError> {
-    write_json_atomically(path, project).map_err(|error| ProjectError::Write {
+    let started = Instant::now();
+    let bytes = write_json_atomically(path, project).map_err(|error| ProjectError::Write {
         path: display(path),
         details: error.to_string(),
-    })
+    })?;
+    diagnostics::project_saved(project.format_version, bytes, started.elapsed());
+    Ok(())
 }
 
 fn display(path: &Path) -> String {

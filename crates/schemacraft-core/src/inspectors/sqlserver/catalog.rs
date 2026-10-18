@@ -9,6 +9,7 @@ use tiberius::{FromSql, Row};
 
 use super::errors::query_error;
 use super::pool::{ConnectionPool, SqlServerConnection, checkout_error};
+use crate::diagnostics;
 use crate::inspectors::{
     InspectionProgress, InspectionStage, InspectorError, ProgressReporter, ServerInformation,
 };
@@ -401,12 +402,7 @@ async fn fetch_stage<T>(
         .map_err(|error| checkout_error(error, session.target, session.connect_timeout))?;
 
     let rows = run_query(&mut connection, query, map_row).await?;
-    tracing::debug!(
-        query = query.name,
-        rows = rows.len(),
-        elapsed_ms = started.elapsed().as_millis(),
-        "catalog query completed"
-    );
+    diagnostics::catalog_query(query.name, rows.len(), started.elapsed());
 
     if reports_count {
         progress.report(InspectionProgress::counted(stage, rows.len()));

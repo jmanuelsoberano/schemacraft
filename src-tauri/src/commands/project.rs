@@ -8,7 +8,7 @@ use schemacraft_core::model::SchemaSnapshot;
 use schemacraft_core::project::{self, OpenedProject, Project, ProjectContent};
 use tauri::AppHandle;
 
-use super::run_blocking;
+use super::{logged, run_blocking};
 use crate::error::CommandError;
 
 /// Reads a project file, upgrading an older format. A file of a newer format opens read-only
@@ -16,17 +16,18 @@ use crate::error::CommandError;
 /// damaged or written by a newer version that older readers must not open.
 #[tauri::command]
 pub async fn read_project(path: PathBuf) -> Result<OpenedProject, CommandError> {
-    tracing::debug!(path = %path.display(), "read_project requested");
-    let read_path = path.clone();
-    let opened = run_blocking(move || project::read_project(&read_path)).await??;
-    tracing::info!(
-        path = %path.display(),
-        tables = opened.project.content.snapshot.tables.len(),
-        format_version = opened.project.format_version,
-        is_read_only = opened.is_read_only,
-        "project opened"
-    );
-    Ok(opened)
+    logged("read_project", async move {
+        tracing::debug!(path = %path.display(), "read_project requested");
+        let read_path = path.clone();
+        let opened = run_blocking(move || project::read_project(&read_path)).await??;
+        tracing::debug!(
+            path = %path.display(),
+            tables = opened.project.content.snapshot.tables.len(),
+            "project opened"
+        );
+        Ok(opened)
+    })
+    .await
 }
 
 /// Writes `content` to `path`, stamping it with the current time and application version, and
@@ -37,13 +38,16 @@ pub async fn write_project(
     path: PathBuf,
     content: ProjectContent,
 ) -> Result<Project, CommandError> {
-    let project = Project::from_content(content, &saved_with(&app));
-    let written_path = path.clone();
-    let project =
-        run_blocking(move || project::write_project(&written_path, &project).map(|()| project))
-            .await??;
-    tracing::info!(path = %path.display(), "project saved");
-    Ok(project)
+    logged("write_project", async move {
+        let project = Project::from_content(content, &saved_with(&app));
+        let written_path = path.clone();
+        let project =
+            run_blocking(move || project::write_project(&written_path, &project).map(|()| project))
+                .await??;
+        tracing::debug!(path = %path.display(), "project saved");
+        Ok(project)
+    })
+    .await
 }
 
 /// Compares the snapshot of an open project with a freshly extracted one.
@@ -52,7 +56,11 @@ pub async fn compute_schema_diff(
     previous: SchemaSnapshot,
     current: SchemaSnapshot,
 ) -> Result<SchemaDiff, CommandError> {
-    run_blocking(move || SchemaDiff::between(&previous, &current)).await
+    logged(
+        "compute_schema_diff",
+        run_blocking(move || SchemaDiff::between(&previous, &current)),
+    )
+    .await
 }
 
 /// Replaces the snapshot of `content` with `snapshot`, keeping the diagram state of the entities
@@ -62,7 +70,11 @@ pub async fn refresh_project_content(
     content: ProjectContent,
     snapshot: SchemaSnapshot,
 ) -> Result<ProjectContent, CommandError> {
-    run_blocking(move || content.with_refreshed_snapshot(snapshot)).await
+    logged(
+        "refresh_project_content",
+        run_blocking(move || content.with_refreshed_snapshot(snapshot)),
+    )
+    .await
 }
 
 fn saved_with(app: &AppHandle) -> String {

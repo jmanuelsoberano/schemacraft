@@ -12,6 +12,12 @@ All notable changes to SchemaCraft are documented here. The format follows
   SchemaCraft would read from a SQL Server database and returns numbers only, so a database that
   cannot be shared can still be measured. It is read-only and returns no name and no text; the
   README says how to run it and what to share.
+- A local diagnostic log for bug reports, in `%LOCALAPPDATA%\com.jmanuelsoberano.schemacraft\logs`:
+  one file per day, at most seven files kept, the crash file among them, with versions, counts,
+  timings, sizes and error kinds and numbers only, never names, code, paths or passwords, and
+  never sent anywhere. The place of a crash goes
+  to `schemacraft-panic.log`. About shows the folder and opens it, and so does "Open diagnostic
+  log folder" in the command palette.
 
 ### Changed
 

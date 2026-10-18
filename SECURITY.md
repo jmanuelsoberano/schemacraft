@@ -24,6 +24,11 @@ problem is confirmed.
   only the visible diagram and, for a partial read, a note saying so.
 - Connections to SQL Server are always encrypted, and the server certificate is validated unless
   you explicitly tick "Trust the server certificate" for that connection.
+- A diagnostic log for bug reports is kept on your computer, in
+  `%LOCALAPPDATA%\com.jmanuelsoberano.schemacraft\logs`, one file per day, with at most seven
+  files kept, the crash file among them. It holds versions, counts, timings, sizes and error kinds and numbers only, never a
+  server, login, password, database, object name, path, SQL text or error message, and it is
+  never sent anywhere; About shows the folder.
 - SchemaCraft only talks to the SQL Server you point it at. It sends no telemetry and contacts no
   other network service. The only web pages it opens, in your browser and only when you ask, are
   Microsoft's WebView2 download page when the runtime is missing and the React Flow site from

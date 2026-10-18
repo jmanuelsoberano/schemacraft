@@ -13,6 +13,7 @@ use super::catalog::{
     CatalogQuery, CatalogSession, optional, optional_text, required, required_text, run_batch,
 };
 use super::pool::{SqlServerConnection, checkout_error};
+use crate::diagnostics;
 use crate::inspectors::{InspectionProgress, InspectionStage, InspectorError, ProgressReporter};
 use crate::model::{AccessProbe, SchemaAccess};
 
@@ -159,12 +160,7 @@ pub(super) async fn fetch_access_stage(
         .map_err(|error| checkout_error(error, session.target, session.connect_timeout))?;
 
     let probe = fetch_access_probe(&mut connection).await?;
-    tracing::debug!(
-        query = ACCESS_PROBE.name,
-        schemas = probe.schemas.len(),
-        elapsed_ms = started.elapsed().as_millis(),
-        "catalog query completed"
-    );
+    diagnostics::catalog_query(ACCESS_PROBE.name, probe.schemas.len(), started.elapsed());
     progress.report(InspectionProgress::stage(InspectionStage::CheckingAccess));
     Ok(probe)
 }

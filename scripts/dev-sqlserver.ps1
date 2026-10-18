@@ -22,7 +22,7 @@
 .EXAMPLE
     .\scripts\dev-sqlserver.ps1 start -Version 2019
     .\scripts\dev-sqlserver.ps1 env -Version 2019 | Invoke-Expression
-    cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions
+    cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions --test diagnostics_privacy
 #>
 param(
     [ValidateSet('start', 'stop', 'remove', 'env')]

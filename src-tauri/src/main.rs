@@ -11,8 +11,10 @@ mod error;
 mod logging;
 mod state;
 
+use std::path::PathBuf;
 use std::process::ExitCode;
 
+use schemacraft_core::diagnostics::{self, StartupFailure, VersionNumber};
 use tauri::Manager;
 
 use state::AppState;
@@ -30,32 +32,41 @@ SchemaCraft necesita Microsoft Edge WebView2 Runtime y no está instalado en est
 ¿Abrir la página de descarga ahora?";
 
 fn main() -> ExitCode {
-    logging::initialize();
+    // The context carries the identifier, so the log folder is known, and the log open, before
+    // anything can fail: the WebView2 check and the start of Tauri are logged too (ADR-041).
+    let context = tauri::generate_context!();
+    let log_directory = logging::initialize(&context.config().identifier);
 
-    if !webview_runtime_available() {
+    let Some(webview2) = webview_runtime_version() else {
         return ExitCode::FAILURE;
-    }
+    };
+    diagnostics::app_started(
+        env!("CARGO_PKG_VERSION"),
+        VersionNumber::parse(&webview2).as_ref(),
+    );
 
-    match run_application() {
+    match run_application(context, log_directory) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             tracing::error!(%error, "SchemaCraft could not start");
+            diagnostics::startup_failed(StartupFailure::CouldNotStart);
             ExitCode::FAILURE
         }
     }
 }
 
-/// Whether the WebView2 runtime can be loaded. The portable executable relies on the Evergreen
-/// runtime that ships with Windows; when it is missing, a native dialog explains it and offers
-/// to open the download page instead of leaving the user with a generic error.
-fn webview_runtime_available() -> bool {
+/// The version of the WebView2 runtime, when it can be loaded. The portable executable relies
+/// on the Evergreen runtime that ships with Windows; when it is missing, a native dialog explains
+/// it and offers to open the download page instead of leaving the user with a generic error.
+fn webview_runtime_version() -> Option<String> {
     match tauri::webview_version() {
         Ok(version) => {
             tracing::debug!(%version, "WebView2 runtime found");
-            true
+            Some(version)
         }
         Err(error) => {
             tracing::error!(%error, "WebView2 runtime not found");
+            diagnostics::startup_failed(StartupFailure::WebView2Missing);
             let answer = rfd::MessageDialog::new()
                 .set_level(rfd::MessageLevel::Warning)
                 .set_title("SchemaCraft")
@@ -67,7 +78,7 @@ fn webview_runtime_available() -> bool {
             {
                 tracing::error!(%error, "could not open the WebView2 download page");
             }
-            false
+            None
         }
     }
 }
@@ -116,20 +127,15 @@ fn remote_debugging_port() -> Option<u16> {
     }
 }
 
-/// Builds the Tauri application and runs it until the last window closes.
-fn run_application() -> tauri::Result<()> {
+/// Builds the Tauri application and runs it until the last window closes. `log_directory` is
+/// the folder logging writes to, for the about dialog.
+fn run_application(context: tauri::Context, log_directory: Option<PathBuf>) -> tauri::Result<()> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .setup(|app| {
-            let package_info = app.package_info();
-            tracing::info!(
-                name = %package_info.name,
-                version = %package_info.version,
-                "application started"
-            );
+        .setup(move |app| {
             let preferences_path = app.path().app_config_dir()?.join(PREFERENCES_FILE_NAME);
-            app.manage(AppState::new(preferences_path));
+            app.manage(AppState::new(preferences_path, log_directory));
             create_main_window(app)?;
             Ok(())
         })
@@ -154,6 +160,7 @@ fn run_application() -> tauri::Result<()> {
             commands::credentials::forget_password,
             commands::export::export_diagram,
             commands::export::cancel_export,
+            commands::diagnostics::open_log_folder,
         ])
-        .run(tauri::generate_context!())
+        .run(context)
 }

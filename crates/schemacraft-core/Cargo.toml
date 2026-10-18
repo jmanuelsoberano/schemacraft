@@ -34,6 +34,8 @@ keyring = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# Captures the diagnostic events in tests; the application installs its own subscriber.
+tracing-subscriber = { workspace = true }
 
 [lints]
 workspace = true

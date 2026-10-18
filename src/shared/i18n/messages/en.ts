@@ -44,6 +44,7 @@ export const englishMessages = {
   "action.themeDark": "Theme: Dark",
   "action.languageEn": "Language: English",
   "action.languageEs": "Language: Español",
+  "action.openLogFolder": "Open diagnostic log folder",
 
   "credits.developedBy": "Developed by {name}",
   "about.title": "About SchemaCraft",
@@ -51,6 +52,13 @@ export const englishMessages = {
   "about.developer": "Developed by",
   "about.source": "Source code",
   "about.builtWith": "Built with Tauri, Rust, React, React Flow, Radix UI and Lucide.",
+  "about.log": "Diagnostic log",
+  "about.log.open": "Open log folder",
+  "about.log.privacy":
+    "Counts and timings for bug reports; never names, code, paths or passwords; never sent anywhere.",
+  "about.log.none":
+    "This session writes no log, because its folder could not be created. Restart SchemaCraft to try again.",
+  "about.log.unavailable": "The desktop application writes the log; this preview has none.",
 
   "export.dialog.title": "Export diagram",
   "export.dialog.description":
@@ -110,6 +118,7 @@ export const englishMessages = {
   "action.unavailable.nothingToUndo": "Nothing to undo",
   "action.unavailable.nothingToRedo": "Nothing to redo",
   "action.unavailable.readOnly": "A newer SchemaCraft saved this project, so it is read-only",
+  "action.unavailable.noLogFolder": "This session writes no diagnostic log",
 
   "menu.theme": "Theme",
   "theme.system": "System",

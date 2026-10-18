@@ -38,6 +38,7 @@ export const spanishMessages: MessageCatalog = {
   "action.themeDark": "Tema: Oscuro",
   "action.languageEn": "Idioma: English",
   "action.languageEs": "Idioma: Español",
+  "action.openLogFolder": "Abrir la carpeta del registro de diagnóstico",
 
   "credits.developedBy": "Desarrollado por {name}",
   "about.title": "Acerca de SchemaCraft",
@@ -45,6 +46,14 @@ export const spanishMessages: MessageCatalog = {
   "about.developer": "Desarrollado por",
   "about.source": "Código fuente",
   "about.builtWith": "Construido con Tauri, Rust, React, React Flow, Radix UI y Lucide.",
+  "about.log": "Registro de diagnóstico",
+  "about.log.open": "Abrir carpeta del registro",
+  "about.log.privacy":
+    "Conteos y tiempos para reportar errores; nunca nombres, código, rutas ni contraseñas; nunca se envía a ninguna parte.",
+  "about.log.none":
+    "Esta sesión no escribe registro, porque no se pudo crear su carpeta. Reinicia SchemaCraft para intentarlo de nuevo.",
+  "about.log.unavailable":
+    "El registro lo escribe la aplicación de escritorio; esta vista previa no tiene ninguno.",
 
   "export.dialog.title": "Exportar diagrama",
   "export.dialog.description":
@@ -105,6 +114,7 @@ export const spanishMessages: MessageCatalog = {
   "action.unavailable.nothingToRedo": "No hay nada que rehacer",
   "action.unavailable.readOnly":
     "Lo guardó un SchemaCraft más reciente, así que el proyecto es de solo lectura",
+  "action.unavailable.noLogFolder": "Esta sesión no escribe registro de diagnóstico",
 
   "menu.theme": "Tema",
   "theme.system": "Sistema",

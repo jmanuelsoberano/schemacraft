@@ -3,6 +3,9 @@ import type { CommandErrorKind } from "./CommandErrorKind";
 
 /**
  * Why a command failed, in a shape the frontend turns into user guidance.
+ *
+ * The message names servers, logins, databases and files, so the diagnostic log records only
+ * the kind, the SQL Server error number and the catalog query, which never cross the IPC.
  */
 export type CommandError = { 
 /**

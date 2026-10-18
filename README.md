@@ -168,15 +168,15 @@ They are skipped unless the `SCHEMACRAFT_TEST_MSSQL_*` variables are set; with
 ```
 
 ```powershell
-cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions -- --nocapture
+cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions --test diagnostics_privacy -- --nocapture
 ```
 
 The script starts SQL Server 2022 as `schemacraft-mssql` on port 14333. With `-Version 2019` it
 starts SQL Server 2019 as `schemacraft-mssql2019` on port 14334, so both can run side by side;
 pass it to `env` as well (`.\scripts\dev-sqlserver.ps1 env -Version 2019`). `env` also prints
 `SCHEMACRAFT_TEST_MSSQL_MAJOR`, the major version the server must report (16 for 2022, 15 for
-2019), which a test in each binary checks, so a run cannot test the wrong server. CI runs both
-binaries against both versions, in one job.
+2019), which a test in each binary checks, so a run cannot test the wrong server. CI runs the
+three binaries against both versions, in one job.
 
 `sqlserver_integration` seeds six databases on the container: `SchemaCraftFixture`, covering
 keys, indexes, constraints, alias types and views; `SchemaCraftFixtureChanged`, the same fixture
@@ -194,7 +194,11 @@ two variants of a schema `DENY` and a column `DENY`, plus, on SQL Server 2022, `
 with `VIEW SECURITY DEFINITION` denied, a permission 2019 does not have, and runs the capability
 probe as several of them. It creates these server logins itself, with the `schemacraft_` prefix
 and a password made up for each run, so run it only against a disposable server such as these
-containers. Windows Authentication cannot run in the Linux container; it is validated manually
+containers. `diagnostics_privacy` reads the same database as `sa`, as the `db_datareader` login and
+as a login of its own that may not read `sys.check_constraints`, logs in with a wrong password
+and opens a database the login cannot open, and checks that the diagnostic log's events hold
+counts, timings, kinds and error numbers only, with no name of the fixture, login, host, password
+or database. Windows Authentication cannot run in the Linux container; it is validated manually
 against a Windows instance.
 
 ## Browser preview
@@ -252,6 +256,17 @@ remembered passwords stay.
 `sqlserver://<server>/<login>` under the `SchemaCraft` service) and never in any SchemaCraft file.
 The history and a reopened project use it without asking; untick the box and connect again to
 forget it, or remove the entry from the Credential Manager.
+
+Since 1.2 SchemaCraft keeps a diagnostic log for bug reports in
+`%LOCALAPPDATA%\com.jmanuelsoberano.schemacraft\logs`: one file per day,
+`schemacraft.<date>.log` with the date in UTC, and `schemacraft-panic.log`, which records where a
+crash happened. The folder keeps at most seven of these files: each start deletes the oldest
+until six are left, then opens today's. The log holds versions, counts, timings, sizes, formats
+and error kinds and numbers, such as how many tables an inspection read and how long each stage
+took, and never a server, login, password, database, object name, path, SQL text or error
+message. It is never sent anywhere. About (F1, or the version in the status bar) shows the folder
+and opens it; read a file before you attach it to a bug report, and delete the folder, with
+SchemaCraft closed, to clear the log.
 
 ## Logins with limited permissions
 

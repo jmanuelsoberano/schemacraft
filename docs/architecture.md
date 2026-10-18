@@ -24,10 +24,11 @@ schemacraft/
 │   ├── src/credentials/       CredentialStore strategy: Windows Credential Manager, memory
 │   ├── src/export/            SVG to PNG and PDF rendering with bundled fonts
 │   ├── src/fs.rs              atomic file writes shared by projects, preferences and exports
+│   ├── src/diagnostics.rs     typed events of the local diagnostic log: counts, timings and kinds only
 │   ├── assets/fonts/          TTF fonts embedded in the exports
 │   ├── probes/                capability probe: a read-only T-SQL script, run by hand with the login SchemaCraft uses, that returns numbers only
 │   └── tests/                 integration tests, SQL fixtures, golden CHECK forms, low-privilege logins and the probe's allowlist (run against a real server)
-├── src-tauri/                 Rust binary: Tauri host, IPC commands, job registry, logging, configuration
+├── src-tauri/                 Rust binary: Tauri host, IPC commands, job registry, logging and the diagnostic log file, configuration
 ├── src/                       React + TypeScript frontend
 │   ├── app/                   composition root: shell, actions, palette, global styles, dev hooks
 │   │   ├── actions/           action registry, keyboard shortcuts, action buttons
@@ -107,6 +108,11 @@ the workspace; tests opt out locally. Library errors use `thiserror` enums; the 
 them to a serialisable error payload for the frontend (introduced with the first fallible command
 in milestone 2). The release profile sets `panic = "abort"`, which is consistent with the rule: a
 panic is a bug, not a flow.
+
+Since 1.2 a panic still leaves a trace although release builds have no console: the hook that
+logging installs appends the panic's file and line, never its message, to
+`schemacraft-panic.log` next to the diagnostic log, through `std::fs` rather than the logger,
+before `panic = "abort"` ends the process (ADR-041).
 
 ### ADR-005: React 19 and React Flow for the canvas, own SVG renderer for export
 
@@ -197,6 +203,10 @@ SQL button, the table chips of its sentences, and the highlight that pointing at
 focusing one of its controls sets on the canvas. The four layout strategies, collapse all, expand
 all, the three themes and the two languages have no shortcut: they live in the layout menu, the
 top bar and the palette, and Ctrl+Shift+L repeats the last layout.
+
+Since 1.2 `help.openLogFolder` (ADR-041) has no shortcut either: opening the log folder is a step
+of a bug report, not of daily work, so it lives in the palette and in the about dialog (F1), and it
+is unavailable when the session writes no log.
 
 Why: labels, icons and shortcuts shown in tooltips can never disagree with what the keyboard does,
 and adding a feature means adding one action rather than touching every surface.
@@ -723,8 +733,8 @@ Why: a pull request that only touches the documentation should not wait fifteen 
 Rust build, and the required checks must still fail closed when the classification itself fails.
 
 Since 1.2 the integration job reads SQL Server 2019 as well as 2022. It has two services, `mssql`
-(2022) on port 1433 and `mssql2019` on 1434, and two steps that run both test binaries, one against
-each server. Each step names the major version its server must report in
+(2022) on port 1433 and `mssql2019` on 1434, and two steps that run the SQL Server test binaries,
+one against each server. Each step names the major version its server must report in
 `SCHEMACRAFT_TEST_MSSQL_MAJOR`, and `connects_to_the_expected_major_version` checks it, so a wrong
 port cannot test one version twice. The 2019 step runs after a failure on 2022 as well
 (`!cancelled()`), so one run reports both versions; it reuses the binaries the first step built,
@@ -1267,6 +1277,94 @@ login and object names, and would have to be compiled and trusted. A T-SQL scrip
 connection code and no error text to clean, runs in the tools a DBA already has, and can be read
 line by line before it runs; the allowlist and the static test turn "numbers only" into a
 property CI checks rather than a promise.
+
+### ADR-041: A local diagnostic log holds typed counts, timings and kinds, never names, paths or code
+
+Release builds have no console, so a user who met a bug had nothing to attach. Since 1.2 SchemaCraft
+keeps a log on the user's machine, in `%LOCALAPPDATA%\com.jmanuelsoberano.schemacraft\logs`, the
+folder Tauri's `app_log_dir` names, and sends it nowhere.
+
+What the log may say is fixed by type, not by a filter. `crates/schemacraft-core/src/diagnostics.rs`
+is the only place that emits events on the target `schemacraft-diagnostics`, a name with a hyphen,
+which no module path has, so an event that names no target never matches it. It has one function
+per event, and their parameters are integers, booleans, durations, `&'static str` and closed
+classifications, which implement the marker trait `ClosedKind` next to their own enum, so the module
+depends on `model` alone. The events are `app_started` (the app's version and the WebView2
+runtime's, as numbers), `startup_failed` (WebView2 missing, or Tauri could not start),
+`catalog_query` (the fixed name of the query, rows, ms), `inspection_completed` (tables, views,
+foreign keys, keys to invisible tables, the access level and the ms of connecting, reading,
+assembling and the whole), `project_opened` (format version, read-only, KB, ms), `project_saved`
+(format version, KB, ms), `export_written` (format, KB, ms) and `command_failed` (the command's
+fixed name, its `CommandErrorKind`, and the SQL Server error number and catalog query when there
+are ones). No event takes a server, a host, a login, a database, a schema or object name, a path,
+SQL text, a definition or an error message. Errors cross with `log_summary()`, which every core
+error enum has: the kind, the SQL Server error number (`InspectorError` keeps it for a rejected
+login, an unavailable database, a refused session and a failed query) and the query name, never the
+message, which names servers, logins, databases, objects and files. `CommandError` carries the
+number and the query to its `log` method without sending them over the IPC, and every command that
+can fail records its failure through `commands::logged`, or through `log` itself in the synchronous
+`cancel_*`.
+
+`src-tauri/src/logging.rs` keeps the console layer as it was, under `SCHEMACRAFT_LOG`, and adds a
+file layer that accepts exactly that target, from that module, at info and above, whatever
+`SCHEMACRAFT_LOG` says. It checks the module (`diagnostics::MODULE`) as well as the target, so an
+event in another file that names the target, by mistake or through a copy of the constant, stays
+out too. Its formatter writes the UTC time, the level and the event's own fields, and no span, no
+target and no thread, so neither a stray `tracing::info!` elsewhere nor a future `#[instrument]`,
+which records every argument of a function in its span, can reach the file; a source scan test
+fails when any other file names the target or imports its constant under another name. A line
+reads `2026-10-18T21:04:05.120Z INFO catalog query query="columns" rows=418 elapsed_ms=31`.
+
+The files come from tracing-appender's `RollingFileAppender`: one per UTC day,
+`schemacraft.2026-10-18.log`, at most seven files kept, written in blocking mode, so the last line
+is on disk before `panic = "abort"` ends the process. They are named by date and never renamed: a
+writer capped by size renames `schemacraft.log` to `schemacraft.1.log`, which fails on Windows while
+a second SchemaCraft holds the file open, whereas files that are only created and appended to, one
+write per line, let two instances share a day's file. Each time the appender is built, at every
+start, and again at each UTC midnight while SchemaCraft runs, it first deletes the oldest files, by
+creation time, until six are left, and then opens today's file, so the folder holds at most seven
+files and a second start on the same day leaves six. It counts every file whose name starts with
+`schemacraft` and ends with `log`, so the panic file below is one of them, deleted like a daily file
+once it is the oldest. The folder is resolved before Tauri starts: `main.rs` calls
+`tauri::generate_context!()` first, and the pure function `log_directory` joins `LOCALAPPDATA`, the
+identifier and `logs`, so the WebView2 check and a failed start are logged too. When the folder
+cannot be created, the application goes on with the console only and the about dialog says that
+this session writes no log.
+
+A panic hook appends `time panic version=… at=file:line` to `schemacraft-panic.log` in the same
+folder through `std::fs`, without the logger, whose lock the panicking thread may hold, and then
+calls the previous hook. It writes the location, never the message, which can quote anything the
+code had at hand, and a dependency's path keeps only the part from its crate's folder on, without
+the folders of the machine that built the executable.
+
+`AppInfo.logDirectory` gives the about dialog the folder, which it shows with an "Open log folder"
+button and the sentence that the log holds counts and timings for bug reports, never names, code,
+paths or passwords, and is never sent anywhere. `open_log_folder` opens the folder the state holds,
+never a path from the frontend, with the opener plugin's Rust API on `run_blocking`, so no
+capability of the window grows; `help.openLogFolder` puts it in the palette, without a shortcut
+(ADR-008). Errors of the frontend are not logged: a window error or a rejected promise carries a
+message and a stack whose text can hold anything the page had at hand, and the WebView's console
+stays out of the file.
+
+Tests keep the contract. Unit tests check that each event records only its declared fields, that the
+`log_summary()` of every `InspectorError` variant built with a sentinel server, database, login and
+path holds none of them, the source scan, that the formatter writes no span context, the file
+filter, `log_directory` and the console filter as pure functions (the environment cannot be changed
+in a test, since `env::set_var` is unsafe in edition 2024 and the workspace forbids unsafe code) and
+the panic line. `tests/diagnostics_privacy.rs`, run against both CI servers, captures every event on
+the target at every level, without span context, which the formatter's unit test keeps out of the
+file, while it reads `SchemaCraftPermissions` as `sa` and as the `db_datareader` login, logs in with
+a wrong password, opens a database the login has no user in, and reads as a login that may not read
+`sys.check_constraints` (`fixtures/sqlserver/diagnostics_logins.sql`), and fails on any schema,
+object, column, key or constraint name of the fixture, any readable expression, the server's name, a
+login, the host, a password, a database or a fragment of the server's messages.
+
+Why: a log is useful in a bug report only when it can be shared without reading it twice. A typed
+allowlist keeps names, paths and code out by construction, which a filter over free-form events
+could not do, because errors carry server, login and object names; counts and timings are what a
+slow or failing inspection needs. Date-named files make rotation safe for two processes without a
+lock between them, and resolving the folder before Tauri starts covers the failures users meet
+first.
 
 ## Milestones
 

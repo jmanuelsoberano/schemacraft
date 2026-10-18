@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use ts_rs::TS;
 
+use crate::diagnostics::{ClosedKind, ErrorSummary};
+
 /// Failure to read or write a project file.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ProjectError {
@@ -58,7 +60,14 @@ impl ProjectError {
             Self::UnsupportedFormatVersion { .. } => ProjectErrorKind::UnsupportedFormatVersion,
         }
     }
+
+    /// What the diagnostic log may record of this error: its kind, never the path.
+    pub fn log_summary(&self) -> ErrorSummary<ProjectErrorKind> {
+        ErrorSummary::of(self.kind())
+    }
 }
+
+impl ClosedKind for ProjectErrorKind {}
 
 /// Serialisable classification of a [`ProjectError`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

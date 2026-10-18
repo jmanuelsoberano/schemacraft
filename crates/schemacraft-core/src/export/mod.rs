@@ -10,6 +10,7 @@ mod fonts;
 mod render;
 
 use std::path::Path;
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
@@ -19,6 +20,7 @@ pub use error::{ExportError, ExportErrorKind};
 pub use fonts::{MONO_FAMILY, SANS_FAMILY};
 pub use render::PNG_SCALES;
 
+use crate::diagnostics::{self, ClosedKind};
 use crate::fs::write_bytes_atomically;
 
 /// Longest side a PNG may have, in pixels; larger rasters would exhaust memory.
@@ -38,6 +40,8 @@ pub enum ExportFormat {
     /// Single-page vector document the size of the diagram.
     Pdf,
 }
+
+impl ClosedKind for ExportFormat {}
 
 /// What to export and where.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -82,12 +86,14 @@ pub struct ExportOutcome {
 }
 
 /// Writes the export described by `request`, reporting each stage through `on_stage` and giving
-/// up between stages once `cancellation` fires. The destination is only touched at the end.
+/// up between stages once `cancellation` fires. The destination is only touched at the end. A
+/// written file is recorded in the diagnostic log by its format, size and time.
 pub fn export_diagram(
     request: &ExportRequest,
     on_stage: &dyn Fn(ExportStage),
     cancellation: &CancellationToken,
 ) -> Result<ExportOutcome, ExportError> {
+    let started = Instant::now();
     on_stage(ExportStage::Rendering);
     let (bytes, size) = match request.format {
         ExportFormat::Svg | ExportFormat::Html => (request.document.clone().into_bytes(), None),
@@ -112,6 +118,7 @@ pub fn export_diagram(
             details: error.to_string(),
         }
     })?;
+    diagnostics::export_written(request.format, bytes.len(), started.elapsed());
     Ok(ExportOutcome {
         path: request.destination.clone(),
         bytes: u64::try_from(bytes.len()).unwrap_or(u64::MAX),

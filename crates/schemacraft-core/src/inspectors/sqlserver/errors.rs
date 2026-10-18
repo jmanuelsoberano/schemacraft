@@ -30,12 +30,14 @@ pub(super) fn classify_connect_error(
         DriverError::Server(token) if LOGIN_FAILED_CODES.contains(&token.code()) => {
             InspectorError::AuthenticationFailed {
                 details: token.message().to_string(),
+                error_number: Some(token.code()),
             }
         }
         DriverError::Server(token) if DATABASE_UNAVAILABLE_CODES.contains(&token.code()) => {
             InspectorError::DatabaseUnavailable {
                 database: context.database.unwrap_or_default().to_string(),
                 details: token.message().to_string(),
+                error_number: Some(token.code()),
             }
         }
         DriverError::Tls(message) => InspectorError::UntrustedCertificate {
@@ -57,6 +59,7 @@ pub(super) fn classify_connect_error(
         other => InspectorError::ConnectionRefused {
             target: context.target.to_string(),
             details: other.to_string(),
+            error_number: server_error_number(other),
         },
     }
 }
@@ -66,6 +69,16 @@ pub(super) fn query_error(query: &'static str, error: &DriverError) -> Inspector
     InspectorError::QueryFailed {
         query,
         details: error.to_string(),
+        error_number: server_error_number(error),
+    }
+}
+
+/// The SQL Server error number of a failure the server raised, such as 229 for a denied
+/// `SELECT`; `None` for a failure of the network, TLS or the driver.
+fn server_error_number(error: &DriverError) -> Option<u32> {
+    match error {
+        DriverError::Server(token) => Some(token.code()),
+        _ => None,
     }
 }
 
@@ -75,7 +88,7 @@ mod tests {
 
     use tiberius::error::Error as DriverError;
 
-    use super::{ConnectionContext, classify_connect_error};
+    use super::{ConnectionContext, classify_connect_error, query_error};
     use crate::inspectors::InspectorError;
 
     fn context() -> ConnectionContext<'static> {
@@ -120,7 +133,26 @@ mod tests {
         let error = DriverError::Protocol("unexpected token".into());
         assert!(matches!(
             classify_connect_error(&error, &context()),
-            InspectorError::ConnectionRefused { .. }
+            InspectorError::ConnectionRefused {
+                error_number: None,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn failures_without_a_server_error_carry_no_number() {
+        let error = DriverError::Io {
+            kind: ErrorKind::ConnectionReset,
+            message: "connection reset".to_string(),
+        };
+        assert!(matches!(
+            query_error("columns", &error),
+            InspectorError::QueryFailed {
+                query: "columns",
+                error_number: None,
+                ..
+            }
         ));
     }
 }

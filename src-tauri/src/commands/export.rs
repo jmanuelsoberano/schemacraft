@@ -6,7 +6,7 @@ use tauri::State;
 use tauri::ipc::Channel;
 use ts_rs::TS;
 
-use super::run_blocking;
+use super::{logged, run_blocking};
 use crate::error::CommandError;
 use crate::state::AppState;
 
@@ -33,29 +33,32 @@ pub async fn export_diagram(
     request: ExportRequest,
     on_event: Channel<ExportEvent>,
 ) -> Result<ExportOutcome, CommandError> {
-    let (job_id, cancellation) = state.export_jobs.start();
-    tracing::debug!(job_id, format = ?request.format, "export_diagram started");
-    send(
-        &on_event,
-        ExportEvent::Started {
-            job_id: job_id.clone(),
-        },
-    );
+    logged("export_diagram", async move {
+        let (job_id, cancellation) = state.export_jobs.start();
+        tracing::debug!(job_id, format = ?request.format, "export_diagram started");
+        send(
+            &on_event,
+            ExportEvent::Started {
+                job_id: job_id.clone(),
+            },
+        );
 
-    let stage_channel = on_event.clone();
-    let finished = run_blocking(move || {
-        export::export_diagram(
-            &request,
-            &|stage| send(&stage_channel, ExportEvent::Progress(stage)),
-            &cancellation,
-        )
+        let stage_channel = on_event.clone();
+        let finished = run_blocking(move || {
+            export::export_diagram(
+                &request,
+                &|stage| send(&stage_channel, ExportEvent::Progress(stage)),
+                &cancellation,
+            )
+        })
+        .await;
+        state.export_jobs.finish(&job_id);
+
+        let outcome = finished??;
+        tracing::debug!(path = %outcome.path, bytes = outcome.bytes, "export written");
+        Ok(outcome)
     })
-    .await;
-    state.export_jobs.finish(&job_id);
-
-    let outcome = finished??;
-    tracing::info!(path = %outcome.path, bytes = outcome.bytes, "export written");
-    Ok(outcome)
+    .await
 }
 
 /// Cancels a running export; the `export_diagram` call then fails with `cancelled`.
@@ -69,7 +72,9 @@ pub fn cancel_export(state: State<'_, AppState>, job_id: String) -> Result<(), C
         tracing::debug!(job_id, "export cancellation requested");
         Ok(())
     } else {
-        Err(CommandError::unknown_job(&job_id))
+        let error = CommandError::unknown_job(&job_id);
+        error.log("cancel_export");
+        Err(error)
     }
 }
 

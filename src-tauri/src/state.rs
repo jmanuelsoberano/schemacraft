@@ -134,16 +134,20 @@ pub struct AppState {
     pub preferences: PreferencesStore,
     /// Remembered passwords, kept by the operating system.
     pub credentials: Box<dyn CredentialStore>,
+    /// Folder of the diagnostic log, or `None` when this session writes none (ADR-041).
+    pub log_directory: Option<PathBuf>,
 }
 
 impl AppState {
-    /// Creates the state, loading the preferences stored at `preferences_path`.
-    pub fn new(preferences_path: PathBuf) -> Self {
+    /// Creates the state, loading the preferences stored at `preferences_path`. `log_directory`
+    /// is where logging writes, as it was opened before the application started.
+    pub fn new(preferences_path: PathBuf, log_directory: Option<PathBuf>) -> Self {
         Self {
             inspection_jobs: Jobs::new("inspection"),
             export_jobs: Jobs::new("export"),
             preferences: PreferencesStore::load(preferences_path),
             credentials: Box::new(SystemCredentialStore),
+            log_directory,
         }
     }
 }

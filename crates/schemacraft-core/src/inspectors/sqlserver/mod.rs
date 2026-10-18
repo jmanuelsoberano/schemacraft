@@ -26,6 +26,7 @@ pub use settings::{
 use self::assembly::SnapshotIdentity;
 use self::catalog::CatalogSession;
 use self::pool::{ConnectionPool, PoolSettings, checkout_error, open_pool};
+use crate::diagnostics::{self, InspectionCompleted};
 use crate::inspectors::{
     DatabaseDescription, DatabaseInspector, InspectionOptions, InspectionProgress, InspectionStage,
     InspectorError, ProgressReporter, ServerInformation,
@@ -74,7 +75,8 @@ impl SqlServerInspector {
     }
 
     /// The inspection itself: connect, then read the access facts and the catalog together and
-    /// assemble them. [`DatabaseInspector::inspect`] races it against the cancellation token.
+    /// assemble them, logging the counts and the time of each stage (ADR-041).
+    /// [`DatabaseInspector::inspect`] races it against the cancellation token.
     async fn read_snapshot(
         &self,
         options: &InspectionOptions,
@@ -88,6 +90,7 @@ impl SqlServerInspector {
             let mut connection = self.checkout(&pool).await?;
             catalog::fetch_server_information(&mut connection).await?
         };
+        let connected = started.elapsed();
 
         let target = self.target();
         let session = CatalogSession {
@@ -99,6 +102,7 @@ impl SqlServerInspector {
             access::fetch_access_stage(&session, progress),
             catalog::fetch_catalog(&session, progress),
         )?;
+        let read = started.elapsed();
 
         progress.report(InspectionProgress::stage(InspectionStage::Assembling));
         let snapshot = assembly::assemble_snapshot(
@@ -112,16 +116,18 @@ impl SqlServerInspector {
             },
         );
 
-        tracing::info!(
-            database = %snapshot.database_name,
-            tables = snapshot.tables.len(),
-            views = snapshot.views.len(),
-            foreign_keys = snapshot.foreign_keys.len(),
-            foreign_keys_to_invisible_tables = snapshot.foreign_keys_to_invisible_tables.len(),
-            access = ?snapshot.access.as_ref().map(|profile| profile.level),
-            elapsed_ms = started.elapsed().as_millis(),
-            "inspection completed"
-        );
+        let total = started.elapsed();
+        diagnostics::inspection_completed(&InspectionCompleted {
+            tables: snapshot.tables.len(),
+            views: snapshot.views.len(),
+            foreign_keys: snapshot.foreign_keys.len(),
+            foreign_keys_to_invisible_tables: snapshot.foreign_keys_to_invisible_tables.len(),
+            access: snapshot.access.as_ref().map(|profile| profile.level),
+            connecting: connected,
+            reading: read.saturating_sub(connected),
+            assembling: total.saturating_sub(read),
+            total,
+        });
         progress.report(InspectionProgress::counted(
             InspectionStage::Completed,
             snapshot.tables.len(),

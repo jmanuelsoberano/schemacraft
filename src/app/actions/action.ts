@@ -36,7 +36,8 @@ export type ActionId =
   | "settings.theme.dark"
   | "settings.language.en"
   | "settings.language.es"
-  | "help.about";
+  | "help.about"
+  | "help.openLogFolder";
 
 /**
  * A user-facing operation defined once and surfaced consistently by toolbars, menus, the

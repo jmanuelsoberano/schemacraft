@@ -23,6 +23,7 @@ import {
   Rows3,
   Save,
   SaveAll,
+  ScrollText,
   Search,
   ShieldHalf,
   Sun,
@@ -46,6 +47,7 @@ import { useConnectionStore } from "@/features/connection/connectionStore";
 import { useExportStore } from "@/features/export/exportStore";
 import { useProjectStore } from "@/features/project/projectStore";
 import { usePaletteStore } from "@/app/palette/paletteStore";
+import { useAppInfo } from "@/shared/ipc/useAppInfo";
 import { useSettingsStore } from "@/shared/settings/settingsStore";
 
 import type { MessageKey } from "@/shared/i18n/messages/en";
@@ -72,6 +74,9 @@ export function useAppActions(): AppActions {
   const saveProjectAs = useProjectStore((state) => state.saveProjectAs);
   const setDetailLevel = useProjectStore((state) => state.setDetailLevel);
   const openAbout = useAboutStore((state) => state.open);
+  const openLogFolder = useAboutStore((state) => state.openLogFolder);
+  const appInfo = useAppInfo();
+  const hasLogFolder = appInfo.status === "ready" && appInfo.info.logDirectory !== null;
   const openAccessReport = useAccessReportStore((state) => state.open);
   const canUndo = useProjectStore((state) => state.history.past.length > 0);
   const canRedo = useProjectStore((state) => state.history.future.length > 0);
@@ -422,6 +427,17 @@ export function useAppActions(): AppActions {
         isAvailable: true,
         run: openAbout,
       },
+      // For a bug report, from the palette; the about dialog shows the folder and opens it too.
+      "help.openLogFolder": {
+        id: "help.openLogFolder",
+        labelKey: "action.openLogFolder",
+        icon: ScrollText,
+        isAvailable: hasLogFolder,
+        unavailableReason: hasLogFolder ? undefined : "action.unavailable.noLogFolder",
+        run: () => {
+          void openLogFolder();
+        },
+      },
     };
 
     return { byId, list: Object.values(byId) };
@@ -440,6 +456,8 @@ export function useAppActions(): AppActions {
     saveProjectAs,
     setDetailLevel,
     openAbout,
+    openLogFolder,
+    hasLogFolder,
     openAccessReport,
     canUndo,
     canRedo,

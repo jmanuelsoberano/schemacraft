@@ -2,6 +2,8 @@ import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { AppInfoState } from "@/shared/ipc/useAppInfo";
+
 import type { ActionId } from "./action";
 import { formatShortcut, isReservedBrowserShortcut } from "./shortcut";
 import type { Shortcut, ShortcutKeyboardEvent } from "./shortcut";
@@ -26,6 +28,11 @@ vi.mock("@/features/canvas/layouts/elkWorker", () => ({
 vi.mock("@/features/export/fontFaces", () => ({
   loadEmbeddedFontFaces: () => Promise.resolve(""),
 }));
+// Outside the desktop runtime there is no application info; a test sets the state it needs.
+const appInfo = vi.hoisted((): { state: AppInfoState } => ({ state: { status: "unavailable" } }));
+vi.mock("@/shared/ipc/useAppInfo", () => ({ useAppInfo: () => appInfo.state }));
+const openLogFolder = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+vi.mock("@/shared/ipc/appInfo", () => ({ getAppInfo: unreachable, openLogFolder }));
 vi.stubGlobal("window", {
   localStorage: {
     getItem: () => null,
@@ -85,7 +92,17 @@ function keystroke(shortcut: Shortcut): ShortcutKeyboardEvent {
   };
 }
 
+/** The application info of a desktop session, with or without a log folder. */
+function ready(logDirectory: string | null): AppInfoState {
+  return {
+    status: "ready",
+    info: { name: "SchemaCraft", version: "1.2.0", isDebugBuild: false, logDirectory },
+  };
+}
+
 beforeEach(() => {
+  appInfo.state = { status: "unavailable" };
+  openLogFolder.mockClear();
   useCanvasUiStore.setState({ isInspectorOpen: false, inspectorFocusRequest: 0 });
   useSettingsStore.setState({ themePreference: "system", locale: "en" });
 });
@@ -149,6 +166,28 @@ describe("the action registry", () => {
     });
     byId["view.toggleInspector"].run();
     expect(useCanvasUiStore.getState().isInspectorOpen).toBe(false);
+  });
+
+  it("offers the diagnostic log folder from the palette, only when the session writes a log", () => {
+    // Outside the desktop runtime there is no application info, so no log folder either.
+    const action = builtRegistry().byId["help.openLogFolder"];
+    expect(action).toMatchObject({
+      labelKey: "action.openLogFolder",
+      isAvailable: false,
+      unavailableReason: "action.unavailable.noLogFolder",
+    });
+    expect(action.shortcut).toBeUndefined();
+
+    // A session whose log folder could not be created has none to offer.
+    appInfo.state = ready(null);
+    expect(builtRegistry().byId["help.openLogFolder"].isAvailable).toBe(false);
+
+    appInfo.state = ready("C:\\logs");
+    const available = builtRegistry().byId["help.openLogFolder"];
+    expect(available.isAvailable).toBe(true);
+    expect(available.unavailableReason).toBeUndefined();
+    available.run();
+    expect(openLogFolder).toHaveBeenCalledOnce();
   });
 
   it("switches the theme and the language through the settings, without shortcuts", () => {

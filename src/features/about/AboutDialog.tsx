@@ -6,9 +6,13 @@ import { Button } from "@/shared/ui/Button";
 import { Dialog } from "@/shared/ui/Dialog";
 
 import styles from "./AboutDialog.module.css";
+import { DiagnosticLog } from "./DiagnosticLog";
 import { useAboutStore } from "./aboutStore";
 
-/** Name, version, author and the open source work the application is built on. */
+/**
+ * Name, version, author, the folder of the diagnostic log and the open source work the
+ * application is built on.
+ */
 export function AboutDialog() {
   const { t } = useI18n();
   const isOpen = useAboutStore((state) => state.isOpen);
@@ -44,6 +48,7 @@ export function AboutDialog() {
             <dd>{DEVELOPER_NAME}</dd>
             <dt>{t("about.source")}</dt>
             <dd className={styles.mono}>{REPOSITORY_URL}</dd>
+            <DiagnosticLog appInfo={appInfo} />
           </dl>
           <p className={styles.builtWith}>{t("about.builtWith")}</p>
         </div>

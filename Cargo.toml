@@ -40,6 +40,8 @@ tauri-plugin-opener = "2"
 rfd = "0.16"
 open = "5"
 tracing = "0.1"
+# Daily log files for the diagnostic log (ADR-041); MIT, part of the tracing project.
+tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [workspace.lints.rust]

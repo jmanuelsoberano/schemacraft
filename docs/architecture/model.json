@@ -20,7 +20,8 @@
       "remember_password",
       "forget_password",
       "export_diagram",
-      "cancel_export"
+      "cancel_export",
+      "open_log_folder"
     ],
     "featureFolders": [
       "about",
@@ -35,6 +36,7 @@
     ],
     "coreModules": [
       "credentials",
+      "diagnostics",
       "diff",
       "export",
       "inspectors",
@@ -49,16 +51,16 @@
       "preferencesBackend.ts",
       "projectBackend.ts"
     ],
-    "adrCount": 40
+    "adrCount": 41
   },
   "en": {
     "overview": {
       "title": "SchemaCraft architecture",
       "oneLiner": "A Windows desktop app that reads a SQL Server catalog, draws it as an editable ER diagram, saves it as a .scraft file and exports it to SVG, HTML, PNG and PDF.",
       "paragraphs": [
-        "SchemaCraft is a Tauri 2 app. The UI is React 19 and TypeScript running in WebView2. All disk, network and OS work is done in Rust. The Rust side has two parts: a thin host (src-tauri) that exposes 20 IPC commands, and a framework-free library (crates/schemacraft-core) that holds the real logic.",
+        "SchemaCraft is a Tauri 2 app. The UI is React 19 and TypeScript running in WebView2. All disk, network and OS work is done in Rust. The Rust side has two parts: a thin host (src-tauri) that exposes 21 IPC commands, and a framework-free library (crates/schemacraft-core) that holds the real logic.",
         "Dependencies point one way: frontend -> IPC -> host -> core -> external systems. The frontend reaches Rust and the window only through src/shared/ipc, the one folder that imports the Tauri API, and ESLint enforces the layer rules (ADR-031). Commands are thin adapters: they resolve inputs, call the core and map errors, with no domain logic, and they keep blocking work off the main thread (ADR-032). The core knows nothing about Tauri or the UI. The types that cross the boundary are written once in Rust and generated as TypeScript with ts-rs.",
-        "SchemaCraft has no database of its own. SQL Server is only read, with fixed SELECT queries over sys.* views. What lasts lives in four places: .scraft files the user picks, preferences.json in %APPDATA%\\com.jmanuelsoberano.schemacraft, passwords in Windows Credential Manager, and two localStorage keys for UI conveniences. Everything else is memory only."
+        "SchemaCraft has no database of its own. SQL Server is only read, with fixed SELECT queries over sys.* views. What lasts lives in four places: .scraft files the user picks, preferences.json in %APPDATA%\\com.jmanuelsoberano.schemacraft, passwords in Windows Credential Manager, and two localStorage keys for UI conveniences. The local diagnostic log, counts and timings only, lives in %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft\\logs and is never sent anywhere (ADR-041). Everything else is memory only."
       ]
     },
     "layers": [
@@ -107,7 +109,7 @@
             "id": "action-registry",
             "name": "Action registry and shortcuts",
             "path": "src/app/actions",
-            "responsibility": "32 AppActions (id, labelKey, icon, shortcut, isAvailable, unavailableReason, run) built in useAppActions.ts. A disabled action says why in its tooltip: no project, a layout running, nothing hidden, nothing to undo or redo, or a read-only project (Save, Save as and Refresh). view.accessReport (Ctrl+Shift+A) opens the Access report whenever a project is open. Since 1.1 the detail levels (view.detailCompact, view.detailKeys and view.detailFull on Ctrl+1, Ctrl+2 and Ctrl+3), the themes (settings.theme.*) and the languages (settings.language.*) are actions too, run by the top bar, and view.toggleInspector (Ctrl+I) opens or closes the Inspector with focus; the per-entity gestures and Enter on a card stay outside the registry on purpose (ADR-008). useKeyboardShortcuts.ts routes keys in the capture phase; the first match wins. useAppActions.test.ts builds the registry as the shell does and fails when two actions share a shortcut or one takes a browser key that is not on the claimed list. The toolbar, the menus, the welcome screen and the command palette all read this registry.",
+            "responsibility": "33 AppActions (id, labelKey, icon, shortcut, isAvailable, unavailableReason, run) built in useAppActions.ts. A disabled action says why in its tooltip: no project, a layout running, nothing hidden, nothing to undo or redo, or a read-only project (Save, Save as and Refresh). view.accessReport (Ctrl+Shift+A) opens the Access report whenever a project is open. Since 1.1 the detail levels (view.detailCompact, view.detailKeys and view.detailFull on Ctrl+1, Ctrl+2 and Ctrl+3), the themes (settings.theme.*) and the languages (settings.language.*) are actions too, run by the top bar, and view.toggleInspector (Ctrl+I) opens or closes the Inspector with focus; the per-entity gestures and Enter on a card stay outside the registry on purpose (ADR-008). Since 1.2 help.openLogFolder opens the folder of the diagnostic log from the palette, without a shortcut, and is unavailable when the session writes no log. useKeyboardShortcuts.ts routes keys in the capture phase; the first match wins. useAppActions.test.ts builds the registry as the shell does and fails when two actions share a shortcut or one takes a browser key that is not on the claimed list. The toolbar, the menus, the welcome screen and the command palette all read this registry.",
             "patterns": ["Command / single registry (ADR-008)", "Platform-neutral mod key"]
           },
           {
@@ -156,7 +158,7 @@
             "id": "shared-ipc",
             "name": "IPC backends and resolver",
             "path": "src/shared/ipc",
-            "responsibility": "The only folder that imports the Tauri API. One typed backend per area (connection, project, preferences, credentials, export), each with a Tauri, an unavailable and a DEV-only preview implementation picked by createBackendResolver. Every command goes through invokeCommand, which normalises rejections with toOperationError. nativeWindow.ts wraps the window (theme, title, close guard, destroy), runtime.ts tells whether the page runs in the desktop app, and appInfo.ts with useAppInfo wraps get_app_info. previewAccess.ts follows the Rust access verdicts and the refresh merge for the preview backends, whose server names choose what the login sees (ADR-014).",
+            "responsibility": "The only folder that imports the Tauri API. One typed backend per area (connection, project, preferences, credentials, export), each with a Tauri, an unavailable and a DEV-only preview implementation picked by createBackendResolver. Every command goes through invokeCommand, which normalises rejections with toOperationError. nativeWindow.ts wraps the window (theme, title, close guard, destroy), runtime.ts tells whether the page runs in the desktop app, and appInfo.ts with useAppInfo wraps get_app_info and open_log_folder. previewAccess.ts follows the Rust access verdicts and the refresh merge for the preview backends, whose server names choose what the login sees (ADR-014).",
             "patterns": [
               "Ports and adapters",
               "Lazy resolver (ADR-014, ADR-018)",
@@ -340,7 +342,7 @@
             "id": "feature-about",
             "name": "about",
             "path": "src/features/about",
-            "responsibility": "About dialog: name, version, credit, repository URL.",
+            "responsibility": "About dialog: name, version, credit, repository URL, and the Diagnostic log row (DiagnosticLog.tsx): the folder from AppInfo.logDirectory, Open log folder, the sentence that the log holds counts and timings and is never sent anywhere, the states for no folder and for a browser preview, and the failure to open it. aboutStore.openLogFolder, shared with the help.openLogFolder action, opens the dialog with the failure.",
             "patterns": ["Visibility store per dialog"]
           },
           {
@@ -425,7 +427,7 @@
             "id": "ipc-invoke",
             "name": "Commands (invoke)",
             "path": "src-tauri/src/main.rs",
-            "responsibility": "invokeCommand(name, args) in src/shared/ipc reaches one of the 20 commands in generate_handler!. Arguments go camelCase from TS and arrive as snake_case Rust parameters. Commands that only read memory stay synchronous and return at once (get_app_info, read_preferences, both cancel_* commands). Every other command is async, and its file, credential-store or heavy work runs on the blocking pool through run_blocking (ADR-032), so the window never freezes.",
+            "responsibility": "invokeCommand(name, args) in src/shared/ipc reaches one of the 21 commands in generate_handler!. Arguments go camelCase from TS and arrive as snake_case Rust parameters. Commands that only read memory stay synchronous and return at once (get_app_info, read_preferences, both cancel_* commands). Every other command is async, and its file, credential-store or heavy work runs on the blocking pool through run_blocking (ADR-032), so the window never freezes.",
             "patterns": [
               "Request/response over serde JSON",
               "The signature decides the thread (async or sync)"
@@ -442,7 +444,7 @@
             "id": "ipc-error",
             "name": "CommandError envelope",
             "path": "src-tauri/src/error.rs",
-            "responsibility": "{kind: {type, value}, message}. One CommandErrorKind variant and one From impl per core error, plus UnknownJob, InvalidArgument and Unexpected (a blocking task that could not be joined), which serialise as {type} with no value.",
+            "responsibility": "{kind: {type, value}, message}. One CommandErrorKind variant and one From impl per core error, plus UnknownJob, InvalidArgument and Unexpected (a blocking task that could not be joined), which serialise as {type} with no value. Since 1.2 each From impl also keeps the error's log_summary(): the SQL Server error number and the catalog query name, in #[serde(skip)] fields that never cross the IPC. CommandError::log(command) hands them with the kind (CommandErrorKind is a ClosedKind) to diagnostics::command_failed. commands::logged calls it for every async command, and the synchronous cancel commands call it directly (ADR-041).",
             "patterns": ["Classification separate from message"]
           },
           {
@@ -465,21 +467,25 @@
             "id": "host-entry",
             "name": "main.rs",
             "path": "src-tauri/src/main.rs",
-            "responsibility": "Logging, WebView2 check (native bilingual dialog and exit if missing), plugins dialog and opener, AppState, the main window built by hand (optional CDP port from SCHEMACRAFT_REMOTE_DEBUGGING_PORT, also in release builds), and the 20 commands.",
+            "responsibility": "tauri::generate_context!() first, so logging::initialize opens the diagnostic log with the identifier before anything can fail, then the WebView2 check (native bilingual dialog and exit if missing; logged as startup_failed), app_started with the app and WebView2 versions, plugins dialog and opener, AppState with the log folder, the main window built by hand (optional CDP port from SCHEMACRAFT_REMOTE_DEBUGGING_PORT, also in release builds), and the 21 commands; a failed start is logged as startup_failed too.",
             "patterns": ["Composition root", "Fail-fast preflight"]
           },
           {
             "id": "host-logging",
             "name": "Logging",
             "path": "src-tauri/src/logging.rs",
-            "responsibility": "tracing fmt subscriber to stdout. Filter from SCHEMACRAFT_LOG; default info (release) or info,schemacraft=debug (debug). No log file.",
-            "patterns": ["Env-configurable filter"]
+            "responsibility": "Two layers on one tracing registry (ADR-041). The console layer writes to stdout under SCHEMACRAFT_LOG (default info in release, info,schemacraft=debug in debug; console_directives is pure). The file layer accepts only the target schemacraft-diagnostics, from the module schemacraft_core::diagnostics (diagnostics::MODULE), at info and above, whatever SCHEMACRAFT_LOG says, and its DiagnosticFormat writes the UTC time, the level and the event's fields, never a span, a target or a thread. tracing-appender's RollingFileAppender writes schemacraft.<UTC date>.log daily, in blocking mode, and never renames a file, so two instances share a day's file. It keeps at most seven files, the panic file among them: each start and each rollover deletes the oldest, by creation time, until six are left, then opens today's. log_directory (pure) joins LOCALAPPDATA, the identifier and logs; when the folder cannot be created the console is the only output. The panic hook appends time, version and file:line, never the message, to schemacraft-panic.log through std::fs, without the logger's lock, before panic = \"abort\".",
+            "patterns": [
+              "Env-configurable console filter",
+              "Allowlist of typed events",
+              "Formatter without span context"
+            ]
           },
           {
             "id": "host-state",
             "name": "AppState",
             "path": "src-tauri/src/state.rs",
-            "responsibility": "Jobs registries ('inspection-N', 'export-N' -> CancellationToken), PreferencesStore and the credential store (SystemCredentialStore). PreferencesStore applies a change to a copy and keeps it only once the file holds it, and never overwrites a file written by a newer version.",
+            "responsibility": "Jobs registries ('inspection-N', 'export-N' -> CancellationToken), PreferencesStore, the credential store (SystemCredentialStore) and the folder of the diagnostic log, as logging opened it, or None. PreferencesStore applies a change to a copy and keeps it only once the file holds it, and never overwrites a file written by a newer version.",
             "patterns": ["Registry of cancellation tokens", "Write-through persistence"]
           },
           {
@@ -493,7 +499,7 @@
             "id": "cmd-app-info",
             "name": "commands/app_info.rs",
             "path": "src-tauri/src/commands/app_info.rs",
-            "responsibility": "get_app_info: name, version, isDebugBuild. Sync, no core call.",
+            "responsibility": "get_app_info: name, version, isDebugBuild and logDirectory, the folder of the diagnostic log or null when this session writes none. Sync, reads AppState, no core call.",
             "patterns": ["Thin command"]
           },
           {
@@ -528,15 +534,22 @@
             "id": "cmd-export",
             "name": "commands/export.rs",
             "path": "src-tauri/src/commands/export.rs",
-            "responsibility": "Async. export_diagram runs the core export through run_blocking and streams stages; cancel_export (sync) cancels by jobId.",
+            "responsibility": "Async. export_diagram runs the core export through run_blocking and streams stages; cancel_export (sync) cancels by jobId. Like every command that can fail, a failure is logged by name and kind through commands::logged or CommandError::log (ADR-041).",
             "patterns": ["Offload CPU work to the blocking pool"]
+          },
+          {
+            "id": "cmd-diagnostics",
+            "name": "commands/diagnostics.rs",
+            "path": "src-tauri/src/commands/diagnostics.rs",
+            "responsibility": "Async. open_log_folder takes the folder from AppState, never from the frontend, creates it if the user deleted it and opens it with the opener plugin's Rust API (OpenerExt::open_path) on run_blocking, so no capability grows. Without a folder it fails as invalidArgument (ADR-041).",
+            "patterns": ["Thin command", "Rust-side plugin API"]
           }
         ]
       },
       {
         "id": "core",
         "name": "Rust core",
-        "summary": "schemacraft-core: framework-free library with seven public modules. About 10.5k lines and 160 unit tests.",
+        "summary": "schemacraft-core: framework-free library with eight public modules. About 10.5k lines and 160 unit tests.",
         "path": "crates/schemacraft-core/src",
         "technologies": [
           "Rust 1.99.0 (edition 2024)",
@@ -567,7 +580,7 @@
             "id": "core-inspectors",
             "name": "inspectors",
             "path": "crates/schemacraft-core/src/inspectors",
-            "responsibility": "DatabaseInspector trait (test_connection, list_databases, describe_database, inspect), create_inspector factory, ConnectionSettings, InspectionOptions, DatabaseDescription, ProgressReporter with the CheckingAccess stage, and InspectorError with 13 variants. inspect can be cancelled at any point, connecting included.",
+            "responsibility": "DatabaseInspector trait (test_connection, list_databases, describe_database, inspect), create_inspector factory, ConnectionSettings, InspectionOptions, DatabaseDescription, ProgressReporter with the CheckingAccess stage, and InspectorError with 13 variants, whose log_summary() keeps the kind, the SQL Server error number and the query name for the diagnostic log. inspect can be cancelled at any point, connecting included.",
             "patterns": [
               "Strategy (PRD 4.3)",
               "Factory",
@@ -579,7 +592,7 @@
             "id": "core-sqlserver",
             "name": "inspectors/sqlserver",
             "path": "crates/schemacraft-core/src/inspectors/sqlserver",
-            "responsibility": "SQL Server strategy. settings.rs builds the tiberius Config, pool.rs is a bb8 manager opened per operation (1 or 4 sessions), access.rs holds the access probe (one batch, two result sets; no denial is counted for dbo) that describe_database and every inspection run, catalog.rs holds the named sys.* queries, assembly.rs builds the snapshot purely (unreadable texts become NotVisible, keys to invisible tables are kept apart), bound_defaults.rs reads legacy bound defaults, data_types.rs holds type rules, errors.rs maps driver errors (a TLS failure becomes UntrustedCertificate). inspect races the cancellation token with tokio::select! (biased), connecting included.",
+            "responsibility": "SQL Server strategy. settings.rs builds the tiberius Config, pool.rs is a bb8 manager opened per operation (1 or 4 sessions), access.rs holds the access probe (one batch, two result sets; no denial is counted for dbo) that describe_database and every inspection run, catalog.rs holds the named sys.* queries, assembly.rs builds the snapshot purely (unreadable texts become NotVisible, keys to invisible tables are kept apart), bound_defaults.rs reads legacy bound defaults, data_types.rs holds type rules, errors.rs maps driver errors (a TLS failure becomes UntrustedCertificate) and keeps the SQL Server error number. Every catalog query and the access probe log catalog_query, and read_snapshot logs inspection_completed with the ms of connecting, reading and assembling (ADR-041). inspect races the cancellation token with tokio::select! (biased), connecting included.",
             "patterns": [
               "Concrete Strategy",
               "Per-operation pool (ADR-009)",
@@ -602,7 +615,7 @@
             "id": "core-project",
             "name": "project",
             "path": "crates/schemacraft-core/src/project",
-            "responsibility": ".scraft document (FORMAT_VERSION 2, MIN_READER_VERSION 2), read and written by file.rs with the fs helpers. A newer file opens read-only when its minReaderVersion allows it and is refused otherwise; an older one is upgraded by migrations.rs on the raw JSON; unknown keys at the root, the snapshot, the canvas and each node are kept (ADR-035). ProjectContent (with_refreshed_snapshot applies the carry-over merge), SavedConnection without password, CanvasState (the Memento) with normalisation and retaining_entities_of.",
+            "responsibility": ".scraft document (FORMAT_VERSION 2, MIN_READER_VERSION 2), read and written by file.rs with the fs helpers, which logs project_opened and project_saved (format, KB, ms). A newer file opens read-only when its minReaderVersion allows it and is refused otherwise; an older one is upgraded by migrations.rs on the raw JSON; unknown keys at the root, the snapshot, the canvas and each node are kept (ADR-035). ProjectContent (with_refreshed_snapshot applies the carry-over merge), SavedConnection without password, CanvasState (the Memento) with normalisation and retaining_entities_of.",
             "patterns": [
               "Memento",
               "Header + flattened content",
@@ -635,12 +648,19 @@
             "id": "core-export",
             "name": "export",
             "path": "crates/schemacraft-core/src/export",
-            "responsibility": "export_diagram: SVG and HTML written verbatim, PNG with resvg at 1x/2x/4x (max 16384 px per side), PDF with svg2pdf. fonts.rs loads the four TTFs from crates/schemacraft-core/assets/fonts (include_bytes!) and then the system fonts for characters the Latin subsets lack, in one OnceLock database (ADR-024).",
+            "responsibility": "export_diagram (logged as export_written: format, KB, ms): SVG and HTML written verbatim, PNG with resvg at 1x/2x/4x (max 16384 px per side), PDF with svg2pdf. fonts.rs loads the four TTFs from crates/schemacraft-core/assets/fonts (include_bytes!) and then the system fonts for characters the Latin subsets lack, in one OnceLock database (ADR-024).",
             "patterns": [
               "Format dispatch on an enum",
               "Validate before allocate",
               "OnceLock font database"
             ]
+          },
+          {
+            "id": "core-diagnostics",
+            "name": "diagnostics",
+            "path": "crates/schemacraft-core/src/diagnostics.rs",
+            "responsibility": "The only emitter of the target schemacraft-diagnostics (TARGET), whose hyphen no module path has, from the module the file layer checks as well (MODULE), one function per event whose parameters are integers, booleans, durations, &'static str and ClosedKind values: app_started, startup_failed, catalog_query, inspection_completed (counts, access level, ms per stage), project_opened, project_saved, export_written and command_failed (command, kind, SQL Server error number, query). ErrorSummary is what log_summary() returns: kind, error number and query name, never the message. Depends on model alone; the other modules mark their kinds with the ClosedKind marker trait. A source scan test fails when another file names the target or imports TARGET under another name (ADR-041).",
+            "patterns": ["Allowlist of typed events", "Marker trait for closed kinds"]
           }
         ]
       },
@@ -713,7 +733,7 @@
             "id": "ci",
             "name": "CI workflow",
             "path": ".github/workflows/ci.yml",
-            "responsibility": "On every pull request each job first runs scripts/ci-changes.sh. Windows job: the CHANGELOG entry of the package.json version (release-notes.mjs), prettier, eslint, tsc, vitest and npm run docs:check always; when code changed, also cargo fmt, clippy -D warnings, cargo test, the contracts check, tauri build --no-bundle with the ci profile, WebView2 when the runner lacks it and the smoke test, uploading the exe and the screenshots. Linux job, when the core changed: the SQL Server integration tests, sqlserver_integration and sqlserver_permissions, against two services, mssql/server:2022-latest on port 1433 and 2019-latest on 1434, in one step per server that names the major version it must report (SCHEMACRAFT_TEST_MSSQL_MAJOR, 16 and 15); the 2019 step runs after a 2022 failure too, and SCHEMACRAFT_TEST_REQUIRE_SERVER=1 makes a missing server fail the tests instead of skipping them. Two services in the one job rather than a matrix keep the name of the required check. Pushes to main run everything and keep the cache warm (ADR-033).",
+            "responsibility": "On every pull request each job first runs scripts/ci-changes.sh. Windows job: the CHANGELOG entry of the package.json version (release-notes.mjs), prettier, eslint, tsc, vitest and npm run docs:check always; when code changed, also cargo fmt, clippy -D warnings, cargo test, the contracts check, tauri build --no-bundle with the ci profile, WebView2 when the runner lacks it and the smoke test, uploading the exe and the screenshots. Linux job, when the core changed: the SQL Server integration tests, sqlserver_integration, sqlserver_permissions and diagnostics_privacy, against two services, mssql/server:2022-latest on port 1433 and 2019-latest on 1434, in one step per server that names the major version it must report (SCHEMACRAFT_TEST_MSSQL_MAJOR, 16 and 15); the 2019 step runs after a 2022 failure too, and SCHEMACRAFT_TEST_REQUIRE_SERVER=1 makes a missing server fail the tests instead of skipping them. Two services in the one job rather than a matrix keep the name of the required check. Pushes to main run everything and keep the cache warm (ADR-033).",
             "patterns": ["Required checks", "Change-based filtering that fails closed"]
           },
           {
@@ -755,7 +775,7 @@
             "id": "integration-tests",
             "name": "SQL Server integration tests",
             "path": "crates/schemacraft-core/tests",
-            "responsibility": "sqlserver_integration.rs creates databases from fixtures/sqlserver/fixture.sql, changes.sql and stress_200_tables.sql, then checks connection errors (the untrusted certificate included), describe_database, inspection, progress, cancellation and refresh against a real server. It also builds SchemaCraftCheckForms from fixtures/sqlserver/check_forms.json (72 golden CHECK forms, which the rule reader's vitest suite reads too) and rule_facts.sql, asserts every stored form, column list and enabled state against the engine, and pins on scratch tables the CHECK and foreign key behaviour the rule sentences rest on (ADR-039). It also builds SchemaCraftCode from fixtures/sqlserver/code.sql (views WITH CHECK OPTION, indexed and encrypted; triggers on a table and a view, ordered, disabled, NOT FOR REPLICATION and encrypted; procedures and functions of every T-SQL kind, no CLR module; a code-only schema; a database DDL trigger) and runs the capability probe as sa on SchemaCraftFixture, SchemaCraftCheckForms and SchemaCraftCode: the output contract of tests/common (one result set, nvarchar, nvarchar, bigint, every pair in PROBE_METRICS), no failed section and the counts each fixture defines; a run while another connection holds a schema lock, in which every failed section returns only error 1222; and a static check that the script is one read-only batch, that every CATCH returns only ERROR_NUMBER(), that every label is a literal or comes from a fixed VALUES list and that it calls none of the functions that return a name, an error message or a definition, such as OBJECT_NAME, ERROR_MESSAGE or OBJECT_DEFINITION (ADR-040). sqlserver_permissions.rs seeds permissions.sql (the fixture schema, an empty database and a database with denials made to public) and creates nine low-privilege logins with permission_logins.sql (db_owner, db_datareader, VIEW DEFINITION only, reader plus a schema's VIEW DEFINITION, two tables, CONNECT only, two schema-DENY variants and a column DENY) with a password made up for the run, plus, only on SQL Server 2022 and later, a tenth with permission_logins_2022.sql (VIEW DEFINITION with VIEW SECURITY DEFINITION denied), then checks every access verdict, hidden text and refresh rule, and that a denial to public never reaches dbo. On 2019 HAS_PERMS_BY_NAME answers NULL for VIEW SECURITY DEFINITION and denials stay countable; on 2022 the tenth login sees no denial, not even its own, nor its own database user, so its denials are unknown (ADR-034). It also runs the capability probe as sa and as the owner, reader, VIEW DEFINITION, sales-texts and connect-only logins, and the tenth on 2022, and pins what each one counts, such as no procedure and no readable text for db_datareader, and its VIEW SECURITY DEFINITION answer, -1 for every login on 2019. tests/common holds the shared helpers. The stress test must read 200 tables within 5 s (STRESS_BUDGET; the product target is 3 s) and prints its time with the server version. connects_to_the_expected_major_version, in both binaries, checks that the server reports the major version SCHEMACRAFT_TEST_MSSQL_MAJOR names, so a step cannot test the wrong server; CI runs both binaries against SQL Server 2019 and 2022, and check_forms.json and rule_facts.sql hold on both unchanged. Every test that needs the server is skipped when SCHEMACRAFT_TEST_MSSQL_HOST is not set, unless SCHEMACRAFT_TEST_REQUIRE_SERVER, which CI sets, makes it fail; the static check of the probe runs in every cargo test.",
+            "responsibility": "sqlserver_integration.rs creates databases from fixtures/sqlserver/fixture.sql, changes.sql and stress_200_tables.sql, then checks connection errors (the untrusted certificate included), describe_database, inspection, progress, cancellation and refresh against a real server. It also builds SchemaCraftCheckForms from fixtures/sqlserver/check_forms.json (72 golden CHECK forms, which the rule reader's vitest suite reads too) and rule_facts.sql, asserts every stored form, column list and enabled state against the engine, and pins on scratch tables the CHECK and foreign key behaviour the rule sentences rest on (ADR-039). It also builds SchemaCraftCode from fixtures/sqlserver/code.sql (views WITH CHECK OPTION, indexed and encrypted; triggers on a table and a view, ordered, disabled, NOT FOR REPLICATION and encrypted; procedures and functions of every T-SQL kind, no CLR module; a code-only schema; a database DDL trigger) and runs the capability probe as sa on SchemaCraftFixture, SchemaCraftCheckForms and SchemaCraftCode: the output contract of tests/common (one result set, nvarchar, nvarchar, bigint, every pair in PROBE_METRICS), no failed section and the counts each fixture defines; a run while another connection holds a schema lock, in which every failed section returns only error 1222; and a static check that the script is one read-only batch, that every CATCH returns only ERROR_NUMBER(), that every label is a literal or comes from a fixed VALUES list and that it calls none of the functions that return a name, an error message or a definition, such as OBJECT_NAME, ERROR_MESSAGE or OBJECT_DEFINITION (ADR-040). sqlserver_permissions.rs seeds permissions.sql (the fixture schema, an empty database and a database with denials made to public) and creates nine low-privilege logins with permission_logins.sql (db_owner, db_datareader, VIEW DEFINITION only, reader plus a schema's VIEW DEFINITION, two tables, CONNECT only, two schema-DENY variants and a column DENY) with a password made up for the run, plus, only on SQL Server 2022 and later, a tenth with permission_logins_2022.sql (VIEW DEFINITION with VIEW SECURITY DEFINITION denied), then checks every access verdict, hidden text and refresh rule, and that a denial to public never reaches dbo. On 2019 HAS_PERMS_BY_NAME answers NULL for VIEW SECURITY DEFINITION and denials stay countable; on 2022 the tenth login sees no denial, not even its own, nor its own database user, so its denials are unknown (ADR-034). It also runs the capability probe as sa and as the owner, reader, VIEW DEFINITION, sales-texts and connect-only logins, and the tenth on 2022, and pins what each one counts, such as no procedure and no readable text for db_datareader, and its VIEW SECURITY DEFINITION answer, -1 for every login on 2019. diagnostics_privacy.rs captures every event on the diagnostics target at every level, while it reads SchemaCraftPermissions as sa and as the db_datareader login, logs in with a wrong password, opens a database the login has no user in and reads as the login of fixtures/sqlserver/diagnostics_logins.sql, which may not read sys.check_constraints; it fails on any fixture name or readable expression from an sa read, the server's name, a login, the host, a password, a database or a fragment of the server's messages, and checks the counts, kinds and error numbers 18456, 4060 and 229 (ADR-041). tests/common holds the shared helpers. The stress test must read 200 tables within 5 s (STRESS_BUDGET; the product target is 3 s) and prints its time with the server version. connects_to_the_expected_major_version, in each binary, checks that the server reports the major version SCHEMACRAFT_TEST_MSSQL_MAJOR names, so a step cannot test the wrong server; CI runs the three binaries against SQL Server 2019 and 2022, and check_forms.json and rule_facts.sql hold on both unchanged. Every test that needs the server is skipped when SCHEMACRAFT_TEST_MSSQL_HOST is not set, unless SCHEMACRAFT_TEST_REQUIRE_SERVER, which CI sets, makes it fail; the static check of the probe runs in every cargo test.",
             "patterns": [
               "Gated by environment variables",
               "Performance budget as a test",
@@ -889,7 +909,7 @@
         "id": "action-registry-to-feature-about",
         "from": "action-registry",
         "to": "feature-about",
-        "label": "open About",
+        "label": "open About, openLogFolder",
         "kind": "call"
       },
       {
@@ -1085,7 +1105,7 @@
         "id": "host-entry-to-ipc-invoke",
         "from": "host-entry",
         "to": "ipc-invoke",
-        "label": "generate_handler! (20 commands)",
+        "label": "generate_handler! (21 commands)",
         "kind": "call"
       },
       {
@@ -1990,6 +2010,104 @@
         "to": "shared-i18n",
         "label": "formatMessageParts and pluralKey (ruleText), the rule message keys, the translator types and formatDate (objectDetailsView)",
         "kind": "call"
+      },
+      {
+        "id": "host-entry-to-core-diagnostics",
+        "from": "host-entry",
+        "to": "core-diagnostics",
+        "label": "app_started, startup_failed",
+        "kind": "call"
+      },
+      {
+        "id": "host-logging-to-core-diagnostics",
+        "from": "host-logging",
+        "to": "core-diagnostics",
+        "label": "file layer accepts diagnostics::TARGET from diagnostics::MODULE only",
+        "kind": "call"
+      },
+      {
+        "id": "host-logging-to-ext-filesystem",
+        "from": "host-logging",
+        "to": "ext-filesystem",
+        "label": "daily log files and schemacraft-panic.log in %LOCALAPPDATA%",
+        "kind": "file"
+      },
+      {
+        "id": "cmd-diagnostics-to-ext-filesystem",
+        "from": "cmd-diagnostics",
+        "to": "ext-filesystem",
+        "label": "opens the log folder (opener plugin)",
+        "kind": "call"
+      },
+      {
+        "id": "ipc-invoke-to-cmd-diagnostics",
+        "from": "ipc-invoke",
+        "to": "cmd-diagnostics",
+        "label": "open_log_folder",
+        "kind": "ipc"
+      },
+      {
+        "id": "cmd-diagnostics-to-host-state",
+        "from": "cmd-diagnostics",
+        "to": "host-state",
+        "label": "log_directory",
+        "kind": "call"
+      },
+      {
+        "id": "cmd-diagnostics-to-ipc-error",
+        "from": "cmd-diagnostics",
+        "to": "ipc-error",
+        "label": "invalid_argument, unexpected",
+        "kind": "call"
+      },
+      {
+        "id": "cmd-app-info-to-host-state",
+        "from": "cmd-app-info",
+        "to": "host-state",
+        "label": "log_directory",
+        "kind": "call"
+      },
+      {
+        "id": "ipc-error-to-core-diagnostics",
+        "from": "ipc-error",
+        "to": "core-diagnostics",
+        "label": "command_failed (CommandError::log, through commands::logged)",
+        "kind": "call"
+      },
+      {
+        "id": "action-registry-to-shared-ipc",
+        "from": "action-registry",
+        "to": "shared-ipc",
+        "label": "useAppInfo (help.openLogFolder availability)",
+        "kind": "call"
+      },
+      {
+        "id": "feature-about-to-shared-ipc",
+        "from": "feature-about",
+        "to": "shared-ipc",
+        "label": "useAppInfo, openLogFolder",
+        "kind": "call"
+      },
+      {
+        "id": "core-sqlserver-to-core-diagnostics",
+        "from": "core-sqlserver",
+        "to": "core-diagnostics",
+        "label": "catalog_query, inspection_completed",
+        "kind": "call"
+      },
+      {
+        "id": "core-project-to-core-diagnostics",
+        "from": "core-project",
+        "to": "core-diagnostics",
+        "label": "project_opened, project_saved",
+        "kind": "call"
+      },
+      {
+        "id": "core-export-to-core-diagnostics",
+        "from": "core-export",
+        "to": "core-diagnostics",
+        "label": "export_written",
+        "kind": "call"
       }
     ],
     "dataStores": [
@@ -2059,11 +2177,11 @@
       },
       {
         "name": "Logs",
-        "location": "stdout/stderr",
-        "format": "tracing text",
-        "owner": "src-tauri/src/logging.rs",
-        "contents": "Command starts, saves, exports, warnings. Never secrets.",
-        "notes": "No log file. Release builds have no console."
+        "location": "%LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft\\logs, and stdout",
+        "format": "One line per event: UTC time, level, message and name=value fields",
+        "owner": "src-tauri/src/logging.rs, with the events of crates/schemacraft-core/src/diagnostics.rs",
+        "contents": "schemacraft.<UTC date>.log, one per day, at most seven files kept, the panic file among them: the typed events only, versions, counts, timings, formats, read-only flags, sizes in KB, error kinds, SQL Server error numbers and fixed query and command names. Never a server, host, login, password, database, object name, path, SQL text, definition or error message. schemacraft-panic.log: time, version and file:line of a panic. stdout keeps the console events under SCHEMACRAFT_LOG.",
+        "notes": "Local only, never sent anywhere; the about dialog shows the folder and opens it. Files are named by date and never renamed, so two instances append safely; every start and every UTC midnight first deletes the oldest files, by creation time, until six are left, then opens today's, so the panic file counts toward the seven and a second start on a day leaves six. Without the folder the console is the only output (ADR-041)."
       }
     ],
     "flows": [
@@ -2563,6 +2681,11 @@
         "name": "cancel_export",
         "purpose": "Cancels a running export by jobId.",
         "streamsEvents": false
+      },
+      {
+        "name": "open_log_folder",
+        "purpose": "Opens the folder of the diagnostic log in the file manager; the folder comes from the state, never from the frontend.",
+        "streamsEvents": false
       }
     ],
     "patterns": [
@@ -2630,6 +2753,11 @@
         "name": "Typed errors with kinds",
         "where": "core *Error enums, src-tauri/src/error.rs, src/shared/errors/describeOperationError.ts",
         "why": "Rust classifies; the UI owns the localised remedy, such as 'Trust the certificate and retry' (ADR-012)."
+      },
+      {
+        "name": "Allowlist of typed log events",
+        "where": "crates/schemacraft-core/src/diagnostics.rs, src-tauri/src/logging.rs, tests/diagnostics_privacy.rs",
+        "why": "The log file takes only events whose parameters cannot carry a name, a path or code, through a formatter that writes no span, so it can be shared without reading it twice (ADR-041)."
       },
       {
         "name": "Long-running job",
@@ -3137,15 +3265,19 @@
         },
         {
           "concern": "Errors",
-          "touches": "Core *ErrorKind -> CommandErrorKind -> toOperationError -> error.<name>.title/hint."
+          "touches": "Core *ErrorKind -> CommandErrorKind -> toOperationError -> error.<name>.title/hint. For the diagnostic log, log_summary() -> CommandError (error number and query, never serialised) -> CommandError::log, through commands::logged."
         },
         {
           "concern": "Progress and cancel",
           "touches": "Jobs, Channel, Started{jobId} first, cancel_* returning UnknownJob; async jobs race the token, connecting included (ADR-013)."
         },
         {
+          "concern": "Diagnostic log",
+          "touches": "A new event is a function in crates/schemacraft-core/src/diagnostics.rs whose parameters are numbers, booleans, durations, &'static str or ClosedKind values; no other file emits on its target (source scan test). A new error enum gets log_summary() and a ClosedKind kind; a new command wraps its body in commands::logged. Extend tests/diagnostics_privacy.rs when a new path reads the server (ADR-041)."
+        },
+        {
           "concern": "Security and data placement",
-          "touches": "No app database; four persistence places; passwords as SecretString and never in files, but a typed one crosses IPC on every connection call; the connection draft keeps trustServerCertificate; .scraft stores the database user name, which exports never embed; strict CSP (devCsp only for tauri dev) and capabilities."
+          "touches": "No app database; four persistence places, plus the local diagnostic log of typed events (ADR-041); passwords as SecretString and never in files, but a typed one crosses IPC on every connection call; the connection draft keeps trustServerCertificate; .scraft stores the database user name, which exports never embed; strict CSP (devCsp only for tauri dev) and capabilities."
         },
         {
           "concern": "Module boundaries",
@@ -3200,7 +3332,7 @@
       },
       {
         "topic": "Errors",
-        "rule": "One thiserror enum per core domain with kind() returning a TS-exported *ErrorKind. The host wraps it in CommandError. The UI writes the user text."
+        "rule": "One thiserror enum per core domain with kind() returning a TS-exported *ErrorKind. Each also has log_summary() for the diagnostic log: kind, SQL Server error number and query name, never the message. The host wraps it in CommandError. The UI writes the user text."
       },
       {
         "topic": "No panic",
@@ -3256,7 +3388,7 @@
       }
     ],
     "conformance": {
-      "verdict": "The architecture holds. The core has no Tauri dependency, commands are thin and keep blocking work off the main thread, errors are typed end to end, contracts are generated and checked, ESLint enforces the frontend layers and keeps features/schema a leaf, only src/shared/ipc talks to Tauri, and the viewer pulls in no React or stores. Builder and Memento are implemented as the ADRs say, and each drawing rule has one home guarded by a test. Every deviation but one is fixed, the three major ones included; the one still open, a log file for bug reports, is a backlog item, not a structural break. Fixed entries stay below, marked fixed.",
+      "verdict": "The architecture holds. The core has no Tauri dependency, commands are thin and keep blocking work off the main thread, errors are typed end to end, contracts are generated and checked, ESLint enforces the frontend layers and keeps features/schema a leaf, only src/shared/ipc talks to Tauri, and the viewer pulls in no React or stores. Builder and Memento are implemented as the ADRs say, and each drawing rule has one home guarded by a test. Every deviation is fixed, the three major ones included, the last being the log file for bug reports (ADR-041). Fixed entries stay below, marked fixed.",
       "deviations": [
         {
           "what": "Disabled action buttons always say 'Available in an upcoming milestone', even when the cause is a runtime condition.",
@@ -3478,9 +3610,9 @@
         {
           "what": "No log file; release builds show no logs.",
           "where": "src-tauri/src/logging.rs",
-          "fix": "Backlog: Consider a rolling log file for bug reports.",
+          "fix": "Fixed: release builds keep a local diagnostic log of typed events, one file per day, at most seven files, under %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft\\logs, shown and opened from the about dialog, with the panic location in schemacraft-panic.log (ADR-041).",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "The smoke test covers only welcome, About, language, theme and F5; its output folder is not in .gitignore.",
@@ -3759,6 +3891,11 @@
         "id": "rule-highlight",
         "term": "Rule highlight",
         "meaning": "canvasUiStore.ruleHighlight: the columns and relationship of the rule pointed at in the Inspector, owned by the item that set it; the cards outline and tint them. The viewer paints the same with its sc-rule-* classes."
+      },
+      {
+        "id": "diagnostic-log",
+        "term": "Diagnostic log",
+        "meaning": "The local log for bug reports: typed counts, timings and kinds, one file per day, at most seven files, under %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft\\logs, never names, code, paths or passwords, never sent anywhere."
       }
     ]
   },
@@ -3767,9 +3904,9 @@
       "title": "Arquitectura de SchemaCraft",
       "oneLiner": "Una app de escritorio para Windows que lee el catálogo de SQL Server, lo dibuja como un diagrama ER editable, lo guarda como archivo .scraft y lo exporta a SVG, HTML, PNG y PDF.",
       "paragraphs": [
-        "SchemaCraft es una app Tauri 2. La interfaz es React 19 y TypeScript dentro de WebView2. Todo el trabajo de disco, red y sistema operativo lo hace Rust. El lado Rust tiene dos partes: un host delgado (src-tauri) que expone 20 comandos IPC, y una biblioteca sin framework (crates/schemacraft-core) que contiene la lógica real.",
+        "SchemaCraft es una app Tauri 2. La interfaz es React 19 y TypeScript dentro de WebView2. Todo el trabajo de disco, red y sistema operativo lo hace Rust. El lado Rust tiene dos partes: un host delgado (src-tauri) que expone 21 comandos IPC, y una biblioteca sin framework (crates/schemacraft-core) que contiene la lógica real.",
         "Las dependencias van en un solo sentido: frontend -> IPC -> host -> core -> sistemas externos. El frontend llega a Rust y a la ventana solo a través de src/shared/ipc, la única carpeta que importa la API de Tauri, y ESLint hace cumplir las reglas de capas (ADR-031). Los comandos son adaptadores delgados: resuelven las entradas, llaman al core y traducen los errores, sin lógica de dominio, y mantienen el trabajo bloqueante fuera del hilo principal (ADR-032). El core no sabe nada de Tauri ni de la interfaz. Los tipos que cruzan la frontera se escriben una vez en Rust y se generan en TypeScript con ts-rs.",
-        "SchemaCraft no tiene base de datos propia. SQL Server solo se lee, con consultas SELECT fijas sobre las vistas sys.*. Lo que perdura vive en cuatro lugares: archivos .scraft que elige el usuario, preferences.json en %APPDATA%\\com.jmanuelsoberano.schemacraft, contraseñas en el Administrador de credenciales de Windows y dos claves de localStorage para comodidades de la interfaz. Todo lo demás vive solo en memoria."
+        "SchemaCraft no tiene base de datos propia. SQL Server solo se lee, con consultas SELECT fijas sobre las vistas sys.*. Lo que perdura vive en cuatro lugares: archivos .scraft que elige el usuario, preferences.json en %APPDATA%\\com.jmanuelsoberano.schemacraft, contraseñas en el Administrador de credenciales de Windows y dos claves de localStorage para comodidades de la interfaz. El registro de diagnóstico local, solo conteos y tiempos, vive en %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft\\logs y nunca se envía a ninguna parte (ADR-041). Todo lo demás vive solo en memoria."
       ]
     },
     "layers": [
@@ -3818,7 +3955,7 @@
             "id": "action-registry",
             "name": "Registro de acciones y atajos",
             "path": "src/app/actions",
-            "responsibility": "32 AppActions (id, labelKey, icono, atajo, isAvailable, unavailableReason, run) construidas en useAppActions.ts. Una acción deshabilitada dice por qué en su tooltip: no hay proyecto, se está calculando una disposición, no hay nada oculto, nada que deshacer o rehacer, o el proyecto es de solo lectura (Guardar, Guardar como y Actualizar). view.accessReport (Ctrl+Shift+A) abre el informe de acceso siempre que hay un proyecto abierto. Desde 1.1 los niveles de detalle (view.detailCompact, view.detailKeys y view.detailFull con Ctrl+1, Ctrl+2 y Ctrl+3), los temas (settings.theme.*) y los idiomas (settings.language.*) también son acciones, que ejecuta la barra superior, y view.toggleInspector (Ctrl+I) abre o cierra el Inspector con foco; los gestos por entidad y Enter sobre una tarjeta quedan fuera del registro a propósito (ADR-008). useKeyboardShortcuts.ts dirige las teclas en fase de captura; gana la primera coincidencia. useAppActions.test.ts arma el registro como lo hace el shell y falla si dos acciones comparten atajo o una toma una tecla del navegador que no está en la lista declarada. La barra superior, los menús, la pantalla de bienvenida y la paleta de comandos leen este registro.",
+            "responsibility": "33 AppActions (id, labelKey, icono, atajo, isAvailable, unavailableReason, run) construidas en useAppActions.ts. Una acción deshabilitada dice por qué en su tooltip: no hay proyecto, se está calculando una disposición, no hay nada oculto, nada que deshacer o rehacer, o el proyecto es de solo lectura (Guardar, Guardar como y Actualizar). view.accessReport (Ctrl+Shift+A) abre el informe de acceso siempre que hay un proyecto abierto. Desde 1.1 los niveles de detalle (view.detailCompact, view.detailKeys y view.detailFull con Ctrl+1, Ctrl+2 y Ctrl+3), los temas (settings.theme.*) y los idiomas (settings.language.*) también son acciones, que ejecuta la barra superior, y view.toggleInspector (Ctrl+I) abre o cierra el Inspector con foco; los gestos por entidad y Enter sobre una tarjeta quedan fuera del registro a propósito (ADR-008). Desde 1.2 help.openLogFolder abre la carpeta del registro de diagnóstico desde la paleta, sin atajo, y no está disponible cuando la sesión no escribe ninguno. useKeyboardShortcuts.ts dirige las teclas en fase de captura; gana la primera coincidencia. useAppActions.test.ts arma el registro como lo hace el shell y falla si dos acciones comparten atajo o una toma una tecla del navegador que no está en la lista declarada. La barra superior, los menús, la pantalla de bienvenida y la paleta de comandos leen este registro.",
             "patterns": [
               "Command / registro único (ADR-008)",
               "Tecla mod independiente de plataforma"
@@ -3870,7 +4007,7 @@
             "id": "shared-ipc",
             "name": "Backends IPC y resolver",
             "path": "src/shared/ipc",
-            "responsibility": "La única carpeta que importa la API de Tauri. Un backend tipado por área (connection, project, preferences, credentials, export), cada uno con implementación Tauri, unavailable y preview (solo DEV), elegidas por createBackendResolver. Todo comando pasa por invokeCommand, que normaliza los rechazos con toOperationError. nativeWindow.ts envuelve la ventana (tema, título, protección al cerrar, destroy), runtime.ts indica si la página corre en la aplicación de escritorio, y appInfo.ts con useAppInfo envuelve get_app_info. previewAccess.ts sigue los veredictos de acceso de Rust y la fusión de la actualización para los backends preview, cuyos nombres de servidor eligen qué ve el inicio de sesión (ADR-014).",
+            "responsibility": "La única carpeta que importa la API de Tauri. Un backend tipado por área (connection, project, preferences, credentials, export), cada uno con implementación Tauri, unavailable y preview (solo DEV), elegidas por createBackendResolver. Todo comando pasa por invokeCommand, que normaliza los rechazos con toOperationError. nativeWindow.ts envuelve la ventana (tema, título, protección al cerrar, destroy), runtime.ts indica si la página corre en la aplicación de escritorio, y appInfo.ts con useAppInfo envuelve get_app_info y open_log_folder. previewAccess.ts sigue los veredictos de acceso de Rust y la fusión de la actualización para los backends preview, cuyos nombres de servidor eligen qué ve el inicio de sesión (ADR-014).",
             "patterns": [
               "Puertos y adaptadores",
               "Resolver perezoso (ADR-014, ADR-018)",
@@ -4054,7 +4191,7 @@
             "id": "feature-about",
             "name": "about",
             "path": "src/features/about",
-            "responsibility": "Diálogo Acerca de: nombre, versión, crédito, URL del repositorio.",
+            "responsibility": "Diálogo Acerca de: nombre, versión, crédito, URL del repositorio y la fila Registro de diagnóstico (DiagnosticLog.tsx): la carpeta de AppInfo.logDirectory, Abrir carpeta del registro, la frase de que el registro guarda conteos y tiempos y nunca se envía a ninguna parte, los estados sin carpeta y de vista previa en el navegador, y el fallo al abrirla. aboutStore.openLogFolder, compartido con la acción help.openLogFolder, abre el diálogo con el fallo.",
             "patterns": ["Store de visibilidad por diálogo"]
           },
           {
@@ -4139,7 +4276,7 @@
             "id": "ipc-invoke",
             "name": "Comandos (invoke)",
             "path": "src-tauri/src/main.rs",
-            "responsibility": "invokeCommand(nombre, args) en src/shared/ipc llega a uno de los 20 comandos de generate_handler!. Los argumentos salen en camelCase desde TS y llegan como parámetros snake_case en Rust. Los comandos que solo leen memoria siguen siendo síncronos y responden al instante (get_app_info, read_preferences y los dos cancel_*). Todos los demás son async, y su trabajo con archivos, con el almacén de credenciales o pesado corre en el pool bloqueante mediante run_blocking (ADR-032), así la ventana nunca se congela.",
+            "responsibility": "invokeCommand(nombre, args) en src/shared/ipc llega a uno de los 21 comandos de generate_handler!. Los argumentos salen en camelCase desde TS y llegan como parámetros snake_case en Rust. Los comandos que solo leen memoria siguen siendo síncronos y responden al instante (get_app_info, read_preferences y los dos cancel_*). Todos los demás son async, y su trabajo con archivos, con el almacén de credenciales o pesado corre en el pool bloqueante mediante run_blocking (ADR-032), así la ventana nunca se congela.",
             "patterns": [
               "Petición/respuesta sobre serde JSON",
               "La firma decide el hilo (async o síncrona)"
@@ -4156,7 +4293,7 @@
             "id": "ipc-error",
             "name": "Envoltorio CommandError",
             "path": "src-tauri/src/error.rs",
-            "responsibility": "{kind: {type, value}, message}. Una variante de CommandErrorKind y un impl From por cada error del core, más UnknownJob, InvalidArgument y Unexpected (una tarea bloqueante que no se pudo unir), que se serializan como {type} sin value.",
+            "responsibility": "{kind: {type, value}, message}. Una variante de CommandErrorKind y un impl From por cada error del core, más UnknownJob, InvalidArgument y Unexpected (una tarea bloqueante que no se pudo unir), que se serializan como {type} sin value. Desde 1.2 cada impl From conserva también el log_summary() del error: el número de error de SQL Server y el nombre de la consulta del catálogo, en campos #[serde(skip)] que nunca cruzan el IPC. CommandError::log(command) los entrega con la clasificación (CommandErrorKind es ClosedKind) a diagnostics::command_failed. commands::logged lo llama en cada comando asíncrono y los comandos cancel_* síncronos lo llaman directamente (ADR-041).",
             "patterns": ["Clasificación separada del mensaje"]
           },
           {
@@ -4179,21 +4316,25 @@
             "id": "host-entry",
             "name": "main.rs",
             "path": "src-tauri/src/main.rs",
-            "responsibility": "Logging, revisión de WebView2 (diálogo nativo bilingüe y salida si falta), plugins dialog y opener, AppState, la ventana principal construida a mano (puerto CDP opcional con SCHEMACRAFT_REMOTE_DEBUGGING_PORT, también en compilaciones release) y los 20 comandos.",
+            "responsibility": "Primero tauri::generate_context!(), para que logging::initialize abra el registro de diagnóstico con el identificador antes de que algo pueda fallar; luego la revisión de WebView2 (diálogo nativo bilingüe y salida si falta; queda registrada como startup_failed), app_started con las versiones de la app y de WebView2, plugins dialog y opener, AppState con la carpeta del registro, la ventana principal construida a mano (puerto CDP opcional con SCHEMACRAFT_REMOTE_DEBUGGING_PORT, también en compilaciones release) y los 21 comandos; un arranque fallido también queda registrado como startup_failed.",
             "patterns": ["Raíz de composición", "Verificación previa que falla rápido"]
           },
           {
             "id": "host-logging",
             "name": "Logging",
             "path": "src-tauri/src/logging.rs",
-            "responsibility": "Subscriber fmt de tracing hacia stdout. Filtro desde SCHEMACRAFT_LOG; por defecto info (release) o info,schemacraft=debug (debug). Sin archivo de log.",
-            "patterns": ["Filtro configurable por variable de entorno"]
+            "responsibility": "Dos capas sobre un mismo registry de tracing (ADR-041). La capa de consola escribe en stdout según SCHEMACRAFT_LOG (por defecto info en release, info,schemacraft=debug en debug; console_directives es pura). La capa de archivo acepta solo el target schemacraft-diagnostics, desde el módulo schemacraft_core::diagnostics (diagnostics::MODULE), en info o más, diga lo que diga SCHEMACRAFT_LOG, y su DiagnosticFormat escribe la hora UTC, el nivel y los campos del evento, nunca un span, un target ni un hilo. El RollingFileAppender de tracing-appender escribe schemacraft.<fecha UTC>.log cada día, en modo bloqueante, y nunca renombra un archivo, así dos instancias comparten el archivo del día. Conserva como mucho siete archivos, el de panic entre ellos: cada arranque y cada cambio de día borra los más antiguos, por fecha de creación, hasta dejar seis, y luego abre el de hoy. log_directory (pura) une LOCALAPPDATA, el identificador y logs; si la carpeta no se puede crear, la consola es la única salida. El hook de panic agrega hora, versión y archivo:línea, nunca el mensaje, a schemacraft-panic.log con std::fs, sin el candado del logger, antes de panic = \"abort\".",
+            "patterns": [
+              "Filtro de consola configurable por variable de entorno",
+              "Lista cerrada de eventos tipados",
+              "Formateador sin contexto de spans"
+            ]
           },
           {
             "id": "host-state",
             "name": "AppState",
             "path": "src-tauri/src/state.rs",
-            "responsibility": "Registros Jobs ('inspection-N', 'export-N' -> CancellationToken), PreferencesStore y el almacén de credenciales (SystemCredentialStore). PreferencesStore aplica cada cambio a una copia y la conserva solo cuando el archivo ya la tiene, y nunca sobrescribe un archivo escrito por una versión más nueva.",
+            "responsibility": "Registros Jobs ('inspection-N', 'export-N' -> CancellationToken), PreferencesStore, el almacén de credenciales (SystemCredentialStore) y la carpeta del registro de diagnóstico, tal como la abrió el logging, o None. PreferencesStore aplica cada cambio a una copia y la conserva solo cuando el archivo ya la tiene, y nunca sobrescribe un archivo escrito por una versión más nueva.",
             "patterns": [
               "Registro de tokens de cancelación",
               "Persistencia inmediata (write-through)"
@@ -4210,7 +4351,7 @@
             "id": "cmd-app-info",
             "name": "commands/app_info.rs",
             "path": "src-tauri/src/commands/app_info.rs",
-            "responsibility": "get_app_info: nombre, versión, isDebugBuild. Síncrono, sin llamada al core.",
+            "responsibility": "get_app_info: nombre, versión, isDebugBuild y logDirectory, la carpeta del registro de diagnóstico o null cuando esta sesión no escribe ninguno. Síncrono, lee AppState, sin llamada al core.",
             "patterns": ["Comando delgado"]
           },
           {
@@ -4245,15 +4386,22 @@
             "id": "cmd-export",
             "name": "commands/export.rs",
             "path": "src-tauri/src/commands/export.rs",
-            "responsibility": "Async. export_diagram ejecuta la exportación del core mediante run_blocking y transmite etapas; cancel_export (síncrono) cancela por jobId.",
+            "responsibility": "Async. export_diagram ejecuta la exportación del core mediante run_blocking y transmite etapas; cancel_export (síncrono) cancela por jobId. Como todo comando que puede fallar, un fallo queda registrado por nombre y clasificación con commands::logged o CommandError::log (ADR-041).",
             "patterns": ["Trabajo de CPU en el pool de hilos bloqueantes"]
+          },
+          {
+            "id": "cmd-diagnostics",
+            "name": "commands/diagnostics.rs",
+            "path": "src-tauri/src/commands/diagnostics.rs",
+            "responsibility": "Async. open_log_folder toma la carpeta de AppState, nunca del frontend, la crea si el usuario la borró y la abre con la API de Rust del plugin opener (OpenerExt::open_path) en run_blocking, así ninguna capability crece. Sin carpeta falla como invalidArgument (ADR-041).",
+            "patterns": ["Comando delgado", "API del plugin desde Rust"]
           }
         ]
       },
       {
         "id": "core",
         "name": "Core en Rust",
-        "summary": "schemacraft-core: biblioteca sin framework con siete módulos públicos. Unas 10.5 mil líneas y 160 pruebas unitarias.",
+        "summary": "schemacraft-core: biblioteca sin framework con ocho módulos públicos. Unas 10.5 mil líneas y 160 pruebas unitarias.",
         "path": "crates/schemacraft-core/src",
         "technologies": [
           "Rust 1.99.0 (edition 2024)",
@@ -4284,7 +4432,7 @@
             "id": "core-inspectors",
             "name": "inspectors",
             "path": "crates/schemacraft-core/src/inspectors",
-            "responsibility": "Trait DatabaseInspector (test_connection, list_databases, describe_database, inspect), fábrica create_inspector, ConnectionSettings, InspectionOptions, DatabaseDescription, ProgressReporter con la etapa CheckingAccess e InspectorError con 13 variantes. inspect se puede cancelar en cualquier momento, también al conectar.",
+            "responsibility": "Trait DatabaseInspector (test_connection, list_databases, describe_database, inspect), fábrica create_inspector, ConnectionSettings, InspectionOptions, DatabaseDescription, ProgressReporter con la etapa CheckingAccess e InspectorError con 13 variantes, cuyo log_summary() conserva la clasificación, el número de error de SQL Server y el nombre de la consulta para el registro de diagnóstico. inspect se puede cancelar en cualquier momento, también al conectar.",
             "patterns": [
               "Strategy (PRD 4.3)",
               "Factory",
@@ -4296,7 +4444,7 @@
             "id": "core-sqlserver",
             "name": "inspectors/sqlserver",
             "path": "crates/schemacraft-core/src/inspectors/sqlserver",
-            "responsibility": "Estrategia de SQL Server. settings.rs arma la Config de tiberius, pool.rs es un manager de bb8 abierto por operación (1 o 4 sesiones), access.rs tiene el sondeo de acceso (un lote, dos conjuntos de resultados; para dbo no se cuenta ningún DENY) que corren describe_database y cada inspección, catalog.rs tiene las consultas sys.* con nombre, assembly.rs arma el snapshot de forma pura (los textos ilegibles quedan como NotVisible y las llaves hacia tablas no visibles van aparte), bound_defaults.rs lee los valores por defecto enlazados heredados, data_types.rs tiene las reglas de tipos y errors.rs traduce errores del driver (un fallo de TLS se vuelve UntrustedCertificate). inspect compite con el token de cancelación en tokio::select! (biased), también al conectar.",
+            "responsibility": "Estrategia de SQL Server. settings.rs arma la Config de tiberius, pool.rs es un manager de bb8 abierto por operación (1 o 4 sesiones), access.rs tiene el sondeo de acceso (un lote, dos conjuntos de resultados; para dbo no se cuenta ningún DENY) que corren describe_database y cada inspección, catalog.rs tiene las consultas sys.* con nombre, assembly.rs arma el snapshot de forma pura (los textos ilegibles quedan como NotVisible y las llaves hacia tablas no visibles van aparte), bound_defaults.rs lee los valores por defecto enlazados heredados, data_types.rs tiene las reglas de tipos y errors.rs traduce errores del driver (un fallo de TLS se vuelve UntrustedCertificate) y conserva el número de error de SQL Server. Cada consulta de catálogo y el sondeo de acceso registran catalog_query, y read_snapshot registra inspection_completed con los ms de conectar, leer y ensamblar (ADR-041). inspect compite con el token de cancelación en tokio::select! (biased), también al conectar.",
             "patterns": [
               "Strategy concreta",
               "Pool por operación (ADR-009)",
@@ -4319,7 +4467,7 @@
             "id": "core-project",
             "name": "project",
             "path": "crates/schemacraft-core/src/project",
-            "responsibility": "Documento .scraft (FORMAT_VERSION 2, MIN_READER_VERSION 2), que file.rs lee y escribe con los helpers de fs. Un archivo más nuevo se abre en solo lectura si su minReaderVersion lo permite y se rechaza si no; uno más viejo se actualiza con migrations.rs sobre el JSON crudo; las claves desconocidas de la raíz, el snapshot, el lienzo y cada nodo se conservan (ADR-035). ProjectContent (with_refreshed_snapshot aplica la fusión de lo conservado), SavedConnection sin contraseña, CanvasState (el Memento) con normalización y retaining_entities_of.",
+            "responsibility": "Documento .scraft (FORMAT_VERSION 2, MIN_READER_VERSION 2), que file.rs lee y escribe con los helpers de fs, y que registra project_opened y project_saved (formato, KB, ms). Un archivo más nuevo se abre en solo lectura si su minReaderVersion lo permite y se rechaza si no; uno más viejo se actualiza con migrations.rs sobre el JSON crudo; las claves desconocidas de la raíz, el snapshot, el lienzo y cada nodo se conservan (ADR-035). ProjectContent (with_refreshed_snapshot aplica la fusión de lo conservado), SavedConnection sin contraseña, CanvasState (el Memento) con normalización y retaining_entities_of.",
             "patterns": [
               "Memento",
               "Encabezado + contenido aplanado",
@@ -4352,11 +4500,21 @@
             "id": "core-export",
             "name": "export",
             "path": "crates/schemacraft-core/src/export",
-            "responsibility": "export_diagram: SVG y HTML se escriben tal cual, PNG con resvg a 1x/2x/4x (máximo 16384 px por lado), PDF con svg2pdf. fonts.rs carga los cuatro TTF de crates/schemacraft-core/assets/fonts (include_bytes!) y luego las fuentes del sistema para los caracteres que faltan en los subconjuntos latinos, en una sola base OnceLock (ADR-024).",
+            "responsibility": "export_diagram (registrado como export_written: formato, KB, ms): SVG y HTML se escriben tal cual, PNG con resvg a 1x/2x/4x (máximo 16384 px por lado), PDF con svg2pdf. fonts.rs carga los cuatro TTF de crates/schemacraft-core/assets/fonts (include_bytes!) y luego las fuentes del sistema para los caracteres que faltan en los subconjuntos latinos, en una sola base OnceLock (ADR-024).",
             "patterns": [
               "Despacho de formato sobre un enum",
               "Validar antes de reservar memoria",
               "Base de fuentes OnceLock"
+            ]
+          },
+          {
+            "id": "core-diagnostics",
+            "name": "diagnostics",
+            "path": "crates/schemacraft-core/src/diagnostics.rs",
+            "responsibility": "El único emisor del target schemacraft-diagnostics (TARGET), cuyo guion no tiene ninguna ruta de módulo, desde el módulo que la capa de archivo también comprueba (MODULE), una función por evento cuyos parámetros son enteros, booleanos, duraciones, &'static str y valores ClosedKind: app_started, startup_failed, catalog_query, inspection_completed (conteos, nivel de acceso, ms por etapa), project_opened, project_saved, export_written y command_failed (comando, clasificación, número de error de SQL Server, consulta). ErrorSummary es lo que devuelve log_summary(): clasificación, número de error y nombre de la consulta, nunca el mensaje. Solo depende de model; los demás módulos marcan sus clasificaciones con el trait marcador ClosedKind. Una prueba que recorre el código falla si otro archivo nombra el target o importa TARGET con otro nombre (ADR-041).",
+            "patterns": [
+              "Lista cerrada de eventos tipados",
+              "Trait marcador para clasificaciones cerradas"
             ]
           }
         ]
@@ -4430,7 +4588,7 @@
             "id": "ci",
             "name": "Workflow de CI",
             "path": ".github/workflows/ci.yml",
-            "responsibility": "En cada pull request, cada job corre primero scripts/ci-changes.sh. Job de Windows: la entrada de CHANGELOG de la versión de package.json (release-notes.mjs), prettier, eslint, tsc, vitest y npm run docs:check siempre; si cambió código, además cargo fmt, clippy -D warnings, cargo test, la revisión de contratos, tauri build --no-bundle con el perfil ci, WebView2 si el runner no lo tiene y la prueba de humo, y sube el exe y las capturas. Job de Linux, si cambió el core: las pruebas de integración con SQL Server, sqlserver_integration y sqlserver_permissions, contra dos servicios, mssql/server:2022-latest en el puerto 1433 y 2019-latest en el 1434, en un paso por servidor que nombra la versión principal que debe informar el servidor (SCHEMACRAFT_TEST_MSSQL_MAJOR, 16 y 15); el paso de 2019 corre también tras un fallo en 2022, y con SCHEMACRAFT_TEST_REQUIRE_SERVER=1 un servidor ausente hace fallar las pruebas en vez de omitirlas. Dos servicios en el mismo job en lugar de una matriz conservan el nombre del check obligatorio. Los push a main corren todo y mantienen la caché caliente (ADR-033).",
+            "responsibility": "En cada pull request, cada job corre primero scripts/ci-changes.sh. Job de Windows: la entrada de CHANGELOG de la versión de package.json (release-notes.mjs), prettier, eslint, tsc, vitest y npm run docs:check siempre; si cambió código, además cargo fmt, clippy -D warnings, cargo test, la revisión de contratos, tauri build --no-bundle con el perfil ci, WebView2 si el runner no lo tiene y la prueba de humo, y sube el exe y las capturas. Job de Linux, si cambió el core: las pruebas de integración con SQL Server, sqlserver_integration, sqlserver_permissions y diagnostics_privacy, contra dos servicios, mssql/server:2022-latest en el puerto 1433 y 2019-latest en el 1434, en un paso por servidor que nombra la versión principal que debe informar el servidor (SCHEMACRAFT_TEST_MSSQL_MAJOR, 16 y 15); el paso de 2019 corre también tras un fallo en 2022, y con SCHEMACRAFT_TEST_REQUIRE_SERVER=1 un servidor ausente hace fallar las pruebas en vez de omitirlas. Dos servicios en el mismo job en lugar de una matriz conservan el nombre del check obligatorio. Los push a main corren todo y mantienen la caché caliente (ADR-033).",
             "patterns": ["Checks obligatorios", "Filtrado según el cambio, que falla cerrado"]
           },
           {
@@ -4472,7 +4630,7 @@
             "id": "integration-tests",
             "name": "Pruebas de integración con SQL Server",
             "path": "crates/schemacraft-core/tests",
-            "responsibility": "sqlserver_integration.rs crea bases de datos a partir de fixtures/sqlserver/fixture.sql, changes.sql y stress_200_tables.sql y luego prueba contra un servidor real los errores de conexión (incluido el certificado no confiable), describe_database, la inspección, el progreso, la cancelación y la actualización. También crea SchemaCraftCheckForms a partir de fixtures/sqlserver/check_forms.json (72 formas CHECK de referencia, que también lee la suite vitest del lector de reglas) y rule_facts.sql, comprueba contra el motor cada forma almacenada, lista de columnas y estado de habilitación, y fija sobre tablas auxiliares el comportamiento de CHECK y llaves foráneas en que se apoyan las frases de las reglas (ADR-039). También crea SchemaCraftCode a partir de fixtures/sqlserver/code.sql (vistas WITH CHECK OPTION, indexadas y cifradas; desencadenadores sobre una tabla y una vista, ordenados, deshabilitados, NOT FOR REPLICATION y cifrados; procedimientos y funciones T-SQL de cada clase, sin módulos CLR; un esquema solo con código; un desencadenador DDL de base de datos) y ejecuta el sondeo de capacidades como sa sobre SchemaCraftFixture, SchemaCraftCheckForms y SchemaCraftCode: el contrato de salida de tests/common (un conjunto de resultados, nvarchar, nvarchar, bigint, cada par en PROBE_METRICS), ninguna sección fallida y los conteos que define cada base de prueba; una corrida mientras otra conexión retiene un bloqueo de esquema, en la que cada sección fallida devuelve solo el error 1222; y una revisión estática de que el script es un solo lote de solo lectura, de que cada CATCH devuelve solo ERROR_NUMBER(), de que cada etiqueta es un literal o sale de una lista VALUES fija y de que no llama a ninguna de las funciones que devuelven un nombre, un mensaje de error o una definición, como OBJECT_NAME, ERROR_MESSAGE u OBJECT_DEFINITION (ADR-040). sqlserver_permissions.rs siembra permissions.sql (el esquema de prueba, una base de datos vacía y una con DENY hechos a public) y crea con permission_logins.sql nueve inicios de sesión con pocos permisos (db_owner, db_datareader, solo VIEW DEFINITION, lector más el VIEW DEFINITION de un esquema, dos tablas, solo CONNECT, dos variantes de DENY sobre un esquema y un DENY sobre una columna) con una contraseña inventada para la corrida, más, solo en SQL Server 2022 y posteriores, un décimo con permission_logins_2022.sql (VIEW DEFINITION con VIEW SECURITY DEFINITION denegado), y luego revisa cada veredicto de acceso, cada texto no visible y cada regla de la actualización, y que un DENY a public nunca alcanza a dbo. En 2019 HAS_PERMS_BY_NAME responde NULL para VIEW SECURITY DEFINITION y las denegaciones se pueden contar; en 2022 el décimo inicio de sesión no ve ninguna denegación, ni siquiera la suya, ni su propio usuario de la base de datos, así que sus denegaciones son desconocidas (ADR-034). También ejecuta el sondeo de capacidades como sa y como los inicios de sesión db_owner, db_datareader, solo VIEW DEFINITION, lector más el VIEW DEFINITION de un esquema y solo CONNECT, y el décimo en 2022, y fija lo que cuenta cada uno, como ningún procedimiento y ningún texto legible para db_datareader, y su respuesta para VIEW SECURITY DEFINITION, -1 para todos en 2019. tests/common tiene los helpers compartidos. La prueba de carga debe leer 200 tablas en menos de 5 s (STRESS_BUDGET; la meta del producto es 3 s) e imprime su tiempo con la versión del servidor. connects_to_the_expected_major_version, en ambos binarios, comprueba que el servidor informa la versión principal que nombra SCHEMACRAFT_TEST_MSSQL_MAJOR, así un paso no puede probar el servidor equivocado; la CI corre ambos binarios contra SQL Server 2019 y 2022, y check_forms.json y rule_facts.sql valen sin cambios en los dos. Las pruebas que necesitan el servidor se omiten si SCHEMACRAFT_TEST_MSSQL_HOST no está definida, salvo que SCHEMACRAFT_TEST_REQUIRE_SERVER, que define la CI, las haga fallar; la revisión estática del sondeo corre en todo cargo test.",
+            "responsibility": "sqlserver_integration.rs crea bases de datos a partir de fixtures/sqlserver/fixture.sql, changes.sql y stress_200_tables.sql y luego prueba contra un servidor real los errores de conexión (incluido el certificado no confiable), describe_database, la inspección, el progreso, la cancelación y la actualización. También crea SchemaCraftCheckForms a partir de fixtures/sqlserver/check_forms.json (72 formas CHECK de referencia, que también lee la suite vitest del lector de reglas) y rule_facts.sql, comprueba contra el motor cada forma almacenada, lista de columnas y estado de habilitación, y fija sobre tablas auxiliares el comportamiento de CHECK y llaves foráneas en que se apoyan las frases de las reglas (ADR-039). También crea SchemaCraftCode a partir de fixtures/sqlserver/code.sql (vistas WITH CHECK OPTION, indexadas y cifradas; desencadenadores sobre una tabla y una vista, ordenados, deshabilitados, NOT FOR REPLICATION y cifrados; procedimientos y funciones T-SQL de cada clase, sin módulos CLR; un esquema solo con código; un desencadenador DDL de base de datos) y ejecuta el sondeo de capacidades como sa sobre SchemaCraftFixture, SchemaCraftCheckForms y SchemaCraftCode: el contrato de salida de tests/common (un conjunto de resultados, nvarchar, nvarchar, bigint, cada par en PROBE_METRICS), ninguna sección fallida y los conteos que define cada base de prueba; una corrida mientras otra conexión retiene un bloqueo de esquema, en la que cada sección fallida devuelve solo el error 1222; y una revisión estática de que el script es un solo lote de solo lectura, de que cada CATCH devuelve solo ERROR_NUMBER(), de que cada etiqueta es un literal o sale de una lista VALUES fija y de que no llama a ninguna de las funciones que devuelven un nombre, un mensaje de error o una definición, como OBJECT_NAME, ERROR_MESSAGE u OBJECT_DEFINITION (ADR-040). sqlserver_permissions.rs siembra permissions.sql (el esquema de prueba, una base de datos vacía y una con DENY hechos a public) y crea con permission_logins.sql nueve inicios de sesión con pocos permisos (db_owner, db_datareader, solo VIEW DEFINITION, lector más el VIEW DEFINITION de un esquema, dos tablas, solo CONNECT, dos variantes de DENY sobre un esquema y un DENY sobre una columna) con una contraseña inventada para la corrida, más, solo en SQL Server 2022 y posteriores, un décimo con permission_logins_2022.sql (VIEW DEFINITION con VIEW SECURITY DEFINITION denegado), y luego revisa cada veredicto de acceso, cada texto no visible y cada regla de la actualización, y que un DENY a public nunca alcanza a dbo. En 2019 HAS_PERMS_BY_NAME responde NULL para VIEW SECURITY DEFINITION y las denegaciones se pueden contar; en 2022 el décimo inicio de sesión no ve ninguna denegación, ni siquiera la suya, ni su propio usuario de la base de datos, así que sus denegaciones son desconocidas (ADR-034). También ejecuta el sondeo de capacidades como sa y como los inicios de sesión db_owner, db_datareader, solo VIEW DEFINITION, lector más el VIEW DEFINITION de un esquema y solo CONNECT, y el décimo en 2022, y fija lo que cuenta cada uno, como ningún procedimiento y ningún texto legible para db_datareader, y su respuesta para VIEW SECURITY DEFINITION, -1 para todos en 2019. diagnostics_privacy.rs captura cada evento del target de diagnóstico en todos los niveles, mientras lee SchemaCraftPermissions como sa y como el inicio de sesión db_datareader, entra con una contraseña equivocada, abre una base de datos en la que el inicio de sesión no tiene usuario y lee como el inicio de sesión de fixtures/sqlserver/diagnostics_logins.sql, que no puede leer sys.check_constraints; falla ante cualquier nombre o expresión legible de la base de prueba leída como sa, el nombre del servidor, un inicio de sesión, el host, una contraseña, una base de datos o un fragmento de los mensajes del servidor, y revisa los conteos, las clasificaciones y los números de error 18456, 4060 y 229 (ADR-041). tests/common tiene los helpers compartidos. La prueba de carga debe leer 200 tablas en menos de 5 s (STRESS_BUDGET; la meta del producto es 3 s) e imprime su tiempo con la versión del servidor. connects_to_the_expected_major_version, en cada binario, comprueba que el servidor informa la versión principal que nombra SCHEMACRAFT_TEST_MSSQL_MAJOR, así un paso no puede probar el servidor equivocado; la CI corre los tres binarios contra SQL Server 2019 y 2022, y check_forms.json y rule_facts.sql valen sin cambios en los dos. Las pruebas que necesitan el servidor se omiten si SCHEMACRAFT_TEST_MSSQL_HOST no está definida, salvo que SCHEMACRAFT_TEST_REQUIRE_SERVER, que define la CI, las haga fallar; la revisión estática del sondeo corre en todo cargo test.",
             "patterns": [
               "Controladas por variables de entorno",
               "Presupuesto de rendimiento como prueba",
@@ -4613,7 +4771,7 @@
         "id": "action-registry-to-feature-about",
         "from": "action-registry",
         "to": "feature-about",
-        "label": "abre Acerca de",
+        "label": "abre Acerca de, openLogFolder",
         "kind": "call"
       },
       {
@@ -4809,7 +4967,7 @@
         "id": "host-entry-to-ipc-invoke",
         "from": "host-entry",
         "to": "ipc-invoke",
-        "label": "generate_handler! (20 comandos)",
+        "label": "generate_handler! (21 comandos)",
         "kind": "call"
       },
       {
@@ -5714,6 +5872,104 @@
         "to": "shared-i18n",
         "label": "formatMessageParts y pluralKey (ruleText), las claves de los mensajes de reglas, los tipos del traductor y formatDate (objectDetailsView)",
         "kind": "call"
+      },
+      {
+        "id": "host-entry-to-core-diagnostics",
+        "from": "host-entry",
+        "to": "core-diagnostics",
+        "label": "app_started, startup_failed",
+        "kind": "call"
+      },
+      {
+        "id": "host-logging-to-core-diagnostics",
+        "from": "host-logging",
+        "to": "core-diagnostics",
+        "label": "la capa de archivo acepta solo diagnostics::TARGET desde diagnostics::MODULE",
+        "kind": "call"
+      },
+      {
+        "id": "host-logging-to-ext-filesystem",
+        "from": "host-logging",
+        "to": "ext-filesystem",
+        "label": "archivos diarios del registro y schemacraft-panic.log en %LOCALAPPDATA%",
+        "kind": "file"
+      },
+      {
+        "id": "cmd-diagnostics-to-ext-filesystem",
+        "from": "cmd-diagnostics",
+        "to": "ext-filesystem",
+        "label": "abre la carpeta del registro (plugin opener)",
+        "kind": "call"
+      },
+      {
+        "id": "ipc-invoke-to-cmd-diagnostics",
+        "from": "ipc-invoke",
+        "to": "cmd-diagnostics",
+        "label": "open_log_folder",
+        "kind": "ipc"
+      },
+      {
+        "id": "cmd-diagnostics-to-host-state",
+        "from": "cmd-diagnostics",
+        "to": "host-state",
+        "label": "log_directory",
+        "kind": "call"
+      },
+      {
+        "id": "cmd-diagnostics-to-ipc-error",
+        "from": "cmd-diagnostics",
+        "to": "ipc-error",
+        "label": "invalid_argument, unexpected",
+        "kind": "call"
+      },
+      {
+        "id": "cmd-app-info-to-host-state",
+        "from": "cmd-app-info",
+        "to": "host-state",
+        "label": "log_directory",
+        "kind": "call"
+      },
+      {
+        "id": "ipc-error-to-core-diagnostics",
+        "from": "ipc-error",
+        "to": "core-diagnostics",
+        "label": "command_failed (CommandError::log, mediante commands::logged)",
+        "kind": "call"
+      },
+      {
+        "id": "action-registry-to-shared-ipc",
+        "from": "action-registry",
+        "to": "shared-ipc",
+        "label": "useAppInfo (disponibilidad de help.openLogFolder)",
+        "kind": "call"
+      },
+      {
+        "id": "feature-about-to-shared-ipc",
+        "from": "feature-about",
+        "to": "shared-ipc",
+        "label": "useAppInfo, openLogFolder",
+        "kind": "call"
+      },
+      {
+        "id": "core-sqlserver-to-core-diagnostics",
+        "from": "core-sqlserver",
+        "to": "core-diagnostics",
+        "label": "catalog_query, inspection_completed",
+        "kind": "call"
+      },
+      {
+        "id": "core-project-to-core-diagnostics",
+        "from": "core-project",
+        "to": "core-diagnostics",
+        "label": "project_opened, project_saved",
+        "kind": "call"
+      },
+      {
+        "id": "core-export-to-core-diagnostics",
+        "from": "core-export",
+        "to": "core-diagnostics",
+        "label": "export_written",
+        "kind": "call"
       }
     ],
     "dataStores": [
@@ -5783,11 +6039,11 @@
       },
       {
         "name": "Logs",
-        "location": "stdout/stderr",
-        "format": "Texto de tracing",
-        "owner": "src-tauri/src/logging.rs",
-        "contents": "Inicio de comandos, guardados, exportaciones, advertencias. Nunca secretos.",
-        "notes": "Sin archivo de log. Las compilaciones release no tienen consola."
+        "location": "%LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft\\logs, y stdout",
+        "format": "Una línea por evento: hora UTC, nivel, mensaje y campos nombre=valor",
+        "owner": "src-tauri/src/logging.rs, con los eventos de crates/schemacraft-core/src/diagnostics.rs",
+        "contents": "schemacraft.<fecha UTC>.log, uno por día, se conservan como mucho siete archivos, el de panic entre ellos: solo los eventos tipados, versiones, conteos, tiempos, formatos, marcas de solo lectura, tamaños en KB, clasificaciones de error, números de error de SQL Server y nombres fijos de consultas y comandos. Nunca un servidor, host, inicio de sesión, contraseña, base de datos, nombre de objeto, ruta, texto SQL, definición ni mensaje de error. schemacraft-panic.log: hora, versión y archivo:línea de un panic. stdout conserva los eventos de consola según SCHEMACRAFT_LOG.",
+        "notes": "Solo local, nunca se envía a ninguna parte; el diálogo Acerca de muestra la carpeta y la abre. Los archivos se nombran por fecha y nunca se renombran, así dos instancias abiertas a la vez escriben al final del mismo archivo sin estorbarse. Cada arranque y cada medianoche UTC borra primero los archivos más antiguos, por fecha de creación, hasta dejar seis, y luego abre el de hoy, de modo que el archivo de panic cuenta entre los siete y un segundo arranque en el mismo día deja seis. Sin la carpeta, la consola es la única salida (ADR-041)."
       }
     ],
     "flows": [
@@ -6287,6 +6543,11 @@
         "name": "cancel_export",
         "purpose": "Cancela una exportación en curso por jobId.",
         "streamsEvents": false
+      },
+      {
+        "name": "open_log_folder",
+        "purpose": "Abre la carpeta del registro de diagnóstico en el explorador de archivos; la carpeta sale del estado, nunca del frontend.",
+        "streamsEvents": false
       }
     ],
     "patterns": [
@@ -6354,6 +6615,11 @@
         "name": "Errores tipados con kind",
         "where": "enums *Error del core, src-tauri/src/error.rs, src/shared/errors/describeOperationError.ts",
         "why": "Rust clasifica; la interfaz define el remedio localizado, como 'Confiar en el certificado y reintentar' (ADR-012)."
+      },
+      {
+        "name": "Lista cerrada de eventos tipados para el registro",
+        "where": "crates/schemacraft-core/src/diagnostics.rs, src-tauri/src/logging.rs, tests/diagnostics_privacy.rs",
+        "why": "El archivo de registro solo recibe eventos cuyos parámetros no pueden llevar un nombre, una ruta ni código, con un formateador que no escribe spans, así se puede compartir sin leerlo dos veces (ADR-041)."
       },
       {
         "name": "Trabajo largo",
@@ -6861,15 +7127,19 @@
         },
         {
           "concern": "Errores",
-          "touches": "*ErrorKind del core -> CommandErrorKind -> toOperationError -> error.<nombre>.title/hint."
+          "touches": "*ErrorKind del core -> CommandErrorKind -> toOperationError -> error.<nombre>.title/hint. Para el registro de diagnóstico, log_summary() -> CommandError (número de error y consulta, nunca serializados) -> CommandError::log, mediante commands::logged."
         },
         {
           "concern": "Progreso y cancelación",
           "touches": "Jobs, Channel, Started{jobId} primero, cancel_* que devuelve UnknownJob; los trabajos async compiten con el token, también al conectar (ADR-013)."
         },
         {
+          "concern": "Registro de diagnóstico",
+          "touches": "Un evento nuevo es una función en crates/schemacraft-core/src/diagnostics.rs cuyos parámetros son números, booleanos, duraciones, &'static str o valores ClosedKind; ningún otro archivo emite en su target (prueba que recorre el código). Un enum de error nuevo recibe log_summary() y una clasificación ClosedKind; un comando nuevo envuelve su cuerpo en commands::logged. Amplía tests/diagnostics_privacy.rs cuando un camino nuevo lea el servidor (ADR-041)."
+        },
+        {
           "concern": "Seguridad y ubicación de datos",
-          "touches": "Sin base de datos propia; cuatro lugares de persistencia; contraseñas como SecretString y nunca en archivos, aunque una tecleada cruza el IPC en cada llamada de conexión; el borrador de conexión conserva trustServerCertificate; el .scraft guarda el nombre del usuario de base de datos, que las exportaciones nunca incrustan; CSP estricta (devCsp solo para tauri dev) y capabilities."
+          "touches": "Sin base de datos propia; cuatro lugares de persistencia, más el registro de diagnóstico local de eventos tipados (ADR-041); contraseñas como SecretString y nunca en archivos, aunque una tecleada cruza el IPC en cada llamada de conexión; el borrador de conexión conserva trustServerCertificate; el .scraft guarda el nombre del usuario de base de datos, que las exportaciones nunca incrustan; CSP estricta (devCsp solo para tauri dev) y capabilities."
         },
         {
           "concern": "Fronteras de módulos",
@@ -6924,7 +7194,7 @@
       },
       {
         "topic": "Errores",
-        "rule": "Un enum thiserror por dominio del core con kind() que devuelve un *ErrorKind exportado a TS. El host lo envuelve en CommandError. La interfaz escribe el texto para el usuario."
+        "rule": "Un enum thiserror por dominio del core con kind() que devuelve un *ErrorKind exportado a TS. Cada uno tiene además log_summary() para el registro de diagnóstico: clasificación, número de error de SQL Server y nombre de la consulta, nunca el mensaje. El host lo envuelve en CommandError. La interfaz escribe el texto para el usuario."
       },
       {
         "topic": "Sin panic",
@@ -6980,7 +7250,7 @@
       }
     ],
     "conformance": {
-      "verdict": "La arquitectura se sostiene. El core no depende de Tauri, los comandos son delgados y mantienen el trabajo bloqueante fuera del hilo principal, los errores están tipados de punta a punta, los contratos se generan y se revisan, ESLint exige las capas del frontend y mantiene features/schema como hoja, solo src/shared/ipc habla con Tauri y el visor no trae React ni stores. Builder y Memento están implementados como dicen los ADRs, y cada regla de dibujo tiene un solo hogar protegido por una prueba. Todas las desviaciones menos una están corregidas, incluidas las tres mayores; la que sigue abierta, un archivo de log para los reportes de errores, es un pendiente sin fecha, no una ruptura estructural. Las corregidas siguen abajo, marcadas como corregidas.",
+      "verdict": "La arquitectura se sostiene. El core no depende de Tauri, los comandos son delgados y mantienen el trabajo bloqueante fuera del hilo principal, los errores están tipados de punta a punta, los contratos se generan y se revisan, ESLint exige las capas del frontend y mantiene features/schema como hoja, solo src/shared/ipc habla con Tauri y el visor no trae React ni stores. Builder y Memento están implementados como dicen los ADRs, y cada regla de dibujo tiene un solo hogar protegido por una prueba. Todas las desviaciones están corregidas, incluidas las tres mayores; la última fue el archivo de log para los reportes de errores (ADR-041). Las corregidas siguen abajo, marcadas como corregidas.",
       "deviations": [
         {
           "what": "Los botones de acción deshabilitados siempre dicen 'Available in an upcoming milestone', aunque la causa sea una condición en tiempo de ejecución.",
@@ -7202,9 +7472,9 @@
         {
           "what": "No hay archivo de log; las compilaciones release no muestran logs.",
           "where": "src-tauri/src/logging.rs",
-          "fix": "Pendiente sin fecha: Considerar un archivo de log rotativo para reportes de errores.",
+          "fix": "Corregido: las compilaciones release guardan un registro de diagnóstico local de eventos tipados, un archivo por día, como mucho siete archivos, en %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft\\logs, que el diálogo Acerca de muestra y abre, con la ubicación de un panic en schemacraft-panic.log (ADR-041).",
           "severity": "minor",
-          "status": "open"
+          "status": "fixed"
         },
         {
           "what": "La prueba de humo cubre solo bienvenida, Acerca de, idioma, tema y F5; su carpeta de salida no está en .gitignore.",
@@ -7483,6 +7753,11 @@
         "id": "rule-highlight",
         "term": "Resaltado de reglas",
         "meaning": "canvasUiStore.ruleHighlight: las columnas y la relación de la regla señalada en el Inspector, con el elemento que lo puso como dueño; las tarjetas las rodean y las tiñen. El visor pinta lo mismo con sus clases sc-rule-*."
+      },
+      {
+        "id": "diagnostic-log",
+        "term": "Registro de diagnóstico",
+        "meaning": "El registro local para reportar errores: conteos, tiempos y clasificaciones tipados, un archivo por día, como mucho siete archivos, en %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft\\logs, nunca nombres, código, rutas ni contraseñas, nunca se envía a ninguna parte."
       }
     ]
   }

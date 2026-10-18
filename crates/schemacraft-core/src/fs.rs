@@ -47,12 +47,17 @@ pub(crate) fn format_version(bytes: &[u8]) -> Result<Option<u32>, serde_json::Er
     serde_json::from_slice::<FormatHeader>(bytes).map(|header| header.format_version)
 }
 
-/// Serialises `value` as pretty JSON and writes it with [`write_bytes_atomically`].
-pub(crate) fn write_json_atomically<T: Serialize>(path: &Path, value: &T) -> Result<(), FileError> {
+/// Serialises `value` as pretty JSON and writes it with [`write_bytes_atomically`], returning
+/// the size of the file.
+pub(crate) fn write_json_atomically<T: Serialize>(
+    path: &Path,
+    value: &T,
+) -> Result<usize, FileError> {
     let mut bytes =
         serde_json::to_vec_pretty(value).map_err(|error| FileError::Write(error.to_string()))?;
     bytes.push(b'\n');
-    write_bytes_atomically(path, &bytes)
+    write_bytes_atomically(path, &bytes)?;
+    Ok(bytes.len())
 }
 
 /// Replaces `path` with `bytes` in one step: the content goes to a sibling temporary file, is
