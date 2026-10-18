@@ -50,6 +50,9 @@ jobs:
 
       - run: npm ci
 
+      - name: The version in package.json has a dated CHANGELOG entry
+        run: node scripts/release-notes.mjs > /dev/null
+
       - name: Frontend quality gates
         run: |
           npm run format:check

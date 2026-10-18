@@ -713,14 +713,14 @@
             "id": "ci",
             "name": "CI workflow",
             "path": ".github/workflows/ci.yml",
-            "responsibility": "On every pull request each job first runs scripts/ci-changes.sh. Windows job: prettier, eslint, tsc, vitest and npm run docs:check always; when code changed, also cargo fmt, clippy -D warnings, cargo test, the contracts check, tauri build --no-bundle with the ci profile, WebView2 when the runner lacks it and the smoke test, uploading the exe and the screenshots. Linux job: the SQL Server integration tests, sqlserver_integration and sqlserver_permissions, against mssql/server:2022-latest when the core changed. Pushes to main run everything and keep the cache warm (ADR-033).",
+            "responsibility": "On every pull request each job first runs scripts/ci-changes.sh. Windows job: the CHANGELOG entry of the package.json version (release-notes.mjs), prettier, eslint, tsc, vitest and npm run docs:check always; when code changed, also cargo fmt, clippy -D warnings, cargo test, the contracts check, tauri build --no-bundle with the ci profile, WebView2 when the runner lacks it and the smoke test, uploading the exe and the screenshots. Linux job: the SQL Server integration tests, sqlserver_integration and sqlserver_permissions, against mssql/server:2022-latest when the core changed. Pushes to main run everything and keep the cache warm (ADR-033).",
             "patterns": ["Required checks", "Change-based filtering that fails closed"]
           },
           {
             "id": "release",
             "name": "Release workflow",
             "path": ".github/workflows/release.yml",
-            "responsibility": "On a v* tag, without caches: checks that the tag is on main and matches package.json and Cargo.toml, runs the gates, builds the exe and the NSIS installer with the full release profile, installs WebView2 when missing, runs the smoke test (screenshots uploaded), writes SHA256SUMS.txt and creates a draft GitHub release (ADR-027).",
+            "responsibility": "On a v* tag, without caches: checks that the tag is on main and matches package.json and Cargo.toml and that CHANGELOG.md has its entry, runs the gates, builds the exe and the NSIS installer with the full release profile, installs WebView2 when missing, runs the smoke test (screenshots uploaded), writes SHA256SUMS.txt and creates a draft GitHub release whose notes end with that entry, after what SchemaCraft is, the assets and the code signing policy (ADR-027).",
             "patterns": ["Tag-driven release", "Draft then manual publish"]
           },
           {
@@ -729,6 +729,13 @@
             "path": "scripts/smoke-test-release.mjs",
             "responsibility": "Launches the release exe with a CDP port and its own WebView2 profile (WEBVIEW2_USER_DATA_FOLDER), then checks the welcome screen, About, language, theme and that F5 does not reload. Saves screenshots to smoke-test/. Does not test connect, save or export.",
             "patterns": ["Black-box test of the shipped binary"]
+          },
+          {
+            "id": "release-notes",
+            "name": "release-notes.mjs",
+            "path": "scripts/release-notes.mjs",
+            "responsibility": "Prints the notes of a release: what SchemaCraft is, the assets, the code signing policy and the version's CHANGELOG.md entry with its wrapped lines joined. Fails when the entry, its date or its link is missing. release.yml publishes its output as the body of the draft release; CI runs it on every pull request for the version in package.json (ADR-027).",
+            "patterns": ["Release notes written once, in the changelog"]
           },
           {
             "id": "architecture-page",
@@ -1408,6 +1415,20 @@
         "from": "release",
         "to": "smoke-test",
         "label": "runs before publishing",
+        "kind": "build"
+      },
+      {
+        "id": "ci-to-release-notes",
+        "from": "ci",
+        "to": "release-notes",
+        "label": "the version in package.json has its entry",
+        "kind": "build"
+      },
+      {
+        "id": "release-to-release-notes",
+        "from": "release",
+        "to": "release-notes",
+        "label": "body of the draft release",
         "kind": "build"
       },
       {
@@ -2322,7 +2343,7 @@
           {
             "actor": "Maintainer",
             "action": "Bumps the version",
-            "detail": "package.json and Cargo.toml workspace version, a CHANGELOG.md entry, merged through a PR."
+            "detail": "package.json and Cargo.toml workspace version, a dated CHANGELOG.md entry with its link, merged through a PR; CI fails a version without its entry."
           },
           {
             "actor": "Maintainer",
@@ -2332,12 +2353,12 @@
           {
             "actor": "release.yml",
             "action": "Builds and checks",
-            "detail": "Tag must equal 'v' + package.json version; all gates, npm run docs:check included; contracts check; npm run tauri build; WebView2 installed if missing; smoke test."
+            "detail": "The tag must be on main and equal 'v' + the package.json and Cargo.toml versions, and CHANGELOG.md must have its entry; all gates, npm run docs:check included; contracts check; npm run tauri build; WebView2 installed if missing; smoke test."
           },
           {
             "actor": "release.yml",
             "action": "Prepares the draft",
-            "detail": "Renames assets to schemacraft-<tag>-windows-x64.exe and -setup.exe, writes SHA256SUMS.txt, creates a draft release."
+            "detail": "Renames assets to schemacraft-<tag>-windows-x64.exe and -setup.exe, writes SHA256SUMS.txt, creates a draft release whose notes are what SchemaCraft is, the assets and the code signing policy, then the CHANGELOG entry, followed by the generated list of pull requests."
           },
           {
             "actor": "Maintainer",
@@ -4383,14 +4404,14 @@
             "id": "ci",
             "name": "Workflow de CI",
             "path": ".github/workflows/ci.yml",
-            "responsibility": "En cada pull request, cada job corre primero scripts/ci-changes.sh. Job de Windows: prettier, eslint, tsc, vitest y npm run docs:check siempre; si cambió código, además cargo fmt, clippy -D warnings, cargo test, la revisión de contratos, tauri build --no-bundle con el perfil ci, WebView2 si el runner no lo tiene y la prueba de humo, y sube el exe y las capturas. Job de Linux: las pruebas de integración con SQL Server, sqlserver_integration y sqlserver_permissions, contra mssql/server:2022-latest si cambió el core. Los push a main corren todo y mantienen la caché caliente (ADR-033).",
+            "responsibility": "En cada pull request, cada job corre primero scripts/ci-changes.sh. Job de Windows: la entrada de CHANGELOG de la versión de package.json (release-notes.mjs), prettier, eslint, tsc, vitest y npm run docs:check siempre; si cambió código, además cargo fmt, clippy -D warnings, cargo test, la revisión de contratos, tauri build --no-bundle con el perfil ci, WebView2 si el runner no lo tiene y la prueba de humo, y sube el exe y las capturas. Job de Linux: las pruebas de integración con SQL Server, sqlserver_integration y sqlserver_permissions, contra mssql/server:2022-latest si cambió el core. Los push a main corren todo y mantienen la caché caliente (ADR-033).",
             "patterns": ["Checks obligatorios", "Filtrado según el cambio, que falla cerrado"]
           },
           {
             "id": "release",
             "name": "Workflow de release",
             "path": ".github/workflows/release.yml",
-            "responsibility": "Con un tag v* y sin cachés: revisa que el tag esté en main y coincida con package.json y Cargo.toml, corre los controles, compila el exe y el instalador NSIS con el perfil release completo, instala WebView2 si falta, corre la prueba de humo (sube las capturas), escribe SHA256SUMS.txt y crea un borrador de release en GitHub (ADR-027).",
+            "responsibility": "Con un tag v* y sin cachés: revisa que el tag esté en main y coincida con package.json y Cargo.toml y que CHANGELOG.md tenga su entrada, corre los controles, compila el exe y el instalador NSIS con el perfil release completo, instala WebView2 si falta, corre la prueba de humo (sube las capturas), escribe SHA256SUMS.txt y crea un borrador de release en GitHub cuyas notas terminan con esa entrada, después de qué es SchemaCraft, los archivos y la política de firma de código (ADR-027).",
             "patterns": ["Publicación disparada por tag", "Borrador y publicación manual"]
           },
           {
@@ -4399,6 +4420,13 @@
             "path": "scripts/smoke-test-release.mjs",
             "responsibility": "Lanza el exe de release con un puerto CDP y su propio perfil de WebView2 (WEBVIEW2_USER_DATA_FOLDER) y revisa la pantalla de bienvenida, Acerca de, idioma, tema y que F5 no recargue. Guarda capturas en smoke-test/. No prueba conectar, guardar ni exportar.",
             "patterns": ["Prueba de caja negra del binario entregado"]
+          },
+          {
+            "id": "release-notes",
+            "name": "release-notes.mjs",
+            "path": "scripts/release-notes.mjs",
+            "responsibility": "Imprime las notas de una versión: qué es SchemaCraft, los archivos, la política de firma de código y la entrada de CHANGELOG.md de esa versión, con sus líneas cortadas unidas. Falla si falta la entrada, su fecha o su enlace. release.yml publica su salida como cuerpo del borrador de release; CI lo corre en cada pull request con la versión de package.json (ADR-027).",
+            "patterns": ["Notas de versión escritas una vez, en el changelog"]
           },
           {
             "id": "architecture-page",
@@ -5082,6 +5110,20 @@
         "from": "release",
         "to": "smoke-test",
         "label": "corre antes de publicar",
+        "kind": "build"
+      },
+      {
+        "id": "ci-to-release-notes",
+        "from": "ci",
+        "to": "release-notes",
+        "label": "la versión de package.json tiene su entrada",
+        "kind": "build"
+      },
+      {
+        "id": "release-to-release-notes",
+        "from": "release",
+        "to": "release-notes",
+        "label": "cuerpo del borrador de release",
         "kind": "build"
       },
       {
@@ -5996,7 +6038,7 @@
           {
             "actor": "Mantenedor",
             "action": "Sube la versión",
-            "detail": "package.json y la versión del workspace en Cargo.toml, una entrada en CHANGELOG.md, todo por un PR."
+            "detail": "package.json y la versión del workspace en Cargo.toml, una entrada fechada en CHANGELOG.md con su enlace, todo por un PR; CI falla si la versión no tiene su entrada."
           },
           {
             "actor": "Mantenedor",
@@ -6006,12 +6048,12 @@
           {
             "actor": "release.yml",
             "action": "Compila y revisa",
-            "detail": "El tag debe ser 'v' + la versión de package.json; todos los controles, incluido npm run docs:check; revisión de contratos; npm run tauri build; WebView2 se instala si falta; prueba de humo."
+            "detail": "El tag debe estar en main y ser 'v' + la versión de package.json y de Cargo.toml, y CHANGELOG.md debe tener su entrada; todos los controles, incluido npm run docs:check; revisión de contratos; npm run tauri build; WebView2 se instala si falta; prueba de humo."
           },
           {
             "actor": "release.yml",
             "action": "Prepara el borrador",
-            "detail": "Renombra a schemacraft-<tag>-windows-x64.exe y -setup.exe, escribe SHA256SUMS.txt y crea un borrador de release."
+            "detail": "Renombra a schemacraft-<tag>-windows-x64.exe y -setup.exe, escribe SHA256SUMS.txt y crea un borrador de release cuyas notas son qué es SchemaCraft, los archivos y la política de firma de código, luego la entrada de CHANGELOG y al final la lista generada de pull requests."
           },
           {
             "actor": "Mantenedor",

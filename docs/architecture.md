@@ -54,7 +54,7 @@ schemacraft/
 │   │   └── ui/                accessible UI primitives (Radix based), the resizer of both side panels
 │   └── viewer/                standalone viewer embedded in exported HTML files, drawing the shared details view-model and its rules
 ├── assets/brand/              source artwork for the application icon
-├── scripts/                   SQL Server container, font preparation, smoke test, page check, CI change filter
+├── scripts/                   SQL Server container, font preparation, smoke test, page check, CI change filter, release notes
 ├── docs/                      PRD, decision records, UX principles, release checklist
 │   └── architecture/          interactive architecture page and its model (GitHub Pages)
 └── .github/workflows/         CI on every pull request, sized to the change; release on every tag
@@ -229,7 +229,7 @@ of embedding the WebView2 bootstrapper.
 Code signing is a distribution requirement, not an option: on Windows 11 machines where Smart
 App Control is enforced, the unsigned release build is refused at launch (observed on the
 development machine in milestone 1, while the debug build runs). Signing goes through the
-SignPath Foundation (ADR-029); version 1.0.0 ships unsigned while that application is reviewed.
+SignPath Foundation (ADR-029); releases ship unsigned while that application is reviewed.
 
 ### ADR-011: One Server field that understands SSMS notations
 
@@ -603,6 +603,14 @@ Why: a release must be reproducible from a tag and verified on the real binary, 
 development mode. The draft release gives the author a last manual check before publishing.
 Signing was first planned as an optional Azure Trusted Signing step; ADR-029 replaced it.
 
+Since 1.1 the notes of the draft release are the version's CHANGELOG.md entry, printed by
+`scripts/release-notes.mjs` after what SchemaCraft is, the assets and the code signing policy,
+and followed by GitHub's list of pull requests. The script joins the entry's wrapped lines, which
+a release page would show as line breaks, and fails when the entry, its date or its link is
+missing; the release workflow runs it before building, and CI runs it on every pull request for
+the version in `package.json`, so no version reaches a tag without its entry. Users read on the
+release page what changed, a new project format included, and the changes are written once.
+
 ### ADR-028: SchemaCraft is free software under the AGPL-3.0-only license
 
 The project is published under the GNU Affero General Public License, version 3 only, the most
@@ -630,9 +638,9 @@ the repository on GitHub-hosted runners without caches from earlier builds, and 
 components. The release workflow therefore drops the Azure step and its caches, and the NSIS
 installer no longer embeds Microsoft's WebView2 bootstrapper (`webviewInstallMode: skip`): like
 the portable executable, the installed program checks for the runtime at startup and offers
-Microsoft's download page when it is missing. Version 1.0.0 ships unsigned while the
-application is reviewed; once it is approved, the release workflow submits the executable and
-the installer to SignPath and the maintainer approves every signing request.
+Microsoft's download page when it is missing. Releases ship unsigned while the application is
+reviewed; once it is approved, the release workflow submits the executable and the installer
+to SignPath and the maintainer approves every signing request.
 
 Why: Smart App Control refuses unsigned executables outright, so signing decides whether
 SchemaCraft runs on a growing share of Windows 11 machines, and a certificate in the name of an
