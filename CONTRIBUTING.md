@@ -6,8 +6,9 @@ Thanks for taking the time to contribute. This page covers what you need to get 
 
 - Bugs and feature requests go in
   [GitHub issues](https://github.com/jmanuelsoberano/schemacraft/issues). For a bug, include the
-  SchemaCraft version (Help, About), the Windows version, the SQL Server version and the steps
-  that reproduce it. Never paste connection strings or passwords.
+  SchemaCraft version (Help, About), the Windows version, the SQL Server version and edition
+  (`SELECT @@VERSION` prints both) and the steps that reproduce it. SchemaCraft is tested against
+  SQL Server 2019 and 2022. Never paste connection strings or passwords.
 - For anything beyond a small fix, open an issue first so the approach can be agreed before you
   write code.
 - Security problems have their own channel: see [SECURITY.md](SECURITY.md).
@@ -32,8 +33,9 @@ cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 `cargo test` regenerates the TypeScript contracts under `src/shared/contracts/generated`; commit
-them when they change. The SQL Server integration tests need a database: see the README section
-on integration tests.
+them when they change. The SQL Server integration tests need a database, and CI runs them
+against SQL Server 2019 and 2022; `scripts/dev-sqlserver.ps1 -Version` starts either locally. See
+the README section on integration tests.
 
 ## Conventions
 

@@ -49,7 +49,7 @@ export function profile(
 const complete = { objects: "complete", definitions: "complete" } as const;
 const nothing = { objects: "notAvailable", definitions: "notAvailable" } as const;
 
-/** One profile per persona of `permission_logins.sql`. */
+/** One profile per persona of `permission_logins.sql` and `permission_logins_2022.sql`. */
 export const personas = {
   owner: profile("full", complete),
   reader: profile(
@@ -107,11 +107,20 @@ export const personas = {
       ],
     },
   ),
+  // VIEW DEFINITION with VIEW SECURITY DEFINITION denied (SQL Server 2022 and later): it reads
+  // every object and text, but SQL Server hides its denials and its own user from it.
   denialsUnknown: profile(
     "partial",
     { objects: "partial", definitions: "complete" },
     {
+      canReadData: false,
       explicitDenials: null,
+      schemas: [
+        schema("audit", { canReadData: false }),
+        schema("dbo", { canReadData: false }),
+        schema("sales", { canReadData: false }),
+      ],
+      databaseUser: null,
     },
   ),
   emptyDatabase: profile("empty", complete, { seesObjects: false, schemas: [] }),

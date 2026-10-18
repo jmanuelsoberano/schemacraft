@@ -4,7 +4,11 @@
 //!
 //! The tests run only when `SCHEMACRAFT_TEST_MSSQL_HOST`, `SCHEMACRAFT_TEST_MSSQL_PORT`,
 //! `SCHEMACRAFT_TEST_MSSQL_USER` and `SCHEMACRAFT_TEST_MSSQL_PASSWORD` are set; otherwise every
-//! test prints a notice and passes. `scripts/dev-sqlserver.ps1` starts a suitable container.
+//! test prints a notice and passes, unless `SCHEMACRAFT_TEST_REQUIRE_SERVER` is set to anything
+//! but `0`, as CI does, which makes every one of them fail instead.
+//! `SCHEMACRAFT_TEST_MSSQL_MAJOR` names the major version the server must report, 15 for SQL
+//! Server 2019 and 16 for 2022, and is required when a server is. `scripts/dev-sqlserver.ps1`
+//! starts a suitable container of either version and prints these variables.
 
 // Each test binary uses its own subset of the helpers.
 #![allow(dead_code)]
@@ -34,21 +38,142 @@ pub struct TestServer {
     pub password: String,
 }
 
-/// The server named by the environment, or `None` after printing why the test is skipped.
+/// Set by CI, so a job whose server variables went missing fails instead of passing without
+/// having tested anything.
+const REQUIRE_SERVER: &str = "SCHEMACRAFT_TEST_REQUIRE_SERVER";
+/// The major version the server must report.
+const EXPECTED_MAJOR_VERSION: &str = "SCHEMACRAFT_TEST_MSSQL_MAJOR";
+
+fn variable(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|value| !value.is_empty())
+}
+
+/// Whether the environment asks for a server: [`REQUIRE_SERVER`] set to anything but `0`.
+fn server_is_required() -> bool {
+    variable(REQUIRE_SERVER).is_some_and(|value| value != "0")
+}
+
+/// The server named by the environment, or `None` after printing why the test is skipped. Fails
+/// the test instead when [`REQUIRE_SERVER`] asks for a server and any of the host, port, login,
+/// password or major version is missing, and whenever the port is not a number.
 pub fn test_server() -> Option<TestServer> {
-    let read = |name: &str| std::env::var(name).ok().filter(|value| !value.is_empty());
-    let Some(host) = read("SCHEMACRAFT_TEST_MSSQL_HOST") else {
+    let Some(host) = variable("SCHEMACRAFT_TEST_MSSQL_HOST") else {
+        assert!(
+            !server_is_required(),
+            "{REQUIRE_SERVER} is set, yet SCHEMACRAFT_TEST_MSSQL_HOST names no server"
+        );
         eprintln!("skipping: SCHEMACRAFT_TEST_MSSQL_* variables are not set");
         return None;
     };
+    let required = server_is_required();
+    let port = if let Some(value) = variable("SCHEMACRAFT_TEST_MSSQL_PORT") {
+        value
+            .parse()
+            .unwrap_or_else(|_| panic!("SCHEMACRAFT_TEST_MSSQL_PORT is not a port: {value}"))
+    } else {
+        assert!(
+            !required,
+            "{REQUIRE_SERVER} is set, yet SCHEMACRAFT_TEST_MSSQL_PORT names no port"
+        );
+        1433
+    };
+    let user = variable("SCHEMACRAFT_TEST_MSSQL_USER");
+    assert!(
+        !required || user.is_some(),
+        "{REQUIRE_SERVER} is set, yet SCHEMACRAFT_TEST_MSSQL_USER names no login"
+    );
+    let password = variable("SCHEMACRAFT_TEST_MSSQL_PASSWORD");
+    assert!(
+        !required || password.is_some(),
+        "{REQUIRE_SERVER} is set, yet SCHEMACRAFT_TEST_MSSQL_PASSWORD is not set"
+    );
+    if required {
+        // Fails every server test, not only the version test, when the major version is missing.
+        expected_major_version();
+    }
     Some(TestServer {
         host,
-        port: read("SCHEMACRAFT_TEST_MSSQL_PORT")
-            .and_then(|port| port.parse().ok())
-            .unwrap_or(1433),
-        user: read("SCHEMACRAFT_TEST_MSSQL_USER").unwrap_or_else(|| "sa".to_string()),
-        password: read("SCHEMACRAFT_TEST_MSSQL_PASSWORD").unwrap_or_default(),
+        port,
+        user: user.unwrap_or_else(|| "sa".to_string()),
+        password: password.unwrap_or_default(),
     })
+}
+
+/// The major version [`EXPECTED_MAJOR_VERSION`] names, or `None` when it is not set. Fails the
+/// test when it is not a number, or when it is missing although [`REQUIRE_SERVER`] asks for a
+/// server, since a run that names no version could test the same server twice.
+pub fn expected_major_version() -> Option<i32> {
+    let Some(value) = variable(EXPECTED_MAJOR_VERSION) else {
+        assert!(
+            !server_is_required(),
+            "{REQUIRE_SERVER} is set, yet {EXPECTED_MAJOR_VERSION} names no major version"
+        );
+        return None;
+    };
+    Some(
+        value
+            .parse()
+            .unwrap_or_else(|_| panic!("{EXPECTED_MAJOR_VERSION} is not a number: {value}")),
+    )
+}
+
+/// The version of the test server, as `SERVERPROPERTY` reports it.
+#[derive(Debug, Clone)]
+pub struct ServerVersion {
+    /// `ProductMajorVersion`: 15 for SQL Server 2019, 16 for 2022.
+    pub major: i32,
+    /// `ProductVersion`, such as `16.0.4135.4`.
+    pub product_version: String,
+}
+
+/// The version of the test server, read once per test binary, which talks to one server only:
+/// https://learn.microsoft.com/en-us/sql/t-sql/functions/serverproperty-transact-sql
+pub async fn server_version(server: &TestServer) -> ServerVersion {
+    static VERSION: tokio::sync::OnceCell<ServerVersion> = tokio::sync::OnceCell::const_new();
+    VERSION
+        .get_or_init(|| async {
+            let query = "SELECT CAST(SERVERPROPERTY('ProductMajorVersion') AS int),
+                                CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(128))";
+            let mut client = connect(server, None).await;
+            let row = client
+                .simple_query(query)
+                .await
+                .unwrap_or_else(|error| panic!("{query}: {error}"))
+                .into_row()
+                .await
+                .unwrap_or_else(|error| panic!("{query}: {error}"))
+                .unwrap_or_else(|| panic!("{query} returned no row"));
+            ServerVersion {
+                major: row
+                    .get::<i32, _>(0)
+                    .unwrap_or_else(|| panic!("{query}: no major version")),
+                product_version: row
+                    .get::<&str, _>(1)
+                    .unwrap_or_else(|| panic!("{query}: no product version"))
+                    .to_string(),
+            }
+        })
+        .await
+        .clone()
+}
+
+/// Checks that the server is the major version [`EXPECTED_MAJOR_VERSION`] names, so a run meant
+/// for one version cannot test another through a wrong port, and returns it.
+pub async fn check_expected_major_version(server: &TestServer) -> ServerVersion {
+    let version = server_version(server).await;
+    match expected_major_version() {
+        Some(expected) => assert_eq!(
+            version.major, expected,
+            "{}:{} runs SQL Server {}, not the major version {expected} that \
+             {EXPECTED_MAJOR_VERSION} names",
+            server.host, server.port, version.product_version
+        ),
+        None => eprintln!(
+            "SQL Server {} on {}:{}; {EXPECTED_MAJOR_VERSION} would check its major version",
+            version.product_version, server.host, server.port
+        ),
+    }
+    version
 }
 
 /// The same server reached with another login.

@@ -33,8 +33,8 @@ use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
 use self::common::{
-    PROBE_METRICS, PROBE_SCRIPT, TestClient, TestServer, connect, ensure_seeded, inspector,
-    run_probe, run_probe_script, settings, test_server,
+    PROBE_METRICS, PROBE_SCRIPT, TestClient, TestServer, check_expected_major_version, connect,
+    ensure_seeded, inspector, run_probe, run_probe_script, server_version, settings, test_server,
 };
 
 const FIXTURE_DATABASE: &str = "SchemaCraftFixture";
@@ -104,6 +104,19 @@ async fn test_connection_reports_server_identity() {
     assert_ne!(information.product_version, "");
     assert_ne!(information.edition, "");
     assert_eq!(information.database_name, "master");
+}
+
+#[tokio::test]
+async fn connects_to_the_expected_major_version() {
+    let Some(server) = test_server() else { return };
+    let version = check_expected_major_version(&server).await;
+
+    // The inspector reports the server the test checked.
+    let information = inspector(settings(&server, None))
+        .test_connection()
+        .await
+        .expect("connection succeeds");
+    assert_eq!(information.product_version, version.product_version);
 }
 
 #[tokio::test]
@@ -570,6 +583,7 @@ async fn cancellation_stops_the_inspection() {
 async fn inspects_two_hundred_tables_within_budget() {
     let Some(server) = test_server() else { return };
     ensure_seeded(&server, STRESS_DATABASE, STRESS_SCRIPT).await;
+    let version = server_version(&server).await;
 
     let started = Instant::now();
     let snapshot = inspector(settings(&server, Some(STRESS_DATABASE)))
@@ -582,7 +596,11 @@ async fn inspects_two_hundred_tables_within_budget() {
         .expect("inspection succeeds");
     let elapsed = started.elapsed();
 
-    eprintln!("inspected {} tables in {elapsed:?}", snapshot.tables.len());
+    eprintln!(
+        "inspected {} tables in {elapsed:?} on SQL Server {}",
+        snapshot.tables.len(),
+        version.product_version
+    );
     assert_eq!(snapshot.tables.len(), 200);
     assert_eq!(snapshot.foreign_keys.len(), 199);
     assert!(snapshot.tables.iter().all(|table| table.indexes.len() == 2));

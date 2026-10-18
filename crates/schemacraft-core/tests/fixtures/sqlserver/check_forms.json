@@ -1,6 +1,6 @@
 {
   "about": "Golden CHECK forms. Each case is a CHECK as a developer writes it, the text SQL Server stores for it in sys.check_constraints.definition, and how the rule reader must read that stored text. tests/sqlserver_integration.rs builds the table in SchemaCraftCheckForms from this file and asserts every stored form, column list and enabled state against the engine; src/features/schema/rules reads every stored form against these columns and asserts the reading. Every expression is synthetic.",
-  "engine": "SQL Server 2022 (16.x), default collation SQL_Latin1_General_CP1_CI_AS",
+  "engine": "SQL Server 2019 (15.x) and 2022 (16.x), default collation SQL_Latin1_General_CP1_CI_AS",
   "notation": {
     "setup": "Batches run before the table is created.",
     "enabled": "false for a constraint disabled with NOCHECK; true when left out.",

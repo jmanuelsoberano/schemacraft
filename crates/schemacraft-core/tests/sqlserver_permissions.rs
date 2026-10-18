@@ -3,8 +3,9 @@
 //! `tests/common` says when they run.
 //!
 //! The logins are created by `fixtures/sqlserver/permission_logins.sql` with a password made up
-//! for the run. They live at server level, use the `schemacraft_` prefix and are recreated on
-//! every run.
+//! for the run, and on SQL Server 2022 and later also by `permission_logins_2022.sql`, whose login
+//! needs a permission earlier versions do not have. They live at server level, use the
+//! `schemacraft_` prefix and are recreated on every run.
 
 #![allow(
     clippy::unwrap_used,
@@ -36,7 +37,8 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use self::common::{
-    TestServer, as_login, ensure_seeded, inspector, run_probe, settings, test_server,
+    TestServer, as_login, check_expected_major_version, connect, ensure_seeded, inspector,
+    run_probe, server_version, settings, test_server,
 };
 
 const DATABASE: &str = "SchemaCraftPermissions";
@@ -44,6 +46,7 @@ const EMPTY_DATABASE: &str = "SchemaCraftPermissionsEmpty";
 const PUBLIC_DENY_DATABASE: &str = "SchemaCraftPermissionsPublicDeny";
 const DATABASE_SCRIPT: &str = include_str!("fixtures/sqlserver/permissions.sql");
 const LOGINS_SCRIPT: &str = include_str!("fixtures/sqlserver/permission_logins.sql");
+const LOGINS_2022_SCRIPT: &str = include_str!("fixtures/sqlserver/permission_logins_2022.sql");
 
 const OWNER: &str = "schemacraft_owner";
 const READER: &str = "schemacraft_reader";
@@ -54,6 +57,14 @@ const CONNECT_ONLY: &str = "schemacraft_connect";
 const VIEW_DEFINITION_DENIED_AUDIT: &str = "schemacraft_vd_deny_audit";
 const READER_DENIED_AUDIT: &str = "schemacraft_reader_deny_audit";
 const READER_DENIED_COLUMN: &str = "schemacraft_reader_deny_column";
+/// Only on SQL Server 2022 and later: `VIEW DEFINITION` with `VIEW SECURITY DEFINITION` denied.
+const VIEW_DEFINITION_DENIED_SECURITY: &str = "schemacraft_vd_deny_vsd";
+
+/// `ProductMajorVersion` of SQL Server 2022, which added `VIEW SECURITY DEFINITION` and made it
+/// part of `VIEW DEFINITION`. Before it `HAS_PERMS_BY_NAME` answers `NULL` for the permission and
+/// a `DENY` of it is a syntax error:
+/// https://learn.microsoft.com/en-us/sql/relational-databases/security/permissions-database-engine
+const VIEW_SECURITY_DEFINITION_SINCE: i32 = 16;
 
 /// Password of every login of the run. It is random, so none is committed, and it mixes cases,
 /// digits and a symbol in case a password policy applies after all.
@@ -62,11 +73,36 @@ static PASSWORD: LazyLock<String> = LazyLock::new(|| {
     format!("Sc!{:016x}{:016x}", random(), random())
 });
 
-/// Creates both databases and every login, once per run.
+/// Whether the server knows `VIEW SECURITY DEFINITION`.
+async fn knows_view_security_definition(server: &TestServer) -> bool {
+    server_version(server).await.major >= VIEW_SECURITY_DEFINITION_SINCE
+}
+
+/// Creates the databases and every login the server's version can have, once per run.
 async fn seed(server: &TestServer) {
-    let logins = LOGINS_SCRIPT.replace("$(PASSWORD)", &PASSWORD);
-    let script = format!("{DATABASE_SCRIPT}\nGO\n{logins}");
+    let mut logins = LOGINS_SCRIPT.to_string();
+    if knows_view_security_definition(server).await {
+        logins = format!("{logins}\nGO\n{LOGINS_2022_SCRIPT}");
+    }
+    let script = format!(
+        "{DATABASE_SCRIPT}\nGO\n{}",
+        logins.replace("$(PASSWORD)", &PASSWORD)
+    );
     ensure_seeded(server, DATABASE, &script).await;
+}
+
+/// The one integer `query` returns in the fixture database, run with the login of `identity`.
+async fn integer(identity: &TestServer, query: &str) -> Option<i32> {
+    let mut client = connect(identity, Some(DATABASE)).await;
+    client
+        .simple_query(query)
+        .await
+        .unwrap_or_else(|error| panic!("{} runs {query}: {error}", identity.user))
+        .into_row()
+        .await
+        .unwrap_or_else(|error| panic!("{} runs {query}: {error}", identity.user))
+        .unwrap_or_else(|| panic!("{} runs {query}: no row", identity.user))
+        .get::<i32, _>(0)
 }
 
 async fn describe(server: &TestServer, login: &str, database: &str) -> DatabaseDescription {
@@ -217,6 +253,25 @@ fn saved_by_1_0_and_reopened(snapshot: &SchemaSnapshot) -> SchemaSnapshot {
     opened.project.content.snapshot
 }
 
+#[tokio::test]
+async fn connects_to_the_expected_major_version() {
+    let Some(server) = test_server() else { return };
+    let version = check_expected_major_version(&server).await;
+
+    // The login that needs SQL Server 2022 exists exactly where the version has its permission.
+    seed(&server).await;
+    let persona = format!(
+        "SELECT COUNT(*) FROM sys.database_principals \
+         WHERE name = N'{VIEW_DEFINITION_DENIED_SECURITY}'"
+    );
+    assert_eq!(
+        integer(&server, &persona).await,
+        Some(i32::from(version.major >= VIEW_SECURITY_DEFINITION_SINCE)),
+        "SQL Server {}",
+        version.product_version
+    );
+}
+
 /// What the connection dialog is expected to predict for one login.
 struct Expected {
     login: &'static str,
@@ -340,6 +395,133 @@ async fn a_schema_denial_is_counted_even_where_select_is_granted() {
             .schemas
             .iter()
             .any(|schema| schema.name == "audit" && schema.can_read_data)
+    );
+}
+
+#[tokio::test]
+async fn denials_are_unknown_only_where_view_security_definition_hides_them() {
+    use AccessLevel::Partial;
+    use Completeness::Complete;
+
+    let Some(server) = test_server() else { return };
+    seed(&server).await;
+    let login = |name: &str| as_login(&server, name, &PASSWORD);
+    let view_security_definition =
+        "SELECT HAS_PERMS_BY_NAME(NULL, 'DATABASE', 'VIEW SECURITY DEFINITION')";
+
+    if !knows_view_security_definition(&server).await {
+        // The permission does not exist: HAS_PERMS_BY_NAME answers NULL for every login, the
+        // administrator included, and the logins with VIEW DEFINITION still count their
+        // denials, the one that hides audit included.
+        for identity in [
+            server.clone(),
+            login(OWNER),
+            login(VIEW_DEFINITION),
+            login(READER),
+        ] {
+            assert_eq!(
+                integer(&identity, view_security_definition).await,
+                None,
+                "{}",
+                identity.user
+            );
+        }
+        for (name, denials) in [(VIEW_DEFINITION, 0), (VIEW_DEFINITION_DENIED_AUDIT, 1)] {
+            let probe = describe(&server, name, DATABASE).await.access.probe;
+            assert_eq!(probe.explicit_denials, Some(denials), "{name}: {probe:?}");
+        }
+        return;
+    }
+
+    // VIEW DEFINITION includes the permission, and every login gets an answer.
+    for (identity, expected) in [
+        (server.clone(), 1),
+        (login(OWNER), 1),
+        (login(VIEW_DEFINITION), 1),
+        (login(READER), 0),
+        (login(VIEW_DEFINITION_DENIED_SECURITY), 0),
+    ] {
+        assert_eq!(
+            integer(&identity, view_security_definition).await,
+            Some(expected),
+            "{}",
+            identity.user
+        );
+    }
+
+    // Denied it, a login sees no denial at all, not even its own, which the administrator sees.
+    let denials = "SELECT COUNT(*) FROM sys.database_permissions WHERE state = 'D'";
+    assert_eq!(
+        integer(&login(VIEW_DEFINITION_DENIED_SECURITY), denials).await,
+        Some(0)
+    );
+    let its_denials = format!(
+        "{denials} \
+         AND grantee_principal_id = DATABASE_PRINCIPAL_ID(N'{VIEW_DEFINITION_DENIED_SECURITY}')"
+    );
+    assert_eq!(integer(&server, &its_denials).await, Some(1));
+
+    // So its denials are unknown and the level partial, as for the denialsUnknown persona of
+    // src/features/access/testFixtures.ts, whose one cause is denials the login cannot see. The
+    // users of the database are hidden from it too, its own included, so it has no user to name.
+    let description = describe(&server, VIEW_DEFINITION_DENIED_SECURITY, DATABASE).await;
+    assert_eq!(description.schemas, ["audit", "dbo", "sales"]);
+    let access = description.access;
+    assert_eq!(access.probe.explicit_denials, None, "{access:?}");
+    assert!(access.probe.can_read_definitions, "{access:?}");
+    assert!(!access.probe.can_read_data, "{access:?}");
+    assert_eq!(access.probe.database_user, None, "{access:?}");
+    let schemas: Vec<(&str, bool, bool, bool, bool)> = access
+        .probe
+        .schemas
+        .iter()
+        .map(|schema| {
+            (
+                schema.name.as_str(),
+                schema.can_read_definitions,
+                schema.can_read_data,
+                schema.is_denied,
+                schema.has_visible_objects,
+            )
+        })
+        .collect();
+    assert_eq!(
+        schemas,
+        [
+            ("audit", true, false, false, true),
+            ("dbo", true, false, false, true),
+            ("sales", true, false, false, true),
+        ]
+    );
+    assert_eq!(
+        (
+            access.level,
+            access.coverage.objects,
+            access.coverage.definitions
+        ),
+        (Partial, Completeness::Partial, Complete)
+    );
+
+    // Its capture reads every object and every text, yet vouches for no absence, so a table
+    // dropped later is kept as not checked rather than reported as removed.
+    let snapshot = inspect_as(&server, VIEW_DEFINITION_DENIED_SECURITY, DATABASE).await;
+    let owner = inspect_as(&server, OWNER, DATABASE).await;
+    assert_eq!(table_names(&snapshot), table_names(&owner));
+    assert_eq!(texts(&snapshot), texts(&owner));
+    for schema in ["audit", "dbo", "sales"] {
+        let dropped = QualifiedName::new(schema, "Dropped");
+        assert!(!snapshot.vouches_for_absence_of(&dropped), "{schema}");
+        assert!(owner.vouches_for_absence_of(&dropped), "{schema}");
+    }
+    let captured = snapshot.access.as_ref().unwrap();
+    assert_eq!(captured.probe.explicit_denials, None);
+    assert_eq!(
+        (
+            captured.level,
+            captured.coverage.objects,
+            captured.coverage.definitions
+        ),
+        (Partial, Completeness::Partial, Complete)
     );
 }
 
@@ -745,6 +927,9 @@ struct ProbeExpected {
     identity: TestServer,
     /// `access.view_definition`.
     view_definition: i64,
+    /// `access.view_security_definition` on SQL Server 2022 and later; earlier versions do not
+    /// know the permission and the probe reports -1 for every login.
+    view_security_definition: i64,
     /// `objects.P`, `objects.FN`, `objects.IF` and `objects.TR`.
     code_objects: [i64; 4],
     /// Readable module texts over every kind.
@@ -757,14 +942,16 @@ struct ProbeExpected {
 async fn the_capability_probe_returns_counts_only_for_every_login() {
     let Some(server) = test_server() else { return };
     seed(&server).await;
+    let knows_permission = knows_view_security_definition(&server).await;
     let login = |name: &str| as_login(&server, name, &PASSWORD);
-    let expectations = [
+    let mut expectations = vec![
         // The server administrator, who enters as dbo, and the database owner see everything:
         // three procedures, one of them encrypted, a scalar and an inline function and the
         // triggers on sales.Orders and on the view sales.OrderSummary.
         ProbeExpected {
             identity: server.clone(),
             view_definition: 1,
+            view_security_definition: 1,
             code_objects: [3, 1, 1, 2],
             readable: 7,
             not_visible: 0,
@@ -772,6 +959,7 @@ async fn the_capability_probe_returns_counts_only_for_every_login() {
         ProbeExpected {
             identity: login(OWNER),
             view_definition: 1,
+            view_security_definition: 1,
             code_objects: [3, 1, 1, 2],
             readable: 7,
             not_visible: 0,
@@ -781,6 +969,7 @@ async fn the_capability_probe_returns_counts_only_for_every_login() {
         ProbeExpected {
             identity: login(READER),
             view_definition: 0,
+            view_security_definition: 0,
             code_objects: [0, 0, 1, 2],
             readable: 0,
             not_visible: 4,
@@ -788,6 +977,7 @@ async fn the_capability_probe_returns_counts_only_for_every_login() {
         ProbeExpected {
             identity: login(VIEW_DEFINITION),
             view_definition: 1,
+            view_security_definition: 1,
             code_objects: [3, 1, 1, 2],
             readable: 7,
             not_visible: 0,
@@ -797,6 +987,7 @@ async fn the_capability_probe_returns_counts_only_for_every_login() {
         ProbeExpected {
             identity: login(READER_WITH_SALES_TEXTS),
             view_definition: 0,
+            view_security_definition: 0,
             code_objects: [2, 0, 1, 2],
             readable: 5,
             not_visible: 0,
@@ -804,11 +995,23 @@ async fn the_capability_probe_returns_counts_only_for_every_login() {
         ProbeExpected {
             identity: login(CONNECT_ONLY),
             view_definition: 0,
+            view_security_definition: 0,
             code_objects: [0, 0, 0, 0],
             readable: 0,
             not_visible: 0,
         },
     ];
+    // Every object and text, with the permission that shows its denials denied.
+    if knows_permission {
+        expectations.push(ProbeExpected {
+            identity: login(VIEW_DEFINITION_DENIED_SECURITY),
+            view_definition: 1,
+            view_security_definition: 0,
+            code_objects: [3, 1, 1, 2],
+            readable: 7,
+            not_visible: 0,
+        });
+    }
 
     for expected in expectations {
         let user = expected.identity.user.clone();
@@ -834,6 +1037,15 @@ async fn the_capability_probe_returns_counts_only_for_every_login() {
         assert_eq!(
             probe.value("text", "modules_scanned"),
             expected.readable,
+            "{user}"
+        );
+        assert_eq!(
+            probe.value("access", "view_security_definition"),
+            if knows_permission {
+                expected.view_security_definition
+            } else {
+                -1
+            },
             "{user}"
         );
         // The encrypted procedure is told apart from a hidden one wherever it is visible.

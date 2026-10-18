@@ -11,7 +11,8 @@ the same diagram, and renders fast, interactive diagrams with high-fidelity sing
 
 - **Reverse engineering of SQL Server.** Tables, views, columns and types, primary and foreign
   keys, indexes and check constraints, with SQL Server or Windows Authentication over encrypted
-  connections.
+  connections. SQL Server 2019 and 2022 are tested; 2016 and 2017 are supported on a best-effort
+  basis, without tests.
 - **Honest with limited logins.** A login that sees only part of a database gets everything it
   can read, with what it cannot read marked as not available, never as missing, and an access
   report that names the cause and the one grant that would complete the schema.
@@ -154,8 +155,9 @@ open a Chrome DevTools Protocol port on localhost, so a script can drive the rea
 
 ## Integration tests against SQL Server
 
-The core crate has integration tests that run against a real SQL Server 2022. They are skipped
-unless the `SCHEMACRAFT_TEST_MSSQL_*` variables are set. With Docker Desktop running:
+The core crate has integration tests that run against real SQL Server 2019 and 2022 instances.
+They are skipped unless the `SCHEMACRAFT_TEST_MSSQL_*` variables are set; with
+`SCHEMACRAFT_TEST_REQUIRE_SERVER=1`, as CI sets it, they fail instead. With Docker Desktop running:
 
 ```powershell
 .\scripts\dev-sqlserver.ps1 start
@@ -169,6 +171,13 @@ unless the `SCHEMACRAFT_TEST_MSSQL_*` variables are set. With Docker Desktop run
 cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions -- --nocapture
 ```
 
+The script starts SQL Server 2022 as `schemacraft-mssql` on port 14333. With `-Version 2019` it
+starts SQL Server 2019 as `schemacraft-mssql2019` on port 14334, so both can run side by side;
+pass it to `env` as well (`.\scripts\dev-sqlserver.ps1 env -Version 2019`). `env` also prints
+`SCHEMACRAFT_TEST_MSSQL_MAJOR`, the major version the server must report (16 for 2022, 15 for
+2019), which a test in each binary checks, so a run cannot test the wrong server. CI runs both
+binaries against both versions, in one job.
+
 `sqlserver_integration` seeds six databases on the container: `SchemaCraftFixture`, covering
 keys, indexes, constraints, alias types and views; `SchemaCraftFixtureChanged`, the same fixture
 with the changes of `changes.sql`, which the refresh test reads; `SchemaCraftStress`, 200 tables
@@ -181,11 +190,12 @@ sections that wait on it fail and report only their error number.
 `sqlserver_permissions` seeds a database of its own, an empty one and one with denials made to
 `public`, and reads them as low-privilege logins: `db_owner`, `db_datareader`, `VIEW DEFINITION`
 only, a reader with the `VIEW DEFINITION` of one schema, `SELECT` on two tables, `CONNECT` only,
-two variants of a schema `DENY` and a column `DENY`, and runs the capability probe as several of
-them. It creates these server logins itself, with the `schemacraft_` prefix and a password made
-up for each run, so run it only against a disposable server such as this container. Windows
-Authentication cannot run in the Linux container; it is validated manually against a Windows
-instance.
+two variants of a schema `DENY` and a column `DENY`, plus, on SQL Server 2022, `VIEW DEFINITION`
+with `VIEW SECURITY DEFINITION` denied, a permission 2019 does not have, and runs the capability
+probe as several of them. It creates these server logins itself, with the `schemacraft_` prefix
+and a password made up for each run, so run it only against a disposable server such as these
+containers. Windows Authentication cannot run in the Linux container; it is validated manually
+against a Windows instance.
 
 ## Browser preview
 

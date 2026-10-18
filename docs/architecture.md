@@ -55,7 +55,7 @@ schemacraft/
 │   │   └── ui/                accessible UI primitives (Radix based), the resizer of both side panels
 │   └── viewer/                standalone viewer embedded in exported HTML files, drawing the shared details view-model and its rules
 ├── assets/brand/              source artwork for the application icon
-├── scripts/                   SQL Server container, font preparation, smoke test, page check, CI change filter, release notes
+├── scripts/                   SQL Server containers, font preparation, smoke test, page check, CI change filter, release notes
 ├── docs/                      PRD, decision records, UX principles, release checklist
 │   └── architecture/          interactive architecture page and its model (GitHub Pages)
 └── .github/workflows/         CI on every pull request, sized to the change; release on every tag
@@ -722,6 +722,20 @@ separate job, because a job skipped through a failed dependency would count as p
 Why: a pull request that only touches the documentation should not wait fifteen minutes for a
 Rust build, and the required checks must still fail closed when the classification itself fails.
 
+Since 1.2 the integration job reads SQL Server 2019 as well as 2022. It has two services, `mssql`
+(2022) on port 1433 and `mssql2019` on 1434, and two steps that run both test binaries, one against
+each server. Each step names the major version its server must report in
+`SCHEMACRAFT_TEST_MSSQL_MAJOR`, and `connects_to_the_expected_major_version` checks it, so a wrong
+port cannot test one version twice. The 2019 step runs after a failure on 2022 as well
+(`!cancelled()`), so one run reports both versions; it reuses the binaries the first step built,
+and the job's timeout grew from 30 to 40 minutes. A matrix would be the usual shape, but GitHub
+names each matrix job after its values and the branch ruleset requires this check by name, so two
+services in the one job keep the required check without a change to the ruleset. The job also sets
+`SCHEMACRAFT_TEST_REQUIRE_SERVER=1`, under which a missing server variable fails every SQL Server
+test instead of skipping it, so the job can no longer pass without having reached a server. The
+classification is unchanged: what both runs read lives under `crates/`, and the CI definition
+counts as core.
+
 ### ADR-034: Honest access: one access probe, and unknown is not none
 
 A login may see only part of a database, and SQL Server says so silently: the catalog views
@@ -785,6 +799,17 @@ that looks like an absence is a false statement the user will act on. SQL Server
 the user, so the application must. One probe classifies every tested permission profile in one
 round trip, `VIEW DEFINITION` is the single grant that completes the schema without exposing
 data, and disclosing in grades keeps the common case, full access, free of warnings.
+
+Since 1.2 the access probe is verified on SQL Server 2019 as well as 2022 (ADR-033). SQL Server
+2019 does not know `VIEW SECURITY DEFINITION`: `HAS_PERMS_BY_NAME` answers `NULL` for it, to `sa`
+too, and a `DENY` of it is a syntax error, so a login with `VIEW DEFINITION` sees its denials and
+counts them, which the 2019 run pins. The branch where the count is unknown has a login of its
+own, `schemacraft_vd_deny_vsd` in `permission_logins_2022.sql`, created only where the server
+reports major version 16 or later: `VIEW DEFINITION` with `VIEW SECURITY DEFINITION` denied. SQL
+Server then hides every denial from it, its own included, and its own database user, so
+`explicitDenials` and `databaseUser` are `null`, and its capture reads every object and text yet
+vouches for no absence: the level is partial, with a partial object list, complete texts and the
+one cause that the login cannot see its denials.
 
 ### ADR-035: Project format 2 reads forward: two version numbers, migrations, kept unknown keys
 
@@ -1146,6 +1171,13 @@ consumer outside the frontend can port the table rather than the reasoning. Row 
 right for any table name in either language, and markers chosen by the functions that word the
 sentences cannot contradict them.
 
+Since 1.2 the golden forms and the engine facts are asserted against SQL Server 2019 as well as
+2022 (ADR-033). SQL Server 2019 stores all 72 forms exactly as 2022 does, with the same columns and
+enabled states, and behaves the same on every scratch table, so `check_forms.json` keeps one stored
+form per case. Should a version store a case differently, the file records that version's form for
+the case beside the other, and the test checks each against its own version; a case is never
+skipped on a version.
+
 ### ADR-040: A database that cannot be shared is measured by a probe its owner runs, and the probe returns numbers only
 
 Some decisions rest on databases the project cannot see: how much code a real schema holds, how
@@ -1173,7 +1205,7 @@ modules match each pattern; whoever runs it can turn it off at the top. The sect
 `indexes`, `constraints`, `columns`, `properties` and `timings`.
 
 The engine sets rules for keeping it runnable on every version and for every login, learned
-against SQL Server 2022:
+against SQL Server 2022 and checked on 2019:
 
 - A catalog column that a version lacks fails the whole batch at compile time, where no `CATCH`
   can report it, so the script uses only columns that exist since SQL Server 2012 and reads newer
@@ -1219,7 +1251,10 @@ defines. One more run holds a schema lock in a database of its own while the pro
 every `CATCH` that can wait on it runs, and checks that they return only error 1222.
 `sqlserver_permissions.rs` runs it as `sa` and as the `db_owner`, reader, `VIEW DEFINITION`,
 sales-texts and connect-only logins and pins what each sees: a `db_datareader` member, for one,
-sees no procedure, no scalar function and no text, and no `VIEW DEFINITION` on the database.
+sees no procedure, no scalar function and no text, and no `VIEW DEFINITION` on the database. On
+SQL Server 2022 it also runs as the login denied `VIEW SECURITY DEFINITION` (ADR-034), which
+reports 1 for `view_definition` and 0 for `view_security_definition`; on 2019, which does not know
+that permission, `view_security_definition` is -1 for every login, `sa` included.
 `permissions.sql` gained the code those runs count and no table, view, `CHECK` or `DEFAULT`, so
 every access verdict of ADR-034 holds.
 

@@ -13,6 +13,12 @@ All notable changes to SchemaCraft are documented here. The format follows
   cannot be shared can still be measured. It is read-only and returns no name and no text; the
   README says how to run it and what to share.
 
+### Changed
+
+- SQL Server 2019 and 2022 are the tested versions: the integration tests run against both on
+  every change to the core. SQL Server 2016 and 2017 are supported on a best-effort basis, without
+  tests.
+
 ## [1.1.0] - 2026-10-18
 
 Logins with limited permissions are explained, tables and views are told apart, an Inspector
