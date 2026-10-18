@@ -6,6 +6,13 @@ All notable changes to SchemaCraft are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A capability probe script, `crates/schemacraft-core/probes/capability-probe.sql`, measures what
+  SchemaCraft would read from a SQL Server database and returns numbers only, so a database that
+  cannot be shared can still be measured. It is read-only and returns no name and no text; the
+  README says how to run it and what to share.
+
 ## [1.1.0] - 2026-10-18
 
 Logins with limited permissions are explained, tables and views are told apart, an Inspector

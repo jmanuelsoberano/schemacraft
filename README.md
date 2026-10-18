@@ -169,19 +169,23 @@ unless the `SCHEMACRAFT_TEST_MSSQL_*` variables are set. With Docker Desktop run
 cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions -- --nocapture
 ```
 
-`sqlserver_integration` seeds four databases on the container: `SchemaCraftFixture`, covering
+`sqlserver_integration` seeds six databases on the container: `SchemaCraftFixture`, covering
 keys, indexes, constraints, alias types and views; `SchemaCraftFixtureChanged`, the same fixture
 with the changes of `changes.sql`, which the refresh test reads; `SchemaCraftStress`, 200 tables
-used to check the extraction time budget; and `SchemaCraftCheckForms`, built from the golden
-check constraints in `check_forms.json` and the scratch tables of `rule_facts.sql`, which pins the
-forms SQL Server stores and the engine behaviour the readable rules rely on.
+used to check the extraction time budget; `SchemaCraftCheckForms`, built from the golden check
+constraints in `check_forms.json` and the scratch tables of `rule_facts.sql`, which pins the
+forms SQL Server stores and the engine behaviour the readable rules rely on; `SchemaCraftCode`,
+the views, triggers, procedures and functions of `code.sql`, against which the capability probe's
+counts are checked; and `SchemaCraftProbeLocked`, one table that a test locks so that the probe's
+sections that wait on it fail and report only their error number.
 `sqlserver_permissions` seeds a database of its own, an empty one and one with denials made to
 `public`, and reads them as low-privilege logins: `db_owner`, `db_datareader`, `VIEW DEFINITION`
 only, a reader with the `VIEW DEFINITION` of one schema, `SELECT` on two tables, `CONNECT` only,
-two variants of a schema `DENY` and a column `DENY`. It creates these server logins itself, with
-the `schemacraft_` prefix and a password made up for each run, so run it only against a
-disposable server such as this container. Windows Authentication cannot run in the Linux
-container; it is validated manually against a Windows instance.
+two variants of a schema `DENY` and a column `DENY`, and runs the capability probe as several of
+them. It creates these server logins itself, with the `schemacraft_` prefix and a password made
+up for each run, so run it only against a disposable server such as this container. Windows
+Authentication cannot run in the Linux container; it is validated manually against a Windows
+instance.
 
 ## Browser preview
 
@@ -264,6 +268,46 @@ says "None" only when it is complete. A login that sees no table or
 view at all is told so and cannot start a read. Refreshing a project with a
 login that sees less never removes what it cannot see: those items are kept and listed as not
 checked.
+
+## Measuring a database without sharing it
+
+Some databases cannot leave their owner's hands, yet how SchemaCraft fares on them still matters.
+[`crates/schemacraft-core/probes/capability-probe.sql`](crates/schemacraft-core/probes/capability-probe.sql)
+measures what SchemaCraft would read from a SQL Server database and prints numbers only, so you
+can share the numbers and nothing else.
+
+It is one read-only batch: SELECT statements on catalog views and system functions, under a lock
+timeout of 5 seconds, that fill a table variable and return it. It reads no table data, calls no
+procedure and changes nothing. Each row is a section, a metric and a number: objects per type,
+the module texts of views, procedures, functions and triggers with their sizes in bytes, trigger,
+parameter, index and constraint counts, the server version as numbers, whether the login holds
+the permissions SchemaCraft checks, and timings in milliseconds. No name of any object, schema,
+column, login, database or server and no definition text is ever returned: names and texts are
+read on the server only to turn them into numbers, such as sizes, permission checks, pattern
+matches and counts. A section that fails shows only its error number. Error 1222 means another
+session held a lock for more than 5 seconds, usually an open transaction that changed the
+schema; run the script again once it has ended. A text scan, on by default, counts on the server
+how many modules contain credential-like words such as `password` or dynamic SQL such as
+`sp_executesql`, and returns no text; set `@scan_text` to 0 at the top of the script to skip it.
+
+Open the script in SSMS or in Visual Studio Code with the MSSQL extension, connected with the
+login SchemaCraft uses and with the database to measure as the current database, read it and run
+it. With sqlcmd, from the root of the clone:
+
+```powershell
+sqlcmd -S <server> -d <database> -U <login> -i crates\schemacraft-core\probes\capability-probe.sql -s "," -W -r1 > <folder outside the repository>\probe.csv
+```
+
+`-r1` keeps sqlcmd's messages on the screen and out of the file. With `-o` instead, sqlcmd would
+write any error into the file, and an error can name the server, the database or the login. If
+sqlcmd prints anything, the run failed, so share nothing. Share the file only when every line
+after the two header lines reads section,metric,number.
+
+Keep the result outside the repository and share only the grid of numbers. A commented query at
+the end of the file times the transfer of the module texts in SSMS; it returns those texts, so
+follow its instructions and share only the two client statistics they name. CI runs the probe
+against the test databases as the administrator and as logins with limited permissions, and
+fails if it returns any label outside a pinned list ([ADR-040](docs/architecture.md)).
 
 ## Project structure
 

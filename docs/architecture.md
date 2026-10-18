@@ -25,7 +25,8 @@ schemacraft/
 │   ├── src/export/            SVG to PNG and PDF rendering with bundled fonts
 │   ├── src/fs.rs              atomic file writes shared by projects, preferences and exports
 │   ├── assets/fonts/          TTF fonts embedded in the exports
-│   └── tests/                 integration tests, SQL fixtures, golden CHECK forms and low-privilege logins (run against a real server)
+│   ├── probes/                capability probe: a read-only T-SQL script, run by hand with the login SchemaCraft uses, that returns numbers only
+│   └── tests/                 integration tests, SQL fixtures, golden CHECK forms, low-privilege logins and the probe's allowlist (run against a real server)
 ├── src-tauri/                 Rust binary: Tauri host, IPC commands, job registry, logging, configuration
 ├── src/                       React + TypeScript frontend
 │   ├── app/                   composition root: shell, actions, palette, global styles, dev hooks
@@ -721,7 +722,7 @@ separate job, because a job skipped through a failed dependency would count as p
 Why: a pull request that only touches the documentation should not wait fifteen minutes for a
 Rust build, and the required checks must still fail closed when the classification itself fails.
 
-### ADR-034: Honest access: one capability probe, and unknown is not none
+### ADR-034: Honest access: one access probe, and unknown is not none
 
 A login may see only part of a database, and SQL Server says so silently: the catalog views
 leave out the objects it cannot see and return `NULL` for the texts it cannot read. SchemaCraft
@@ -1144,6 +1145,93 @@ against the engine catches a normal form that changes before a sentence goes wro
 consumer outside the frontend can port the table rather than the reasoning. Row phrasing reads
 right for any table name in either language, and markers chosen by the functions that word the
 sentences cannot contradict them.
+
+### ADR-040: A database that cannot be shared is measured by a probe its owner runs, and the probe returns numbers only
+
+Some decisions rest on databases the project cannot see: how much code a real schema holds, how
+large its texts are, how often its triggers are disabled or its indexes filtered, what a
+production login may read. `crates/schemacraft-core/probes/capability-probe.sql` lets the owner
+of such a database measure it and share numbers only. It is run with the login SchemaCraft
+connects with, not as `dbo`, since every count is what that login can see. It lives under
+`crates/`, so an edit to it counts as a core change and runs the SQL Server tests (ADR-033).
+
+The script is one T-SQL batch without `GO`, short enough to read before it runs. It starts with
+`DECLARE @scan_text bit = 1`, `SET NOCOUNT ON` and `SET LOCK_TIMEOUT 5000`, fills a table
+variable section by section, each but `probe` in its own `TRY … CATCH`, and ends with one `SELECT`
+of that variable. Every row is `(section nvarchar, metric nvarchar, value bigint)`. The labels
+are literals of the script, type codes become labels through fixed `VALUES` lists, and a value is
+a count, a sum or maximum of `DATALENGTH`, a server property as a number, milliseconds, or a
+capability as 1, 0 or -1 when the server does not answer. No name of an object, schema, column,
+parameter, principal, login, database, collation, server or file is returned, nor any definition
+or expression text: names and texts are read only on the server, inside `COUNT`, `DATALENGTH`,
+`LIKE`, `CHARINDEX`, a comparison with a fixed word or a permission check, and become numbers
+there. A failed section returns only `ERROR_NUMBER()`, never the message. It reads catalog views
+and system functions only: no table data, no procedure, no dynamic management function and no
+write beyond the table variable. The text scan runs `LIKE` on the server and returns how many
+modules match each pattern; whoever runs it can turn it off at the top. The sections are
+`probe`, `server`, `access`, `objects`, `modules`, `text`, `triggers`, `views`, `routines`,
+`indexes`, `constraints`, `columns`, `properties` and `timings`.
+
+The engine sets rules for keeping it runnable on every version and for every login, learned
+against SQL Server 2022:
+
+- A catalog column that a version lacks fails the whole batch at compile time, where no `CATCH`
+  can report it, so the script uses only columns that exist since SQL Server 2012 and reads newer
+  flags through `OBJECTPROPERTY`, which answers NULL instead.
+- A subquery inside an aggregate is Msg 130, a compile error too, so flags that need one are
+  worked out per object in a derived table and summed outside it.
+- `ISNULL` returns the type of its first argument, so a `tinyint` is cast before -1 can stand in
+  for its NULL, and no aggregate is given a NULL, whose warning would land in the sqlcmd output.
+- `sys.sql_expression_dependencies` raises Msg 229 for `VIEW DEFINITION` without `SELECT`, so only
+  the permission to read it is probed.
+- The `sys.objects` row of a table type is marked `is_ms_shipped`, so table types are counted in
+  `sys.table_types`.
+- Another session's uncommitted schema change holds locks that the catalog queries wait for, so a
+  blocked section reports error 1222 after 5 seconds, and the owner runs the probe again once
+  that change has ended.
+- An error that no `CATCH` can handle, such as a compile error, reaches the client with a header
+  that names the server, so the README runs sqlcmd with `-r1`, which keeps every message on the
+  screen and only the result set in the file.
+
+Tests keep the contract. `tests/common` holds `PROBE_METRICS`, every `(section, metric)` pair the
+script may return, and `run_probe`, which sends the script as one `simple_query`, as SSMS sends
+it, and asserts one result set with the columns `section`, `metric` and `value` of types
+`nvarchar`, `nvarchar` and `bigint`, no NULL, every pair in the list and none twice, and every
+listed metric unless its section failed. A change that would return anything else, a name above
+all, fails until the list grows in the same pull request, where a review sees it. A static test
+reads the script without its comments and literals and fails on `GO`, on a statement that runs
+code, writes or changes the session, on a `SET` other than `SET NOCOUNT ON`,
+`SET LOCK_TIMEOUT 5000` or one of a variable, on an `INSERT` into anything but the table
+variable, on a dynamic management view or a `sys.fn_` function, and on the functions that hand
+back a name, an error message or a definition, such as `OBJECT_NAME`, `ERROR_MESSAGE` and
+`OBJECT_DEFINITION`; the only name functions it calls, `QUOTENAME` and `USER_NAME`, feed a
+permission check. It also checks that every `CATCH` returns only `ERROR_NUMBER()` as
+`error_number` and that every label is a literal or a column of a fixed `VALUES` list, so how many
+rows come back never depends on the database and the allowlist sees every row any database can
+produce. `sqlserver_integration.rs` runs the probe as `sa` on `SchemaCraftFixture`,
+`SchemaCraftCheckForms` and `SchemaCraftCode`, a database of its own built from
+`fixtures/sqlserver/code.sql` (views `WITH CHECK OPTION`, indexed and encrypted; triggers on a
+table and on a view, marked First and Last, disabled, `NOT FOR REPLICATION` and encrypted;
+procedures and functions of every T-SQL kind, one created through `sp_executesql` with CRLF and
+trailing spaces; a schema with code only; a database DDL trigger; no CLR module, which needs an
+assembly, so the CLR counts are pinned at 0), and compares the counts with what each fixture
+defines. One more run holds a schema lock in a database of its own while the probe runs, so that
+every `CATCH` that can wait on it runs, and checks that they return only error 1222.
+`sqlserver_permissions.rs` runs it as `sa` and as the `db_owner`, reader, `VIEW DEFINITION`,
+sales-texts and connect-only logins and pins what each sees: a `db_datareader` member, for one,
+sees no procedure, no scalar function and no text, and no `VIEW DEFINITION` on the database.
+`permissions.sql` gained the code those runs count and no table, view, `CHECK` or `DEFAULT`, so
+every access verdict of ADR-034 holds.
+
+The results belong to the database's owner: the README asks to keep them outside the repository
+and to share only the grid of numbers, `.gitignore` ignores a result written next to the script,
+and none is committed.
+
+Why: a probe built on the inspector would reuse the connection code, whose errors carry server,
+login and object names, and would have to be compiled and trusted. A T-SQL script has no
+connection code and no error text to clean, runs in the tools a DBA already has, and can be read
+line by line before it runs; the allowlist and the static test turn "numbers only" into a
+property CI checks rather than a promise.
 
 ## Milestones
 

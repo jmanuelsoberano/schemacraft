@@ -35,7 +35,9 @@ use schemacraft_core::project::{
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
-use self::common::{TestServer, as_login, ensure_seeded, inspector, settings, test_server};
+use self::common::{
+    TestServer, as_login, ensure_seeded, inspector, run_probe, settings, test_server,
+};
 
 const DATABASE: &str = "SchemaCraftPermissions";
 const EMPTY_DATABASE: &str = "SchemaCraftPermissionsEmpty";
@@ -736,4 +738,112 @@ async fn an_empty_database_is_neutral() {
     // Without VIEW DEFINITION a login cannot tell an empty database from a hidden one.
     let reader = describe(&server, READER, EMPTY_DATABASE).await;
     assert_eq!(reader.access.level, AccessLevel::NothingVisible);
+}
+
+/// What the capability probe must count in the fixture for one login.
+struct ProbeExpected {
+    identity: TestServer,
+    /// `access.view_definition`.
+    view_definition: i64,
+    /// `objects.P`, `objects.FN`, `objects.IF` and `objects.TR`.
+    code_objects: [i64; 4],
+    /// Readable module texts over every kind.
+    readable: i64,
+    /// Module texts of visible modules that the login cannot read.
+    not_visible: i64,
+}
+
+#[tokio::test]
+async fn the_capability_probe_returns_counts_only_for_every_login() {
+    let Some(server) = test_server() else { return };
+    seed(&server).await;
+    let login = |name: &str| as_login(&server, name, &PASSWORD);
+    let expectations = [
+        // The server administrator, who enters as dbo, and the database owner see everything:
+        // three procedures, one of them encrypted, a scalar and an inline function and the
+        // triggers on sales.Orders and on the view sales.OrderSummary.
+        ProbeExpected {
+            identity: server.clone(),
+            view_definition: 1,
+            code_objects: [3, 1, 1, 2],
+            readable: 7,
+            not_visible: 0,
+        },
+        ProbeExpected {
+            identity: login(OWNER),
+            view_definition: 1,
+            code_objects: [3, 1, 1, 2],
+            readable: 7,
+            not_visible: 0,
+        },
+        // db_datareader hides procedures and scalar functions and keeps the view, the inline
+        // function and the triggers visible without their texts, as the 1.1 spike recorded.
+        ProbeExpected {
+            identity: login(READER),
+            view_definition: 0,
+            code_objects: [0, 0, 1, 2],
+            readable: 0,
+            not_visible: 4,
+        },
+        ProbeExpected {
+            identity: login(VIEW_DEFINITION),
+            view_definition: 1,
+            code_objects: [3, 1, 1, 2],
+            readable: 7,
+            not_visible: 0,
+        },
+        // VIEW DEFINITION on sales shows its procedures and every text there; dbo's procedure
+        // and function stay hidden.
+        ProbeExpected {
+            identity: login(READER_WITH_SALES_TEXTS),
+            view_definition: 0,
+            code_objects: [2, 0, 1, 2],
+            readable: 5,
+            not_visible: 0,
+        },
+        ProbeExpected {
+            identity: login(CONNECT_ONLY),
+            view_definition: 0,
+            code_objects: [0, 0, 0, 0],
+            readable: 0,
+            not_visible: 0,
+        },
+    ];
+
+    for expected in expectations {
+        let user = expected.identity.user.clone();
+        let probe = run_probe(&expected.identity, DATABASE).await;
+        assert_eq!(probe.errors(), [], "{user}");
+        let code_objects = ["P", "FN", "IF", "TR"].map(|kind| probe.value("objects", kind));
+        assert_eq!(
+            (
+                probe.value("access", "view_definition"),
+                code_objects,
+                probe.modules_total("readable"),
+                probe.modules_total("not_visible"),
+            ),
+            (
+                expected.view_definition,
+                expected.code_objects,
+                expected.readable,
+                expected.not_visible,
+            ),
+            "{user}: {:?}",
+            probe.rows
+        );
+        assert_eq!(
+            probe.value("text", "modules_scanned"),
+            expected.readable,
+            "{user}"
+        );
+        // The encrypted procedure is told apart from a hidden one wherever it is visible.
+        assert_eq!(
+            probe.value("modules", "P.encrypted"),
+            i64::from(expected.code_objects[0] > 0),
+            "{user}"
+        );
+        // The legacy bound default dbo.LegacyZero is visible to every login, CONNECT only
+        // included.
+        assert_eq!(probe.value("objects", "other"), 1, "{user}");
+    }
 }

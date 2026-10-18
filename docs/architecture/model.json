@@ -49,7 +49,7 @@
       "preferencesBackend.ts",
       "projectBackend.ts"
     ],
-    "adrCount": 39
+    "adrCount": 40
   },
   "en": {
     "overview": {
@@ -696,8 +696,8 @@
       {
         "id": "delivery",
         "name": "Delivery",
-        "summary": "Pinned toolchains, CI gates, the release workflow, the smoke test of the real binary, the developer scripts and the check that keeps this page in step.",
-        "path": ".github/workflows, scripts, crates/schemacraft-core/tests, docs/architecture",
+        "summary": "Pinned toolchains, CI gates, the release workflow, the smoke test of the real binary, the developer scripts, the capability probe and the check that keeps this page in step.",
+        "path": ".github/workflows, scripts, crates/schemacraft-core/tests, crates/schemacraft-core/probes, docs/architecture",
         "technologies": [
           "GitHub Actions",
           "windows-latest",
@@ -755,12 +755,19 @@
             "id": "integration-tests",
             "name": "SQL Server integration tests",
             "path": "crates/schemacraft-core/tests",
-            "responsibility": "sqlserver_integration.rs creates databases from fixtures/sqlserver/fixture.sql, changes.sql and stress_200_tables.sql, then checks connection errors (the untrusted certificate included), describe_database, inspection, progress, cancellation and refresh against a real server. It also builds SchemaCraftCheckForms from fixtures/sqlserver/check_forms.json (72 golden CHECK forms, which the rule reader's vitest suite reads too) and rule_facts.sql, asserts every stored form, column list and enabled state against the engine, and pins on scratch tables the CHECK and foreign key behaviour the rule sentences rest on (ADR-039). sqlserver_permissions.rs seeds permissions.sql (the fixture schema, an empty database and a database with denials made to public) and creates nine low-privilege logins with permission_logins.sql (db_owner, db_datareader, VIEW DEFINITION only, reader plus a schema's VIEW DEFINITION, two tables, CONNECT only, two schema-DENY variants and a column DENY) with a password made up for the run, then checks every access verdict, hidden text and refresh rule, and that a denial to public never reaches dbo. tests/common holds the shared helpers. The stress test must read 200 tables within 5 s (STRESS_BUDGET; the product target is 3 s). Every test is skipped when SCHEMACRAFT_TEST_MSSQL_HOST is not set.",
+            "responsibility": "sqlserver_integration.rs creates databases from fixtures/sqlserver/fixture.sql, changes.sql and stress_200_tables.sql, then checks connection errors (the untrusted certificate included), describe_database, inspection, progress, cancellation and refresh against a real server. It also builds SchemaCraftCheckForms from fixtures/sqlserver/check_forms.json (72 golden CHECK forms, which the rule reader's vitest suite reads too) and rule_facts.sql, asserts every stored form, column list and enabled state against the engine, and pins on scratch tables the CHECK and foreign key behaviour the rule sentences rest on (ADR-039). It also builds SchemaCraftCode from fixtures/sqlserver/code.sql (views WITH CHECK OPTION, indexed and encrypted; triggers on a table and a view, ordered, disabled, NOT FOR REPLICATION and encrypted; procedures and functions of every T-SQL kind, no CLR module; a code-only schema; a database DDL trigger) and runs the capability probe as sa on SchemaCraftFixture, SchemaCraftCheckForms and SchemaCraftCode: the output contract of tests/common (one result set, nvarchar, nvarchar, bigint, every pair in PROBE_METRICS), no failed section and the counts each fixture defines; a run while another connection holds a schema lock, in which every failed section returns only error 1222; and a static check that the script is one read-only batch, that every CATCH returns only ERROR_NUMBER(), that every label is a literal or comes from a fixed VALUES list and that it calls none of the functions that return a name, an error message or a definition, such as OBJECT_NAME, ERROR_MESSAGE or OBJECT_DEFINITION (ADR-040). sqlserver_permissions.rs seeds permissions.sql (the fixture schema, an empty database and a database with denials made to public) and creates nine low-privilege logins with permission_logins.sql (db_owner, db_datareader, VIEW DEFINITION only, reader plus a schema's VIEW DEFINITION, two tables, CONNECT only, two schema-DENY variants and a column DENY) with a password made up for the run, then checks every access verdict, hidden text and refresh rule, and that a denial to public never reaches dbo. It also runs the capability probe as sa and as the owner, reader, VIEW DEFINITION, sales-texts and connect-only logins and pins what each one counts, such as no procedure and no readable text for db_datareader. tests/common holds the shared helpers. The stress test must read 200 tables within 5 s (STRESS_BUDGET; the product target is 3 s). Every test that needs the server is skipped when SCHEMACRAFT_TEST_MSSQL_HOST is not set; the static check of the probe runs in every cargo test.",
             "patterns": [
               "Gated by environment variables",
               "Performance budget as a test",
               "Golden table shared with the frontend tests"
             ]
+          },
+          {
+            "id": "capability-probe",
+            "name": "capability-probe.sql",
+            "path": "crates/schemacraft-core/probes/capability-probe.sql",
+            "responsibility": "A read-only T-SQL batch without GO that the owner of a database the project cannot see runs in SSMS or sqlcmd, with the login SchemaCraft uses, and shares as numbers. It fills a table variable with (section, metric, value) rows, each section but probe in its own TRY ... CATCH, and returns them in one SELECT: objects per type, module texts per kind (readable, encrypted, not visible, bytes, CR, trailing spaces), DML triggers, views, parameters, index and constraint states, computed columns, descriptions, the server version as numbers, the login's permissions and timings in milliseconds. A text scan, on by default (@scan_text), counts on the server the modules with credential-like words or dynamic SQL. Labels are literals of the script and values are bigint, so no name and no text is returned; a failed section returns only its error number. It lives under crates/ so that an edit runs the SQL Server tests (ADR-033, ADR-040).",
+            "patterns": ["Numbers only, by construction", "Allowlist pinned in a test"]
           },
           {
             "id": "prepare-fonts",
@@ -1688,6 +1695,20 @@
         "from": "integration-tests",
         "to": "ext-sqlserver",
         "label": "seeds the fixture databases, the golden CHECK forms and the low-privilege logins",
+        "kind": "network"
+      },
+      {
+        "id": "integration-tests-to-capability-probe",
+        "from": "integration-tests",
+        "to": "capability-probe",
+        "label": "runs it as sa and as the test logins, pins PROBE_METRICS",
+        "kind": "build"
+      },
+      {
+        "id": "capability-probe-to-ext-sqlserver",
+        "from": "capability-probe",
+        "to": "ext-sqlserver",
+        "label": "read-only catalog SELECTs, run by hand with the login SchemaCraft uses",
         "kind": "network"
       },
       {
@@ -3476,7 +3497,7 @@
         "The page carries one manifest, at the top level of model.json and shared by both languages. CI checks it against the code with scripts/check-architecture-page.mjs (npm run docs:check).",
         "New command: add it to manifest.commands and to the commands table in both languages.",
         "New feature folder, core module or IPC backend: add it to the manifest, the layer list and the diagram edges.",
-        "New decision: add an ADR (ADR-040 is next), raise manifest.adrCount and link the ADR from the pattern or recipe it changes.",
+        "New decision: add an ADR (ADR-041 is next), raise manifest.adrCount and link the ADR from the pattern or recipe it changes.",
         "Scope change: update both PRD copies (docs/ and 02_Docs/), add a dated line to section 6, commit as docs(prd), only with the user's approval.",
         "Fixed deviation: mark it fixed in the same PR. New known deviation: add it with a severity and status open.",
         "New data store or localStorage key: add a row to the data table.",
@@ -3718,6 +3739,11 @@
         "id": "golden-forms",
         "term": "Golden forms",
         "meaning": "check_forms.json beside the SQL Server fixtures: CHECKs as written, as stored and as they must be read. The integration test checks the stored forms against the engine, and the reader's tests read them."
+      },
+      {
+        "id": "capability-probe",
+        "term": "Capability probe",
+        "meaning": "crates/schemacraft-core/probes/capability-probe.sql: a read-only T-SQL script that the owner of a database runs by hand and that returns (section, metric, number) rows only, so a database that cannot be shared can still be measured (ADR-040). Not the access probe, which the inspector runs on every database it describes or reads (ADR-034)."
       },
       {
         "id": "match-simple",
@@ -4387,8 +4413,8 @@
       {
         "id": "delivery",
         "name": "Entrega",
-        "summary": "Toolchain fija, controles de CI, el workflow de release, la prueba de humo del binario real, los scripts de desarrollo y la revisión que mantiene esta página al día.",
-        "path": ".github/workflows, scripts, crates/schemacraft-core/tests, docs/architecture",
+        "summary": "Toolchain fija, controles de CI, el workflow de release, la prueba de humo del binario real, los scripts de desarrollo, el sondeo de capacidades y la revisión que mantiene esta página al día.",
+        "path": ".github/workflows, scripts, crates/schemacraft-core/tests, crates/schemacraft-core/probes, docs/architecture",
         "technologies": [
           "GitHub Actions",
           "windows-latest",
@@ -4446,11 +4472,21 @@
             "id": "integration-tests",
             "name": "Pruebas de integración con SQL Server",
             "path": "crates/schemacraft-core/tests",
-            "responsibility": "sqlserver_integration.rs crea bases de datos a partir de fixtures/sqlserver/fixture.sql, changes.sql y stress_200_tables.sql y luego prueba contra un servidor real los errores de conexión (incluido el certificado no confiable), describe_database, la inspección, el progreso, la cancelación y la actualización. También crea SchemaCraftCheckForms a partir de fixtures/sqlserver/check_forms.json (72 formas CHECK de referencia, que también lee la suite vitest del lector de reglas) y rule_facts.sql, comprueba contra el motor cada forma almacenada, lista de columnas y estado de habilitación, y fija sobre tablas auxiliares el comportamiento de CHECK y llaves foráneas en que se apoyan las frases de las reglas (ADR-039). sqlserver_permissions.rs siembra permissions.sql (el esquema de prueba, una base de datos vacía y una con DENY hechos a public) y crea con permission_logins.sql nueve inicios de sesión con pocos permisos (db_owner, db_datareader, solo VIEW DEFINITION, lector más el VIEW DEFINITION de un esquema, dos tablas, solo CONNECT, dos variantes de DENY sobre un esquema y un DENY sobre una columna) con una contraseña inventada para la corrida, y luego revisa cada veredicto de acceso, cada texto no visible y cada regla de la actualización, y que un DENY a public nunca alcanza a dbo. tests/common tiene los helpers compartidos. La prueba de carga debe leer 200 tablas en menos de 5 s (STRESS_BUDGET; la meta del producto es 3 s). Todas se omiten si SCHEMACRAFT_TEST_MSSQL_HOST no está definida.",
+            "responsibility": "sqlserver_integration.rs crea bases de datos a partir de fixtures/sqlserver/fixture.sql, changes.sql y stress_200_tables.sql y luego prueba contra un servidor real los errores de conexión (incluido el certificado no confiable), describe_database, la inspección, el progreso, la cancelación y la actualización. También crea SchemaCraftCheckForms a partir de fixtures/sqlserver/check_forms.json (72 formas CHECK de referencia, que también lee la suite vitest del lector de reglas) y rule_facts.sql, comprueba contra el motor cada forma almacenada, lista de columnas y estado de habilitación, y fija sobre tablas auxiliares el comportamiento de CHECK y llaves foráneas en que se apoyan las frases de las reglas (ADR-039). También crea SchemaCraftCode a partir de fixtures/sqlserver/code.sql (vistas WITH CHECK OPTION, indexadas y cifradas; desencadenadores sobre una tabla y una vista, ordenados, deshabilitados, NOT FOR REPLICATION y cifrados; procedimientos y funciones T-SQL de cada clase, sin módulos CLR; un esquema solo con código; un desencadenador DDL de base de datos) y ejecuta el sondeo de capacidades como sa sobre SchemaCraftFixture, SchemaCraftCheckForms y SchemaCraftCode: el contrato de salida de tests/common (un conjunto de resultados, nvarchar, nvarchar, bigint, cada par en PROBE_METRICS), ninguna sección fallida y los conteos que define cada base de prueba; una corrida mientras otra conexión retiene un bloqueo de esquema, en la que cada sección fallida devuelve solo el error 1222; y una revisión estática de que el script es un solo lote de solo lectura, de que cada CATCH devuelve solo ERROR_NUMBER(), de que cada etiqueta es un literal o sale de una lista VALUES fija y de que no llama a ninguna de las funciones que devuelven un nombre, un mensaje de error o una definición, como OBJECT_NAME, ERROR_MESSAGE u OBJECT_DEFINITION (ADR-040). sqlserver_permissions.rs siembra permissions.sql (el esquema de prueba, una base de datos vacía y una con DENY hechos a public) y crea con permission_logins.sql nueve inicios de sesión con pocos permisos (db_owner, db_datareader, solo VIEW DEFINITION, lector más el VIEW DEFINITION de un esquema, dos tablas, solo CONNECT, dos variantes de DENY sobre un esquema y un DENY sobre una columna) con una contraseña inventada para la corrida, y luego revisa cada veredicto de acceso, cada texto no visible y cada regla de la actualización, y que un DENY a public nunca alcanza a dbo. También ejecuta el sondeo de capacidades como sa y como los inicios de sesión db_owner, db_datareader, solo VIEW DEFINITION, lector más el VIEW DEFINITION de un esquema y solo CONNECT, y fija lo que cuenta cada uno, como ningún procedimiento y ningún texto legible para db_datareader. tests/common tiene los helpers compartidos. La prueba de carga debe leer 200 tablas en menos de 5 s (STRESS_BUDGET; la meta del producto es 3 s). Las pruebas que necesitan el servidor se omiten si SCHEMACRAFT_TEST_MSSQL_HOST no está definida; la revisión estática del sondeo corre en todo cargo test.",
             "patterns": [
               "Controladas por variables de entorno",
               "Presupuesto de rendimiento como prueba",
               "Tabla de referencia compartida con las pruebas del frontend"
+            ]
+          },
+          {
+            "id": "capability-probe",
+            "name": "capability-probe.sql",
+            "path": "crates/schemacraft-core/probes/capability-probe.sql",
+            "responsibility": "Un lote T-SQL de solo lectura y sin GO que el dueño de una base de datos que el proyecto no puede ver ejecuta en SSMS o sqlcmd, con el inicio de sesión que usa SchemaCraft, y comparte como números. Llena una variable de tabla con filas (section, metric, value), cada sección salvo probe en su propio TRY ... CATCH, y las devuelve en un solo SELECT: objetos por tipo, textos de módulos por clase (legibles, cifrados, no visibles, bytes, CR, espacios al final de línea), desencadenadores DML, vistas, parámetros, estado de índices y restricciones, columnas calculadas, descripciones, la versión del servidor como números, los permisos del inicio de sesión y tiempos en milisegundos. Un escaneo de texto, activado por defecto (@scan_text), cuenta en el servidor los módulos con palabras parecidas a credenciales o con SQL dinámico. Las etiquetas son literales del script y los valores son bigint, así que no devuelve ningún nombre ni ningún texto; una sección que falla devuelve solo su número de error. Vive bajo crates/ para que un cambio corra las pruebas con SQL Server (ADR-033, ADR-040).",
+            "patterns": [
+              "Solo números, por construcción",
+              "Lista de permitidos fijada en una prueba"
             ]
           },
           {
@@ -5383,6 +5419,20 @@
         "from": "integration-tests",
         "to": "ext-sqlserver",
         "label": "crea las bases de datos de prueba, las formas CHECK de referencia y los inicios de sesión con pocos permisos",
+        "kind": "network"
+      },
+      {
+        "id": "integration-tests-to-capability-probe",
+        "from": "integration-tests",
+        "to": "capability-probe",
+        "label": "lo ejecuta como sa y como los inicios de sesión de prueba, fija PROBE_METRICS",
+        "kind": "build"
+      },
+      {
+        "id": "capability-probe-to-ext-sqlserver",
+        "from": "capability-probe",
+        "to": "ext-sqlserver",
+        "label": "SELECT de solo lectura sobre el catálogo, ejecutados a mano con el inicio de sesión que usa SchemaCraft",
         "kind": "network"
       },
       {
@@ -7171,7 +7221,7 @@
         "La página lleva un solo manifiesto, en el nivel superior de model.json y compartido por ambos idiomas. CI lo compara con el código con scripts/check-architecture-page.mjs (npm run docs:check).",
         "Comando nuevo: agrégalo a manifest.commands y a la tabla de comandos en ambos idiomas.",
         "Carpeta de funcionalidad, módulo del core o backend IPC nuevo: agrégalo al manifiesto, a la lista de capas y a las aristas del diagrama.",
-        "Decisión nueva: agrega un ADR (el siguiente es ADR-040), sube manifest.adrCount y enlaza el ADR desde el patrón o la receta que cambia.",
+        "Decisión nueva: agrega un ADR (el siguiente es ADR-041), sube manifest.adrCount y enlaza el ADR desde el patrón o la receta que cambia.",
         "Cambio de alcance: actualiza ambas copias del PRD (docs/ y 02_Docs/), agrega una línea fechada en la sección 6 y haz commit como docs(prd), solo con aprobación del usuario.",
         "Desviación corregida: márcala como corregida en el mismo PR. Desviación conocida nueva: agrégala con su severidad y estado open.",
         "Almacén de datos o clave de localStorage nueva: agrega una fila a la tabla de datos.",
@@ -7413,6 +7463,11 @@
         "id": "golden-forms",
         "term": "Formas de referencia",
         "meaning": "check_forms.json, junto a los fixtures de SQL Server: restricciones CHECK como se escriben, como se almacenan y como deben leerse. La prueba de integración comprueba las formas almacenadas contra el motor, y las pruebas del lector las leen."
+      },
+      {
+        "id": "capability-probe",
+        "term": "Sondeo de capacidades (capability probe)",
+        "meaning": "crates/schemacraft-core/probes/capability-probe.sql: un script T-SQL de solo lectura que el dueño de una base de datos ejecuta a mano y que solo devuelve filas (sección, métrica, número), para medir una base de datos que no se puede compartir (ADR-040). No es el sondeo de acceso, que el inspector corre en cada base de datos que describe o lee (ADR-034)."
       },
       {
         "id": "match-simple",
