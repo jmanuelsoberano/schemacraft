@@ -51,7 +51,7 @@ import type { ProjectBackend } from "./projectBackend";
 /** Format the preview writes, as `FORMAT_VERSION` and `MIN_READER_VERSION` on the Rust side. */
 const FORMAT_VERSION = 2;
 const MIN_READER_VERSION = 2;
-const GENERATOR = "SchemaCraft 1.0.0 (preview)";
+const GENERATOR = "SchemaCraft (preview)";
 
 const SAMPLE_PATH = "C:\\Projects\\northwind.scraft";
 
