@@ -12,6 +12,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 Set-StrictMode -Version Latest
 if (-not $ConfirmDisposableHostedRunner -or $env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') {
     throw 'This setup is restricted to a disposable GitHub-hosted runner.'
@@ -58,23 +59,53 @@ $mediaVersion = (Get-Item -LiteralPath $mediaPath).VersionInfo
 if ($mediaVersion.ProductMajorPart -ne 16) { throw 'The SQL installation media is not version 2022.' }
 $mediaHash = (Get-FileHash -LiteralPath $mediaPath -Algorithm SHA256).Hash
 $extractPath = Join-Path $workPath 'media'
-Write-Host 'Extracting signature-checked SQL Server media.'
-$extract = Start-Process -FilePath $mediaPath -ArgumentList @('/Q', ('/X="' + $extractPath + '"')) -WindowStyle Hidden -Wait -PassThru
-if ($extract.ExitCode -ne 0) { throw "SQL media extraction failed with exit code $($extract.ExitCode)." }
-$setup = Join-Path $extractPath 'setup.exe'
-if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw 'Extracted SQL setup.exe is missing.' }
-$setupArgs = @(
-    '/Q', '/ACTION=Install', '/FEATURES=SQLENGINE', '/INSTANCENAME=SCACCEPT', '/INSTANCEID=SCACCEPT',
-    '/IACCEPTSQLSERVERLICENSETERMS', '/SUPPRESSPRIVACYSTATEMENTNOTICE', '/UPDATEENABLED=False',
-    '/USEMICROSOFTUPDATE=False', '/TCPENABLED=0', '/NPENABLED=0', '/BROWSERSVCSTARTUPTYPE=Disabled',
-    '/SQLSVCACCOUNT="NT Service\MSSQL$SCACCEPT"', '/SQLSVCSTARTUPTYPE=Manual',
-    ('/SQLSYSADMINACCOUNTS="' + $identity.Name + '"')
-)
-Write-Host 'Installing the dedicated Windows-authentication-only SQL instance.'
-$install = Start-Process -FilePath $setup -ArgumentList $setupArgs -WindowStyle Hidden -PassThru
-if (-not $install.WaitForExit(1200000)) { throw 'SQL setup exceeded its 20-minute deadline; the disposable runner must be discarded.' }
-$install.Refresh()
-if ($install.ExitCode -notin @(0, 3010)) { throw "SQL setup failed with exit code $($install.ExitCode)." }
+$setupStarted = Get-Date
+$setupPhase = 'extraction'
+try {
+    Write-Host 'Extracting signature-checked SQL Server media.'
+    $extract = Start-Process -FilePath $mediaPath -ArgumentList @('/Q', ('/X:"' + $extractPath + '"')) -WindowStyle Hidden -PassThru
+    if (-not $extract.WaitForExit(300000)) { throw 'SQL media extraction exceeded its five-minute deadline; the disposable runner must be discarded.' }
+    $extract.Refresh()
+    if ($extract.ExitCode -ne 0) { throw "SQL media extraction failed with exit code $($extract.ExitCode)." }
+    $setup = Join-Path $extractPath 'setup.exe'
+    if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw 'Extracted SQL setup.exe is missing.' }
+    $setupArgs = @(
+        '/Q', '/ACTION=Install', '/FEATURES=SQLENGINE', '/INSTANCENAME=SCACCEPT', '/INSTANCEID=SCACCEPT',
+        '/IACCEPTSQLSERVERLICENSETERMS', '/SUPPRESSPRIVACYSTATEMENTNOTICE', '/UPDATEENABLED=False',
+        '/USEMICROSOFTUPDATE=False', '/TCPENABLED=0', '/NPENABLED=0', '/BROWSERSVCSTARTUPTYPE=Disabled',
+        '/SQLSVCACCOUNT="NT Service\MSSQL$SCACCEPT"', '/SQLSVCSTARTUPTYPE=Manual',
+        ('/SQLSYSADMINACCOUNTS="' + $identity.Name + '"')
+    )
+    $setupPhase = 'installation'
+    Write-Host 'Installing the dedicated Windows-authentication-only SQL instance.'
+    $install = Start-Process -FilePath $setup -ArgumentList $setupArgs -WindowStyle Hidden -PassThru
+    if (-not $install.WaitForExit(1200000)) { throw 'SQL setup exceeded its 20-minute deadline; the disposable runner must be discarded.' }
+    $install.Refresh()
+    if ($install.ExitCode -notin @(0, 3010)) { throw "SQL setup failed with exit code $($install.ExitCode)." }
+} catch {
+    $setupError = $_
+    # These known setup logs belong to this disposable runner; no profile or application data is collected.
+    # https://learn.microsoft.com/en-us/sql/database-engine/install-windows/view-and-read-sql-server-setup-log-files
+    $logFiles = @()
+    $summaryPath = Join-Path $env:ProgramFiles 'Microsoft SQL Server\160\Setup Bootstrap\Log\Summary.txt'
+    if (Test-Path -LiteralPath $summaryPath -PathType Leaf) { $logFiles += Get-Item -LiteralPath $summaryPath }
+    $logFiles += @(Get-ChildItem -LiteralPath $env:TEMP -Filter 'sqlsetup*.log' -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -ge $setupStarted } | Sort-Object LastWriteTime -Descending | Select-Object -First 2)
+    $logs = @($logFiles | Where-Object { $_.LastWriteTime -ge $setupStarted } | ForEach-Object {
+        [ordered]@{ file = $_.Name; tail = @(Get-Content -LiteralPath $_.FullName -Tail 200 -ErrorAction SilentlyContinue) }
+    })
+    [ordered]@{
+        passed = $false
+        phase = $setupPhase
+        error = $setupError.Exception.Message
+        mediaUrl = $mediaUrl
+        mediaSha256 = $mediaHash
+        mediaSignatureVerified = $true
+        mediaProductVersion = $mediaVersion.ProductVersion
+        setupLogs = $logs
+    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $evidencePath 'windows-auth-sql-setup.json') -Encoding UTF8
+    throw $setupError
+}
 Write-Host 'SQL setup completed; configuring the loopback listener.'
 
 # The engine was installed with TCP disabled. Configure only this new instance before enabling it.
