@@ -109,7 +109,9 @@ try {
     Start-Service -Name $serviceName
     (Get-Service -Name $serviceName).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
     Add-Type -AssemblyName System.Data
-    $connection = New-Object System.Data.SqlClient.SqlConnection('Server=tcp:localhost,14335;Database=master;Integrated Security=SSPI;Encrypt=True;TrustServerCertificate=True;Connect Timeout=3;Pooling=False')
+    # Native SNI rewrites localhost to the computer name, which can omit loopback addresses.
+    # https://github.com/dotnet/SqlClient/issues/2075#issuecomment-1635093044
+    $connection = New-Object System.Data.SqlClient.SqlConnection('Server=tcp:127.0.0.1,14335;Database=master;Integrated Security=SSPI;Encrypt=True;TrustServerCertificate=True;Connect Timeout=3;Pooling=False')
     $connected = $false
     $setupPhase = 'local-connection'
     for ($attempt = 0; $attempt -lt 30; $attempt++) {
@@ -176,6 +178,7 @@ try {
         engineVersion = $engineVersion
         instance = 'SCACCEPT'
         endpoint = 'localhost,14335'
+        provisioningEndpoint = '127.0.0.1,14335'
         loopbackOnly = $true
         windowsAuthenticationOnly = $true
         standardAccountProvisioned = $true
