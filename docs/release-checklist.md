@@ -265,3 +265,25 @@ checks and matching PRD copies passed. Review corrections preserve the oldest re
 read date and avoid saying none beside retained rows; HTML does not substitute a parent date for
 an omitted code history. Manual grayscale print-preview verification confirmed that the dashed
 badge on app.OrderLines remains distinct from the solid badges on app.Orders and app.OrderAudit.
+
+### Qualified identifier regression verification, 2026-10-19
+
+The real debug application captured a dedicated synthetic fixture on both SQL Server 2022 and 2019. `[a.b].c` and `a.[b.c]`, their corresponding views, same-named foreign keys and triggers
+remained distinct. The Inspector, palette, raw and delimited searches, context menu, hide/show,
+undo/redo, card dragging, save/reopen and a selective database refresh passed. Each object's
+columns, code, position and hidden state remained with its exact qualified name. English/light
+and Spanish/dark output was inspected; both sessions restored preferences byte for byte after
+confirmed process termination and reverted the temporary fixture change.
+
+Both sessions exported SVG, PDF, PNG and HTML. Hiding either side omitted only that side and its
+trigger metadata, without module code or routines. PDF and PNG output was inspected visually;
+the standalone HTML opened outside the application, found both delimited names separately and
+showed their correct columns and firing timing. Existing structured project names need no
+migration. Previously overwritten layout choices cannot be recovered.
+
+Rust formatting, Clippy, two workspace test runs (351 core and 24 host tests), unchanged generated
+contracts and the debug build passed. All 64 SQL tests passed on each required engine, including
+the new identifier capture and schema-filter regression. Frontend formatting, lint, type checking,
+817 tests, production build, architecture checks and matching PRD copies passed. Independent
+reviews also checked opaque-key isolation, accessible relation labels and hidden-object export
+filtering. Release-publication checks remain open.

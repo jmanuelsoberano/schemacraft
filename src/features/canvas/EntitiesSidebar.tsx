@@ -21,7 +21,7 @@ import {
   listsEveryObject,
   routinesListNotice,
 } from "@/features/schema/coverage";
-import { entityKey } from "@/features/schema/entities";
+import { entityKey, qualifiedNameLabel } from "@/features/schema/entities";
 import type { EntityListItem } from "@/features/schema/entities";
 import { moduleKey } from "@/features/schema/modules";
 import {
@@ -526,8 +526,8 @@ function EntityRow({ entity, isHidden, isSelected, index }: EntityRowProps) {
       <button
         type="button"
         className={styles.entityButton}
-        title={entity.key}
-        aria-label={t("sidebar.center", { name: entity.key })}
+        title={qualifiedNameLabel(entity)}
+        aria-label={t("sidebar.center", { name: qualifiedNameLabel(entity) })}
         onClick={() => {
           focusEntity(entity.key);
         }}
@@ -555,8 +555,8 @@ function EntityRow({ entity, isHidden, isSelected, index }: EntityRowProps) {
         className={styles.visibility}
         aria-label={
           isHidden
-            ? t("sidebar.show", { name: entity.key })
-            : t("sidebar.hide", { name: entity.key })
+            ? t("sidebar.show", { name: qualifiedNameLabel(entity) })
+            : t("sidebar.hide", { name: qualifiedNameLabel(entity) })
         }
         aria-pressed={!isHidden}
         onClick={() => {
@@ -580,7 +580,7 @@ export function RoutineRow({ routine, isSelected, index }: RoutineRowProps) {
   const { t, tCount } = useI18n();
   const selectModule = useCanvasUiStore((state) => state.selectModule);
   const Icon = routine.kind === "function" ? SquareFunction : ScrollText;
-  const name = entityKey(routine.ref.name);
+  const name = qualifiedNameLabel(routine.ref.name);
   const parameters = tCount("objects.parameters", routine.parameterCount);
   return (
     <li

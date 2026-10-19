@@ -3,7 +3,7 @@ import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { useProjectStore } from "@/features/project/projectStore";
-import { entityKey } from "@/features/schema/entities";
+import { foreignKeyId, qualifiedNameLabel } from "@/features/schema/entities";
 import { codeObjectName, groupCodeFacts } from "@/features/schema/codeFacts";
 import type { AccessProfile, Completeness, SchemaSnapshot } from "@/shared/contracts";
 import { formatDate, formatDateTime } from "@/shared/i18n/formatDate";
@@ -291,10 +291,10 @@ function InvisibleTableKeys({ snapshot }: { snapshot: SchemaSnapshot }) {
     <Section title={tCount("access.report.invisibleKeys", keys.length)}>
       <ul className={styles.list}>
         {keys.map((key) => (
-          <li key={`${entityKey(key.referencingTable)}.${key.name}`} className={styles.item}>
+          <li key={foreignKeyId(key)} className={styles.item}>
             <span className={styles.itemName}>{key.name}</span>
             <span className={styles.itemMeta}>
-              {entityKey(key.referencingTable)} ({key.columns.join(", ")})
+              {qualifiedNameLabel(key.referencingTable)} ({key.columns.join(", ")})
             </span>
           </li>
         ))}
@@ -315,7 +315,7 @@ function CarriedFacts({ snapshot }: { snapshot: SchemaSnapshot }) {
       <ul className={styles.list}>
         {carried.map((entry) => (
           <li key={JSON.stringify([entry.object, entry.fact])} className={styles.item}>
-            <span className={styles.itemName}>{entityKey(entry.object)}</span>
+            <span className={styles.itemName}>{qualifiedNameLabel(entry.object)}</span>
             <span className={styles.itemMeta}>
               {t("access.report.carried.entry", {
                 fact: describeSnapshotFact(entry.fact, t),

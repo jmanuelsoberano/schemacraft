@@ -13,6 +13,7 @@ import {
 import { memo } from "react";
 
 import { formatDataType } from "@/features/schema/dataType";
+import { displayIdentifier, qualifiedNameLabel } from "@/features/schema/entities";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { classNames } from "@/shared/ui/classNames";
 
@@ -63,7 +64,7 @@ function EntityNodeComponent({ id, data, selected }: NodeProps<EntityNodeType>) 
         isHighlighted && styles.highlighted,
         isRuleTarget && styles.ruleTarget,
       )}
-      title={entity.key}
+      title={qualifiedNameLabel(entity.name)}
     >
       <Handle
         type="target"
@@ -85,8 +86,8 @@ function EntityNodeComponent({ id, data, selected }: NodeProps<EntityNodeType>) 
           <Table2 className={styles.kindIcon} aria-label={t("entity.table")} />
         )}
         <span className={styles.title}>
-          <span className={styles.schema}>{entity.name.schema}.</span>
-          <span className={styles.name}>{entity.name.name}</span>
+          <span className={styles.schema}>{displayIdentifier(entity.name.schema)}.</span>
+          <span className={styles.name}>{displayIdentifier(entity.name.name)}</span>
         </span>
         {isView ? <span className={styles.kindLabel}>{t("entity.view.label")}</span> : null}
         {entity.triggers === null ? null : (

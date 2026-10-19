@@ -1,6 +1,6 @@
 /** Code identities and kind counts shared by the review and access report. */
 import type { CodeObjectRef, SchemaSnapshot } from "@/shared/contracts";
-import { entityKey } from "./entities";
+import { qualifiedNameLabel } from "./entities";
 
 export type CodeKind = "procedure" | "function" | "trigger" | "view" | "unknown";
 
@@ -8,9 +8,9 @@ export function codeObjectName(object: CodeObjectRef): string {
   switch (object.kind) {
     case "routine":
     case "view":
-      return entityKey(object.name);
+      return qualifiedNameLabel(object.name);
     case "trigger":
-      return `${entityKey(object.parent)} · ${object.name}`;
+      return `${qualifiedNameLabel(object.parent)} · ${object.name}`;
     case "unknown":
       return "";
   }

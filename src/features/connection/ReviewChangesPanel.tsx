@@ -7,7 +7,7 @@ import { useProjectStore } from "@/features/project/projectStore";
 import { describeColumn, formatDataType } from "@/features/schema/dataType";
 import type { DefaultLabels } from "@/features/schema/dataType";
 import { definitionText, isUnknownDefinition } from "@/features/schema/definition";
-import { entityKey } from "@/features/schema/entities";
+import { entityKey, foreignKeyId, qualifiedNameLabel } from "@/features/schema/entities";
 import type {
   AvailableFact,
   CaptureChange,
@@ -117,12 +117,12 @@ function describeForeignKey(key: ForeignKey): string {
   const pairs = key.columnPairs
     .map((pair) => `${pair.referencingColumn} → ${pair.referencedColumn}`)
     .join(", ");
-  return `${entityKey(key.referencingTable)} → ${entityKey(key.referencedTable)} (${pairs})`;
+  return `${qualifiedNameLabel(key.referencingTable)} → ${qualifiedNameLabel(key.referencedTable)} (${pairs})`;
 }
 
 function describeKeyToInvisibleTable(key: ForeignKeyToInvisibleTable, t: Translator["t"]): string {
   return t("review.foreignKey.invisibleTable", {
-    table: entityKey(key.referencingTable),
+    table: qualifiedNameLabel(key.referencingTable),
     columns: key.columns.join(", "),
   });
 }
@@ -199,7 +199,10 @@ function foreignKeyPropertyValues(
       .join(", ");
   switch (property) {
     case "referencedTable":
-      return [entityKey(before.referencedTable), entityKey(after.referencedTable)];
+      return [
+        qualifiedNameLabel(before.referencedTable),
+        qualifiedNameLabel(after.referencedTable),
+      ];
     case "columns":
       return [pairs(before), pairs(after)];
     case "onDelete":
@@ -348,7 +351,7 @@ function TableItem({ change }: { change: TableChange }) {
     return (
       <li className={styles.item}>
         <Badge kind={change.kind} />
-        <span className={styles.name}>{entityKey(change.name)}</span>
+        <span className={styles.name}>{qualifiedNameLabel(change.name)}</span>
         <span className={styles.meta}>{tCount("review.columns", change.columnCount)}</span>
       </li>
     );
@@ -356,7 +359,7 @@ function TableItem({ change }: { change: TableChange }) {
   return (
     <li className={styles.item}>
       <Badge kind="changed" />
-      <span className={styles.name}>{entityKey(change.name)}</span>
+      <span className={styles.name}>{qualifiedNameLabel(change.name)}</span>
       <span className={styles.meta} />
       <ul className={styles.details}>
         <ColumnDetails changes={change.columns} />
@@ -381,7 +384,7 @@ function ViewItem({ change }: { change: ViewChange }) {
     return (
       <li className={styles.item}>
         <Badge kind={change.kind} />
-        <span className={styles.name}>{entityKey(change.name)}</span>
+        <span className={styles.name}>{qualifiedNameLabel(change.name)}</span>
         <span className={styles.meta}>{tCount("review.columns", change.columnCount)}</span>
       </li>
     );
@@ -389,7 +392,7 @@ function ViewItem({ change }: { change: ViewChange }) {
   return (
     <li className={styles.item}>
       <Badge kind="changed" />
-      <span className={styles.name}>{entityKey(change.name)}</span>
+      <span className={styles.name}>{qualifiedNameLabel(change.name)}</span>
       <span className={styles.meta} />
       <ul className={styles.details}>
         <ColumnDetails changes={change.columns} />
@@ -514,7 +517,7 @@ function NotCheckedSection({ facts }: { facts: readonly CarriedFact[] }) {
     <Section title={t("review.section.notChecked")} icon={ShieldQuestionMark}>
       {facts.map((entry) => (
         <li key={JSON.stringify([entry.object, entry.fact])} className={styles.factItem}>
-          <span className={styles.name}>{entityKey(entry.object)}</span>
+          <span className={styles.name}>{qualifiedNameLabel(entry.object)}</span>
           <span className={styles.meta}>
             {t("access.report.carried.entry", {
               fact: describeSnapshotFact(entry.fact, t),
@@ -534,7 +537,7 @@ function NowAvailableSection({ facts }: { facts: readonly AvailableFact[] }) {
     <Section title={t("review.section.nowAvailable")} icon={Sparkles}>
       {facts.map((entry) => (
         <li key={JSON.stringify([entry.object, entry.fact])} className={styles.factItem}>
-          <span className={styles.name}>{entityKey(entry.object)}</span>
+          <span className={styles.name}>{qualifiedNameLabel(entry.object)}</span>
           <span className={styles.meta}>{describeSnapshotFact(entry.fact, t)}</span>
         </li>
       ))}
@@ -690,20 +693,12 @@ export function ReviewChangesPanel({ diff, capture }: ReviewChangesPanelProps) {
         <Section title={t("review.section.foreignKeys")}>
           {diff.foreignKeys.map((change) => {
             const key = change.kind === "changed" ? change.after : change.key;
-            return (
-              <ForeignKeyItem
-                key={`${entityKey(key.referencingTable)}.${key.name}`}
-                change={change}
-              />
-            );
+            return <ForeignKeyItem key={foreignKeyId(key)} change={change} />;
           })}
           {diff.foreignKeysToInvisibleTables.map((change) => {
             const key = change.kind === "changed" ? change.after : change.key;
             return (
-              <KeyToInvisibleTableItem
-                key={`invisible:${entityKey(key.referencingTable)}.${key.name}`}
-                change={change}
-              />
+              <KeyToInvisibleTableItem key={`invisible:${foreignKeyId(key)}`} change={change} />
             );
           })}
         </Section>

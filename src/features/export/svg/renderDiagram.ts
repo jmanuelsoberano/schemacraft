@@ -29,7 +29,7 @@ import {
   tablesByKey,
 } from "@/features/canvas/graph";
 import { formatDataType } from "@/features/schema/dataType";
-import { entityKey } from "@/features/schema/entities";
+import { displayIdentifier, entityKey } from "@/features/schema/entities";
 import { triggerCapture } from "@/features/schema/triggerDetails";
 import type {
   CanvasState,
@@ -429,18 +429,14 @@ function renderEntity(
   const labelX = beforeCount - GAP - labelWidth;
   const titleX = HEADER_PADDING_LEFT + ICON_SIZE + GAP;
   const titleMaxWidth = (isView ? labelX : beforeCount) - GAP - titleX;
-  const schema = `${entity.name.schema}.`;
+  const schema = `${displayIdentifier(entity.name.schema)}.`;
   const schemaWidth = measure(schema, TITLE_FONT);
   let shownSchema = schema;
-  let shownName = fitText(entity.name.name, titleMaxWidth - schemaWidth, NAME_FONT, measure);
+  const name = displayIdentifier(entity.name.name);
+  let shownName = fitText(name, titleMaxWidth - schemaWidth, NAME_FONT, measure);
   if (schemaWidth > titleMaxWidth * 0.6) {
     shownSchema = fitText(schema, titleMaxWidth * 0.6, TITLE_FONT, measure);
-    shownName = fitText(
-      entity.name.name,
-      titleMaxWidth - measure(shownSchema, TITLE_FONT),
-      NAME_FONT,
-      measure,
-    );
+    shownName = fitText(name, titleMaxWidth - measure(shownSchema, TITLE_FONT), NAME_FONT, measure);
   }
   parts.push(
     icon(

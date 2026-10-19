@@ -111,6 +111,7 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{read_project, write_project};
+    use crate::diff::{SchemaDiff, TableChange};
     use crate::model::test_fixtures::sample_programmability;
     use crate::model::{AccessLevel, Completeness, Definition, QualifiedName, SnapshotFact};
     use crate::project::document::{FORMAT_VERSION, MIN_READER_VERSION, Project};
@@ -155,6 +156,64 @@ mod tests {
         let text = fs::read_to_string(&path).unwrap();
         assert!(text.starts_with("{\n  \"formatVersion\": 3,\n  \"minReaderVersion\": 2,"));
         assert!(text.ends_with("}\n"));
+    }
+
+    #[test]
+    fn dotted_names_remain_distinct_through_save_load_and_refresh() {
+        let dotted_schema = QualifiedName::new("a.b", "c");
+        let dotted_object = QualifiedName::new("a", "b.c");
+        let mut content = sample_project_content();
+        content.snapshot.access = None;
+        content.snapshot.tables[0].name = dotted_schema.clone();
+        content.snapshot.tables[1].name = dotted_object.clone();
+        content.snapshot.views.clear();
+        content.snapshot.foreign_keys[0].referencing_table = dotted_object.clone();
+        content.snapshot.foreign_keys[0].referenced_table = dotted_schema.clone();
+        content.canvas.nodes[0].name = dotted_object.clone();
+        content.canvas.nodes[0].is_hidden = true;
+        content.canvas.nodes[1].name = dotted_schema.clone();
+        let expected_survivor = content.canvas.nodes[0].clone();
+        let mut updated_position = content.canvas.nodes[1].clone();
+        updated_position.position.x = 740.0;
+        content.canvas.nodes.push(updated_position.clone());
+
+        // Saving deduplicates only the repeated structured name, never its dotted spelling.
+        let project = Project::from_content(content, "SchemaCraft 1.2.0");
+        assert_eq!(project.content.canvas.nodes.len(), 2);
+        assert_eq!(
+            project.content.canvas.node(&dotted_schema),
+            Some(&updated_position)
+        );
+        assert_eq!(
+            project.content.canvas.node(&dotted_object),
+            Some(&expected_survivor)
+        );
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("dotted-names.scraft");
+        write_project(&path, &project).unwrap();
+        let opened = read_project(&path).unwrap();
+        assert_eq!(opened.project, project);
+
+        // One object changes while the other disappears, although both display as a.b.c.
+        let mut fresh = opened.project.content.snapshot.clone();
+        fresh.tables.retain(|table| table.name == dotted_object);
+        fresh.tables[0].columns[0].is_nullable = true;
+        fresh.foreign_keys.clear();
+        let diff = SchemaDiff::between(&opened.project.content.snapshot, &fresh);
+        assert_eq!(diff.tables.len(), 2);
+        assert!(diff.tables.iter().any(|change| matches!(
+            change,
+            TableChange::Removed { name, .. } if name == &dotted_schema
+        )));
+        assert!(diff.tables.iter().any(|change| matches!(
+            change,
+            TableChange::Changed { name, .. } if name == &dotted_object
+        )));
+
+        let refreshed = opened.project.content.with_refreshed_snapshot(fresh);
+        assert_eq!(refreshed.canvas.nodes, vec![expected_survivor]);
+        assert_eq!(refreshed.snapshot.tables[0].name, dotted_object);
+        assert!(refreshed.snapshot.tables[0].columns[0].is_nullable);
     }
 
     #[test]

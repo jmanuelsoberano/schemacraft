@@ -3,6 +3,7 @@ import type { MessageKey } from "@/shared/i18n/messages/en";
 import type { CatalogTranslator } from "@/shared/i18n/translator";
 
 import type { EntityKind } from "./entities";
+import { qualifiedNameLabel } from "./entities";
 import type {
   CheckFacts,
   ColumnFacts,
@@ -563,15 +564,15 @@ function targetView(target: RelationTarget, { t }: Words): RelationTargetView {
     case "available":
       return {
         state: "available",
-        label: target.key,
+        label: qualifiedNameLabel(target.name),
         stateLabel: null,
         key: target.key,
-        goLabel: t("details.target.go", { name: target.key }),
+        goLabel: t("details.target.go", { name: qualifiedNameLabel(target.name) }),
       };
     case "self":
       return {
         state: "self",
-        label: target.key,
+        label: qualifiedNameLabel(target.name),
         stateLabel: t("details.target.self"),
         key: null,
         goLabel: null,
@@ -579,7 +580,7 @@ function targetView(target: RelationTarget, { t }: Words): RelationTargetView {
     case "hidden":
       return {
         state: "hidden",
-        label: target.key,
+        label: qualifiedNameLabel(target.name),
         stateLabel: t("details.target.hidden"),
         key: null,
         goLabel: null,
@@ -587,7 +588,7 @@ function targetView(target: RelationTarget, { t }: Words): RelationTargetView {
     case "unknown":
       return {
         state: "unknown",
-        label: target.key,
+        label: qualifiedNameLabel(target.name),
         stateLabel: t("details.target.unknown"),
         key: null,
         goLabel: null,

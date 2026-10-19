@@ -20,7 +20,12 @@ import type { ViewerMessageKey } from "@/features/export/html/viewerMessages";
 import { renderDiagramSvg } from "@/features/export/svg/renderDiagram";
 import type { ExportTheme } from "@/features/export/svg/palette";
 import { createCanvasMeasurer } from "@/features/export/svg/text";
-import { entityKey } from "@/features/schema/entities";
+import {
+  displayIdentifier,
+  entityKey,
+  matchesQualifiedName,
+  qualifiedNameLabel,
+} from "@/features/schema/entities";
 import { describeObjectDetails } from "@/features/schema/objectDetails";
 import type { DetailsScope } from "@/features/schema/objectDetails";
 import { triggerCapture } from "@/features/schema/triggerDetails";
@@ -602,8 +607,8 @@ class Viewer {
         h(
           "h2",
           { class: "sc-panel-title", tabindex: "-1" },
-          h("span", { class: "sc-schema" }, `${view.schema}.`),
-          view.name,
+          h("span", { class: "sc-schema" }, `${displayIdentifier(view.schema)}.`),
+          displayIdentifier(view.name),
         ),
         h("div", { class: "sc-panel-summary" }, view.summary),
         view.notice === null ? null : h("p", { class: "sc-panel-notice" }, view.notice),
@@ -840,10 +845,15 @@ class Viewer {
       this.results.hidden = true;
       return;
     }
-    this.resultKeys = [...this.entities.keys()]
-      .filter((key) => key.toLowerCase().includes(query))
-      .sort((left, right) => left.length - right.length || left.localeCompare(right))
-      .slice(0, 50);
+    this.resultKeys = [...this.entities.values()]
+      .map((entity) => ({ entity, label: `${entity.name.schema}.${entity.name.name}` }))
+      .filter(({ entity }) => matchesQualifiedName(entity.name, query))
+      .sort(
+        (left, right) =>
+          left.label.length - right.label.length || left.label.localeCompare(right.label),
+      )
+      .slice(0, 50)
+      .map(({ entity }) => entity.key);
     this.activeResult = 0;
     this.paintResults();
     this.results.hidden = false;
@@ -857,9 +867,11 @@ class Viewer {
       return;
     }
     this.results.replaceChildren(
-      ...this.resultKeys.map((key, index) => {
+      ...this.resultKeys.flatMap((key, index) => {
         // Each result says whether it is a table or a view, as the application's palette does.
-        const isView = this.entities.get(key)?.kind === "view";
+        const entity = this.entities.get(key);
+        if (entity === undefined) return [];
+        const isView = entity.kind === "view";
         const item = h(
           "li",
           {
@@ -867,7 +879,7 @@ class Viewer {
             role: "option",
             "aria-selected": String(index === this.activeResult),
           },
-          h("span", { class: "sc-result-name" }, key),
+          h("span", { class: "sc-result-name" }, qualifiedNameLabel(entity.name)),
           h(
             "span",
             { class: isView ? "sc-result-kind sc-result-kind-view" : "sc-result-kind" },

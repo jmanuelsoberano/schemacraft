@@ -3,7 +3,7 @@ import type { MessageKey } from "@/shared/i18n/messages/en";
 import type { CatalogTranslator } from "@/shared/i18n/translator";
 
 import { formatDataType } from "./dataType";
-import { entityKey } from "./entities";
+import { qualifiedNameLabel } from "./entities";
 import type { ModuleDefinitionFacts, ModuleDetails, ModuleSection } from "./moduleDetails";
 import type { ModuleKind } from "./modules";
 import type { BadgeView, ColumnsSectionView } from "./objectDetailsView";
@@ -192,9 +192,9 @@ function runsView(
     kind: "runs",
     title: t("module.section.runs"),
     parent: {
-      label: entityKey(parent.name),
+      label: qualifiedNameLabel(parent.name),
       key: parent.key,
-      goLabel: t("module.parent.go", { name: entityKey(parent.name) }),
+      goLabel: t("module.parent.go", { name: qualifiedNameLabel(parent.name) }),
       stateLabel: parent.unavailable === null ? null : t(`module.parent.${parent.unavailable}`),
     },
     events,

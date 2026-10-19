@@ -5,6 +5,7 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { focusInspectedHome } from "@/features/canvas/canvasFocus";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { useProjectStore } from "@/features/project/projectStore";
+import { displayIdentifier } from "@/features/schema/entities";
 import { describeModuleDetails } from "@/features/schema/moduleDetails";
 import { presentModuleDetails } from "@/features/schema/moduleDetailsView";
 import { describeObjectDetails } from "@/features/schema/objectDetails";
@@ -132,8 +133,8 @@ export function InspectorPanel({
                 {view.kindLabel}
               </span>
               <h3 ref={headingRef} tabIndex={-1} className={styles.name}>
-                <span className={styles.schema}>{view.schema}.</span>
-                {view.name}
+                <span className={styles.schema}>{displayIdentifier(view.schema)}.</span>
+                {displayIdentifier(view.name)}
               </h3>
               <span className={styles.summary}>{view.summary}</span>
               {view.notice === null ? null : <p className={styles.notice}>{view.notice}</p>}
@@ -153,8 +154,8 @@ export function InspectorPanel({
             <header className={styles.entity}>
               <span className={styles.kind}>{moduleView.kindLabel}</span>
               <h3 ref={headingRef} tabIndex={-1} className={styles.name}>
-                <span className={styles.schema}>{moduleView.schema}.</span>
-                {moduleView.name}
+                <span className={styles.schema}>{displayIdentifier(moduleView.schema)}.</span>
+                {displayIdentifier(moduleView.name)}
               </h3>
               {moduleView.notice === null ? null : (
                 <p className={styles.notice}>{moduleView.notice}</p>

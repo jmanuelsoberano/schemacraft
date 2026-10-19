@@ -64,6 +64,9 @@ All notable changes to SchemaCraft are documented here. The format follows
 
 ### Fixed
 
+- Objects whose schema or name contains a dot no longer share diagram identity. Selection,
+  visibility, layout, relationships, refresh and export keep them separate; qualified labels
+  delimit ambiguous names without exposing internal keys. Existing projects need no migration.
 - Testing the same connection and database again keeps the selected schema filter, including
   during refresh.
 - Applying a refresh keeps its chosen connection and read options, without saving the password.

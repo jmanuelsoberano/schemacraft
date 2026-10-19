@@ -15,7 +15,12 @@ import type { AppActions } from "@/app/actions/useAppActions";
 import { setHidden } from "@/features/canvas/canvasActions";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { useProjectStore } from "@/features/project/projectStore";
-import { entityKey, listEntities } from "@/features/schema/entities";
+import {
+  displayIdentifier,
+  entityKey,
+  listEntities,
+  qualifiedNameLabel,
+} from "@/features/schema/entities";
 import { listModules } from "@/features/schema/modules";
 import type { MessageKey } from "@/shared/i18n/messages/en";
 import { useI18n } from "@/shared/i18n/useI18n";
@@ -239,11 +244,11 @@ function ObjectResult({ object }: { object: PaletteObject }) {
         aria-hidden="true"
       />
       <span className={styles.itemLabel}>
-        <span className={styles.schema}>{object.schema}.</span>
-        {object.name}
+        <span className={styles.schema}>{displayIdentifier(object.schema)}.</span>
+        {displayIdentifier(object.name)}
         {parent !== null ? (
           <span className={styles.parent}>
-            {t("palette.onParent", { name: `${parent.schema}.${parent.name}` })}
+            {t("palette.onParent", { name: qualifiedNameLabel(parent) })}
           </span>
         ) : null}
       </span>

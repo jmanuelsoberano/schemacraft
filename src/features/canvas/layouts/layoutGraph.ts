@@ -1,4 +1,4 @@
-import { entityKey } from "@/features/schema/entities";
+import { entityKey, foreignKeyId } from "@/features/schema/entities";
 import type { DetailLevel, Point, SchemaSnapshot } from "@/shared/contracts";
 
 import { NODE_WIDTH, nodeHeight, rowsFor } from "../geometry";
@@ -55,7 +55,7 @@ export function buildLayoutInput(
     if (source === target || !visible.has(source) || !visible.has(target)) {
       continue;
     }
-    edges.push({ id: `${source}.${key.name}`, source, target });
+    edges.push({ id: foreignKeyId(key), source, target });
   }
   return { nodes, edges, positions };
 }

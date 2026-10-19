@@ -1,6 +1,6 @@
 import type { SchemaSnapshot } from "@/shared/contracts";
 
-import { listEntities } from "./entities";
+import { listEntities, matchesQualifiedName } from "./entities";
 import type { EntityListItem } from "./entities";
 import { listModules } from "./modules";
 import type { ModuleKind, ModuleListItem, ModuleRef } from "./modules";
@@ -106,7 +106,7 @@ export function searchObjectGroups(
     const sections: ObjectSection[] = [];
     for (const section of group.sections) {
       const objects = section.objects.filter((item) => {
-        if (!`${item.schema}.${item.name}`.toLowerCase().includes(needle)) return false;
+        if (!matchesQualifiedName(item, needle)) return false;
         totalMatches += 1;
         return totalMatches <= OBJECT_SEARCH_LIMIT;
       });

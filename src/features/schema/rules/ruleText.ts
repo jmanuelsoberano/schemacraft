@@ -4,7 +4,7 @@ import type { Locale } from "@/shared/i18n/locales";
 import type { RuleMessageKey, RulePluralBase } from "@/shared/i18n/messages/rules/en";
 import type { CatalogTranslator } from "@/shared/i18n/translator";
 
-import { entityKey } from "../entities";
+import { entityKey, qualifiedNameLabel } from "../entities";
 
 /**
  * Sentences as data. A reader says what a rule means as a message key with typed arguments
@@ -262,7 +262,7 @@ function argumentParts(argument: RuleArgument, translator: RuleTranslator): Rule
       // Always qualified, so a sentence reads the same in the Inspector, the exported viewer
       // and the canvas, whichever table it is shown next to.
       const key = entityKey(argument.name);
-      return [{ kind: "table", key, label: key }];
+      return [{ kind: "table", key, label: qualifiedNameLabel(argument.name) }];
     }
     case "referencedTable":
       return [{ kind: "text", text: translator.template("rule.value.referencedTable") }];

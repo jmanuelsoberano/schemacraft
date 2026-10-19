@@ -1,5 +1,6 @@
 import type { ActionId } from "@/app/actions/action";
 import type { EntityListItem } from "@/features/schema/entities";
+import { qualifiedNameLabel } from "@/features/schema/entities";
 import type { ModuleListItem } from "@/features/schema/modules";
 
 /** An action as the palette lists it: already translated, with its shortcut rendered. */
@@ -64,16 +65,15 @@ export function searchPalette(
 
   const rankedObjects = objects
     .map((object) => {
-      const parent =
-        "ref" in object && object.ref.kind === "trigger"
-          ? `${object.ref.parent.schema}.${object.ref.parent.name}`
-          : "";
+      const parent = "ref" in object && object.ref.kind === "trigger" ? object.ref.parent : null;
       return {
         object,
         rank: Math.max(
           score(object.name, needle),
           score(`${object.schema}.${object.name}`, needle) - 0.5,
-          parent === "" ? 0 : score(parent, needle) - 0.5,
+          score(qualifiedNameLabel(object), needle) - 0.5,
+          parent === null ? 0 : score(`${parent.schema}.${parent.name}`, needle) - 0.5,
+          parent === null ? 0 : score(qualifiedNameLabel(parent), needle) - 0.5,
         ),
       };
     })

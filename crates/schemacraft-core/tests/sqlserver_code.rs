@@ -34,8 +34,8 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use common::{
-    TestServer, as_login, check_expected_major_version, ensure_seeded, inspector, settings,
-    test_server,
+    TestServer, as_login, check_expected_major_version, ensure_seeded, inspector, run_script,
+    settings, test_server,
 };
 
 const DATABASE: &str = "SchemaCraftCode";
@@ -44,6 +44,9 @@ const READER: &str = "schemacraft_code_reader";
 const SCRIPT: &str = include_str!("fixtures/sqlserver/code.sql");
 const LOGINS: &str = include_str!("fixtures/sqlserver/code_logins.sql");
 const CHANGES: &str = include_str!("fixtures/sqlserver/code_changes.sql");
+/// Owned only by the dotted-identifier regression, never shared with count-based fixtures.
+const DOTTED_DATABASE: &str = "SchemaCraftDottedNames";
+const DOTTED_SCRIPT: &str = include_str!("fixtures/sqlserver/dotted_names.sql");
 
 static PASSWORD: LazyLock<String> = LazyLock::new(|| {
     let random = || RandomState::new().hash_one(std::process::id());
@@ -114,6 +117,113 @@ fn readable_count(code: &Programmability) -> usize {
 async fn connects_to_the_expected_major_version() {
     let Some(server) = test_server() else { return };
     check_expected_major_version(&server).await;
+}
+
+#[tokio::test]
+async fn dotted_identifiers_keep_their_tables_relations_and_code_distinct() {
+    let Some(server) = test_server() else { return };
+    ensure_seeded(&server, DOTTED_DATABASE, DOTTED_SCRIPT).await;
+    let snapshot = inspect(&server, DOTTED_DATABASE, &InspectionOptions::default()).await;
+    let selected = inspect(
+        &server,
+        DOTTED_DATABASE,
+        &InspectionOptions {
+            schemas: vec!["a.b".to_string()],
+            ..InspectionOptions::default()
+        },
+    )
+    .await;
+    run_script(
+        &server,
+        "USE master;
+ALTER DATABASE SchemaCraftDottedNames SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+DROP DATABASE SchemaCraftDottedNames;",
+    )
+    .await;
+
+    assert_eq!(snapshot.tables.len(), 3);
+    assert_eq!(snapshot.views.len(), 2);
+    assert_eq!(snapshot.foreign_keys.len(), 2);
+    assert_eq!(code(&snapshot).routines.len(), 2);
+    assert_eq!(code(&snapshot).triggers.len(), 2);
+    assert_eq!(code(&snapshot).views.len(), 2);
+    for (schema, table_name, view_name, routine_name, column, timing, sentinel) in [
+        (
+            "a.b",
+            "c",
+            "v",
+            "run",
+            "SchemaParentId",
+            TriggerTiming::After,
+            "@schemaSide",
+        ),
+        (
+            "a",
+            "b.c",
+            "b.v",
+            "b.run",
+            "ObjectParentId",
+            TriggerTiming::InsteadOf,
+            "@objectSide",
+        ),
+    ] {
+        let name = QualifiedName::new(schema, table_name);
+        let table = snapshot.table(&name).expect("the exact table exists");
+        assert_eq!(table.columns[0].name, column);
+        let keys: Vec<_> = snapshot.foreign_keys_from(&name).collect();
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].name, "FK.Shared");
+        assert_eq!(
+            keys[0].referenced_table,
+            QualifiedName::new("dbo", "Parents")
+        );
+        assert_eq!(keys[0].column_pairs[0].referencing_column, column);
+        let trigger = code(&snapshot)
+            .triggers
+            .iter()
+            .find(|trigger| trigger.parent == name)
+            .expect("the exact parent's trigger exists");
+        assert_eq!(trigger.name, "TR.Shared");
+        assert_eq!(trigger.timing, timing);
+        assert!(
+            trigger
+                .body
+                .definition()
+                .unwrap()
+                .text()
+                .unwrap()
+                .contains(sentinel)
+        );
+        let view_name = QualifiedName::new(schema, view_name);
+        let view = snapshot
+            .views
+            .iter()
+            .find(|view| view.name == view_name)
+            .unwrap();
+        assert_eq!(view.columns[0].name, column);
+        assert!(code(&snapshot).views.iter().any(|view| {
+            view.view == view_name && view.definition.text().unwrap().contains(column)
+        }));
+        assert!(code(&snapshot).routines.iter().any(|routine| {
+            routine.name == QualifiedName::new(schema, routine_name)
+                && routine.kind == RoutineKind::Procedure
+        }));
+    }
+
+    assert_eq!(selected.tables.len(), 1);
+    assert_eq!(selected.tables[0].name, QualifiedName::new("a.b", "c"));
+    assert_eq!(selected.views.len(), 1);
+    assert_eq!(selected.views[0].name, QualifiedName::new("a.b", "v"));
+    assert_eq!(code(&selected).routines.len(), 1);
+    assert_eq!(
+        code(&selected).routines[0].name,
+        QualifiedName::new("a.b", "run")
+    );
+    assert_eq!(code(&selected).triggers.len(), 1);
+    assert_eq!(
+        code(&selected).triggers[0].parent,
+        QualifiedName::new("a.b", "c")
+    );
 }
 
 #[tokio::test]

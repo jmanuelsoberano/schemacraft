@@ -1008,6 +1008,16 @@ keeps a `Map` key of its own (`nameKey` in `previewAccess.ts`) that never stands
 import only `shared/` and itself (ADR-031), so the viewer bundle can always take it and no entity
 helper can grow a dependency on a store.
 
+Entity keys are opaque: each schema and object component escapes `%`, `.`, `[` and `]` before
+joining with a dot. Thus `[a.b].c` and `a.[b.c]` remain distinct, literal escape-looking names
+cannot alias encoded names, and entity keys cannot collide with tagged JSON module keys.
+`foreignKeyId` applies the same encoding to the constraint name, including in layout input.
+Human text uses `qualifiedNameLabel` or `displayIdentifier`, which delimit dotted or bracketed
+identifiers using SQL Server brackets. Searches use the original names rather than encoded keys.
+The saved project and Rust comparisons already use separate schema/name fields, so this changes
+neither the project format nor saved positions. Older projects regain independent nodes when
+opened; already-lost layout choices cannot be reconstructed.
+
 Markers and routing: `canvas/edgeGeometry.ts` holds `RELATION_MARKER_SHAPES` (the width,
 reference point, path and optional circle of each marker kind), `MARKER_HEIGHT`,
 `MARKER_REF_Y`, `MARKER_ORIENT`, `startMarkerKind`, `endMarkerKind` and `relationPath`, which

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { searchPalette } from "./paletteSearch";
 import { moduleKey } from "@/features/schema/modules";
 import type { ModuleRef } from "@/features/schema/modules";
+import { entityKey, qualifiedNameLabel } from "@/features/schema/entities";
 
 import type { PaletteAction, PaletteObject } from "./paletteSearch";
 
@@ -104,5 +105,32 @@ describe("searchPalette", () => {
     expect(searchPalette("", actions, objects).every((result) => result.kind === "action")).toBe(
       true,
     );
+  });
+
+  it("finds dotted objects and trigger parents by their exact displayed names", () => {
+    const names = [
+      { schema: "a.b", name: "Orders" },
+      { schema: "a", name: "b.Orders" },
+    ];
+    const objects = names.map((name): PaletteObject => ({
+      ...name,
+      key: entityKey(name),
+      kind: "table",
+    }));
+    const triggers = names.map((parent): PaletteObject => {
+      const ref: ModuleRef = { kind: "trigger", parent, name: "WriteAudit" };
+      return { key: moduleKey(ref), ref, schema: parent.schema, name: ref.name, kind: "trigger" };
+    });
+    for (const [index, name] of names.entries()) {
+      const query = ` ${qualifiedNameLabel(name).toUpperCase()} `;
+      expect(searchPalette(query, [], objects)).toEqual([
+        { kind: "object", object: objects[index] },
+      ]);
+      expect(searchPalette(query, [], triggers)).toEqual([
+        { kind: "object", object: triggers[index] },
+      ]);
+    }
+    expect(searchPalette("a.b.Orders", [], objects)).toHaveLength(2);
+    expect(searchPalette("a.b.Orders", [], triggers)).toHaveLength(2);
   });
 });
