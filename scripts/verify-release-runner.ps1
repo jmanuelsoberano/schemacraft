@@ -21,7 +21,7 @@ $userName = 'scverify' + $suffix
 $taskName = 'SchemaCraftAcceptance-' + $suffix
 $staging = Join-Path $env:SystemDrive ('SchemaCraftAcceptance-' + $suffix)
 if (Test-Path -LiteralPath $staging) { throw 'The unique staging directory already exists.' }
-$report = [ordered]@{ runner = $env:ImageOS; imageVersion = $env:ImageVersion; runId = $env:GITHUB_RUN_ID; standardAccountCreated = $false; taskRegistered = $false; passed = $false; limitation = 'Windows Server runner; UAC is disabled by the image. This does not verify interactive elevation prompts on Windows 10 or 11.' }
+$report = [ordered]@{ runner = $env:ImageOS; imageVersion = $env:ImageVersion; runId = $env:GITHUB_RUN_ID; standardAccountCreated = $false; taskRegistered = $false; passed = $false; limitation = 'Windows Server runner; the worker records the observed UAC setting. This does not verify interactive elevation prompts on Windows 10 or 11.' }
 $account = $null
 $registered = $false
 $created = $false

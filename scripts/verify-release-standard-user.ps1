@@ -63,8 +63,10 @@ function MissingRuntime([string]$Executable, [bool]$InjectFailure, [string]$Pref
             if ($dialog -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 200 }
         } while ($dialog -eq [IntPtr]::Zero -and [DateTime]::UtcNow -lt $deadline)
         Check 'Missing-runtime dialog exists in the owned application process' ($dialog -ne [IntPtr]::Zero)
-        $text = [ReleaseNativeDialog]::ReadText($dialog)
+        $observed = [ReleaseNativeDialog]::ReadText($dialog, $process.Id)
+        $text = $observed.Text
         $result.dialogText = $text
+        $result.dialogTextReader = [ordered]@{ method = 'owned-window messages and UI Automation'; automationElements = $observed.AutomationElements; automationTimedOut = $observed.AutomationTimedOut; automationError = $observed.AutomationError }
         Check 'Native dialog explains the runtime requirement in English and Spanish' ($text.Contains('SchemaCraft needs the Microsoft Edge WebView2 Runtime') -and $text.Contains('SchemaCraft necesita Microsoft Edge WebView2 Runtime'))
         Check 'The owned native dialog exposes a No button' ([ReleaseNativeDialog]::ChooseNo($dialog))
         Check 'Choosing No closes the application' ($process.WaitForExit(10000))
@@ -137,10 +139,22 @@ try {
     $syntheticPreferenceHash = Sha256 $preferences
     $runtimeBefore = @(RuntimeVersions)
     $report.webview2VersionsBefore = $runtimeBefore
-    Add-Type -TypeDefinition @'
+    Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, WindowsBase
+    $automationReferences = @([System.Windows.Automation.AutomationElement].Assembly.Location, [System.Windows.Automation.AutomationProperty].Assembly.Location, [System.Windows.DependencyObject].Assembly.Location)
+    Add-Type -ReferencedAssemblies $automationReferences -TypeDefinition @'
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
+using System.Threading;
 using System.Runtime.InteropServices;
+using System.Windows.Automation;
+public sealed class ReleaseDialogText {
+  public string Text;
+  public int AutomationElements;
+  public bool AutomationTimedOut;
+  public string AutomationError;
+}
 public static class ReleaseNativeDialog {
   delegate bool EnumProc(IntPtr window, IntPtr parameter);
   [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, IntPtr parameter);
@@ -161,15 +175,73 @@ public static class ReleaseNativeDialog {
     }, IntPtr.Zero);
     return found;
   }
-  public static string ReadText(IntPtr dialog) {
+  static void AppendBounded(StringBuilder target, string value) {
+    if (String.IsNullOrEmpty(value) || target.Length >= 8192) return;
+    if (target.Length > 0) target.Append('\n');
+    target.Append(value, 0, Math.Min(value.Length, 8192 - target.Length));
+  }
+  static void RequireOwner(IntPtr window, int process) {
+    uint owner; GetWindowThreadProcessId(window, out owner);
+    if (owner != (uint)process) throw new InvalidOperationException("The dialog no longer belongs to the owned application process.");
+  }
+  public static ReleaseDialogText ReadText(IntPtr dialog, int process) {
+    RequireOwner(dialog, process);
+    var timer = Stopwatch.StartNew();
     var all = new StringBuilder();
+    int nativeElements = 0;
     EnumChildWindows(dialog, (child, parameter) => {
-      var text = new StringBuilder(8192); IntPtr result;
-      ReadMessage(child, 13, new IntPtr(text.Capacity), text, 2, 500, out result);
-      if (text.Length > 0) all.AppendLine(text.ToString());
+      if (++nativeElements > 64 || timer.ElapsedMilliseconds >= 1500) return false;
+      uint owner; GetWindowThreadProcessId(child, out owner);
+      if (owner != (uint)process) return true;
+      var text = new StringBuilder(4096); IntPtr messageResult;
+      ReadMessage(child, 13, new IntPtr(text.Capacity), text, 2, 250, out messageResult);
+      AppendBounded(all, text.ToString());
       return true;
     }, IntPtr.Zero);
-    return all.ToString();
+    string automationText = null;
+    string automationError = null;
+    int automationElements = 0;
+    // TaskDialog content can be windowless DirectUI. Read its accessible subtree,
+    // never the desktop root, on a bounded MTA thread as recommended by Microsoft.
+    var reader = new Thread(() => {
+      try {
+        RequireOwner(dialog, process);
+        var root = AutomationElement.FromHandle(dialog);
+        if (root.Current.ProcessId != process) throw new InvalidOperationException("UI Automation returned a different process.");
+        var pending = new Queue<AutomationElement>(); pending.Enqueue(root);
+        int discoveredElements = 1;
+        var text = new StringBuilder();
+        var walker = TreeWalker.RawViewWalker;
+        while (pending.Count > 0 && automationElements < 64 && timer.ElapsedMilliseconds < 5000) {
+          RequireOwner(dialog, process);
+          var element = pending.Dequeue();
+          automationElements++;
+          if (element.Current.ProcessId != process) continue;
+          AppendBounded(text, element.Current.Name);
+          var child = walker.GetFirstChild(element);
+          while (child != null && discoveredElements < 64 && timer.ElapsedMilliseconds < 5000) {
+            discoveredElements++;
+            if (child.Current.ProcessId == process) pending.Enqueue(child);
+            child = walker.GetNextSibling(child);
+          }
+        }
+        automationText = text.ToString();
+      } catch (Exception error) {
+        automationError = error.Message.Substring(0, Math.Min(error.Message.Length, 256));
+      }
+    });
+    reader.IsBackground = true;
+    reader.SetApartmentState(ApartmentState.MTA);
+    reader.Start();
+    bool completed = reader.Join((int)Math.Max(1, 5000 - timer.ElapsedMilliseconds));
+    var observed = new ReleaseDialogText { Text = all.ToString(), AutomationTimedOut = !completed };
+    if (completed) {
+      AppendBounded(all, automationText);
+      observed.Text = all.ToString();
+      observed.AutomationElements = automationElements;
+      observed.AutomationError = automationError;
+    }
+    return observed;
   }
   public static bool ChooseNo(IntPtr dialog) {
     IntPtr no = IntPtr.Zero;
