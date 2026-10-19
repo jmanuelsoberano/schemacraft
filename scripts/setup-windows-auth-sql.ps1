@@ -61,6 +61,8 @@ $mediaHash = (Get-FileHash -LiteralPath $mediaPath -Algorithm SHA256).Hash
 $extractPath = Join-Path $workPath 'media'
 $setupStarted = Get-Date
 $setupPhase = 'extraction'
+$connection = $null
+$lastConnectionError = $null
 try {
     Write-Host 'Extracting signature-checked SQL Server media.'
     $extract = Start-Process -FilePath $mediaPath -ArgumentList @('/Q', ('/X:"' + $extractPath + '"')) -WindowStyle Hidden -PassThru
@@ -82,62 +84,56 @@ try {
     if (-not $install.WaitForExit(1200000)) { throw 'SQL setup exceeded its 20-minute deadline; the disposable runner must be discarded.' }
     $install.Refresh()
     if ($install.ExitCode -notin @(0, 3010)) { throw "SQL setup failed with exit code $($install.ExitCode)." }
-} catch {
-    $setupError = $_
-    # These known setup logs belong to this disposable runner; no profile or application data is collected.
-    # https://learn.microsoft.com/en-us/sql/database-engine/install-windows/view-and-read-sql-server-setup-log-files
-    $logFiles = @()
-    $summaryPath = Join-Path $env:ProgramFiles 'Microsoft SQL Server\160\Setup Bootstrap\Log\Summary.txt'
-    if (Test-Path -LiteralPath $summaryPath -PathType Leaf) { $logFiles += Get-Item -LiteralPath $summaryPath }
-    $logFiles += @(Get-ChildItem -LiteralPath $env:TEMP -Filter 'sqlsetup*.log' -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.LastWriteTime -ge $setupStarted } | Sort-Object LastWriteTime -Descending | Select-Object -First 2)
-    $logs = @($logFiles | Where-Object { $_.LastWriteTime -ge $setupStarted } | ForEach-Object {
-        [ordered]@{ file = $_.Name; tail = @(Get-Content -LiteralPath $_.FullName -Tail 200 -ErrorAction SilentlyContinue) }
-    })
-    [ordered]@{
-        passed = $false
-        phase = $setupPhase
-        error = $setupError.Exception.Message
-        mediaUrl = $mediaUrl
-        mediaSha256 = $mediaHash
-        mediaSignatureVerified = $true
-        mediaProductVersion = $mediaVersion.ProductVersion
-        setupLogs = $logs
-    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $evidencePath 'windows-auth-sql-setup.json') -Encoding UTF8
-    throw $setupError
-}
-Write-Host 'SQL setup completed; configuring the loopback listener.'
+    Write-Host 'SQL setup completed; configuring the loopback listener.'
+    $setupPhase = 'listener-configuration'
 
-# The engine was installed with TCP disabled. Configure only this new instance before enabling it.
-$serviceName = 'MSSQL$SCACCEPT'
-Stop-Service -Name $serviceName
-$instanceMap = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL'
-$instanceId = $instanceMap.SCACCEPT
-if ($instanceId -ne 'MSSQL16.SCACCEPT') { throw 'Unexpected SQL instance registry mapping.' }
-$tcpPath = 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\' + $instanceId + '\MSSQLServer\SuperSocketNetLib\Tcp'
-Set-ItemProperty -LiteralPath $tcpPath -Name Enabled -Value 1
-Set-ItemProperty -LiteralPath $tcpPath -Name ListenOnAllIPs -Value 0
-$loopbacks = 0
-foreach ($addressKey in @(Get-ChildItem -LiteralPath $tcpPath | Where-Object { $_.PSChildName -match '^IP\d+$' })) {
-    $addressSettings = Get-ItemProperty -LiteralPath $addressKey.PSPath
-    $loopback = $addressSettings.IpAddress -in @('127.0.0.1', '::1')
-    Set-ItemProperty -LiteralPath $addressKey.PSPath -Name Enabled -Value ([int]$loopback)
-    Set-ItemProperty -LiteralPath $addressKey.PSPath -Name TcpDynamicPorts -Value ''
-    Set-ItemProperty -LiteralPath $addressKey.PSPath -Name TcpPort -Value $(if ($loopback) { '14335' } else { '' })
-    if ($loopback) { $loopbacks++ }
-}
-if ($loopbacks -eq 0) { throw 'SQL setup did not expose a configurable loopback address.' }
-Start-Service -Name $serviceName
-(Get-Service -Name $serviceName).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
-Add-Type -AssemblyName System.Data
-$connection = New-Object System.Data.SqlClient.SqlConnection('Server=tcp:localhost,14335;Database=master;Integrated Security=SSPI;Encrypt=True;TrustServerCertificate=True;Connect Timeout=3;Pooling=False')
-$connected = $false
-for ($attempt = 0; $attempt -lt 30; $attempt++) {
-    try { $connection.Open(); $connected = $true; break }
-    catch { Start-Sleep -Seconds 2 }
-}
-if (-not $connected) { throw 'The dedicated local Windows-authenticated SQL connection did not become ready.' }
-try {
+    # The engine was installed with TCP disabled. Configure only this new instance before enabling it.
+    $serviceName = 'MSSQL$SCACCEPT'
+    Stop-Service -Name $serviceName
+    $instanceMap = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL'
+    $instanceId = $instanceMap.SCACCEPT
+    if ($instanceId -ne 'MSSQL16.SCACCEPT') { throw 'Unexpected SQL instance registry mapping.' }
+    $tcpPath = 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\' + $instanceId + '\MSSQLServer\SuperSocketNetLib\Tcp'
+    Set-ItemProperty -LiteralPath $tcpPath -Name Enabled -Value 1
+    Set-ItemProperty -LiteralPath $tcpPath -Name ListenOnAllIPs -Value 0
+    $loopbacks = 0
+    foreach ($addressKey in @(Get-ChildItem -LiteralPath $tcpPath | Where-Object { $_.PSChildName -match '^IP\d+$' })) {
+        $addressSettings = Get-ItemProperty -LiteralPath $addressKey.PSPath
+        $loopback = $addressSettings.IpAddress -in @('127.0.0.1', '::1')
+        Set-ItemProperty -LiteralPath $addressKey.PSPath -Name Enabled -Value ([int]$loopback)
+        Set-ItemProperty -LiteralPath $addressKey.PSPath -Name TcpDynamicPorts -Value ''
+        Set-ItemProperty -LiteralPath $addressKey.PSPath -Name TcpPort -Value $(if ($loopback) { '14335' } else { '' })
+        if ($loopback) { $loopbacks++ }
+    }
+    if ($loopbacks -eq 0) { throw 'SQL setup did not expose a configurable loopback address.' }
+    Start-Service -Name $serviceName
+    (Get-Service -Name $serviceName).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
+    Add-Type -AssemblyName System.Data
+    $connection = New-Object System.Data.SqlClient.SqlConnection('Server=tcp:localhost,14335;Database=master;Integrated Security=SSPI;Encrypt=True;TrustServerCertificate=True;Connect Timeout=3;Pooling=False')
+    $connected = $false
+    $setupPhase = 'local-connection'
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
+        try { $connection.Open(); $connected = $true; break }
+        catch {
+            $connectionException = $_.Exception
+            while ($connectionException -isnot [System.Data.SqlClient.SqlException] -and $null -ne $connectionException.InnerException) {
+                $connectionException = $connectionException.InnerException
+            }
+            $lastConnectionError = [ordered]@{
+                type = $connectionException.GetType().FullName
+                message = $connectionException.Message
+                sqlErrors = @()
+            }
+            if ($connectionException -is [System.Data.SqlClient.SqlException]) {
+                $lastConnectionError.sqlErrors = @($connectionException.Errors | ForEach-Object {
+                    [ordered]@{ number = $_.Number; state = $_.State; class = $_.Class; message = $_.Message }
+                })
+            }
+            Start-Sleep -Seconds 2
+        }
+    }
+    if (-not $connected) { throw 'The dedicated local Windows-authenticated SQL connection did not become ready.' }
+    $setupPhase = 'fixture-provisioning'
     $listeners = @(Get-NetTCPConnection -LocalPort 14335 -State Listen)
     if ($listeners.Count -eq 0 -or @($listeners | Where-Object { $_.LocalAddress -notin @('127.0.0.1', '::1') }).Count -gt 0) {
         throw 'SQL is not restricted to loopback listeners.'
@@ -189,6 +185,46 @@ try {
     }
     $result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $evidencePath 'windows-auth-sql-setup.json') -Encoding UTF8
     $result | ConvertTo-Json -Depth 5
+} catch {
+    $setupError = $_
+    # Collect only this execution's SQL setup logs and the exact owned instance's diagnostics.
+    # https://learn.microsoft.com/en-us/sql/database-engine/install-windows/view-and-read-sql-server-setup-log-files
+    $logFiles = @()
+    $summaryPath = Join-Path $env:ProgramFiles 'Microsoft SQL Server\160\Setup Bootstrap\Log\Summary.txt'
+    if (Test-Path -LiteralPath $summaryPath -PathType Leaf) { $logFiles += Get-Item -LiteralPath $summaryPath }
+    $logFiles += @(Get-ChildItem -LiteralPath $env:TEMP -Filter 'sqlsetup*.log' -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -ge $setupStarted } | Sort-Object LastWriteTime -Descending | Select-Object -First 2)
+    $logs = @($logFiles | Where-Object { $_.LastWriteTime -ge $setupStarted } | ForEach-Object {
+        [ordered]@{ file = $_.Name; tail = @(Get-Content -LiteralPath $_.FullName -Tail 200 -ErrorAction SilentlyContinue) }
+    })
+    $ownedTcpPath = 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL16.SCACCEPT\MSSQLServer\SuperSocketNetLib\Tcp'
+    $tcpConfiguration = $null
+    if (Test-Path -LiteralPath $ownedTcpPath) {
+        $tcpConfiguration = [ordered]@{
+            protocol = Get-ItemProperty -LiteralPath $ownedTcpPath | Select-Object Enabled, ListenOnAllIPs
+            addresses = @(Get-ChildItem -LiteralPath $ownedTcpPath | Where-Object { $_.PSChildName -match '^IP(?:\d+|All)$' } | ForEach-Object {
+                Get-ItemProperty -LiteralPath $_.PSPath | Select-Object PSChildName, Enabled, Active, IpAddress, TcpDynamicPorts, TcpPort
+            })
+        }
+    }
+    $engineLog = Join-Path $env:ProgramFiles 'Microsoft SQL Server\MSSQL16.SCACCEPT\MSSQL\Log\ERRORLOG'
+    $engineLogTail = @()
+    if (Test-Path -LiteralPath $engineLog -PathType Leaf) { $engineLogTail = @(Get-Content -LiteralPath $engineLog -Tail 200 -ErrorAction SilentlyContinue) }
+    [ordered]@{
+        passed = $false
+        phase = $setupPhase
+        error = $setupError.Exception.Message
+        mediaUrl = $mediaUrl
+        mediaSha256 = $mediaHash
+        mediaSignatureVerified = $true
+        mediaProductVersion = $mediaVersion.ProductVersion
+        setupLogs = $logs
+        lastConnectionError = $lastConnectionError
+        listeners = @(Get-NetTCPConnection -LocalPort 14335 -State Listen -ErrorAction SilentlyContinue | Select-Object LocalAddress, LocalPort, OwningProcess)
+        tcpConfiguration = $tcpConfiguration
+        engineLogTail = $engineLogTail
+    } | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $evidencePath 'windows-auth-sql-setup.json') -Encoding UTF8
+    throw $setupError
 } finally {
-    $connection.Dispose()
+    if ($null -ne $connection) { $connection.Dispose() }
 }
