@@ -15,8 +15,9 @@ connection details or database contents are recorded here.
 The version commit follows that acceptance. After the feature PR merges, a separate release PR
 updates the package and workspace versions, both lockfiles, the dated CHANGELOG entry and this
 checklist. That PR must pass all gates, both SQL Server versions, the local release smoke test
-and the previous-reader check. Tagging and publishing follow the release PR and the by-hand
-checks; preparing a release does not itself approve a merge, tag or publication.
+and the previous-reader check. After that PR merges, the version tag on `main` builds a draft
+release. Downloaded-asset, clean-machine and installer checks use those artifacts and must pass
+before the draft is published.
 
 ## Acceptance criteria
 
