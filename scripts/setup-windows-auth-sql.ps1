@@ -1,0 +1,156 @@
+#requires -Version 5.1
+# Run only in Windows PowerShell on a disposable GitHub-hosted runner.
+# Installs a dedicated Windows-authentication-only SQL Server 2022 Express instance.
+# No password is created or accepted for SQL authentication.
+# Installation parameters: https://learn.microsoft.com/en-us/sql/database-engine/install-windows/install-sql-server-from-the-command-prompt
+# Listener semantics: https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/configure-a-server-to-listen-on-a-specific-tcp-port
+param(
+    [Parameter(Mandatory = $true)][string]$TestAccount,
+    [Parameter(Mandatory = $true)][string]$FixtureDirectory,
+    [Parameter(Mandatory = $true)][string]$EvidenceDirectory,
+    [Parameter(Mandatory = $true)][switch]$ConfirmDisposableHostedRunner
+)
+
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+if (-not $ConfirmDisposableHostedRunner -or $env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') {
+    throw 'This setup is restricted to a disposable GitHub-hosted runner.'
+}
+if ($PSVersionTable.PSEdition -ne 'Desktop' -or -not [Environment]::Is64BitProcess) {
+    throw 'Use 64-bit Windows PowerShell (powershell.exe), which includes System.Data.SqlClient.'
+}
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = New-Object Security.Principal.WindowsPrincipal($identity)
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw 'The isolated SQL setup requires the runner administrator.'
+}
+$accountPattern = '^' + [regex]::Escape($env:COMPUTERNAME) + '\\scverify[0-9a-f]{12}$'
+if ($TestAccount -notmatch $accountPattern) { throw 'The account must be the generated local scverify account.' }
+$localName = $TestAccount.Split('\')[1]
+$testUser = Get-LocalUser -Name $localName
+if (-not $testUser.Enabled) { throw 'The standard test account is not enabled.' }
+if (@(Get-Service -Name 'MSSQL*' -ErrorAction SilentlyContinue).Count -ne 0) {
+    throw 'Refusing to install beside an existing SQL Server service.'
+}
+if (@(Get-NetTCPConnection -LocalPort 14335 -ErrorAction SilentlyContinue).Count -ne 0) {
+    throw 'The dedicated SQL port 14335 is already in use.'
+}
+$fixturePaths = @('code.sql', 'stress_200_tables.sql') | ForEach-Object {
+    (Get-Item -LiteralPath (Join-Path $FixtureDirectory $_)).FullName
+}
+$evidencePath = [IO.Path]::GetFullPath($EvidenceDirectory)
+$temporaryRoot = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\') + '\'
+if (-not $evidencePath.StartsWith($temporaryRoot, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'EvidenceDirectory must be inside RUNNER_TEMP.'
+}
+New-Item -ItemType Directory -Path $evidencePath -Force | Out-Null
+$workPath = Join-Path $evidencePath ('sql-setup-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $workPath | Out-Null
+$mediaPath = Join-Path $workPath 'SQLEXPR_x64_ENU.exe'
+$mediaUrl = 'https://download.microsoft.com/download/3/8/d/38de7036-2433-4207-8eae-06e247e17b25/SQLEXPR_x64_ENU.exe'
+Invoke-WebRequest -UseBasicParsing -Uri $mediaUrl -OutFile $mediaPath
+$signature = Get-AuthenticodeSignature -LiteralPath $mediaPath
+if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '(?:^|,\s*)O=Microsoft Corporation(?:,|$)') {
+    throw 'The SQL installation media does not have a valid Microsoft signature.'
+}
+$mediaVersion = (Get-Item -LiteralPath $mediaPath).VersionInfo
+if ($mediaVersion.ProductMajorPart -ne 16) { throw 'The SQL installation media is not version 2022.' }
+$mediaHash = (Get-FileHash -LiteralPath $mediaPath -Algorithm SHA256).Hash
+$extractPath = Join-Path $workPath 'media'
+$extract = Start-Process -FilePath $mediaPath -ArgumentList @('/Q', ('/X="' + $extractPath + '"')) -WindowStyle Hidden -Wait -PassThru
+if ($extract.ExitCode -ne 0) { throw "SQL media extraction failed with exit code $($extract.ExitCode)." }
+$setup = Join-Path $extractPath 'setup.exe'
+if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw 'Extracted SQL setup.exe is missing.' }
+$setupArgs = @(
+    '/Q', '/ACTION=Install', '/FEATURES=SQLENGINE', '/INSTANCENAME=SCACCEPT', '/INSTANCEID=SCACCEPT',
+    '/IACCEPTSQLSERVERLICENSETERMS', '/SUPPRESSPRIVACYSTATEMENTNOTICE', '/UPDATEENABLED=False',
+    '/USEMICROSOFTUPDATE=False', '/TCPENABLED=0', '/NPENABLED=0', '/BROWSERSVCSTARTUPTYPE=Disabled',
+    '/SQLSVCACCOUNT="NT Service\MSSQL$SCACCEPT"', '/SQLSVCSTARTUPTYPE=Manual',
+    ('/SQLSYSADMINACCOUNTS="' + $identity.Name + '"')
+)
+$install = Start-Process -FilePath $setup -ArgumentList $setupArgs -WindowStyle Hidden -Wait -PassThru
+if ($install.ExitCode -notin @(0, 3010)) { throw "SQL setup failed with exit code $($install.ExitCode)." }
+
+# The engine was installed with TCP disabled. Configure only this new instance before enabling it.
+$serviceName = 'MSSQL$SCACCEPT'
+Stop-Service -Name $serviceName
+$instanceMap = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL'
+$instanceId = $instanceMap.SCACCEPT
+if ($instanceId -ne 'MSSQL16.SCACCEPT') { throw 'Unexpected SQL instance registry mapping.' }
+$tcpPath = 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\' + $instanceId + '\MSSQLServer\SuperSocketNetLib\Tcp'
+Set-ItemProperty -LiteralPath $tcpPath -Name Enabled -Value 1
+Set-ItemProperty -LiteralPath $tcpPath -Name ListenOnAllIPs -Value 0
+$loopbacks = 0
+foreach ($addressKey in @(Get-ChildItem -LiteralPath $tcpPath | Where-Object { $_.PSChildName -match '^IP\d+$' })) {
+    $addressSettings = Get-ItemProperty -LiteralPath $addressKey.PSPath
+    $loopback = $addressSettings.IpAddress -in @('127.0.0.1', '::1')
+    Set-ItemProperty -LiteralPath $addressKey.PSPath -Name Enabled -Value ([int]$loopback)
+    Set-ItemProperty -LiteralPath $addressKey.PSPath -Name TcpDynamicPorts -Value ''
+    Set-ItemProperty -LiteralPath $addressKey.PSPath -Name TcpPort -Value $(if ($loopback) { '14335' } else { '' })
+    if ($loopback) { $loopbacks++ }
+}
+if ($loopbacks -eq 0) { throw 'SQL setup did not expose a configurable loopback address.' }
+Start-Service -Name $serviceName
+(Get-Service -Name $serviceName).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
+Add-Type -AssemblyName System.Data
+$connection = New-Object System.Data.SqlClient.SqlConnection('Server=tcp:localhost,14335;Database=master;Integrated Security=SSPI;Encrypt=True;TrustServerCertificate=True;Connect Timeout=3;Pooling=False')
+$connected = $false
+for ($attempt = 0; $attempt -lt 30; $attempt++) {
+    try { $connection.Open(); $connected = $true; break }
+    catch { Start-Sleep -Seconds 2 }
+}
+if (-not $connected) { throw 'The dedicated local Windows-authenticated SQL connection did not become ready.' }
+try {
+    $listeners = @(Get-NetTCPConnection -LocalPort 14335 -State Listen)
+    if ($listeners.Count -eq 0 -or @($listeners | Where-Object { $_.LocalAddress -notin @('127.0.0.1', '::1') }).Count -gt 0) {
+        throw 'SQL is not restricted to loopback listeners.'
+    }
+    $command = $connection.CreateCommand()
+    $command.CommandTimeout = 120
+    $command.CommandText = "SELECT CASE WHEN SERVERPROPERTY('ProductMajorVersion') = '16' AND SERVERPROPERTY('IsIntegratedSecurityOnly') = 1 AND CONNECTIONPROPERTY('net_transport') = 'TCP' AND CONNECTIONPROPERTY('auth_scheme') IN ('NTLM', 'KERBEROS') THEN 1 ELSE 0 END;"
+    if ([int]$command.ExecuteScalar() -ne 1) { throw 'The server version, transport or Windows-only authentication is incorrect.' }
+    foreach ($fixturePath in $fixturePaths) {
+        $connection.ChangeDatabase('master')
+        $fixture = [IO.File]::ReadAllText($fixturePath)
+        foreach ($batch in [regex]::Split($fixture, '(?im)^[ \t]*GO[ \t]*(?:--[^\r\n]*)?\r?$')) {
+            if ([string]::IsNullOrWhiteSpace($batch)) { continue }
+            $command.CommandText = $batch
+            [void]$command.ExecuteNonQuery()
+        }
+    }
+    $connection.ChangeDatabase('master')
+    $quotedAccount = '[' + $TestAccount.Replace(']', ']]') + ']'
+    $command.CommandText = 'CREATE LOGIN ' + $quotedAccount + ' FROM WINDOWS;'
+    [void]$command.ExecuteNonQuery()
+    foreach ($database in @('SchemaCraftCode', 'SchemaCraftStress')) {
+        $connection.ChangeDatabase($database)
+        $command.CommandText = 'CREATE USER [AcceptanceUser] FOR LOGIN ' + $quotedAccount + '; ALTER ROLE [db_datareader] ADD MEMBER [AcceptanceUser]; GRANT VIEW DEFINITION TO [AcceptanceUser];'
+        [void]$command.ExecuteNonQuery()
+    }
+    $command.CommandText = "SELECT IS_SRVROLEMEMBER('sysadmin', @login);"
+    [void]$command.Parameters.AddWithValue('@login', $TestAccount)
+    if ([int]$command.ExecuteScalar() -ne 0) { throw 'The standard account unexpectedly has SQL sysadmin privileges.' }
+    $command.Parameters.Clear()
+    $command.CommandText = "SELECT CONVERT(nvarchar(50), SERVERPROPERTY('ProductVersion'));"
+    $engineVersion = [string]$command.ExecuteScalar()
+    $result = [ordered]@{
+        passed = $true
+        mediaUrl = $mediaUrl
+        mediaSha256 = $mediaHash
+        mediaSignatureVerified = $true
+        mediaProductVersion = $mediaVersion.ProductVersion
+        engineVersion = $engineVersion
+        instance = 'SCACCEPT'
+        endpoint = 'localhost,14335'
+        loopbackOnly = $true
+        windowsAuthenticationOnly = $true
+        standardAccountProvisioned = $true
+        standardAccountIsSqlSysadmin = $false
+        databases = @('SchemaCraftCode', 'SchemaCraftStress')
+        installerExitCode = $install.ExitCode
+    }
+    $result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $evidencePath 'windows-auth-sql-setup.json') -Encoding UTF8
+    $result | ConvertTo-Json -Depth 5
+} finally {
+    $connection.Dispose()
+}

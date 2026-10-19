@@ -9,8 +9,9 @@ before a draft release is published. The automated parts run on every pull reque
 
 The feature checks and dated local release verification below are complete. On 2026-10-19 the
 maintainer reported that the Spanish interface review and release acceptance session passed:
-capability probe, diagnostic log review, capture, refresh, save, reopen and export. No private
-connection details or database contents are recorded here.
+capability probe, diagnostic log review, capture, refresh, save, reopen and export. That session
+used SQL login authentication; it did not verify Windows Authentication. No private connection
+details or database contents are recorded here.
 
 The version commit follows that acceptance. After the feature PR merges, a separate release PR
 updates the package and workspace versions, both lockfiles, the dated CHANGELOG entry and this
@@ -23,21 +24,21 @@ before the draft is published.
 
 For 1.2.0, "verified" means the automated checks and dated local application checks below;
 maintainer acceptance is recorded above. Windows Authentication has historical manual evidence
-only and has not been reverified separately for 1.2. Downloaded release assets and installation
-on a clean machine still require the publication checks below.
+only and has not been reverified separately for 1.2. The downloaded executable passed the local
+checks recorded below; clean-machine, runtime and installation checks remain pending.
 
-| #   | Criterion (PRD section 5)                                    | How it is verified                                                                                                                                                   | 1.0.0          | 1.1.0          | 1.2.0                                                 |
-| --- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | -------------- | ----------------------------------------------------- |
-| 1   | Connects with SQL Server and with Windows Authentication     | Integration tests in CI against SQL Server 2019 and 2022 (2022 alone up to 1.1.0) cover SQL logins; Windows Authentication was verified by hand on a local instance. | done           | done           | SQL logins verified; Windows Authentication pending   |
-| 2   | Extracts complete schemas with keys, relationships and types | Integration tests on the fixture database check tables, views, columns, types, primary keys, foreign keys, indexes and check constraints.                            | done           | done           | verified                                              |
-| 3   | Hides and shows tables, isolates relational neighbourhoods   | Unit tests of the canvas state and the neighbourhood walk; checked in the real application in milestone 4.                                                           | done           | done           | verified                                              |
-| 4   | At least three detail levels                                 | Unit tests of the geometry and the renderer for compact, keys and full; screenshots in both themes.                                                                  | done           | done           | verified                                              |
-| 5   | At least two automatic layouts plus manual placement         | Unit tests of the layered, organic and radial layouts; timings in the real application (200 tables: layered 456 ms, organic 222 ms).                                 | done           | done           | verified                                              |
-| 6   | Saves `.scraft` and reopens it without a connection          | Rust round-trip tests of the file; save and reopen checked in the real application in milestone 3.                                                                   | done           | done           | verified                                              |
-| 7   | Refreshes against the database keeping the positions         | Rust integration test of the refresh with a changed fixture; reviewed diff checked in the real application.                                                          | done           | done           | verified                                              |
-| 8   | Exports SVG, standalone interactive HTML and single-page PDF | Rust tests of PNG and PDF rendering; renderer and viewer tests; exports of 8 and 200 tables checked in the real application in milestone 5.                          | done           | done           | verified                                              |
-| 9   | Ships as a portable `.exe` on Windows                        | Release build in CI; the smoke test starts the real binary and checks the welcome screen, the version in About, language and theme switching and the reload guard.   | done, unsigned | done, unsigned | local executable verified; publication checks pending |
-| 10  | Bilingual, light and dark, UX definition of done per feature | Catalogue tests keep both languages in step; the smoke test switches language and theme; every feature was reviewed in both themes and languages while it was built. | done           | done           | verified; maintainer review passed                    |
+| #   | Criterion (PRD section 5)                                    | How it is verified                                                                                                                                                   | 1.0.0          | 1.1.0          | 1.2.0                                                |
+| --- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | -------------- | ---------------------------------------------------- |
+| 1   | Connects with SQL Server and with Windows Authentication     | Integration tests in CI against SQL Server 2019 and 2022 (2022 alone up to 1.1.0) cover SQL logins; Windows Authentication was verified by hand on a local instance. | done           | done           | SQL logins verified; Windows Authentication pending  |
+| 2   | Extracts complete schemas with keys, relationships and types | Integration tests on the fixture database check tables, views, columns, types, primary keys, foreign keys, indexes and check constraints.                            | done           | done           | verified                                             |
+| 3   | Hides and shows tables, isolates relational neighbourhoods   | Unit tests of the canvas state and the neighbourhood walk; checked in the real application in milestone 4.                                                           | done           | done           | verified                                             |
+| 4   | At least three detail levels                                 | Unit tests of the geometry and the renderer for compact, keys and full; screenshots in both themes.                                                                  | done           | done           | verified                                             |
+| 5   | At least two automatic layouts plus manual placement         | Unit tests of the layered, organic and radial layouts; timings in the real application (200 tables: layered 456 ms, organic 222 ms).                                 | done           | done           | verified                                             |
+| 6   | Saves `.scraft` and reopens it without a connection          | Rust round-trip tests of the file; save and reopen checked in the real application in milestone 3.                                                                   | done           | done           | verified                                             |
+| 7   | Refreshes against the database keeping the positions         | Rust integration test of the refresh with a changed fixture; reviewed diff checked in the real application.                                                          | done           | done           | verified                                             |
+| 8   | Exports SVG, standalone interactive HTML and single-page PDF | Rust tests of PNG and PDF rendering; renderer and viewer tests; exports of 8 and 200 tables checked in the real application in milestone 5.                          | done           | done           | verified                                             |
+| 9   | Ships as a portable `.exe` on Windows                        | Release build in CI; the smoke test starts the real binary and checks the welcome screen, the version in About, language and theme switching and the reload guard.   | done, unsigned | done, unsigned | downloaded executable verified; installation pending |
+| 10  | Bilingual, light and dark, UX definition of done per feature | Catalogue tests keep both languages in step; the smoke test switches language and theme; every feature was reviewed in both themes and languages while it was built. | done           | done           | verified; maintainer review passed                   |
 
 ## Scope of 1.1
 
@@ -63,7 +64,8 @@ testing the other container. Release publication still requires the manual check
 The 1.2.0 column records feature verification. The full local release build passed the smoke
 test on both engines, and the published 1.1.0 executable passed the older-reader check. These
 checks complement the core compatibility tests; downloaded release assets still require
-their own publication checks.
+their own publication checks. The downloaded 1.2.0 executable has since passed both-engine
+application checks and the 1.1.0 reader check below; hosted verification remains pending.
 
 | Part (PRD 3.9)                              | How it is verified                                                                                                                                                                                                                                                                                                      | 1.2.0                              |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
@@ -102,14 +104,53 @@ First/Last, view settings and honest unread, unknown and retained states in both
   installs the WebView2 runtime first when it lacks it, as a user's machine would need it.
 - `SHA256SUMS.txt` and a draft GitHub release with both files.
 
+## Independent draft-asset verification
+
+`verify-release.yml` downloads the existing draft assets and verifies them without rebuilding,
+signing, replacing or publishing them. The controller creates a new standard local account on
+a disposable GitHub-hosted Windows Server 2022 runner. Only the limited-account worker launches
+the portable executable, installer, installed executable and uninstaller. Each application
+session preserves preferences as opaque bytes and restores the original bytes or absence after
+confirmed process termination. Uploaded evidence excludes profiles, preferences and credentials.
+
+The initial target is `v1.2.0`. Downloaded asset identity and portable application behavior have
+been verified locally as recorded below; hosted, installed-application and Windows Authentication
+results remain pending until the workflow has run and its reports have been inspected. Record
+the tag/source commit, verifier commit, run URL,
+asset hashes, Windows image and build, SQL Server and WebView2 versions, account/token checks,
+UAC setting and per-scenario results. These are downloaded-asset results, separate from the local
+candidate measurements below.
+
+| Verification                      | Required evidence                                                                                                                                       | Status                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Asset identity                    | Both downloaded binary hashes match `SHA256SUMS.txt`; executable and backend report the expected release version                                        | verified locally; repeat on hosted runner                      |
+| Fresh standard account            | No existing installation, registration or app data; account is not in Administrators and worker has no administrative token                             | pending                                                        |
+| Portable and installed app        | Embedded frontend, exact About version, English/light, Spanish/dark, reload guard and confirmed termination                                             | portable verified locally; hosted and installed checks pending |
+| Per-user installation and removal | Installer `asInvoker` manifest, current-user registration, installed executable matching the portable, completed uninstall and preserved synthetic data | pending                                                        |
+| Unavailable WebView2              | Native bilingual explanation and exit after No; report natural absence or process-local failure injection                                               | pending                                                        |
+| Local Windows Authentication      | Actual application connection and capture against the owned local SQL fixture using the fresh Windows account                                           | pending                                                        |
+
+The hosted runner is Windows Server, not a Windows 10/11 consumer image. Its UAC setting is
+recorded; when UAC is disabled, successful standard-account execution does not verify interactive
+elevation prompts. An empty `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER` imposed only on the process
+tests the runtime failure path without uninstalling a shared runtime; it is not evidence of
+natural runtime absence. Local Windows Authentication does not test domain accounts, remote
+Kerberos or delegation. Do not close broader manual checks based on these narrower results.
+
 ## By hand before publishing the draft
 
 These boxes track the release artifacts and final acceptance, independently of the completed
 development-build sessions recorded below. Leave a box open until its stated check is complete.
 
-- [ ] Download the assets and check them against `SHA256SUMS.txt`.
-- [ ] Start the portable executable on a machine without SchemaCraft: the welcome screen appears.
-      Without the WebView2 runtime, the dialog explains it and offers the download.
+- [x] Download the assets and check them against `SHA256SUMS.txt`.
+- [x] Exercise the downloaded portable against SQL Server 2022 and 2019 with SQL logins:
+      capture, module details, save/reopen, unchanged refresh, SVG/PDF/PNG/HTML exports and
+      English/light and Spanish/dark. Restore preferences after confirmed process termination.
+- [ ] Start the portable executable on a fresh Windows 10/11 consumer installation without
+      SchemaCraft: the welcome screen appears. Record separately any disposable Windows Server
+      verification above.
+- [ ] Verify the native bilingual explanation when WebView2 is unavailable and exit after No.
+      Record whether the runtime was naturally absent or made unavailable only to this process.
 - [ ] Connect to a production database, read the schema, lay it out, save, reopen, refresh and
       export to PDF and HTML.
 - [ ] Open a project saved by the previous release and refresh it with the same login: the review
@@ -117,9 +158,11 @@ development-build sessions recorded below. Leave a box open until its stated che
       changed because its key columns no longer start with the partitioning column, shows one
       "Index and constraint state" line with a count under "Recorded for the first time" and
       offers to update the project. Apply, save, reopen the file and check that its header says
-      `formatVersion` 3 and `minReaderVersion` 2. Open the saved file in the previous release: it
-      opens read-only, with the chip naming the version that wrote it, the diagram and the HTML
-      and PDF exports work, and Save and Refresh are not offered.
+      `formatVersion` 3 and `minReaderVersion` 2.
+- [x] Open a format-3 project saved by the downloaded 1.2.0 executable in the published 1.1.0
+      executable: it opens read-only and names 1.2.0 as the writer; the diagram and HTML/PDF
+      exports work, Save and Refresh are disabled including shortcuts, and the input file is
+      unchanged.
 - [ ] Connect with a login that lacks `VIEW DEFINITION` (for example a `db_datareader` member):
       the connection dialog warns before reading, the status bar shows the access chip, the
       access report opens with Ctrl+Shift+A and Copy GRANT script puts the script on the
@@ -162,12 +205,19 @@ development-build sessions recorded below. Leave a box open until its stated che
       about the referenced table after it, and scripts `WITH NOCHECK` in Show SQL. The HTML export
       says the same, and the PDF and PNG draw the same markers.
 - [ ] Open the HTML export in a browser on a machine without SchemaCraft.
+- [x] Open the downloaded executable's standalone HTML export in an external browser on the
+      validation machine: table, view and trigger details work, module Definition says
+      "Not included in this file", and module source is absent. Inspect PDF and PNG output.
 - [ ] In the real app, check trigger badges at all three detail levels and 30% zoom. Export SVG,
       PDF, PNG and HTML in both themes and languages; compare the canvas with SVG, open HTML in
       Edge, and check solid/dashed badges in a grayscale PDF print preview. A 1.1 project must
       say triggers were not read until refreshed. No exported module body or routine object may
       be present; HTML may name only triggers whose parents are on the diagram.
-- [ ] Run the installer and uninstall it; no administrator prompt appears.
+- [ ] Install and uninstall under a standard account without an administrative token; verify
+      per-user registration, removal of installed files and preservation of synthetic data.
+- [ ] On Windows 10/11 with UAC enabled, check that the installer and uninstaller require no
+      administrator prompt or credentials. A hosted image with UAC disabled does not close this
+      interactive check.
 - [ ] The release notes describe the program, link the code signing policy and carry the
       version's `CHANGELOG.md` entry.
 
@@ -250,6 +300,46 @@ bytes are those added by each complete application session, not the shared daily
 | Saved stress project, bytes               | 4,430,274                     | 4,430,274                     |
 | Diagnostic log bytes added by the session | 5,306                         | 5,308                         |
 
+### Downloaded release assets verification, 2026-10-19
+
+The [release workflow run](https://github.com/jmanuelsoberano/schemacraft/actions/runs/39310361788)
+completed successfully for `v1.2.0`, whose source commit is
+`2a659adf62dff78fa15cc1165b786499f9dc1016`. Both files were downloaded from the unpublished
+release and matched its `SHA256SUMS.txt`. Their Windows file metadata reports 1.2.0; both are
+unsigned. These are the CI-built assets, not the local candidate measured above.
+
+| Downloaded asset                           | Bytes      | SHA-256                                                            |
+| ------------------------------------------ | ---------- | ------------------------------------------------------------------ |
+| `schemacraft-v1.2.0-windows-x64.exe`       | 12,921,344 | `765dd024aeb87b8536ebf40b62f8d1a3faaee64a8133ca892ceed584ad08b033` |
+| `schemacraft-v1.2.0-windows-x64-setup.exe` | 5,262,873  | `dbd7616eda81f03683b81fec5fa7799d685a965b4b9c9bded0dd716208bb69ac` |
+
+The downloaded portable passed 75 application checks on each of SQL Server 2022 (16.0.4305.5)
+and SQL Server 2019 (15.0.4500.2), using SQL logins, the embedded production frontend and actual
+Rust commands. The sessions covered exact About version, reload protection, capture, procedure
+parameters and source, table-function returns, trigger and view details, save/reopen, unchanged
+refresh, SVG/PDF/PNG/HTML exports, English/light and Spanish/dark. Each stress capture contained
+200 tables, 20 views, 750 routines, 200 triggers and 970 readable definitions.
+
+| Downloaded executable measurement         | SQL Server 2022 | SQL Server 2019 |
+| ----------------------------------------- | --------------- | --------------- |
+| Stress inspection response                | 179.0 ms        | 221.8 ms        |
+| Serialized snapshot with code, bytes      | 3,156,304       | 3,156,304       |
+| Saved stress project, bytes               | 4,430,274       | 4,430,274       |
+| Diagnostic log bytes added by the session | 5,309           | 5,302           |
+
+Response timing includes Rust and IPC transport but excludes response parsing, project
+initialization and rendering; it is not end-to-end capture time. PDF and PNG were inspected
+visually. The standalone HTML opened in an external browser and displayed table, view and
+trigger details, with module Definition marked "Not included in this file" and module source
+excluded.
+
+The published 1.1.0 executable passed 18 checks with a project saved by the downloaded 1.2.0
+binary: read-only opening, the newer writer identified, Save and Refresh disabled including
+shortcuts, and successful PDF/HTML exports. The input remained byte-identical. All three
+application sessions confirmed process termination before restoring preferences byte for byte.
+Hosted clean-environment verification, Windows Authentication, unavailable-runtime behavior and
+installer execution remain pending; the release remains unpublished.
+
 ### Local release candidate verification, 2026-10-19
 
 The optimized 1.2.0 executable passed 75 application checks against each SQL Server engine,
@@ -271,9 +361,9 @@ Rust formatting, Clippy, two workspace test runs (351 core and 24 host tests), u
 contracts, frontend formatting, lint, type checking, 817 tests, documentation checks and matching
 PRD copies passed. All 64 SQL integration tests passed on each required engine. The full release
 build produced the executable and NSIS installer, and release-note extraction passed. The feature
-PR's Windows and SQL Server CI jobs passed on `4cbe00b`; the separate release PR must pass its own
-checks before merging. Installer execution, clean-machine checks and downloaded CI asset checks
-remain publication gates.
+PR's Windows and SQL Server CI jobs passed on `4cbe00b`. These local-candidate checks preceded
+the release PR, tag and downloaded-asset verification recorded above. Installer execution and
+clean-machine checks remain publication gates.
 
 ### Code capture and refresh verification, 2026-10-19
 

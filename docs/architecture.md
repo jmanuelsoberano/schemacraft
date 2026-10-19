@@ -679,6 +679,26 @@ missing; the release workflow runs it before building, and CI runs it on every p
 the version in `package.json`, so no version reaches a tag without its entry. Users read on the
 release page what changed, a new project format included, and the changes are written once.
 
+The separate `.github/workflows/verify-release.yml` checks the existing draft's downloaded
+portable executable, installer and `SHA256SUMS.txt` on a disposable `windows-2022` runner. It
+does not rebuild, replace, sign or publish release assets. The evidence identifies the release
+tag and source commit separately from the verifier commit and workflow run, and records asset
+hashes, versions and individual outcomes. `scripts/verify-release-runner.ps1` prepares a fresh
+standard local account and runs `verify-release-standard-user.ps1` with a limited token; the
+administrator controller never launches the application, installer or uninstaller itself.
+The worker checks hashes and the installer's manifest (`inspect-pe-manifest.mjs`), exercises
+the portable and installed application (`smoke-release-standard-user.mjs` and `release-cdp.mjs`),
+and verifies per-user registration, installed executable identity, uninstall completion and
+preservation of synthetic data. Every application session backs up preferences as opaque bytes
+and restores them only after confirming process termination. Reports and screenshots exclude
+profiles, preferences and credentials.
+
+This is fresh Windows Server verification, not a Windows 10/11 consumer installation. The
+report records the worker identity and token and the image's UAC setting. On an image with UAC
+disabled, success establishes operation without an administrative account or token; it does
+not establish the absence of an interactive elevation prompt on a consumer desktop. The
+publication checklist keeps these claims separate and records any remaining manual checks.
+
 ### ADR-028: SchemaCraft is free software under the AGPL-3.0-only license
 
 The project is published under the GNU Affero General Public License, version 3 only, the most
@@ -715,6 +735,15 @@ SchemaCraft runs on a growing share of Windows 11 machines, and a certificate in
 individual costs a yearly fee and a hardware token. The bootstrapper was the only third-party
 binary in the installer, and leaving the runtime to Windows also keeps the installer from
 contacting Microsoft on its own.
+
+The independent release verifier leaves installed shared runtimes in place. It records whether
+the missing-runtime case uses natural absence or a process-local empty
+`WEBVIEW2_BROWSER_EXECUTABLE_FOLDER` to make the runtime unavailable. In either case it checks
+the owned application's native bilingual explanation and exit after choosing No. The injected
+case verifies the failure path, not a machine with no runtime installed. When the hosted image
+naturally lacks the runtime, the verifier may install Microsoft's signature-checked bootstrapper
+under the standard account before the positive startup checks; that preparation belongs to the
+test environment and does not change the SchemaCraft installer or its dependency policy.
 
 ### ADR-030: The architecture page is generated from a checked model
 
@@ -802,6 +831,16 @@ services in the one job keep the required check without a change to the ruleset.
 test instead of skipping it, so the job can no longer pass without having reached a server. The
 classification is unchanged: what both runs read lives under `crates/`, and the CI definition
 counts as core.
+
+Release-asset verification is a separate workflow, not a replacement for either required CI
+check or the SQL Server 2019/2022 integration tests. It exercises already-built assets on a
+disposable Windows Server runner and reports packaging and standard-account behavior
+(ADR-027, ADR-029). `scripts/setup-windows-auth-sql.ps1` provisions an owned local SQL Server
+fixture and grants the fresh Windows account access; the application smoke script selects
+Windows Authentication and captures that fixture through the actual Rust commands. Its
+connection guard accepts only the owned local endpoint. This proves the tested local Windows
+authentication scenario, not domain membership, remote Kerberos or delegation. A missing setup
+or failed application check is not reported as a passing authentication test.
 
 ### ADR-034: Honest access: one access probe, and unknown is not none
 

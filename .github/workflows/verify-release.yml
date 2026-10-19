@@ -1,0 +1,78 @@
+name: Verify draft release on Windows
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/verify-release.yml
+      - scripts/verify-release-*.ps1
+      - scripts/smoke-release-standard-user.mjs
+      - scripts/release-cdp.mjs
+      - scripts/inspect-pe-manifest.mjs
+      - scripts/setup-windows-auth-sql.ps1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Download the existing v1.2.0 draft assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $assets = Join-Path $env:RUNNER_TEMP 'schemacraft-official-assets'
+          $results = Join-Path $env:GITHUB_WORKSPACE 'release-acceptance-results'
+          New-Item -ItemType Directory -Path $assets, $results | Out-Null
+          $releaseJson = gh release view v1.2.0 --repo $env:GITHUB_REPOSITORY --json isDraft,tagName,targetCommitish,assets,url
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read the existing draft release.' }
+          $release = $releaseJson | ConvertFrom-Json
+          if (-not $release.isDraft -or $release.tagName -ne 'v1.2.0') { throw 'The expected v1.2.0 draft was not found. Nothing will be built or published.' }
+          $releaseJson | Set-Content -LiteralPath (Join-Path $results 'draft-release.json') -Encoding UTF8
+          $tagCommit = gh api "repos/$env:GITHUB_REPOSITORY/commits/v1.2.0" --jq '.sha'
+          if ($LASTEXITCODE -ne 0 -or $tagCommit -notmatch '^[a-f0-9]{40}$') { throw 'Could not resolve the draft source tag to a commit.' }
+          $verifierCommit = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $verifierCommit -notmatch '^[a-f0-9]{40}$') { throw 'Could not identify the verification checkout.' }
+          [ordered]@{ tag = 'v1.2.0'; sourceCommit = $tagCommit; verifierCommit = $verifierCommit; workflowSha = $env:GITHUB_SHA; event = $env:GITHUB_EVENT_NAME; runId = $env:GITHUB_RUN_ID; runAttempt = $env:GITHUB_RUN_ATTEMPT; runnerImage = $env:ImageOS; runnerImageVersion = $env:ImageVersion; runUrl = ($env:GITHUB_SERVER_URL + '/' + $env:GITHUB_REPOSITORY + '/actions/runs/' + $env:GITHUB_RUN_ID) } |
+            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $results 'source-provenance.json') -Encoding UTF8
+          foreach ($name in @('schemacraft-v1.2.0-windows-x64.exe', 'schemacraft-v1.2.0-windows-x64-setup.exe', 'SHA256SUMS.txt')) {
+            if (@($release.assets | Where-Object { $_.name -eq $name }).Count -ne 1) { throw ('Missing or ambiguous draft asset: ' + $name) }
+            gh release download v1.2.0 --repo $env:GITHUB_REPOSITORY --pattern $name --dir $assets
+            if ($LASTEXITCODE -ne 0) { throw ('Could not download ' + $name) }
+          }
+          $hashes = @{}
+          foreach ($line in Get-Content -LiteralPath (Join-Path $assets 'SHA256SUMS.txt')) {
+            if ($line -match '^([a-fA-F0-9]{64})\s+\*?([^\r\n]+)$') { $hashes[$Matches[2].Trim()] = $Matches[1].ToLowerInvariant() }
+          }
+          foreach ($name in @('schemacraft-v1.2.0-windows-x64.exe', 'schemacraft-v1.2.0-windows-x64-setup.exe')) {
+            $actual = (Get-FileHash -LiteralPath (Join-Path $assets $name) -Algorithm SHA256).Hash.ToLowerInvariant()
+            if (-not $hashes.ContainsKey($name) -or $hashes[$name] -ne $actual) { throw ('Official asset checksum mismatch: ' + $name) }
+          }
+      - name: Verify standard-user install, app, Windows Authentication and uninstall
+        run: |
+          & ./scripts/verify-release-runner.ps1 `
+            -AssetsDirectory (Join-Path $env:RUNNER_TEMP 'schemacraft-official-assets') `
+            -ResultsDirectory (Join-Path $env:GITHUB_WORKSPACE 'release-acceptance-results') `
+            -SqlSetupScript (Join-Path $env:GITHUB_WORKSPACE 'scripts/setup-windows-auth-sql.ps1') `
+            -FixtureDirectory (Join-Path $env:GITHUB_WORKSPACE 'crates/schemacraft-core/tests/fixtures/sqlserver')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: draft-v1.2.0-windows-acceptance
+          path: release-acceptance-results
+          if-no-files-found: error
+          retention-days: 14

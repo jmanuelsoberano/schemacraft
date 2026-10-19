@@ -745,6 +745,35 @@
             "patterns": ["Tag-driven release", "Draft then manual publish"]
           },
           {
+            "id": "release-verification",
+            "name": "Draft-release asset verification",
+            "path": ".github/workflows/verify-release.yml, scripts/verify-release-runner.ps1, scripts/verify-release-standard-user.ps1, scripts/inspect-pe-manifest.mjs",
+            "responsibility": "Verifies downloaded draft assets on a disposable windows-2022 runner without rebuilding, signing, replacing or publishing them (ADR-027, ADR-029, ADR-033). Records release and verifier provenance, hashes, versions and outcomes. The administrator controller creates a standard account; only its limited-token worker runs the app, installer and uninstaller. Checks hashes, asInvoker manifest, per-user registration, installed executable identity, completed removal and preserved synthetic data. App sessions restore opaque preference backups after confirmed termination. Reports exclude profiles, preferences and credentials. Windows Server with UAC disabled cannot prove interactive elevation behavior on Windows 10/11. Missing WebView2 is labeled natural absence or process-local empty-runtime-folder injection; no shared runtime is removed.",
+            "patterns": [
+              "Verify unchanged release assets",
+              "Fresh standard account",
+              "Explicit environment limits"
+            ]
+          },
+          {
+            "id": "release-verification-app",
+            "name": "Standard-account release application checks",
+            "path": "scripts/smoke-release-standard-user.mjs, scripts/release-cdp.mjs",
+            "responsibility": "Exercises the downloaded and installed release binaries through CDP, with the production frontend and real Rust commands. Checks exact version, welcome, About, language/theme, reload guard and a Windows Authentication capture of the owned local fixture. A connection guard permits only that endpoint. Owns the process, confirms termination and restores preferences before success. Local Windows authentication does not establish domain, remote Kerberos or delegation behavior.",
+            "patterns": [
+              "Black-box checks of shipped binaries",
+              "Owned process lifecycle",
+              "Local endpoint allowlist"
+            ]
+          },
+          {
+            "id": "windows-auth-fixture",
+            "name": "Hosted Windows Authentication SQL fixture",
+            "path": "scripts/setup-windows-auth-sql.ps1",
+            "responsibility": "Provisions an owned local SQL Server fixture only on a disposable GitHub-hosted Windows runner and grants the fresh Windows account access. Supplies the endpoint for the real-app integrated-authentication check. Does not access external databases or replace the SQL Server 2019/2022 integration gates; a provisioning failure is not passing authentication evidence.",
+            "patterns": ["Disposable synthetic fixture", "Local Windows principal"]
+          },
+          {
             "id": "smoke-test",
             "name": "Smoke test",
             "path": "scripts/smoke-test-release.mjs",
@@ -1464,6 +1493,34 @@
         "from": "smoke-test",
         "to": "host-entry",
         "label": "CDP via SCHEMACRAFT_REMOTE_DEBUGGING_PORT",
+        "kind": "network"
+      },
+      {
+        "id": "release-verification-to-release",
+        "from": "release-verification",
+        "to": "release",
+        "label": "downloads and checks existing draft assets",
+        "kind": "file"
+      },
+      {
+        "id": "release-verification-to-release-verification-app",
+        "from": "release-verification",
+        "to": "release-verification-app",
+        "label": "runs under the fresh standard account",
+        "kind": "call"
+      },
+      {
+        "id": "release-verification-to-windows-auth-fixture",
+        "from": "release-verification",
+        "to": "windows-auth-fixture",
+        "label": "provisions only the owned local fixture",
+        "kind": "call"
+      },
+      {
+        "id": "release-verification-app-to-host-entry",
+        "from": "release-verification-app",
+        "to": "host-entry",
+        "label": "drives the existing binary through CDP",
         "kind": "network"
       },
       {
@@ -4653,6 +4710,35 @@
             "patterns": ["Publicación disparada por tag", "Borrador y publicación manual"]
           },
           {
+            "id": "release-verification",
+            "name": "Verificación de archivos del borrador de release",
+            "path": ".github/workflows/verify-release.yml, scripts/verify-release-runner.ps1, scripts/verify-release-standard-user.ps1, scripts/inspect-pe-manifest.mjs",
+            "responsibility": "Verifica archivos descargados del borrador en un runner windows-2022 desechable, sin recompilarlos, firmarlos, sustituirlos ni publicarlos (ADR-027, ADR-029, ADR-033). Registra procedencia del release y verificador, hashes, versiones y resultados. El controlador administrador crea una cuenta estándar; solo su trabajador con token limitado ejecuta la app, instalador y desinstalador. Revisa hashes, manifiesto asInvoker, registro por usuario, identidad del ejecutable instalado, eliminación completada y conservación de datos sintéticos. Cada sesión restaura respaldos opacos de preferencias tras confirmar la terminación. Los informes excluyen perfiles, preferencias y credenciales. Windows Server con UAC deshabilitado no demuestra avisos interactivos de elevación en Windows 10/11. WebView2 no disponible se identifica como ausencia natural o inyección de carpeta vacía solo para el proceso; no se elimina un runtime compartido.",
+            "patterns": [
+              "Verificar archivos sin modificar",
+              "Cuenta estándar nueva",
+              "Límites explícitos del entorno"
+            ]
+          },
+          {
+            "id": "release-verification-app",
+            "name": "Pruebas de la aplicación con cuenta estándar",
+            "path": "scripts/smoke-release-standard-user.mjs, scripts/release-cdp.mjs",
+            "responsibility": "Ejercita los binarios descargados e instalados mediante CDP, con el frontend de producción y comandos Rust reales. Revisa versión exacta, bienvenida, Acerca de, idioma/tema, bloqueo de recarga y captura con autenticación de Windows de la base local propia. Una guarda permite solo ese endpoint. Controla el proceso, confirma su terminación y restaura preferencias antes del éxito. La autenticación local no demuestra dominio, Kerberos remoto ni delegación.",
+            "patterns": [
+              "Caja negra sobre binarios entregados",
+              "Ciclo de vida del proceso propio",
+              "Lista de endpoints locales permitidos"
+            ]
+          },
+          {
+            "id": "windows-auth-fixture",
+            "name": "Base SQL para autenticación de Windows en runner",
+            "path": "scripts/setup-windows-auth-sql.ps1",
+            "responsibility": "Prepara una base sintética de SQL Server local propia solo en un runner Windows desechable de GitHub y concede acceso a la cuenta de Windows nueva. Proporciona el endpoint para la prueba de autenticación integrada en la app real. No accede a bases externas ni sustituye los controles de SQL Server 2019/2022; un fallo de preparación no cuenta como autenticación comprobada.",
+            "patterns": ["Base sintética desechable", "Identidad local de Windows"]
+          },
+          {
             "id": "smoke-test",
             "name": "Prueba de humo",
             "path": "scripts/smoke-test-release.mjs",
@@ -5379,6 +5465,34 @@
         "from": "smoke-test",
         "to": "host-entry",
         "label": "CDP con SCHEMACRAFT_REMOTE_DEBUGGING_PORT",
+        "kind": "network"
+      },
+      {
+        "id": "release-verification-to-release",
+        "from": "release-verification",
+        "to": "release",
+        "label": "descarga y verifica los archivos existentes del borrador",
+        "kind": "file"
+      },
+      {
+        "id": "release-verification-to-release-verification-app",
+        "from": "release-verification",
+        "to": "release-verification-app",
+        "label": "ejecuta con la cuenta estándar nueva",
+        "kind": "call"
+      },
+      {
+        "id": "release-verification-to-windows-auth-fixture",
+        "from": "release-verification",
+        "to": "windows-auth-fixture",
+        "label": "prepara solo la base local propia",
+        "kind": "call"
+      },
+      {
+        "id": "release-verification-app-to-host-entry",
+        "from": "release-verification-app",
+        "to": "host-entry",
+        "label": "controla el binario existente mediante CDP",
         "kind": "network"
       },
       {

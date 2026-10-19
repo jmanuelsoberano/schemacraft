@@ -132,6 +132,17 @@ and its link to `CHANGELOG.md`, merge that change into `main` through a pull req
 the merge commit `vX.Y.Z` and push the tag; the release workflow refuses a tag that is not on
 `main`. The entry goes into the notes of the draft release, and CI fails a version without one.
 
+The separate `verify-release.yml` workflow checks downloaded draft-release assets on a
+disposable Windows Server 2022 runner with a fresh standard account. It verifies hashes, the
+portable and installed application, per-user installation and removal, preserved synthetic data,
+the WebView2 failure path and local Windows Authentication against an owned SQL fixture. It
+does not rebuild or publish the release. Its reports distinguish natural runtime absence from
+an injected failure and record the UAC setting: a hosted image with UAC disabled cannot verify
+interactive elevation prompts on Windows 10/11. Local Windows Authentication does not establish
+domain or remote Kerberos behavior. See the [release checklist](docs/release-checklist.md) for
+outcomes and remaining publication checks; the provisioning scripts are restricted to disposable
+GitHub-hosted runners and must not be run on a workstation or self-hosted runner.
+
 ## Scripts
 
 | Command                                                 | Purpose                                                    |
