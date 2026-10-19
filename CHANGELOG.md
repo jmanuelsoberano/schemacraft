@@ -6,6 +6,13 @@ All notable changes to SchemaCraft are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-19
+
+Procedures, functions, triggers and view code can be inspected, saved and refreshed with explicit
+visibility states. Index and constraint state improves the diagram's relationship markers and
+rule sentences. Projects use format 3; SchemaCraft 1.1 opens them read-only. Module code stays
+out of every export, and local diagnostic logs record counts and timings without private data.
+
 ### Added
 
 - Tables and views show their triggers in the Inspector and HTML viewer, with firing events,
@@ -212,6 +219,7 @@ First release.
 - Bilingual interface (English and Spanish), light and dark themes, keyboard access throughout.
 - Portable Windows executable and per-user installer, with a WebView2 runtime check at startup.
 
-[Unreleased]: https://github.com/jmanuelsoberano/schemacraft/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/jmanuelsoberano/schemacraft/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/jmanuelsoberano/schemacraft/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/jmanuelsoberano/schemacraft/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/jmanuelsoberano/schemacraft/releases/tag/v1.0.0

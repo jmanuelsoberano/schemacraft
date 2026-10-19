@@ -5,20 +5,38 @@ the scope each version adds (section 3.8 for 1.1 and 3.9 for 1.2), what CI cover
 before a draft release is published. The automated parts run on every pull request and push to
 `main` (`ci.yml`, sized to the change, ADR-033) and on every tag (`release.yml`).
 
+## Release 1.2 preparation
+
+The feature checks and dated local release verification below are complete. On 2026-10-19 the
+maintainer reported that the Spanish interface review and release acceptance session passed:
+capability probe, diagnostic log review, capture, refresh, save, reopen and export. No private
+connection details or database contents are recorded here.
+
+The version commit follows that acceptance. After the feature PR merges, a separate release PR
+updates the package and workspace versions, both lockfiles, the dated CHANGELOG entry and this
+checklist. That PR must pass all gates, both SQL Server versions, the local release smoke test
+and the previous-reader check. Tagging and publishing follow the release PR and the by-hand
+checks; preparing a release does not itself approve a merge, tag or publication.
+
 ## Acceptance criteria
 
-| #   | Criterion (PRD section 5)                                    | How it is verified                                                                                                                                                   | 1.0.0          | 1.1.0          |
-| --- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | -------------- |
-| 1   | Connects with SQL Server and with Windows Authentication     | Integration tests in CI against SQL Server 2019 and 2022 (2022 alone up to 1.1.0) cover SQL logins; Windows Authentication was verified by hand on a local instance. | done           | done           |
-| 2   | Extracts complete schemas with keys, relationships and types | Integration tests on the fixture database check tables, views, columns, types, primary keys, foreign keys, indexes and check constraints.                            | done           | done           |
-| 3   | Hides and shows tables, isolates relational neighbourhoods   | Unit tests of the canvas state and the neighbourhood walk; checked in the real application in milestone 4.                                                           | done           | done           |
-| 4   | At least three detail levels                                 | Unit tests of the geometry and the renderer for compact, keys and full; screenshots in both themes.                                                                  | done           | done           |
-| 5   | At least two automatic layouts plus manual placement         | Unit tests of the layered, organic and radial layouts; timings in the real application (200 tables: layered 456 ms, organic 222 ms).                                 | done           | done           |
-| 6   | Saves `.scraft` and reopens it without a connection          | Rust round-trip tests of the file; save and reopen checked in the real application in milestone 3.                                                                   | done           | done           |
-| 7   | Refreshes against the database keeping the positions         | Rust integration test of the refresh with a changed fixture; reviewed diff checked in the real application.                                                          | done           | done           |
-| 8   | Exports SVG, standalone interactive HTML and single-page PDF | Rust tests of PNG and PDF rendering; renderer and viewer tests; exports of 8 and 200 tables checked in the real application in milestone 5.                          | done           | done           |
-| 9   | Ships as a portable `.exe` on Windows                        | Release build in CI; the smoke test starts the real binary and checks the welcome screen, the version in About, language and theme switching and the reload guard.   | done, unsigned | done, unsigned |
-| 10  | Bilingual, light and dark, UX definition of done per feature | Catalogue tests keep both languages in step; the smoke test switches language and theme; every feature was reviewed in both themes and languages while it was built. | done           | done           |
+For 1.2.0, "verified" means the automated checks and dated local application checks below;
+maintainer acceptance is recorded above. Windows Authentication has historical manual evidence
+only and has not been reverified separately for 1.2. Downloaded release assets and installation
+on a clean machine still require the publication checks below.
+
+| #   | Criterion (PRD section 5)                                    | How it is verified                                                                                                                                                   | 1.0.0          | 1.1.0          | 1.2.0                                                 |
+| --- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | -------------- | ----------------------------------------------------- |
+| 1   | Connects with SQL Server and with Windows Authentication     | Integration tests in CI against SQL Server 2019 and 2022 (2022 alone up to 1.1.0) cover SQL logins; Windows Authentication was verified by hand on a local instance. | done           | done           | SQL logins verified; Windows Authentication pending   |
+| 2   | Extracts complete schemas with keys, relationships and types | Integration tests on the fixture database check tables, views, columns, types, primary keys, foreign keys, indexes and check constraints.                            | done           | done           | verified                                              |
+| 3   | Hides and shows tables, isolates relational neighbourhoods   | Unit tests of the canvas state and the neighbourhood walk; checked in the real application in milestone 4.                                                           | done           | done           | verified                                              |
+| 4   | At least three detail levels                                 | Unit tests of the geometry and the renderer for compact, keys and full; screenshots in both themes.                                                                  | done           | done           | verified                                              |
+| 5   | At least two automatic layouts plus manual placement         | Unit tests of the layered, organic and radial layouts; timings in the real application (200 tables: layered 456 ms, organic 222 ms).                                 | done           | done           | verified                                              |
+| 6   | Saves `.scraft` and reopens it without a connection          | Rust round-trip tests of the file; save and reopen checked in the real application in milestone 3.                                                                   | done           | done           | verified                                              |
+| 7   | Refreshes against the database keeping the positions         | Rust integration test of the refresh with a changed fixture; reviewed diff checked in the real application.                                                          | done           | done           | verified                                              |
+| 8   | Exports SVG, standalone interactive HTML and single-page PDF | Rust tests of PNG and PDF rendering; renderer and viewer tests; exports of 8 and 200 tables checked in the real application in milestone 5.                          | done           | done           | verified                                              |
+| 9   | Ships as a portable `.exe` on Windows                        | Release build in CI; the smoke test starts the real binary and checks the welcome screen, the version in About, language and theme switching and the reload guard.   | done, unsigned | done, unsigned | local executable verified; publication checks pending |
+| 10  | Bilingual, light and dark, UX definition of done per feature | Catalogue tests keep both languages in step; the smoke test switches language and theme; every feature was reviewed in both themes and languages while it was built. | done           | done           | verified; maintainer review passed                    |
 
 ## Scope of 1.1
 
@@ -41,18 +59,23 @@ The implemented parts of PRD section 3.9 extend the same gates. Each SQL Server 
 binary runs against both 2019 and 2022; the expected major version prevents a run from silently
 testing the other container. Release publication still requires the manual checks below.
 
-| Part (PRD 3.9)                              | How it is verified                                                                                                                                                                                                                                                                                                      |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Measured capability and private diagnostics | The probe reports counts and bytes only; integration and diagnostics tests inspect successful, denied, failed and timed-out operations and reject private names, text and messages from the log.                                                                                                                        |
-| Index and constraint state                  | Core tests pin clustering, included columns, disabled/filtered indexes, trust and partitioned index keys; frontend and export tests pin the resulting rule text, badges and relationship markers.                                                                                                                       |
-| Format 3 and older readers                  | Round trips, migration chains and forward-read tests keep unknown fields and the table interpretation of 1.1; an export sentinel proves routine objects and module texts do not leave the project.                                                                                                                      |
-| Code metadata and texts                     | `sqlserver_code` reads procedures, every SQL function kind, parameters/TVPs, returned columns, view options and DML trigger events/order; assembly tests cover CLR kinds and unknown values. Tests distinguish verbatim readable, encrypted, not-visible and omitted texts.                                             |
-| Code access and scope                       | `sqlserver_permissions` pins reader, schema SELECT/EXECUTE, VIEW DEFINITION plus DENY EXECUTE and execute-only profiles on both engines. Bound schema filters, code-only schemas, views off and both code options are tested. A 2022-only persona checks USER_NAME with VIEW SECURITY DEFINITION denied.                |
-| Code failure and refresh                    | A real denial of `sys.sql_modules` leaves tables readable and saved code intact. Unit tests cover timeouts, normalization, all 14 code properties, first captures, explicit exclusions, whole-object/definition dates and repeated weaker/failing reads. A failed optional read cannot claim the project is up to date. |
-| Connection and review                       | Frontend tests cover default switches, stable schema selections after retesting, stage order, grouped counts, capture/failure lines, both languages and the Rust verdicts consumed by the review.                                                                                                                       |
-| Code extraction budget                      | The stress fixture includes 200 tables, 200 triggers, 600 procedures, 100 scalar functions, 50 inline table functions and 20 views. The integration test enforces the five-second inspection budget and reports the elapsed time and snapshot JSON bytes.                                                               |
-| Objects and module details                  | Frontend tests cover exclusive selection, document replacement and refresh removal, names with dots, grouping, 200-row pages, bounded search, palette kinds, parameters, function returns, trigger events/order and all definition states in both languages.                                                            |
-| Read-only code viewer                       | Tests cover exact source splitting, literal search and range offsets, wrap persistence, copy feedback and owned shortcuts. Real-app checks cover selection, CRLF copying, CSS highlights, Escape focus, context-menu guards, global shortcuts and large sources.                                                        |
+The 1.2.0 column records feature verification. The full local release build passed the smoke
+test on both engines, and the published 1.1.0 executable passed the older-reader check. These
+checks complement the core compatibility tests; downloaded release assets still require
+their own publication checks.
+
+| Part (PRD 3.9)                              | How it is verified                                                                                                                                                                                                                                                                                                      | 1.2.0                              |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Measured capability and private diagnostics | The probe reports counts and bytes only; integration and diagnostics tests inspect successful, denied, failed and timed-out operations and reject private names, text and messages from the log.                                                                                                                        | feature checks verified            |
+| Index and constraint state                  | Core tests pin clustering, included columns, disabled/filtered indexes, trust and partitioned index keys; frontend and export tests pin the resulting rule text, badges and relationship markers.                                                                                                                       | feature checks verified            |
+| Format 3 and older readers                  | Round trips, migration chains and forward-read tests keep unknown fields and the table interpretation of 1.1; an export sentinel proves routine objects and module texts do not leave the project.                                                                                                                      | verified with the 1.1.0 executable |
+| Code metadata and texts                     | `sqlserver_code` reads procedures, every SQL function kind, parameters/TVPs, returned columns, view options and DML trigger events/order; assembly tests cover CLR kinds and unknown values. Tests distinguish verbatim readable, encrypted, not-visible and omitted texts.                                             | feature checks verified            |
+| Code access and scope                       | `sqlserver_permissions` pins reader, schema SELECT/EXECUTE, VIEW DEFINITION plus DENY EXECUTE and execute-only profiles on both engines. Bound schema filters, code-only schemas, views off and both code options are tested. A 2022-only persona checks USER_NAME with VIEW SECURITY DEFINITION denied.                | feature checks verified            |
+| Code failure and refresh                    | A real denial of `sys.sql_modules` leaves tables readable and saved code intact. Unit tests cover timeouts, normalization, all 14 code properties, first captures, explicit exclusions, whole-object/definition dates and repeated weaker/failing reads. A failed optional read cannot claim the project is up to date. | feature checks verified            |
+| Connection and review                       | Frontend tests cover default switches, stable schema selections after retesting, stage order, grouped counts, capture/failure lines, both languages and the Rust verdicts consumed by the review.                                                                                                                       | feature checks verified            |
+| Code extraction budget                      | The stress fixture includes 200 tables, 200 triggers, 600 procedures, 100 scalar functions, 50 inline table functions and 20 views. The integration test enforces the five-second inspection budget and reports the elapsed time and snapshot JSON bytes.                                                               | debug and release verified         |
+| Objects and module details                  | Frontend tests cover exclusive selection, document replacement and refresh removal, names with dots, grouping, 200-row pages, bounded search, palette kinds, parameters, function returns, trigger events/order and all definition states in both languages.                                                            | feature checks verified            |
+| Read-only code viewer                       | Tests cover exact source splitting, literal search and range offsets, wrap persistence, copy feedback and owned shortcuts. Real-app checks cover selection, CRLF copying, CSS highlights, Escape focus, context-menu guards, global shortcuts and large sources.                                                        | feature checks verified            |
 
 Trigger export tests also pin enabled, mixed and all-disabled counts, unchanged card height,
 translated accessible descriptions, title fitting, deterministic SVG and byte-identical output
@@ -79,6 +102,9 @@ First/Last, view settings and honest unread, unknown and retained states in both
 - `SHA256SUMS.txt` and a draft GitHub release with both files.
 
 ## By hand before publishing the draft
+
+These boxes track the release artifacts and final acceptance, independently of the completed
+development-build sessions recorded below. Leave a box open until its stated check is complete.
 
 - [ ] Download the assets and check them against `SHA256SUMS.txt`.
 - [ ] Start the portable executable on a machine without SchemaCraft: the welcome screen appears.
@@ -146,6 +172,9 @@ First/Last, view settings and honest unread, unknown and retained states in both
 
 ## Known limitations of 1.2.0
 
+- Release binaries remain unsigned pending the signing workflow. SmartScreen may warn and
+  Smart App Control may block execution. Microsoft Edge WebView2 is required; it is not bundled
+  with either the portable executable or the installer.
 - SchemaCraft 1.1 opens projects saved by 1.2 read-only, without the code of views, procedures,
   functions and triggers, and cannot save or refresh them; SchemaCraft 1.0 refuses them. Keep a
   copy of a project that must still be edited in 1.1.
@@ -158,7 +187,12 @@ First/Last, view settings and honest unread, unknown and retained states in both
   agents skip it, and its scripted SQL omits NOT FOR REPLICATION. Reading it moves to 1.3.
 - Code comparison normalizes line endings, trailing spaces/tabs and empty edge lines without
   parsing SQL. The project preserves the original code, but the review is not a semantic SQL
-  comparison. Database/server DDL triggers, dependencies and descriptions are outside this scope.
+  comparison. Database/server DDL triggers, synonyms, dependencies and descriptions are outside
+  this scope.
+- Exports deliberately exclude module SQL and routine objects. HTML includes trigger metadata
+  only for visible parent tables and views; module definitions remain in the project and app.
+- The layered-layout limitation from 1.1 remains: an edge spanning several layers can pass
+  behind an intermediate table (ADR-022).
 
 ## Known limitations of 1.1.0
 
@@ -187,6 +221,58 @@ new build took 1.6 s.
 | NSIS installer                           | 4.8 MB  | 5.0 MB  |
 | Start until the window page is reachable | 0.5 s   | 0.54 s  |
 | Welcome page `DOMContentLoaded`          | 0.1 s   | 0.03 s  |
+
+### Release 1.2.0 measurements
+
+Measured on 2026-10-19 from the full optimized release build: feature source `4cbe00b` plus the
+1.2.0 manifest and lockfile changes. The executable reports 1.2.0 in About and Windows file
+metadata. These are local candidate measurements, not sizes or timings of future CI assets.
+Both startup samples are subsequent launches on the development machine, not cold starts.
+
+| Measurement                              | 1.2.0          |
+| ---------------------------------------- | -------------- |
+| Portable executable, bytes               | 12,938,240     |
+| NSIS installer, bytes                    | 5,262,398      |
+| Start until the window page is reachable | 533.1–535.4 ms |
+| Welcome page `DOMContentLoaded`          | 34.2–36.7 ms   |
+
+The stress fixture and both code options match the development measurements below. Inspection
+response time was measured in the real application from the start of the inspection request
+until its response arrived: it includes Rust and IPC transport, but excludes response parsing,
+project initialization and diagram rendering. It is not an end-to-end capture time. Diagnostic
+bytes are those added by each complete application session, not the shared daily file size.
+
+| Measurement                               | SQL Server 2022 (16.0.4305.5) | SQL Server 2019 (15.0.4500.2) |
+| ----------------------------------------- | ----------------------------- | ----------------------------- |
+| Stress inspection response                | 210.6 ms                      | 248.2 ms                      |
+| Serialized snapshot with code, bytes      | 3,156,304                     | 3,156,304                     |
+| Saved stress project, bytes               | 4,430,274                     | 4,430,274                     |
+| Diagnostic log bytes added by the session | 5,306                         | 5,308                         |
+
+### Local release candidate verification, 2026-10-19
+
+The optimized 1.2.0 executable passed 75 application checks against each SQL Server engine,
+using its embedded production frontend and real Rust commands. The sessions covered startup,
+About, the reload guard, capture, procedure parameters and source, table-function returns,
+trigger and view details, save/reopen, unchanged refresh, SVG/PDF/PNG/HTML exports, English/light,
+Spanish/dark and the full stress fixture. PDF output and application screenshots were inspected;
+the standalone HTML was opened in a separate browser and its table and trigger details checked.
+Each stress capture contained 200 tables, 20 views, 750 routines, 200 triggers and 970 readable
+definitions. Diagnostic output contained no SQL, passwords or fixture identifiers.
+
+The published 1.1.0 executable, verified against its release checksum, passed 18 checks with a
+project saved by this candidate. It opened read-only, named 1.2.0 as the writer, disabled Save
+and Refresh including their shortcuts, and exported PDF and HTML. The input project remained
+byte-identical. Every application session backed up preferences, confirmed process termination
+and restored the original preferences byte for byte.
+
+Rust formatting, Clippy, two workspace test runs (351 core and 24 host tests), unchanged generated
+contracts, frontend formatting, lint, type checking, 817 tests, documentation checks and matching
+PRD copies passed. All 64 SQL integration tests passed on each required engine. The full release
+build produced the executable and NSIS installer, and release-note extraction passed. The feature
+PR's Windows and SQL Server CI jobs passed on `4cbe00b`; the separate release PR must pass its own
+checks before merging. Installer execution, clean-machine checks and downloaded CI asset checks
+remain publication gates.
 
 ### Code capture and refresh verification, 2026-10-19
 
