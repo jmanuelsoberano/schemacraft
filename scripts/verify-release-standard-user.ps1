@@ -63,17 +63,20 @@ function MissingRuntime([string]$Executable, [bool]$InjectFailure, [string]$Pref
             if ($dialog -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 200 }
         } while ($dialog -eq [IntPtr]::Zero -and [DateTime]::UtcNow -lt $deadline)
         Check 'Missing-runtime dialog exists in the owned application process' ($dialog -ne [IntPtr]::Zero)
+        $visibility = [ReleaseNativeDialog]::ShowOwnedDialog($dialog, $process.Id)
+        $result.dialogVisibility = [ordered]@{ wasVisible = $visibility.WasVisible; isVisible = $visibility.IsVisible; className = $visibility.ClassName }
+        Check 'The owned native dialog is visible for GUI verification' $visibility.IsVisible
         $observed = [ReleaseNativeDialog]::ReadText($dialog, $process.Id)
         $text = $observed.Text
         $result.dialogText = $text
-        $result.dialogTextReader = [ordered]@{ method = 'owned-window messages and UI Automation'; automationElements = $observed.AutomationElements; automationTimedOut = $observed.AutomationTimedOut; automationError = $observed.AutomationError }
+        $result.dialogTextReader = [ordered]@{ method = 'owned-window messages and UI Automation'; automationElements = $observed.AutomationElements; rejectedProcessIds = $observed.RejectedProcessIds; zeroProcessIds = $observed.ZeroProcessIds; automationTimedOut = $observed.AutomationTimedOut; automationError = $observed.AutomationError }
         Check 'Native dialog explains the runtime requirement in English and Spanish' ($text.Contains('SchemaCraft needs the Microsoft Edge WebView2 Runtime') -and $text.Contains('SchemaCraft necesita Microsoft Edge WebView2 Runtime'))
         Check 'The owned native dialog exposes a No button' ([ReleaseNativeDialog]::ChooseNo($dialog))
         Check 'Choosing No closes the application' ($process.WaitForExit(10000))
         $process.Refresh()
         $result.terminationConfirmed = $process.HasExited
         $result.exitCode = $process.ExitCode
-        Check 'Missing-runtime application exits with failure' ($process.ExitCode -ne 0)
+        Check 'Missing-runtime application exits with failure' ($null -ne $result.exitCode -and $result.exitCode -is [int] -and $result.exitCode -ne 0)
         $result.passed = $true
     }
     finally {
@@ -152,8 +155,15 @@ using System.Windows.Automation;
 public sealed class ReleaseDialogText {
   public string Text;
   public int AutomationElements;
+  public int RejectedProcessIds;
+  public int ZeroProcessIds;
   public bool AutomationTimedOut;
   public string AutomationError;
+}
+public sealed class ReleaseDialogVisibility {
+  public bool WasVisible;
+  public bool IsVisible;
+  public string ClassName;
 }
 public static class ReleaseNativeDialog {
   delegate bool EnumProc(IntPtr window, IntPtr parameter);
@@ -161,6 +171,9 @@ public static class ReleaseNativeDialog {
   [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr parameter);
   [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr window, StringBuilder text, int count);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr window, StringBuilder text, int count);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
+  [DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr window, int command);
   [DllImport("user32.dll", CharSet=CharSet.Unicode, EntryPoint="SendMessageTimeoutW")] static extern IntPtr ReadMessage(IntPtr window, uint message, IntPtr count, StringBuilder text, uint flags, uint timeout, out IntPtr result);
   [DllImport("user32.dll")] static extern int GetDlgCtrlID(IntPtr window);
   [DllImport("user32.dll")] static extern bool PostMessage(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
@@ -184,6 +197,25 @@ public static class ReleaseNativeDialog {
     uint owner; GetWindowThreadProcessId(window, out owner);
     if (owner != (uint)process) throw new InvalidOperationException("The dialog no longer belongs to the owned application process.");
   }
+  public static ReleaseDialogVisibility ShowOwnedDialog(IntPtr dialog, int process) {
+    RequireOwner(dialog, process);
+    var className = new StringBuilder(256);
+    GetClassName(dialog, className, className.Capacity);
+    var observed = new ReleaseDialogVisibility { WasVisible = IsWindowVisible(dialog), ClassName = className.ToString() };
+    // Show only this test dialog on the disposable account's desktop, without activation.
+    // The asynchronous form avoids blocking on another process's window procedure.
+    if (!observed.WasVisible) {
+      ShowWindowAsync(dialog, 4); // SW_SHOWNOACTIVATE.
+      var timer = Stopwatch.StartNew();
+      while (!IsWindowVisible(dialog) && timer.ElapsedMilliseconds < 2000) {
+        RequireOwner(dialog, process);
+        Thread.Sleep(50);
+      }
+    }
+    RequireOwner(dialog, process);
+    observed.IsVisible = IsWindowVisible(dialog);
+    return observed;
+  }
   public static ReleaseDialogText ReadText(IntPtr dialog, int process) {
     RequireOwner(dialog, process);
     var timer = Stopwatch.StartNew();
@@ -201,13 +233,20 @@ public static class ReleaseNativeDialog {
     string automationText = null;
     string automationError = null;
     int automationElements = 0;
+    int rejectedProcessIds = 0;
+    int zeroProcessIds = 0;
     // TaskDialog content can be windowless DirectUI. Read its accessible subtree,
     // never the desktop root, on a bounded MTA thread as recommended by Microsoft.
     var reader = new Thread(() => {
       try {
         RequireOwner(dialog, process);
         var root = AutomationElement.FromHandle(dialog);
-        if (root.Current.ProcessId != process) throw new InvalidOperationException("UI Automation returned a different process.");
+        int rootProcess = root.Current.ProcessId;
+        if (rootProcess != process) {
+          rejectedProcessIds++;
+          if (rootProcess == 0) zeroProcessIds++;
+          throw new InvalidOperationException("UI Automation returned a different process.");
+        }
         var pending = new Queue<AutomationElement>(); pending.Enqueue(root);
         int discoveredElements = 1;
         var text = new StringBuilder();
@@ -216,12 +255,19 @@ public static class ReleaseNativeDialog {
           RequireOwner(dialog, process);
           var element = pending.Dequeue();
           automationElements++;
-          if (element.Current.ProcessId != process) continue;
+          int elementProcess = element.Current.ProcessId;
+          if (elementProcess != process) {
+            rejectedProcessIds++;
+            if (elementProcess == 0) zeroProcessIds++;
+            continue;
+          }
           AppendBounded(text, element.Current.Name);
           var child = walker.GetFirstChild(element);
           while (child != null && discoveredElements < 64 && timer.ElapsedMilliseconds < 5000) {
             discoveredElements++;
-            if (child.Current.ProcessId == process) pending.Enqueue(child);
+            int childProcess = child.Current.ProcessId;
+            if (childProcess == process) pending.Enqueue(child);
+            else { rejectedProcessIds++; if (childProcess == 0) zeroProcessIds++; }
             child = walker.GetNextSibling(child);
           }
         }
@@ -239,6 +285,8 @@ public static class ReleaseNativeDialog {
       AppendBounded(all, automationText);
       observed.Text = all.ToString();
       observed.AutomationElements = automationElements;
+      observed.RejectedProcessIds = rejectedProcessIds;
+      observed.ZeroProcessIds = zeroProcessIds;
       observed.AutomationError = automationError;
     }
     return observed;
