@@ -2,9 +2,11 @@ import { MousePointerClick, SquareDashedMousePointer, X } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 
-import { focusEntityNode } from "@/features/canvas/canvasFocus";
+import { focusInspectedHome } from "@/features/canvas/canvasFocus";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { useProjectStore } from "@/features/project/projectStore";
+import { describeModuleDetails, describeViewDefinition } from "@/features/schema/moduleDetails";
+import { presentModuleDetails, presentModuleDefinition } from "@/features/schema/moduleDetailsView";
 import { describeObjectDetails } from "@/features/schema/objectDetails";
 import { presentObjectDetails } from "@/features/schema/objectDetailsView";
 import type { DetailsView } from "@/features/schema/objectDetailsView";
@@ -14,8 +16,10 @@ import { IconButton } from "@/shared/ui/IconButton";
 import { classNames } from "@/shared/ui/classNames";
 
 import styles from "./InspectorPanel.module.css";
+import { DefinitionSection } from "./DefinitionSection";
 import { InspectorSection } from "./InspectorSections";
-import { inspectedKey, inspectorScope } from "./inspectorScope";
+import { ModuleSection } from "./ModuleSections";
+import { inspectedTarget, inspectorScope } from "./inspectorScope";
 
 interface InspectorPanelProps {
   /** Formatted shortcut of the toggle action, shown on the close button and in the empty state. */
@@ -30,14 +34,14 @@ interface InspectorPanelProps {
 }
 
 /**
- * The details of the selected table or view: columns, keys, indexes, `CHECK`s and relations,
+ * The details of the selected entity or module: columns, keys, indexes, `CHECK`s and relations,
  * each fact with how far the capture vouches for it and every `CHECK` and key in words, from
  * the same view-model the exported HTML draws. The panel follows the canvas selection and holds
  * no state of its own; the rule a reader points at goes to the canvas store, which highlights
  * it on the cards. It shows an empty state while nothing or several entities are selected. The
  * shell places it in a complementary landmark, never a dialog, so shortcuts keep working while
  * it is open. It takes focus when the opening asks for it, which every way in but a double-click
- * does; Escape hands focus back to the inspected card and leaves the panel open; the close
+ * does; Escape hands focus back to the object's home and leaves the panel open; the close
  * button and the toggle shortcut close it.
  */
 export function InspectorPanel({
@@ -51,12 +55,17 @@ export function InspectorPanel({
   const nodes = useProjectStore((state) => state.project?.content.canvas.nodes ?? null);
   const inspection = useProjectStore((state) => state.project?.content.inspection ?? null);
   const selectedKeys = useCanvasUiStore((state) => state.selectedKeys);
+  const selectedModule = useCanvasUiStore((state) => state.selectedModule);
   const focusRequest = useCanvasUiStore((state) => state.inspectorFocusRequest);
   const closeInspector = useCanvasUiStore((state) => state.closeInspector);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
-  const key = inspectedKey(selectedKeys);
+  const target = useMemo(
+    () => inspectedTarget(selectedKeys, selectedModule),
+    [selectedKeys, selectedModule],
+  );
+  const key = target.kind === "entity" ? target.key : null;
   const scope = useMemo(
     () =>
       snapshot === null || nodes === null || inspection === null
@@ -71,6 +80,16 @@ export function InspectorPanel({
     const details = describeObjectDetails(snapshot, key, scope);
     return details === null ? null : presentObjectDetails(details, translator);
   }, [snapshot, scope, key, translator]);
+  const moduleView = useMemo(() => {
+    if (snapshot === null || scope === null || target.kind !== "module") return null;
+    const details = describeModuleDetails(snapshot, target.ref, scope);
+    return details === null ? null : presentModuleDetails(details, translator);
+  }, [snapshot, scope, target, translator]);
+  const viewDefinition = useMemo(() => {
+    if (snapshot === null || view?.kind !== "view") return null;
+    const facts = describeViewDefinition(snapshot, view.key);
+    return facts === null ? null : presentModuleDefinition(facts, translator);
+  }, [snapshot, view, translator]);
 
   // A focus request: focus lands on the entity's heading, or on the panel's own
   // title while nothing is shown. The landmark leaves its inert state in the same render, so
@@ -93,7 +112,7 @@ export function InspectorPanel({
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape" && !event.defaultPrevented) {
       event.preventDefault();
-      focusEntityNode(key);
+      focusInspectedHome(selectedKeys, selectedModule);
     }
   };
 
@@ -134,8 +153,36 @@ export function InspectorPanel({
                 onShowAccessReport={onShowAccessReport}
               />
             ))}
+            {viewDefinition === null ? null : (
+              <DefinitionSection
+                key={`${view.key}:definition`}
+                section={viewDefinition}
+                onShowAccessReport={onShowAccessReport}
+              />
+            )}
           </>
-        ) : selectedKeys.length > 1 ? (
+        ) : moduleView !== null ? (
+          <>
+            <header className={styles.entity}>
+              <span className={styles.kind}>{moduleView.kindLabel}</span>
+              <h3 ref={headingRef} tabIndex={-1} className={styles.name}>
+                <span className={styles.schema}>{moduleView.schema}.</span>
+                {moduleView.name}
+              </h3>
+              {moduleView.notice === null ? null : (
+                <p className={styles.notice}>{moduleView.notice}</p>
+              )}
+            </header>
+            {moduleView.sections.map((section) => (
+              <ModuleSection
+                key={`${moduleView.key}:${section.kind}`}
+                section={section}
+                moduleKey={moduleView.key}
+                onShowAccessReport={onShowAccessReport}
+              />
+            ))}
+          </>
+        ) : target.kind === "multiple" ? (
           <EmptyState
             icon={SquareDashedMousePointer}
             title={tCount("inspector.multiple.title", selectedKeys.length)}

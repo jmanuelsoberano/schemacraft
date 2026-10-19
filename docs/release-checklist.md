@@ -51,6 +51,8 @@ testing the other container. Release publication still requires the manual check
 | Code failure and refresh                    | A real denial of `sys.sql_modules` leaves tables readable and saved code intact. Unit tests cover timeouts, normalization, all 14 code properties, first captures, explicit exclusions, whole-object/definition dates and repeated weaker/failing reads. A failed optional read cannot claim the project is up to date. |
 | Connection and review                       | Frontend tests cover default switches, stable schema selections after retesting, stage order, grouped counts, capture/failure lines, both languages and the Rust verdicts consumed by the review.                                                                                                                       |
 | Code extraction budget                      | The stress fixture includes 200 tables, 200 triggers, 600 procedures, 100 scalar functions, 50 inline table functions and 20 views. The integration test enforces the five-second inspection budget and reports the elapsed time and snapshot JSON bytes.                                                               |
+| Objects and module details                  | Frontend tests cover exclusive selection, document replacement and refresh removal, names with dots, grouping, 200-row pages, bounded search, palette kinds, parameters, function returns, trigger events/order and all definition states in both languages.                                                            |
+| Read-only code viewer                       | Tests cover exact source splitting, literal search and range offsets, wrap persistence, copy feedback and owned shortcuts. Real-app checks cover selection, CRLF copying, CSS highlights, Escape focus, context-menu guards, global shortcuts and large sources.                                                        |
 
 ## Automated on every tag
 
@@ -94,6 +96,11 @@ testing the other container. Release publication still requires the manual check
       afterwards. Read `SchemaCraftCode` as owner and reader in both languages and themes, with
       both code options on and off. Check the two progress stages, code-only schemas, separate
       access-report rows and saved `programmability` states; time a stress inspection.
+- [ ] In Objects and the palette, inspect a procedure, function, trigger and view, then select a
+      card and the empty canvas. Check heading focus, Escape, 200-row paging and partial-access
+      footers. Check all definition states, local find, exact-text copying and the remembered
+      wrap preference in both languages and themes. Time a search across 600 procedures and
+      scroll a synthetic 10,000-line definition in the real app.
 - [ ] Refresh a 1.1 project with code enabled: only aggregate first-capture lines appear for
       code and "Update project" is offered. Apply the code-change fixture and verify altered
       bodies, trigger state/order, view check option, a removed function and an added procedure,
@@ -194,3 +201,30 @@ login, database, object or path). Each
 session backed up preferences, confirmed that the test process had terminated and restored the
 original preferences byte for byte. This is acceptance evidence for code capture and refresh;
 the release-publication checks above remain open until the full 1.2 release is ready.
+
+### Objects and code viewer verification, 2026-10-19
+
+The 1.2 debug executable was checked in English/light and Spanish/dark against SQL Server 2022
+with owner, reader and schema-scoped VIEW DEFINITION logins. Keyboard navigation covered routine
+rows, the palette, trigger-to-parent focus, cards, the empty canvas and a hidden entity revealed
+from the palette. Parameters, scalar and table returns, view code, trigger notes, encrypted and
+unavailable code, omitted definitions and saved unverified definitions were checked. The preview
+fixture supplied CLR and a 2,000-line source through the same desktop Inspector.
+
+Local find, F3/Shift+F3, both Escape steps, code-only selection and global F1/F5/Ctrl+K/Ctrl+I
+passed. Copy code matched the stored CRLF text and trailing spaces exactly through the system
+clipboard. Context-menu and text-drag events remain available in the source surface. The wrap
+preference survived switching modules. Pages grew from 200 to 400 rows and focused the first
+new row; a broad search stayed capped at 200 with a refinement hint.
+
+After avoiding a redundant render of the old results during urgent input updates, five real
+keystrokes filtering the 600-procedure stress fixture took **45.3–68.8 ms** from keydown to two
+animation frames after the new results appeared, below the 100 ms budget. Scrolling a synthetic
+10,000-line procedure reached the last line with **13.6 ms average / 22.3 ms maximum** between
+frames (acceptance bounds: average below 20 ms and maximum below 50 ms). These are local debug
+measurements, not release-wide performance guarantees.
+
+Both final scenarios passed. Every run backed up preferences, confirmed process termination
+and restored the original bytes. Logs contained no SQL, passwords or fixture identifiers. Rust
+and SQL gates were repeated against SQL Server 2022 and 2019; frontend tests, documentation checks
+and the two matching PRD copies also passed. The publication checklist remains open.

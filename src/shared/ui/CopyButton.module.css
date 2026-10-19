@@ -1,0 +1,16 @@
+.copy {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.feedback {
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+}
+
+.copy .iconButton {
+  width: 24px;
+  height: 24px;
+}

@@ -1,5 +1,6 @@
 import type { ActionId } from "@/app/actions/action";
 import type { EntityListItem } from "@/features/schema/entities";
+import type { ModuleListItem } from "@/features/schema/modules";
 
 /** An action as the palette lists it: already translated, with its shortcut rendered. */
 export interface PaletteAction {
@@ -9,13 +10,15 @@ export interface PaletteAction {
   isAvailable: boolean;
 }
 
-/** An entity the palette can centre on. */
-export type PaletteEntity = Pick<EntityListItem, "key" | "schema" | "name" | "kind">;
+/** An inspectable object, with the parent included in a trigger's stable identity. */
+export type PaletteObject =
+  | Pick<EntityListItem, "key" | "schema" | "name" | "kind">
+  | Pick<ModuleListItem, "key" | "schema" | "name" | "kind" | "ref">;
 
 export type PaletteResult =
-  { kind: "action"; action: PaletteAction } | { kind: "entity"; entity: PaletteEntity };
+  { kind: "action"; action: PaletteAction } | { kind: "object"; object: PaletteObject };
 
-const MAX_ENTITIES = 12;
+const MAX_OBJECTS = 12;
 
 function score(text: string, query: string): number {
   const haystack = text.toLowerCase();
@@ -36,13 +39,13 @@ function score(text: string, query: string): number {
 }
 
 /**
- * Ranks actions and entities for `query`: exact and prefix matches first, then matches at the
+ * Ranks actions and objects for `query`: exact and prefix matches first, then matches at the
  * start of a word, then any substring. Without a query every available action is listed.
  */
 export function searchPalette(
   query: string,
   actions: readonly PaletteAction[],
-  entities: readonly PaletteEntity[],
+  objects: readonly PaletteObject[],
 ): PaletteResult[] {
   const needle = query.trim().toLowerCase();
   const rankedActions = actions
@@ -59,20 +62,30 @@ export function searchPalette(
     return rankedActions;
   }
 
-  const rankedEntities = entities
-    .map((entity) => ({
-      entity,
-      rank: Math.max(score(entity.name, needle), score(entity.key, needle) - 0.5),
-    }))
+  const rankedObjects = objects
+    .map((object) => {
+      const parent =
+        "ref" in object && object.ref.kind === "trigger"
+          ? `${object.ref.parent.schema}.${object.ref.parent.name}`
+          : "";
+      return {
+        object,
+        rank: Math.max(
+          score(object.name, needle),
+          score(`${object.schema}.${object.name}`, needle) - 0.5,
+          parent === "" ? 0 : score(parent, needle) - 0.5,
+        ),
+      };
+    })
     .filter((entry) => entry.rank > 0)
     .sort(
       (left, right) =>
         right.rank - left.rank ||
-        left.entity.name.length - right.entity.name.length ||
-        left.entity.key.localeCompare(right.entity.key),
+        left.object.name.length - right.object.name.length ||
+        left.object.key.localeCompare(right.object.key),
     )
-    .slice(0, MAX_ENTITIES)
-    .map((entry): PaletteResult => ({ kind: "entity", entity: entry.entity }));
+    .slice(0, MAX_OBJECTS)
+    .map((entry): PaletteResult => ({ kind: "object", object: entry.object }));
 
-  return [...rankedActions, ...rankedEntities];
+  return [...rankedActions, ...rankedObjects];
 }

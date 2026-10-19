@@ -15,6 +15,7 @@ import {
   withPositions,
 } from "@/features/canvas/canvasState";
 import { OperationError } from "@/shared/ipc/operationError";
+import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 
 const projectBackend = vi.hoisted(() => ({
   pickProjectToOpen: vi.fn<(labels: FileDialogLabels) => Promise<string | null>>(),
@@ -146,6 +147,7 @@ function writtenAs(content: ProjectContent): Promise<Project> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useCanvasUiStore.getState().clearSelection();
   preferencesBackend.rememberProject.mockResolvedValue(emptyPreferences);
   preferencesBackend.forgetProject.mockResolvedValue(emptyPreferences);
   useProjectStore.setState({
@@ -291,6 +293,43 @@ describe("opening", () => {
 });
 
 describe("changes", () => {
+  it("keeps a selected routine on refresh only while it still exists, and clears it on a new document", async () => {
+    const name = { schema: "sales", name: "usp_ReadOrders" };
+    const module = { kind: "routine" as const, name };
+    const withCode: SchemaSnapshot = {
+      ...snapshot,
+      programmability: {
+        capture: { objects: { status: "read" }, definitions: { status: "read" } },
+        views: [],
+        triggers: [],
+        routines: [
+          {
+            name,
+            kind: "procedure",
+            body: { language: "sql", definition: { status: "readable", text: "SELECT 1;" } },
+            parameters: [],
+            returns: null,
+            columns: [],
+          },
+        ],
+      },
+    };
+    useProjectStore.getState().loadFromInspection(withCode, settings, inspection);
+    useCanvasUiStore.getState().selectModule(module);
+    const content = useProjectStore.getState().project?.content;
+    if (content === undefined) throw new Error("project expected");
+    useProjectStore.getState().applyRefreshedContent(content, settings);
+    expect(useCanvasUiStore.getState().selectedModule).toEqual(module);
+    useProjectStore.getState().applyRefreshedContent({ ...content, snapshot }, settings);
+    expect(useCanvasUiStore.getState().selectedModule).toBeNull();
+    useCanvasUiStore.getState().selectModule(module);
+    useProjectStore.getState().loadFromInspection(withCode, settings, inspection);
+    expect(useCanvasUiStore.getState().selectedModule).toBeNull();
+    useCanvasUiStore.getState().selectModule(module);
+    await open(openedFile(), "C:\\work\\other.scraft");
+    expect(useCanvasUiStore.getState().selectedModule).toBeNull();
+  });
+
   it("marks the project dirty when the detail level or the content change", () => {
     useProjectStore.getState().loadFromInspection(snapshot, settings, inspection);
     useProjectStore.getState().setDetailLevel("keys");

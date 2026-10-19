@@ -222,6 +222,16 @@ function newerFormatProject(): Project {
 
 const SAMPLES = new Map<string, () => OpenedProject>([
   [
+    "C:\\Projects\\code-explorer.scraft",
+    () => ({
+      project: sampleProject(previewSnapshot("SchemaCraftCodeExplorer"), {
+        ...LOCAL_CONNECTION,
+        database: "SchemaCraftCodeExplorer",
+      }),
+      isReadOnly: false,
+    }),
+  ],
+  [
     SAMPLE_PATH,
     () => ({ project: sampleProject(previewSnapshot("Northwind")), isReadOnly: false }),
   ],

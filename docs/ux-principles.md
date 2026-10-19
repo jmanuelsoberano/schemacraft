@@ -35,8 +35,8 @@ typography, keyboard first, and the diagram occupying almost the whole window.
     use tabular figures, empty states explain the next step, and undo/redo covers every canvas
     change.
 11. **A desktop application, not a web page.** The browser never shows through: no browser
-    context menu outside text fields, no reload, print, find or zoom accelerators (F5 refreshes
-    from the database, Ctrl+P exports a PDF, Ctrl+F searches the entities), no middle-click
+    context menu outside text fields and the read-only code surface, no reload, print, find or zoom accelerators (F5 refreshes
+    from the database, Ctrl+P exports a PDF, Ctrl+F searches Objects or the focused code), no middle-click
     autoscroll. Panels resize by dragging their edge and remember their width.
 
 ## Definition of done (UX)
@@ -121,7 +121,7 @@ the reason.
 
 ### Working on the canvas
 
-The entities panel lists tables and views by schema and, inside each schema, in Tables and Views
+The Objects panel lists tables and views by schema and, inside each schema, in Tables and Views
 sections with their counts; a level that distinguishes nothing is left out (one schema, one
 kind), and schemas and sections collapse with a chevron for the session, all expanded while a
 search is active. Each entity has instant search, a column counter, a visibility toggle and
@@ -158,6 +158,39 @@ a value not available to this login or a table not visible to it carries a "Why?
 Access report, and a relationship to a table on the canvas is a link that moves the panel to it.
 The panel resizes from its edge and remembers its width; in a window too narrow for both side
 panels at their width they narrow, so the canvas and the top bar keep their room.
+
+### Reading programmable objects
+
+Procedures and Functions have their own sections under each schema in Objects. Their headers
+remain present even when a schema contains only one routine kind, and the sections start
+collapsed. Search opens matching sections temporarily and offers Show more for large result
+sets. Each routine row names its kind, parameter count and any CLR or encrypted state and opens
+its details; it has no canvas eye or center command. A separate footer explains when the code
+list may be incomplete, was not recorded, was excluded or could not be read. The command palette
+finds routines and triggers as well as tables and views; trigger results name their parent.
+
+Opening a module clears the selected cards and makes the Inspector follow that module. Choosing
+a card clears the module selection; clicking the canvas background clears both. The diagram
+continues to contain only tables and views. Procedures show Parameters and Definition; functions
+also show the returned scalar type or table columns; triggers show their parent, the statements
+that fire them, per-statement First/Last order, timing, disabled/replication state and Definition.
+Notes explain AFTER, INSTEAD OF and only the applicable TRUNCATE and bulk-import exceptions.
+Parameters show OUTPUT and READONLY without claiming that a missing default means none.
+
+View code appears after its columns in the desktop Inspector. All code surfaces distinguish
+readable, not visible, encrypted, CLR, not recorded and not read, with an icon and an explanation;
+not visible has a Why link to the Access report. A failed read says so instead of blaming the
+connection options. Kept text and kept states say when they were last checked. Unavailable text
+never appears as a blank editor. The source is read-only, with line numbers, Copy, and Wrap lines
+off by default and remembered as an interface setting. Copy preserves exactly the saved text.
+
+Ctrl+F searches inside the focused code, F3 and Shift+F3 move between literal matches, and Escape
+first closes that search. With search closed, Escape returns to the routine's Objects row or
+the trigger's parent card, falling back to Objects search if its home is not rendered. Closing
+the Inspector uses the same home. Ctrl+A selects only code when the source is focused; the find
+field keeps its usual selection behavior. Tab always leaves the source normally, its native
+selection/copy context menu remains available, and global shortcuts still work outside editable
+fields. These module pages and source text are not included in any export.
 
 ### Reading rules
 

@@ -492,6 +492,7 @@ export function previewSnapshot(
     (schema) => grantIn(login, schema).definitions,
     login.holdsFixture,
     codeFailure,
+    database === "SchemaCraftCodeExplorer",
   );
   return {
     databaseName: database,
@@ -562,7 +563,13 @@ export const previewConnectionBackend: ConnectionBackend = {
 
   async listDatabases(): Promise<string[]> {
     await wait(300);
-    return ["AdventureWorks2022", "Northwind", "SchemaCraftCode", "SchemaCraftFixture"];
+    return [
+      "AdventureWorks2022",
+      "Northwind",
+      "SchemaCraftCode",
+      "SchemaCraftCodeExplorer",
+      "SchemaCraftFixture",
+    ];
   },
 
   async describeDatabase(settings): Promise<DatabaseDescription> {

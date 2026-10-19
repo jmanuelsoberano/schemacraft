@@ -30,10 +30,10 @@ export const englishMessages = {
   "action.redo": "Redo",
   "action.commandPalette": "Command palette",
   "action.export": "Export diagram",
-  "action.toggleSidebar": "Toggle entities panel",
+  "action.toggleSidebar": "Toggle objects panel",
   "action.about": "About SchemaCraft",
   "action.exportPdf": "Export diagram as PDF",
-  "action.searchEntities": "Search entities",
+  "action.searchEntities": "Search objects",
   "action.accessReport": "Show access report",
   "action.toggleInspector": "Toggle Inspector",
   "action.detailCompact": "Detail level: Compact",
@@ -137,29 +137,56 @@ export const englishMessages = {
   "viewMode.full": "Full",
   "viewMode.full.hint": "All columns and types",
 
-  "sidebar.title": "Entities",
-  "sidebar.search": "Search tables and views",
-  "sidebar.resize": "Resize the entities panel",
+  "sidebar.title": "Objects",
+  "sidebar.search": "Search objects",
+  "sidebar.resize": "Resize the objects panel",
   "sidebar.section.tables": "Tables",
   "sidebar.section.views": "Views",
-  "sidebar.search.noMatches": 'No entities match "{query}"',
-  "sidebar.empty.title": "No entities yet",
+  "sidebar.search.noMatches": 'No objects match "{query}"',
+  "sidebar.empty.title": "No objects yet",
   "sidebar.empty.description":
-    "Connect to a database or open a .scraft project to list its tables and views here.",
-  "sidebar.empty.database.title": "No tables or views",
-  "sidebar.empty.database.description": "{database} has no tables or views yet.",
+    "Connect to a database or open a .scraft project to list its objects here.",
+  "sidebar.empty.database.title": "No objects recorded",
+  "sidebar.empty.database.description":
+    "No tables, views, procedures or functions are recorded for {database}.",
   "sidebar.empty.selection.description":
-    "The schemas and options chosen for {database} include no tables or views.",
+    "The chosen schemas and options recorded no objects from {database}.",
   "sidebar.empty.notVisible.title": "No tables or views visible to this login",
   "sidebar.empty.notVisible.description": "Others may exist in {database}.",
   "sidebar.footer.notVisible": "Other tables or views may exist that aren't visible to this login.",
+
+  "objects.section.procedures": "Procedures",
+  "objects.section.functions": "Functions",
+  "objects.section.unknown": "Other routines",
+  "objects.procedure": "Procedure",
+  "objects.function": "Function",
+  "objects.trigger": "Trigger",
+  "objects.unknown": "Routine",
+  "objects.parameters.one": "{count} parameter",
+  "objects.parameters.other": "{count} parameters",
+  "objects.encrypted": "Encrypted",
+  "objects.clr": "CLR",
+  "objects.details": "Show details of {name}",
+  "objects.showMore": "Show {count} more · {remaining} remaining",
+  "objects.search.limited":
+    "Showing the first {count} of {total} matches. Refine your search to find more.",
+  "objects.footer.partial": "Other procedures and functions may exist that this login can't see.",
+  "objects.footer.notRecorded": "Procedures and functions were not recorded in this project.",
+  "objects.footer.optionOff":
+    "Procedures and functions were not read: the connection options left them out.",
+  "objects.footer.queryFailed":
+    "Procedures and functions could not be checked because the read failed. Any saved objects are kept.",
+  "objects.footer.timedOut":
+    "Procedures and functions could not be checked before the read timed out. Any saved objects are kept.",
+  "objects.footer.unknown":
+    "The project does not record whether all procedures and functions could be checked.",
 
   "inspector.title": "Inspector",
   "inspector.resize": "Resize the Inspector panel",
   "inspector.close": "Close the Inspector",
   "inspector.empty.title": "Nothing selected",
   "inspector.empty.description":
-    "Select a table or view on the canvas to see its details here, or double-click a card or press Enter on it. {shortcut} closes this panel.",
+    "Select a table or view on the canvas, or choose an object from the Objects panel or the command palette. {shortcut} closes this panel.",
   "inspector.multiple.title.one": "{count} entity selected",
   "inspector.multiple.title.other": "{count} entities selected",
   "inspector.multiple.description": "Select only one to see its details.",
@@ -193,9 +220,10 @@ export const englishMessages = {
   "canvas.layout.running": "Laying out the diagram…",
 
   "palette.title": "Command palette",
-  "palette.placeholder": "Type a command, a table or a view…",
+  "palette.placeholder": "Type a command or an object name…",
   "palette.noResults": 'Nothing matches "{query}"',
-  "palette.centerOn": "Center on screen",
+  "palette.showDetails": "Show details",
+  "palette.onParent": "on {name}",
 
   "statusBar.notConnected": "Not connected",
   "statusBar.connected": "{target} · {database}",
@@ -683,6 +711,90 @@ export const englishMessages = {
   "review.code.property.kind": "Object kind changed",
   "review.code.failed":
     "Some code could not be read. Tables were refreshed; previously saved code is kept as not checked.",
+
+  // Desktop module Inspector; never embedded in exported HTML.
+  "module.kind.procedure": "Procedure",
+  "module.kind.function": "Function",
+  "module.kind.trigger": "Trigger",
+  "module.kind.unknown": "Programmable object",
+  "module.section.parameters": "Parameters",
+  "module.section.returns": "Returns",
+  "module.section.runs": "Runs",
+  "module.section.definition": "Definition",
+  "module.column.name": "Name",
+  "module.column.type": "Type",
+  "module.column.nullable": "Nullable",
+  "module.value.yes": "Yes",
+  "module.value.no": "No",
+  "module.parameters.empty": "No parameters",
+  "module.parameters.defaults":
+    "SQL Server keeps T-SQL parameter defaults only in the module code.",
+  "module.returns.notRecorded": "The return structure was not recorded in this project.",
+  "module.parent.go": "Go to {name}",
+  "module.parent.hidden": "Hidden on the canvas",
+  "module.parent.unknown": "Not in this project",
+  "module.badge.disabled": "Disabled",
+  "module.runs.after": "Configured to run after {event}.",
+  "module.runs.insteadOf": "Configured to run instead of {event}.",
+  "module.runs.unknown": "Configured for {event}; timing was not recorded.",
+  "module.runs.unknownEvent": "an unrecorded statement",
+  "module.runs.empty": "The statements that fire this trigger were not recorded.",
+  "module.runs.order.first": "First on {event}",
+  "module.runs.order.last": "Last on {event}",
+  "module.runs.order.unknown": "Firing order not recorded",
+  "module.runs.disabled": "This trigger is disabled and does not run.",
+  "module.runs.note.after":
+    "An AFTER trigger runs after the statement, its cascading actions and its constraint checks succeed.",
+  "module.runs.note.insteadOf":
+    "An INSTEAD OF trigger runs in place of the statement's usual action.",
+  "module.runs.note.order":
+    "First and Last apply to each statement separately. Other AFTER triggers run in no defined order.",
+  "module.runs.note.replication": "Replication agents do not fire this trigger.",
+  "module.runs.note.truncate": "TRUNCATE TABLE does not fire a DELETE trigger.",
+  "module.runs.note.bulk":
+    "BULK INSERT and bcp fire INSERT triggers only when FIRE_TRIGGERS is specified.",
+  "module.notice.notChecked":
+    "Kept from the read of {date}; this capture could not check this object.",
+  "module.definition.readable.title": "Saved SQL code",
+  "module.definition.notChecked.title": "Saved SQL code, not checked",
+  "module.definition.notChecked": "Not checked since {date}.",
+  "module.definition.notVisible.title": "Not visible to this login",
+  "module.definition.notVisible.body":
+    "This capture could not read the code with this login's permissions.",
+  "module.definition.keptNotVisible.title": "Previously not visible",
+  "module.definition.keptNotVisible.body":
+    "The code was not visible to the login used for the last checked read. This capture did not verify that state.",
+  "module.definition.encrypted.title": "Encrypted on the server",
+  "module.definition.encrypted.body":
+    "WITH ENCRYPTION: SQL Server returns this code to no login through the catalog, including the database owner.",
+  "module.definition.clr.title": "Written in .NET",
+  "module.definition.clr.body":
+    "SQL Server keeps this code in an assembly. SchemaCraft does not read assembly code.",
+  "module.definition.notRecorded.title": "Not recorded in this project",
+  "module.definition.notRecorded.body": "Refresh from the database to read the code.",
+  "module.definition.notRead.title": "Code not read",
+  "module.definition.optionOff": "The connection options left module code out of this capture.",
+  "module.definition.timedOut":
+    "The code read ran out of time. Refresh from the database to try again.",
+  "module.definition.readFailed":
+    "The code could not be read. Refresh from the database to try again.",
+  "module.view.checkOption": "Rows changed through this view must remain visible through it.",
+  "module.view.indexed": "Indexed view",
+  "module.view.indexedHint": "A unique clustered index stores this view's rows.",
+
+  // Read-only source viewer and shared clipboard feedback.
+  "codeViewer.lines.one": "{count} line",
+  "codeViewer.lines.other": "{count} lines",
+  "codeViewer.source": "SQL code, read-only",
+  "codeViewer.find": "Find in code",
+  "codeViewer.wrap": "Wrap lines",
+  "codeViewer.copy": "Copy code",
+  "codeViewer.previous": "Previous match",
+  "codeViewer.next": "Next match",
+  "codeViewer.closeFind": "Close find",
+  "codeViewer.matches": "{current} of {total}",
+  "copy.copied": "Copied",
+  "copy.failed": "Could not copy",
 
   ...englishRuleMessages,
 } as const;

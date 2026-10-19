@@ -23,6 +23,31 @@ const noReadableText = (snapshot: SchemaSnapshot) =>
   moduleDefinitions(codeOf(snapshot)).every((definition) => definition.status !== "readable");
 
 describe("code in the browser preview", () => {
+  it("offers an Inspector sample with 600 procedures, a 2,000-line body and distinct states", () => {
+    const snapshot = previewSnapshot("SchemaCraftCodeExplorer");
+    const code = codeOf(snapshot);
+    expect(
+      code.routines.filter(
+        (routine) => routine.name.schema === "sales" && routine.kind === "procedure",
+      ),
+    ).toHaveLength(600);
+    const long = code.routines.find((routine) => routine.name.name === "usp_Example001");
+    assert(long?.body.language === "sql" && long.body.definition.status === "readable");
+    expect(long.body.definition.text.split("\n")).toHaveLength(2000);
+    expect(code.routines.some((routine) => routine.body.language === "clr")).toBe(true);
+    expect(code.routines.some((routine) => routine.body.language === "unknown")).toBe(true);
+    expect(new Set(moduleDefinitions(code).map((definition) => definition.status))).toEqual(
+      new Set(["readable", "encrypted", "notVisible", "notRecorded"]),
+    );
+    expect(code.carriedOver).toHaveLength(1);
+    const off = previewSnapshot("SchemaCraftCodeExplorer", "full", {
+      ...options,
+      includeModuleDefinitions: false,
+    });
+    expect(noReadableText(off)).toBe(true);
+    expect(codeOf(off).carriedOver ?? []).toEqual([]);
+  });
+
   it("emits only requested stages with the same object and readable-text counts as the catalog", async () => {
     vi.useFakeTimers();
     const settings: ConnectionSettings = {

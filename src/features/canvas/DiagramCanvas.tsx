@@ -44,6 +44,7 @@ import {
   buildRelationEdges,
 } from "./graph";
 import type { EntityNode as EntityNodeType, RelationEdge as RelationEdgeType } from "./graph";
+import type { FocusRequest } from "./canvasUiStore";
 
 // Stable references keep React Flow from re-initialising on every render.
 const NODE_TYPES = { [ENTITY_NODE_TYPE]: EntityNode };
@@ -159,14 +160,18 @@ function FlowCanvas({ onFlowInit }: FlowCanvasProps) {
   const isCompactZoom = useCanvasUiStore((state) => state.zoom < COMPACT_ZOOM_THRESHOLD);
   const highlighted = useCanvasUiStore((state) => state.highlightedKeys);
   const focusRequest = useCanvasUiStore((state) => state.focusRequest);
+  const cancelFocusRequest = useCanvasUiStore((state) => state.cancelFocusRequest);
   const fitRequest = useCanvasUiStore((state) => state.fitRequest);
+  const deselectRequest = useCanvasUiStore((state) => state.deselectRequest);
   const setZoom = useCanvasUiStore((state) => state.setZoom);
   const setSelectedKeys = useCanvasUiStore((state) => state.setSelectedKeys);
+  const clearSelection = useCanvasUiStore((state) => state.clearSelection);
   const clearHighlights = useCanvasUiStore((state) => state.clearHighlights);
   const openContextMenu = useCanvasUiStore((state) => state.openContextMenu);
   const closeContextMenu = useCanvasUiStore((state) => state.closeContextMenu);
   const openInspector = useCanvasUiStore((state) => state.openInspector);
   const instanceRef = useRef<FlowInstance | null>(null);
+  const appliedFocusRequest = useRef<FocusRequest | null>(null);
 
   const entities = useMemo(
     () => (snapshot === null ? NO_ENTITIES : describeEntities(snapshot)),
@@ -197,6 +202,16 @@ function FlowCanvas({ onFlowInit }: FlowCanvasProps) {
   useEffect(() => {
     setEdges(derivedEdges);
   }, [derivedEdges, setEdges]);
+
+  useEffect(() => {
+    if (deselectRequest === 0) return;
+    setNodes((previous) =>
+      previous.map((node) => (node.selected ? { ...node, selected: false } : node)),
+    );
+    setEdges((previous) =>
+      previous.map((edge) => (edge.selected ? { ...edge, selected: false } : edge)),
+    );
+  }, [deselectRequest, setNodes, setEdges]);
 
   // A new document: restore its viewport or fit it, and lay out a schema just read from a
   // database. Runs after the nodes of the document reached React Flow.
@@ -237,22 +252,34 @@ function FlowCanvas({ onFlowInit }: FlowCanvasProps) {
   }, [fitRequest]);
 
   useEffect(() => {
-    const instance = instanceRef.current;
-    if (focusRequest === null || instance?.getNode(focusRequest.key) === undefined) {
+    if (focusRequest === null || appliedFocusRequest.current === focusRequest) {
       return;
     }
+    // Only a visible destination can wait for React Flow to mount. Remembering a request for
+    // a hidden or removed object would steal selection if that object appears much later.
+    if (!derivedNodes.some((node) => node.id === focusRequest.key)) {
+      cancelFocusRequest(focusRequest);
+      return;
+    }
+    if (!nodes.some((node) => node.id === focusRequest.key)) return;
+    appliedFocusRequest.current = focusRequest;
     if (focusRequest.center) {
-      void instance.fitView({
-        nodes: [{ id: focusRequest.key }],
-        duration: 300,
-        maxZoom: 1,
-        padding: 0.6,
+      // A palette choice can reveal a hidden card. Wait until React Flow has mounted it,
+      // and ignore this request if another object was selected before that frame.
+      requestAnimationFrame(() => {
+        if (useCanvasUiStore.getState().focusRequest !== focusRequest) return;
+        void instanceRef.current?.fitView({
+          nodes: [{ id: focusRequest.key }],
+          duration: 300,
+          maxZoom: 1,
+          padding: 0.6,
+        });
       });
     }
     setNodes((previous) =>
       previous.map((node) => ({ ...node, selected: node.id === focusRequest.key })),
     );
-  }, [focusRequest, setNodes]);
+  }, [cancelFocusRequest, derivedNodes, focusRequest, nodes, setNodes]);
 
   // Closing the Inspector would drop the focus it holds; the inspected card takes it back first.
   useEffect(() => returnFocusFromInspector(), []);
@@ -326,9 +353,10 @@ function FlowCanvas({ onFlowInit }: FlowCanvasProps) {
   );
 
   const handlePaneClick = useCallback(() => {
+    clearSelection();
     clearHighlights();
     closeContextMenu();
-  }, [clearHighlights, closeContextMenu]);
+  }, [clearSelection, clearHighlights, closeContextMenu]);
 
   const handleSelectionChange = useCallback<
     OnSelectionChangeFunc<EntityNodeType, RelationEdgeType>

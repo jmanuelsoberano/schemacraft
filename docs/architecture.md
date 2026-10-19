@@ -208,6 +208,11 @@ Since 1.2 `help.openLogFolder` (ADR-041) has no shortcut either: opening the log
 of a bug report, not of daily work, so it lives in the palette and in the about dialog (F1), and it
 is unavailable when the session writes no log.
 
+The module Inspector's code controls are local too (ADR-044): Find, next/previous match, Wrap
+and Copy operate on the displayed source. Opening a routine or trigger takes a `ModuleRef`, so
+it follows the same argument-taking exception as selecting a table. The shortcut listener leaves
+keys owned by the code viewer to that surface before applying global actions or browser guards.
+
 Why: labels, icons and shortcuts shown in tooltips can never disagree with what the keyboard does,
 and adding a feature means adding one action rather than touching every surface.
 
@@ -486,7 +491,10 @@ setting, like the viewport. Transient interaction state (selection, hover, zoom 
 refresh highlights, context menu, layout in progress, whether the Inspector is open and its
 request for focus, the rule the Inspector highlights) lives in `canvasUiStore` and is never
 saved; the Inspector derives what it shows from the selection and holds no state of its own
-(ADR-038, ADR-039). After a refresh,
+(ADR-038, ADR-039). Since 1.2 `selectedModule` and the node-deselection request are transient too
+(ADR-044): selecting a module clears selected entities, selecting an entity clears the module,
+and a new document or removal of the selected module clears it. No module creates a canvas node,
+saved selection or undo step. After a refresh,
 `refreshPlacement.ts` places new tables in free space next to the
 tables they reference, or in a row below the diagram, and highlights them; surviving positions
 never move.
@@ -600,11 +608,11 @@ implementation.
 
 Inside Tauri the webview's browser habits are switched off at the window, in the capture phase
 so no component can let them through: the browser context menu is suppressed everywhere except
-text fields (the diagram and the entities panel open their own), middle-click autoscroll and
+text fields and the read-only code viewer (the diagram and the Objects panel open their own), middle-click autoscroll and
 dragging images or links out of the window are prevented, and every accelerator that would
 reload, print, find, zoom, navigate history or (outside development) open the developer tools is
 swallowed, held keys included. Where the habit has an application meaning it is mapped instead:
-F5 refreshes from the database, Ctrl+P exports a PDF, Ctrl+F searches the entities, Ctrl+Shift+H
+F5 refreshes from the database, Ctrl+P exports a PDF, Ctrl+F searches Objects outside the code viewer, Ctrl+Shift+H
 shows every hidden entity and Ctrl+Shift+L repeats the last layout; Ctrl+I (the Inspector) and
 Ctrl+1 to Ctrl+3 (the detail levels) need no mapping, because WebView2 reserves neither (only
 Ctrl+Shift+I, the developer tools). Both side panels, the entities panel and the Inspector,
@@ -614,6 +622,12 @@ for both at their width, `fitSidePanels` (`app/shell/sidePanelWidths.ts`) narrow
 Inspector last and neither below its minimum, so the canvas keeps 320 px and the top bar's
 controls stay in the window; the remembered widths do not change, and the handles' widest
 width follows the room left.
+
+Since 1.2 the code viewer owns Ctrl+F, F3, Shift+F3 and source selection inside its region
+(ADR-044). Escape first closes its find field; with find closed it reaches the Inspector and
+returns focus home. The source's native context menu remains available for selecting and copying
+text, and Tab is never captured. Global actions such as Ctrl+K, Ctrl+I, F1 and F5 retain their
+usual behavior outside editable fields.
 
 Why: a reload threw the open project away and the print dialog printed the page chrome; both
 reached the user. Suppressing the defaults in one place keeps every future screen covered, and
@@ -919,6 +933,11 @@ everything is expanded and the toggles are disabled, so a match is never hidden 
 section. An absent kind omits its level the same way, and under partial coverage the single
 footer of ADR-034 stays the honest marker, so an omitted Views section never claims "none".
 
+Since 1.2 this panel is named Objects and also lists procedures and functions (ADR-044). Those
+two sections always keep their kind headers when present, even when a schema contains only one
+routine kind, and start collapsed. The existing singleton-header rule still applies to tables
+and views. Searching opens matching sections temporarily without changing their session state.
+
 On the canvas a view carries a solid VIEW label (VISTA in Spanish, key `entity.view.label`)
 between its name and the column count, the Lucide Glasses icon, the convention of SQL Server
 Management Studio, and the `--color-view` tokens, a teal (hue 195) well apart from the violet of
@@ -1007,7 +1026,7 @@ a 1.0 file, or not checked since the date it was last read (ADR-034, ADR-016); a
 when it was kept on its own before. The exported HTML viewer has had a detail panel since 1.0. Both now draw one view-model, in two modules of
 `features/schema`: `objectDetails.ts` holds the facts (`describeObjectDetails(snapshot, key,
 scope)`), the only place the details are built from the snapshot, which reads `Definition`
-through `definition.ts` (`definitionText`, `isUnknownDefinition`, the only readers of the raw
+through `definition.ts` (`definitionText`, `isUnknownDefinition`, the readers of table-expression
 statuses) and the carried facts through the scope, and `objectDetailsView.ts` the presentation
 (`presentObjectDetails(details, translator)`), every title, badge, value, empty line and
 footnote already translated. The React panel (`features/inspector`) and the vanilla viewer
@@ -1053,6 +1072,14 @@ never drops to the document. The open state and the focus request live in `canva
 The viewer takes the embedded subset of the message catalogues through the shared translator
 (ADR-007), the access verdicts and the read dates of the kept facts of the objects on the
 diagram (ADR-025), and its own catalogue is gone.
+
+Since 1.2 the same Inspector also follows a selected procedure, function or trigger (ADR-044).
+Their facts and presentation are separate modules, `moduleDetails.ts` and
+`moduleDetailsView.ts`, with `module.*` messages excluded from the embedded viewer catalogue.
+View code is appended by the desktop Inspector after the shared entity sections. Neither change
+adds source text or module pages to the HTML detail model. Escape and closing the Inspector use
+the selected object's home: an entity card, a trigger's parent card, or a routine's Objects row,
+with the Objects search field as the module fallback.
 
 Why: a second implementation of the details would drift from the first within a release, and
 the exported file is where other people read the schema, so it must say what the application
@@ -1680,8 +1707,8 @@ keeps that attempt's options and connection, without its password. Disabled code
 omitted from progress. A review with partial code coverage limits its no-change verdict to what
 the login could read even when table access is full. The access report and
 review explain code coverage, encrypted/omitted/unreadable states and failed reads; the review
-groups object changes and lists changed properties without a line diff. Object browsing and a
-code viewer are a later step. Exports continue to omit code entirely (ADR-042).
+groups object changes and lists changed properties without a line diff. ADR-044 adds object
+browsing and a code viewer. Exports continue to omit code entirely (ADR-042).
 
 Evidence: Microsoft's [metadata visibility rules](https://learn.microsoft.com/en-us/sql/relational-databases/security/metadata-visibility-configuration?view=sql-server-ver16),
 [module catalog](https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-sql-modules-transact-sql?view=sql-server-ver16),
@@ -1696,6 +1723,82 @@ Why: a partial catalog is useful only if it cannot be mistaken for a complete on
 outcomes preserve the table inspection, retained facts preserve the user's saved knowledge and
 the review separates database changes from what this attempt could establish. This adds no
 connection pool, canvas entity, stored credential, export payload or file-format version.
+
+### ADR-044: Programmable objects are inspected outside the diagram, with a local code viewer
+
+SchemaCraft 1.2 makes the captured procedures, functions and DML triggers browsable without
+adding canvas entities or changing saved layouts. `features/schema/modules.ts` owns their
+identity and lookup: a routine has its qualified name; a trigger has its parent and its name.
+An unknown stored routine kind remains unknown instead of being called a procedure. Views keep
+their existing entity identity and selection.
+
+`canvasUiStore.selectedModule` is exclusive with a nonempty entity selection. Selecting a
+module clears the entity keys and rule highlight, requests node deselection, opens the Inspector
+and optionally requests heading focus. The empty React Flow selection callback preserves that
+module, because it can be the acknowledgement of the requested deselection. An explicit pane
+click clears both. Loading a new document or removing the selected module clears the selection.
+The Inspector derives one target with entity, multiple-entity, module and empty precedence; it
+holds no parallel selection. `focusInspectedHome` returns to an entity card, a trigger's parent
+card or a routine's Objects row, falling back to the Objects search field when that module home
+is not rendered. Closing the Inspector returns focus before it becomes inert.
+
+The Objects panel keeps tables and views and adds Procedures and Functions under each schema.
+Routine sections start collapsed and always retain their kind header when present, including
+schemas containing only routines of one kind. Section state lasts for the session. Search
+temporarily opens matching groups and limits the rendered results; Show more reveals the next
+batch. Routine rows show kind, parameter count and CLR/encrypted marks and offer Show details,
+without canvas visibility controls. Triggers are found through the palette; each result names its
+parent. The palette searches names and kinds of all object types, including off-diagram routines,
+without scanning SQL bodies. Incomplete, unrecorded, omitted or failed code reads have a separate
+footer so a short list cannot claim that other routines do not exist.
+
+The desktop Inspector uses a separate fact reader (`moduleDetails.ts`) and presentation
+(`moduleDetailsView.ts`), leaving the entity/HTML model exhaustive over its existing sections.
+Procedures show Parameters then Definition; functions insert Returns; triggers show Runs then
+Definition. Parameters remain in declaration order and show OUTPUT/READONLY marks. T-SQL
+defaults are read only in the module's stored source. Scalar functions show their return type;
+table functions reuse the columns renderer for the structural result, without separate internal
+DEFAULT expressions (ADR-043). A trigger's parent is a link only when the parent can be shown.
+Runs keeps First/Last attached to each event, explains AFTER and INSTEAD OF, and marks disabled
+and NOT FOR REPLICATION states. The TRUNCATE note applies only to DELETE triggers on tables;
+the bulk-import note applies only to INSERT triggers. View Definition is appended only by the
+desktop renderer, with recorded WITH CHECK OPTION and indexed-view facts.
+
+Every definition has real state text and an icon: readable SQL, not visible to the login with
+Why to the Access report, encrypted through WITH ENCRYPTION, CLR assembly, not recorded in an
+older project, or not read with its actual option/failure/timeout reason. Unknown definitions are
+handled conservatively as not visible. Kept objects and kept definitions carry their last checked
+dates; an encrypted or unreadable state retained after a failed read also keeps its date. Missing
+text never renders an empty code editor. SQL Server returns an encrypted module's source to no
+login through the catalog, including the owner; this statement is about catalog access.
+
+`CodeViewer` is a focused, read-only `pre/code` surface with line numbers, optional wrapping,
+Copy, and literal search with next/previous matches. It introduces no editor dependency or
+syntax parser. `codeWrap` is a persisted interface setting, false by default. The source remains
+literal React text, including hostile markup, and copying uses the exact original string rather
+than line-number markup or normalized SQL. A shared CopyButton gives the same success
+and failure feedback to the source, rule SQL and access-report script.
+
+The `[data-keyboard-owner="code"]` region owns Ctrl+F, F3 and Shift+F3. Ctrl+A selects only the
+source when it is focused; the find field keeps ordinary text selection. Escape closes find
+first, then returns to the inspected object's home. Tab is unbound, the source retains its native
+context menu, and the global shortcut/browser guard consults the same ownership helper before
+handling a key. Outside the viewer Ctrl+F still searches Objects. Copy, wrapping and search never
+change the project or the stored source. No export gains SQL text or module pages.
+
+Evidence: Microsoft's [CREATE TRIGGER](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-trigger-transact-sql?view=sql-server-ver16)
+defines AFTER, INSTEAD OF, replication and TRUNCATE behavior; [sp_settriggerorder](https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sp-settriggerorder-transact-sql?view=sql-server-ver16)
+defines order per statement; [BULK INSERT](https://learn.microsoft.com/en-us/sql/t-sql/statements/bulk-insert-transact-sql?view=sql-server-ver16)
+and [bcp](https://learn.microsoft.com/en-us/sql/tools/bcp/bcp-utility?view=sql-server-ver16) define the
+FIRE_TRIGGERS requirement. Focused tests cover target precedence, parameter/return mapping,
+conditional trigger notes, definition states and retained dates using the real English and
+Spanish catalogues, plus desktop rendering and source escaping. Acceptance of the complete
+change also requires the real-app keyboard, focus, theme and language checks in the release
+checklist; unit tests alone do not establish them.
+
+Why: code is useful beside the diagram without being a diagram element. Separate module pages
+and a plain source surface keep selection, keyboard ownership and export privacy explicit while
+reusing the existing column renderer, language system and focus behavior.
 
 ## Milestones
 

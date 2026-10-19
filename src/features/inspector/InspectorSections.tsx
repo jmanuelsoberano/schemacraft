@@ -121,7 +121,7 @@ interface ColumnsTableProps {
  * Column, type and nullability per row; the badges follow the name and the default the type.
  * The columns of a rule pointed at are tinted, as they are on the canvas card.
  */
-function ColumnsTable({ section, entityKey, onShowAccessReport }: ColumnsTableProps) {
+export function ColumnsTable({ section, entityKey, onShowAccessReport }: ColumnsTableProps) {
   const ruleColumns = useCanvasUiStore((state) => state.ruleHighlight?.columns.get(entityKey));
   return (
     <table className={styles.table}>

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { CarriedFact, InspectionOptions, NodeState } from "@/shared/contracts";
 import { previewSnapshot } from "@/shared/ipc/previewConnectionBackend";
 
-import { inspectedKey, inspectorScope } from "./inspectorScope";
+import { inspectedTarget, inspectorScope } from "./inspectorScope";
 
 const EVERYTHING: InspectionOptions = {
   schemas: [],
@@ -61,10 +61,18 @@ describe("inspectorScope", () => {
   });
 });
 
-describe("inspectedKey", () => {
-  it("is the one selected entity, and nothing when none or several are selected", () => {
-    expect(inspectedKey(["sales.Orders"])).toBe("sales.Orders");
-    expect(inspectedKey([])).toBeNull();
-    expect(inspectedKey(["sales.Orders", "hr.Employees"])).toBeNull();
+describe("inspectedTarget", () => {
+  it("gives entities precedence over a module, and multiple selection its own empty state", () => {
+    const module = { kind: "routine" as const, name: { schema: "sales", name: "PlaceOrder" } };
+    expect(inspectedTarget(["sales.Orders"], module)).toEqual({
+      kind: "entity",
+      key: "sales.Orders",
+    });
+    expect(inspectedTarget(["sales.Orders", "hr.Employees"], module)).toEqual({
+      kind: "multiple",
+      count: 2,
+    });
+    expect(inspectedTarget([], module)).toEqual({ kind: "module", ref: module });
+    expect(inspectedTarget([], null)).toEqual({ kind: "none" });
   });
 });

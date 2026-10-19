@@ -24,10 +24,10 @@ export const spanishMessages: MessageCatalog = {
   "action.redo": "Rehacer",
   "action.commandPalette": "Paleta de comandos",
   "action.export": "Exportar diagrama",
-  "action.toggleSidebar": "Mostrar u ocultar el panel de entidades",
+  "action.toggleSidebar": "Mostrar u ocultar el panel de objetos",
   "action.about": "Acerca de SchemaCraft",
   "action.exportPdf": "Exportar diagrama como PDF",
-  "action.searchEntities": "Buscar entidades",
+  "action.searchEntities": "Buscar objetos",
   "action.accessReport": "Mostrar informe de acceso",
   "action.toggleInspector": "Mostrar u ocultar el Inspector",
   "action.detailCompact": "Nivel de detalle: Compacto",
@@ -133,30 +133,59 @@ export const spanishMessages: MessageCatalog = {
   "viewMode.full": "Completo",
   "viewMode.full.hint": "Todas las columnas y tipos",
 
-  "sidebar.title": "Entidades",
-  "sidebar.search": "Buscar tablas y vistas",
-  "sidebar.resize": "Cambiar el ancho del panel de entidades",
+  "sidebar.title": "Objetos",
+  "sidebar.search": "Buscar objetos",
+  "sidebar.resize": "Cambiar el ancho del panel de objetos",
   "sidebar.section.tables": "Tablas",
   "sidebar.section.views": "Vistas",
-  "sidebar.search.noMatches": 'Ninguna entidad coincide con "{query}"',
-  "sidebar.empty.title": "Aún no hay entidades",
+  "sidebar.search.noMatches": 'Ningún objeto coincide con "{query}"',
+  "sidebar.empty.title": "Aún no hay objetos",
   "sidebar.empty.description":
-    "Conéctate a una base de datos o abre un proyecto .scraft para listar aquí sus tablas y vistas.",
-  "sidebar.empty.database.title": "No hay tablas ni vistas",
-  "sidebar.empty.database.description": "{database} todavía no tiene tablas ni vistas.",
+    "Conéctate a una base de datos o abre un proyecto .scraft para listar aquí sus objetos.",
+  "sidebar.empty.database.title": "No hay objetos registrados",
+  "sidebar.empty.database.description":
+    "No hay tablas, vistas, procedimientos ni funciones registrados para {database}.",
   "sidebar.empty.selection.description":
-    "Los esquemas y opciones elegidos para {database} no incluyen tablas ni vistas.",
+    "Los esquemas y opciones elegidos no registraron objetos de {database}.",
   "sidebar.empty.notVisible.title": "Ninguna tabla ni vista visible para este inicio de sesión",
   "sidebar.empty.notVisible.description": "Puede haber otras en {database}.",
   "sidebar.footer.notVisible":
     "Puede haber otras tablas o vistas no visibles para este inicio de sesión.",
+
+  "objects.section.procedures": "Procedimientos",
+  "objects.section.functions": "Funciones",
+  "objects.section.unknown": "Otras rutinas",
+  "objects.procedure": "Procedimiento",
+  "objects.function": "Función",
+  "objects.trigger": "Desencadenador",
+  "objects.unknown": "Rutina",
+  "objects.parameters.one": "{count} parámetro",
+  "objects.parameters.other": "{count} parámetros",
+  "objects.encrypted": "Cifrado",
+  "objects.clr": "CLR",
+  "objects.details": "Mostrar detalles de {name}",
+  "objects.showMore": "Mostrar {count} más · quedan {remaining}",
+  "objects.search.limited":
+    "Se muestran las primeras {count} de {total} coincidencias. Afina la búsqueda para encontrar más.",
+  "objects.footer.partial":
+    "Puede haber otros procedimientos y funciones que este inicio de sesión no pueda ver.",
+  "objects.footer.notRecorded":
+    "Los procedimientos y funciones no se registraron en este proyecto.",
+  "objects.footer.optionOff":
+    "Los procedimientos y funciones no se leyeron: las opciones de conexión los excluyeron.",
+  "objects.footer.queryFailed":
+    "No se pudieron comprobar los procedimientos y funciones porque falló la lectura. Se conservan los objetos guardados, si los hay.",
+  "objects.footer.timedOut":
+    "No se pudieron comprobar los procedimientos y funciones antes de agotarse el tiempo de lectura. Se conservan los objetos guardados, si los hay.",
+  "objects.footer.unknown":
+    "El proyecto no registra si se pudieron comprobar todos los procedimientos y funciones.",
 
   "inspector.title": "Inspector",
   "inspector.resize": "Cambiar el ancho del panel Inspector",
   "inspector.close": "Cerrar el Inspector",
   "inspector.empty.title": "Nada seleccionado",
   "inspector.empty.description":
-    "Selecciona una tabla o vista en el lienzo para ver aquí sus detalles, o haz doble clic en una tarjeta o pulsa Intro sobre ella. {shortcut} cierra este panel.",
+    "Selecciona una tabla o vista en el lienzo, o elige un objeto en el panel Objetos o en la paleta de comandos. {shortcut} cierra este panel.",
   "inspector.multiple.title.one": "{count} entidad seleccionada",
   "inspector.multiple.title.other": "{count} entidades seleccionadas",
   "inspector.multiple.description": "Selecciona solo una para ver sus detalles.",
@@ -190,9 +219,10 @@ export const spanishMessages: MessageCatalog = {
   "canvas.layout.running": "Disponiendo el diagrama…",
 
   "palette.title": "Paleta de comandos",
-  "palette.placeholder": "Escribe un comando, una tabla o una vista…",
+  "palette.placeholder": "Escribe un comando o el nombre de un objeto…",
   "palette.noResults": 'Nada coincide con "{query}"',
-  "palette.centerOn": "Centrar en pantalla",
+  "palette.showDetails": "Mostrar detalles",
+  "palette.onParent": "en {name}",
 
   "statusBar.notConnected": "Sin conexión",
   "statusBar.connected": "{target} · {database}",
@@ -708,6 +738,92 @@ export const spanishMessages: MessageCatalog = {
   "review.code.property.kind": "Cambió el tipo de objeto",
   "review.code.failed":
     "No se pudo leer parte del código. Las tablas se leyeron; el código guardado se conserva como no comprobado.",
+
+  // Desktop module Inspector; never embedded in exported HTML.
+  "module.kind.procedure": "Procedimiento",
+  "module.kind.function": "Función",
+  "module.kind.trigger": "Desencadenador",
+  "module.kind.unknown": "Objeto programable",
+  "module.section.parameters": "Parámetros",
+  "module.section.returns": "Devuelve",
+  "module.section.runs": "Se ejecuta",
+  "module.section.definition": "Definición",
+  "module.column.name": "Nombre",
+  "module.column.type": "Tipo",
+  "module.column.nullable": "Admite nulos",
+  "module.value.yes": "Sí",
+  "module.value.no": "No",
+  "module.parameters.empty": "Sin parámetros",
+  "module.parameters.defaults":
+    "SQL Server conserva los valores predeterminados de parámetros T-SQL solo en el código del módulo.",
+  "module.returns.notRecorded": "La estructura que devuelve no se registró en este proyecto.",
+  "module.parent.go": "Ir a {name}",
+  "module.parent.hidden": "Oculto en el lienzo",
+  "module.parent.unknown": "No está en este proyecto",
+  "module.badge.disabled": "Deshabilitado",
+  "module.runs.after": "Configurado para ejecutarse después de {event}.",
+  "module.runs.insteadOf": "Configurado para ejecutarse en lugar de {event}.",
+  "module.runs.unknown": "Configurado para {event}; no se registró cuándo se ejecuta.",
+  "module.runs.unknownEvent": "una sentencia no registrada",
+  "module.runs.empty": "No se registraron las sentencias que disparan este desencadenador.",
+  "module.runs.order.first": "Primero en {event}",
+  "module.runs.order.last": "Último en {event}",
+  "module.runs.order.unknown": "Orden de ejecución no registrado",
+  "module.runs.disabled": "Este desencadenador está deshabilitado y no se ejecuta.",
+  "module.runs.note.after":
+    "Un desencadenador AFTER se ejecuta después de que la sentencia, sus acciones en cascada y sus comprobaciones de restricciones finalicen correctamente.",
+  "module.runs.note.insteadOf":
+    "Un desencadenador INSTEAD OF se ejecuta en lugar de la acción habitual de la sentencia.",
+  "module.runs.note.order":
+    "Primero y Último se aplican a cada sentencia por separado. Los demás desencadenadores AFTER se ejecutan sin un orden definido.",
+  "module.runs.note.replication": "Los agentes de replicación no disparan este desencadenador.",
+  "module.runs.note.truncate": "TRUNCATE TABLE no dispara un desencadenador DELETE.",
+  "module.runs.note.bulk":
+    "BULK INSERT y bcp disparan los desencadenadores INSERT solo cuando se especifica FIRE_TRIGGERS.",
+  "module.notice.notChecked":
+    "Conservado de la lectura del {date}; esta captura no pudo comprobar este objeto.",
+  "module.definition.readable.title": "Código SQL guardado",
+  "module.definition.notChecked.title": "Código SQL guardado, no comprobado",
+  "module.definition.notChecked": "No comprobado desde el {date}.",
+  "module.definition.notVisible.title": "No visible para este inicio de sesión",
+  "module.definition.notVisible.body":
+    "Esta captura no pudo leer el código con los permisos de este inicio de sesión.",
+  "module.definition.keptNotVisible.title": "No visible en la lectura anterior",
+  "module.definition.keptNotVisible.body":
+    "El código no era visible para el inicio de sesión de la última lectura comprobada. Esta captura no verificó ese estado.",
+  "module.definition.encrypted.title": "Cifrado en el servidor",
+  "module.definition.encrypted.body":
+    "WITH ENCRYPTION: SQL Server no devuelve este código por el catálogo a ningún inicio de sesión, incluido el propietario de la base de datos.",
+  "module.definition.clr.title": "Escrito en .NET",
+  "module.definition.clr.body":
+    "SQL Server conserva este código en un ensamblado. SchemaCraft no lee el código de los ensamblados.",
+  "module.definition.notRecorded.title": "No registrado en este proyecto",
+  "module.definition.notRecorded.body": "Actualiza desde la base de datos para leer el código.",
+  "module.definition.notRead.title": "Código no leído",
+  "module.definition.optionOff":
+    "Las opciones de conexión dejaron el código de los módulos fuera de esta captura.",
+  "module.definition.timedOut":
+    "La lectura del código agotó su tiempo. Actualiza desde la base de datos para volver a intentarlo.",
+  "module.definition.readFailed":
+    "No se pudo leer el código. Actualiza desde la base de datos para volver a intentarlo.",
+  "module.view.checkOption":
+    "Las filas modificadas a través de esta vista deben seguir siendo visibles a través de ella.",
+  "module.view.indexed": "Vista indexada",
+  "module.view.indexedHint": "Un índice agrupado único almacena las filas de esta vista.",
+
+  // Read-only source viewer and shared clipboard feedback.
+  "codeViewer.lines.one": "{count} línea",
+  "codeViewer.lines.other": "{count} líneas",
+  "codeViewer.source": "Código SQL, solo lectura",
+  "codeViewer.find": "Buscar en el código",
+  "codeViewer.wrap": "Ajustar líneas",
+  "codeViewer.copy": "Copiar código",
+  "codeViewer.previous": "Coincidencia anterior",
+  "codeViewer.next": "Coincidencia siguiente",
+  "codeViewer.closeFind": "Cerrar búsqueda",
+  "codeViewer.matches": "{current} de {total}",
+  "copy.copied": "Copiado",
+  "copy.failed": "No se pudo copiar",
 
   ...spanishRuleMessages,
 };

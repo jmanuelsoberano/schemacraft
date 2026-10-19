@@ -42,6 +42,58 @@ const isOff = (state: CaptureState) => state.status === "notRead" && state.reaso
 
 export type PreviewCodeFailure = "objects" | "definitions" | "timeout";
 
+/** A separate browser sample exercises long lists and every Inspector definition state. */
+function explorerFixture(): Programmability {
+  const code = fixture();
+  const routines: Routine[] = Array.from({ length: 600 }, (_, index) => ({
+    name: name("sales", `usp_Example${String(index + 1).padStart(3, "0")}`),
+    kind: "procedure",
+    parameters: [],
+    returns: null,
+    columns: [],
+    body: sql(
+      `CREATE PROCEDURE sales.usp_Example${String(index + 1).padStart(3, "0")} AS SELECT ${index + 1};`,
+    ),
+  }));
+  const sample = (index: number, body: ModuleBody) => {
+    const routine = routines[index];
+    if (routine !== undefined) routine.body = body;
+  };
+  sample(
+    0,
+    sql(
+      [
+        "CREATE PROCEDURE sales.usp_Example001 AS",
+        ...Array.from(
+          { length: 1999 },
+          (_, index) => `-- Detail ${index + 1}: a stored line of SQL.`,
+        ),
+      ].join("\n"),
+    ),
+  );
+  sample(1, { language: "clr" });
+  sample(2, { language: "sql", definition: { status: "notRecorded" } });
+  sample(3, { language: "unknown" });
+  sample(4, { language: "sql", definition: { status: "notVisible" } });
+  sample(5, { language: "sql", definition: { status: "encrypted" } });
+  return {
+    ...code,
+    routines: [
+      ...code.routines.filter(
+        (routine) => routine.name.schema !== "sales" || routine.kind !== "procedure",
+      ),
+      ...routines,
+    ],
+    carriedOver: [
+      {
+        object: { kind: "routine", name: name("sales", "usp_Example007") },
+        part: "definition",
+        readAt: "2026-10-18T12:00:00Z",
+      },
+    ],
+  };
+}
+
 /** Representative code.sql facts: parameters, TVP, scalar/table results, encryption and per-event order. */
 function fixture(): Programmability {
   const routine = (
@@ -217,6 +269,7 @@ export function previewProgrammability(
   canRead: (schema: string) => boolean,
   holdsFixture: boolean,
   failure?: PreviewCodeFailure,
+  explorer = false,
 ): Programmability {
   const objects = !options.includeProgrammability
     ? leftOut
@@ -233,7 +286,9 @@ export function previewProgrammability(
       : objects;
   const code =
     holdsFixture && objects.status === "read"
-      ? fixture()
+      ? explorer
+        ? explorerFixture()
+        : fixture()
       : { views: [], routines: [], triggers: [] };
   const scoped = (schema: string) =>
     options.schemas.length === 0 || options.schemas.includes(schema);
@@ -271,6 +326,12 @@ export function previewProgrammability(
     triggers: code.triggers
       .filter((trigger) => held(trigger.parent))
       .map((trigger) => ({ ...trigger, body: body(trigger.body, trigger.parent.schema) })),
+    ...("carriedOver" in code &&
+    definitions.status === "read" &&
+    scoped("sales") &&
+    canRead("sales")
+      ? { carriedOver: code.carriedOver }
+      : {}),
   };
 }
 

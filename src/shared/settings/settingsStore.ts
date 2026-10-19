@@ -34,6 +34,8 @@ interface SettingsState {
   sidebarWidth: number;
   /** Width of the Inspector in pixels, within the clamp. Whether it is open is never saved. */
   inspectorWidth: number;
+  /** Whether the read-only code viewer wraps long lines. */
+  codeWrap: boolean;
   /**
    * Signatures of the partial-access notices the user closed, most recent first. A signature
    * names the server, the database and the verdicts, so the notice returns when they change.
@@ -45,6 +47,7 @@ interface SettingsState {
   setSidebarOpen: (isOpen: boolean) => void;
   setSidebarWidth: (width: number) => void;
   setInspectorWidth: (width: number) => void;
+  setCodeWrap: (wrap: boolean) => void;
   dismissAccessNotice: (signature: string) => void;
 }
 
@@ -56,6 +59,7 @@ export type PersistedSettings = Pick<
   | "isSidebarOpen"
   | "sidebarWidth"
   | "inspectorWidth"
+  | "codeWrap"
   | "dismissedAccessNotices"
 >;
 
@@ -91,6 +95,7 @@ export function mergePersistedSettings<State extends PersistedSettings>(
     isSidebarOpen,
     sidebarWidth,
     inspectorWidth,
+    codeWrap,
     dismissedAccessNotices,
   } = stored;
   return {
@@ -101,6 +106,7 @@ export function mergePersistedSettings<State extends PersistedSettings>(
     isSidebarOpen: typeof isSidebarOpen === "boolean" ? isSidebarOpen : current.isSidebarOpen,
     sidebarWidth: storedPanelWidth(sidebarWidth, SIDEBAR_WIDTH_LIMITS),
     inspectorWidth: storedPanelWidth(inspectorWidth, INSPECTOR_WIDTH_LIMITS),
+    codeWrap: typeof codeWrap === "boolean" ? codeWrap : current.codeWrap,
     dismissedAccessNotices: Array.isArray(dismissedAccessNotices)
       ? dismissedAccessNotices
           .filter((signature): signature is string => typeof signature === "string")
@@ -122,6 +128,7 @@ export const useSettingsStore = create<SettingsState>()(
       isSidebarOpen: true,
       sidebarWidth: SIDEBAR_WIDTH_LIMITS.default,
       inspectorWidth: INSPECTOR_WIDTH_LIMITS.default,
+      codeWrap: false,
       dismissedAccessNotices: [],
       setThemePreference: (themePreference) => {
         set({ themePreference });
@@ -141,6 +148,9 @@ export const useSettingsStore = create<SettingsState>()(
       setInspectorWidth: (width) => {
         set({ inspectorWidth: clampPanelWidth(width, INSPECTOR_WIDTH_LIMITS) });
       },
+      setCodeWrap: (codeWrap) => {
+        set({ codeWrap });
+      },
       dismissAccessNotice: (signature) => {
         set((state) => ({
           dismissedAccessNotices: rememberSignature(state.dismissedAccessNotices, signature),
@@ -156,6 +166,7 @@ export const useSettingsStore = create<SettingsState>()(
         isSidebarOpen: state.isSidebarOpen,
         sidebarWidth: state.sidebarWidth,
         inspectorWidth: state.inspectorWidth,
+        codeWrap: state.codeWrap,
         dismissedAccessNotices: state.dismissedAccessNotices,
       }),
       merge: mergePersistedSettings,

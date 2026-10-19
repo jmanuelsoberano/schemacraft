@@ -34,6 +34,7 @@ const defaults = {
   isSidebarOpen: true,
   sidebarWidth: SIDEBAR_WIDTH_LIMITS.default,
   inspectorWidth: INSPECTOR_WIDTH_LIMITS.default,
+  codeWrap: false,
   dismissedAccessNotices: [] as readonly string[],
 };
 
@@ -69,6 +70,7 @@ describe("mergePersistedSettings", () => {
           isSidebarOpen: false,
           sidebarWidth: 300,
           inspectorWidth: 420,
+          codeWrap: true,
           dismissedAccessNotices: ["b", "a"],
         },
         defaults,
@@ -79,6 +81,7 @@ describe("mergePersistedSettings", () => {
       isSidebarOpen: false,
       sidebarWidth: 300,
       inspectorWidth: 420,
+      codeWrap: true,
       dismissedAccessNotices: ["b", "a"],
     });
   });
@@ -94,6 +97,7 @@ describe("mergePersistedSettings", () => {
           isSidebarOpen: "yes",
           sidebarWidth: "wide",
           inspectorWidth: "wider",
+          codeWrap: "yes",
           dismissedAccessNotices: "all",
         },
         defaults,
@@ -171,6 +175,7 @@ describe("dismissAccessNotice", () => {
       inspectorWidth: INSPECTOR_WIDTH_LIMITS.default,
     });
     expect(Object.keys(written.state ?? {}).sort()).toEqual([
+      "codeWrap",
       "dismissedAccessNotices",
       "inspectorWidth",
       "isSidebarOpen",
@@ -178,5 +183,18 @@ describe("dismissAccessNotice", () => {
       "sidebarWidth",
       "themePreference",
     ]);
+  });
+});
+
+describe("code wrap preference", () => {
+  it("starts unwrapped for old preferences and persists an explicit choice", () => {
+    expect(mergePersistedSettings({}, defaults).codeWrap).toBe(false);
+    useSettingsStore.getState().setCodeWrap(true);
+    const written = JSON.parse(storage.items.get("schemacraft.settings") ?? "{}") as {
+      state: unknown;
+    };
+    expect(mergePersistedSettings(written.state, defaults).codeWrap).toBe(true);
+    useSettingsStore.getState().setCodeWrap(false);
+    expect(useSettingsStore.getState().codeWrap).toBe(false);
   });
 });

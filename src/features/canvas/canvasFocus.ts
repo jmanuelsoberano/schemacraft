@@ -1,4 +1,9 @@
+import { entityKey } from "@/features/schema/entities";
+import { moduleKey } from "@/features/schema/modules";
+import type { ModuleRef } from "@/features/schema/modules";
+
 import { useCanvasUiStore } from "./canvasUiStore";
+import { focusEntitiesSearch } from "./entitiesSearch";
 
 /** Id of the Inspector's landmark, the panel the shell places on the other side of the canvas. */
 export const INSPECTOR_LANDMARK_ID = "inspector";
@@ -22,6 +27,29 @@ export function focusEntityNode(key: string | null): void {
   (card ?? document.querySelector<HTMLElement>(".react-flow"))?.focus();
 }
 
+/** Modules return to their row, or to the parent's card for a trigger. */
+export function focusInspectedHome(
+  selectedKeys: readonly string[],
+  module: ModuleRef | null,
+): void {
+  if (module === null) {
+    focusEntityNode(selectedKeys.length === 1 ? (selectedKeys[0] ?? null) : null);
+    return;
+  }
+  const target =
+    module.kind === "trigger"
+      ? document.querySelector<HTMLElement>(
+          `.react-flow__node[data-id="${CSS.escape(entityKey(module.parent))}"]`,
+        )
+      : document.querySelector<HTMLElement>(`[data-module-key="${CSS.escape(moduleKey(module))}"]`);
+  if (target !== null && target.closest("[inert]") === null) {
+    target.focus();
+  } else {
+    // A collapsed sidebar stays mounted but inert. Its search helper opens it before focusing.
+    focusEntitiesSearch();
+  }
+}
+
 /**
  * Keeps focus on the canvas when the Inspector closes with focus inside it, from its own close
  * button or the toggle shortcut: focus goes back to the inspected card, or to the canvas, before
@@ -30,7 +58,7 @@ export function focusEntityNode(key: string | null): void {
 export function returnFocusFromInspector(): () => void {
   return useCanvasUiStore.subscribe((state, previous) => {
     if (previous.isInspectorOpen && !state.isInspectorOpen && isFocusInsideInspector()) {
-      focusEntityNode(state.selectedKeys.length === 1 ? (state.selectedKeys[0] ?? null) : null);
+      focusInspectedHome(state.selectedKeys, state.selectedModule);
     }
   });
 }

@@ -59,6 +59,18 @@ export function moduleDefinitionsCoverage(snapshot: SchemaSnapshot): FactCoverag
   return snapshot.access?.coverage.moduleDefinitions ?? "notRecorded";
 }
 
+/** Why a routines list cannot vouch for absences, without treating a failed read as permissions. */
+export type RoutinesListNotice =
+  "partial" | "notRecorded" | "optionOff" | "queryFailed" | "timedOut" | "unknown";
+
+export function routinesListNotice(snapshot: SchemaSnapshot): RoutinesListNotice | null {
+  const capture = snapshot.programmability?.capture.objects;
+  if (capture === undefined) return "notRecorded";
+  if (capture.status === "unknown") return "unknown";
+  if (capture.status === "notRead") return capture.reason;
+  return programmabilityCoverage(snapshot) === "complete" ? null : "partial";
+}
+
 /**
  * Whether a table or view missing from the snapshot, or a count of zero, is a fact. A capture that
  * recorded partial access cannot vouch for absences; a SchemaCraft 1.0 snapshot recorded nothing
@@ -69,17 +81,21 @@ export function listsEveryObject(snapshot: SchemaSnapshot): boolean {
 }
 
 /**
- * Why a snapshot holds no table or view: the database has none, the schemas and options chosen
+ * Why a snapshot holds no listed object: the database has none, the schemas and options chosen
  * for the read leave none, or the login sees none of those that may exist.
  */
 export type EmptySchemaReason = "database" | "selection" | "notVisible";
 
-/** Why the snapshot is empty, or `null` when it holds at least one table or view. */
+/** A code-only snapshot is still an inspectable collection of objects. */
 export function emptySchemaReason(
   snapshot: SchemaSnapshot,
   inspection: InspectionOptions,
 ): EmptySchemaReason | null {
-  if (snapshot.tables.length > 0 || snapshot.views.length > 0) {
+  if (
+    snapshot.tables.length > 0 ||
+    snapshot.views.length > 0 ||
+    (snapshot.programmability?.routines.length ?? 0) > 0
+  ) {
     return null;
   }
   if (!listsEveryObject(snapshot)) {

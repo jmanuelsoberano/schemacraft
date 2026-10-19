@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import type { ModuleRef } from "@/features/schema/modules";
+
 import type { LayoutRequest } from "./layouts";
 
 /** A request to bring an entity into view, from the sidebar or the command palette. */
@@ -44,6 +46,10 @@ interface CanvasUiState {
   /** Current zoom factor, for the status bar and semantic zoom. */
   zoom: number;
   selectedKeys: readonly string[];
+  /** Exclusive selection of a procedure, function or trigger, never written to the project. */
+  selectedModule: ModuleRef | null;
+  /** Tells React Flow to drop its own node selection after selecting a module. */
+  deselectRequest: number;
   hoveredEdgeId: string | null;
   focusRequest: FocusRequest | null;
   /** Incremented whenever the whole diagram should be fitted into view. */
@@ -62,8 +68,12 @@ interface CanvasUiState {
   ruleHighlight: RuleHighlight | null;
   setZoom: (zoom: number) => void;
   setSelectedKeys: (keys: readonly string[]) => void;
+  selectModule: (module: ModuleRef, options?: InspectorOptions) => void;
+  clearSelection: () => void;
   setHoveredEdge: (edgeId: string | null) => void;
   focusEntity: (key: string, options?: FocusOptions) => void;
+  /** Drops a request only if it is still current, so stale canvas work cannot cancel a newer one. */
+  cancelFocusRequest: (request: FocusRequest) => void;
   requestFit: () => void;
   highlightEntities: (keys: readonly string[]) => void;
   clearHighlights: () => void;
@@ -95,6 +105,8 @@ function sameKeys(left: readonly string[], right: readonly string[]): boolean {
 export const useCanvasUiStore = create<CanvasUiState>()((set, get) => ({
   zoom: 1,
   selectedKeys: [],
+  selectedModule: null,
+  deselectRequest: 0,
   hoveredEdgeId: null,
   focusRequest: null,
   fitRequest: 0,
@@ -109,9 +121,39 @@ export const useCanvasUiStore = create<CanvasUiState>()((set, get) => ({
     set({ zoom });
   },
   setSelectedKeys: (keys) => {
-    set((state) =>
-      sameKeys(state.selectedKeys, keys) ? {} : { selectedKeys: keys, ruleHighlight: null },
-    );
+    set((state) => {
+      const selectedModule = keys.length > 0 ? null : state.selectedModule;
+      const focusRequest =
+        keys.length > 0 && (keys.length !== 1 || keys[0] !== state.focusRequest?.key)
+          ? null
+          : state.focusRequest;
+      return sameKeys(state.selectedKeys, keys) &&
+        selectedModule === state.selectedModule &&
+        focusRequest === state.focusRequest
+        ? {}
+        : { selectedKeys: keys, selectedModule, focusRequest, ruleHighlight: null };
+    });
+  },
+  selectModule: (selectedModule, { focus = false } = {}) => {
+    set((state) => ({
+      selectedModule,
+      selectedKeys: [],
+      deselectRequest: state.deselectRequest + 1,
+      focusRequest: null,
+      ruleHighlight: null,
+      contextMenu: null,
+      isInspectorOpen: true,
+      inspectorFocusRequest: focus ? state.inspectorFocusRequest + 1 : state.inspectorFocusRequest,
+    }));
+  },
+  clearSelection: () => {
+    set((state) => ({
+      selectedKeys: [],
+      selectedModule: null,
+      ruleHighlight: null,
+      focusRequest: null,
+      deselectRequest: state.deselectRequest + 1,
+    }));
   },
   setHoveredEdge: (edgeId) => {
     set({ hoveredEdgeId: edgeId });
@@ -119,7 +161,12 @@ export const useCanvasUiStore = create<CanvasUiState>()((set, get) => ({
   focusEntity: (key, { center = true } = {}) => {
     set((state) => ({
       focusRequest: { key, center, nonce: (state.focusRequest?.nonce ?? 0) + 1 },
+      selectedModule: null,
+      ruleHighlight: null,
     }));
+  },
+  cancelFocusRequest: (request) => {
+    set((state) => (state.focusRequest === request ? { focusRequest: null } : {}));
   },
   requestFit: () => {
     set((state) => ({ fitRequest: state.fitRequest + 1 }));

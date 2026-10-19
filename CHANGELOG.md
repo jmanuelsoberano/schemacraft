@@ -8,6 +8,13 @@ All notable changes to SchemaCraft are documented here. The format follows
 
 ### Added
 
+- The Objects panel lists procedures and functions in collapsed sections with pages of 200.
+  Search and the command palette reach their details, including triggers and their parent
+  tables or views. The Inspector shows parameters, return structures, firing conditions and
+  view code, with explicit states for encrypted, unavailable, omitted and previously saved code.
+- A read-only SQL viewer with line numbers, exact-text copying, a remembered wrap preference
+  (off initially), and local find with Ctrl+F, F3 and Shift+F3. Escape leaves the find bar before
+  returning to the object; Ctrl+A selects only the source. Module code stays out of exports.
 - Read procedures, functions, DML triggers and view code with separate options to read the
   objects and to save their SQL texts, both on by default. The schema picker also offers schemas
   containing only visible procedures or functions. The access report separates code visibility

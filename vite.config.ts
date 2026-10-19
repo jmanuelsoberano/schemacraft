@@ -114,6 +114,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
+    // Source-inventory guards must rediscover newly added files on every run. A persisted
+    // glob transform can otherwise keep an old file list and silently miss a new dependency.
+    fsModuleCache: false,
     // A stylesheet imported as text (`?raw`) reaches the tests whole; vitest blanks CSS otherwise.
     css: { include: [/\?raw$/u] },
   },
