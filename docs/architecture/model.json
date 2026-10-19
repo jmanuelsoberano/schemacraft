@@ -51,7 +51,7 @@
       "preferencesBackend.ts",
       "projectBackend.ts"
     ],
-    "adrCount": 44
+    "adrCount": 45
   },
   "en": {
     "overview": {
@@ -717,8 +717,8 @@
       {
         "id": "delivery",
         "name": "Delivery",
-        "summary": "Pinned toolchains, CI gates, the release workflow, the smoke test of the real binary, the developer scripts, the capability probe and the check that keeps this page in step.",
-        "path": ".github/workflows, scripts, crates/schemacraft-core/tests, crates/schemacraft-core/probes, docs/architecture",
+        "summary": "Pinned toolchains, CI gates, independent direct-download and Store packaging workflows, the smoke test of the real binary, the developer scripts, the capability probe and the check that keeps this page in step.",
+        "path": ".github/workflows, scripts, distribution, crates/schemacraft-core/tests, crates/schemacraft-core/probes, docs/architecture",
         "technologies": [
           "GitHub Actions",
           "windows-latest",
@@ -727,7 +727,8 @@
           "Chrome DevTools Protocol",
           "Docker (local SQL Server)",
           "wawoff2",
-          "GitHub Pages"
+          "GitHub Pages",
+          "Windows SDK MakeAppx"
         ],
         "components": [
           {
@@ -743,6 +744,17 @@
             "path": ".github/workflows/release.yml",
             "responsibility": "On a v* tag, without caches: checks that the tag is on main and matches package.json and Cargo.toml and that CHANGELOG.md has its entry, runs the gates, builds the exe and the NSIS installer with the full release profile, installs WebView2 when missing, runs the smoke test (screenshots uploaded), writes SHA256SUMS.txt and creates a draft GitHub release whose notes end with that entry, after what SchemaCraft is, the assets and the code signing policy (ADR-027).",
             "patterns": ["Tag-driven release", "Draft then manual publish"]
+          },
+          {
+            "id": "microsoft-store-packaging",
+            "name": "Microsoft Store packaging",
+            "path": "distribution/microsoft-store/package.mjs, .github/workflows/microsoft-store.yml, scripts/check-distribution.mjs, docs/microsoft-store.md",
+            "responsibility": "External distribution adapter (ADR-045): verifies the SHA-256 checksum of a published release executable and wraps the same bytes with MakeAppx as packagedClassicApp/mediumIL, x64, Windows 10 build 19041 or later, with runFullTrust only. Real Partner Center identity is required for a production package; test identities do not establish Store acceptance. The portable and current-user NSIS release remain independent of Store accounts, identity and certificates. check-distribution.mjs guards their base configuration and the absence of Store imports in product code. The project format, Tauri identifier and credential service stay unchanged; AppData virtualization means shared preferences or automatic migration are not promised. Evergreen WebView2 remains a prerequisite. Package validation, installation, update, uninstall and a Store flight with the real identity are separate publication gates, not implied by static checks.",
+            "patterns": [
+              "Distribution adapter outside the product",
+              "Same executable, verified by hash",
+              "Independent channels (ADR-045)"
+            ]
           },
           {
             "id": "smoke-test",
@@ -3667,7 +3679,7 @@
         "The page carries one manifest, at the top level of model.json and shared by both languages. CI checks it against the code with scripts/check-architecture-page.mjs (npm run docs:check).",
         "New command: add it to manifest.commands and to the commands table in both languages.",
         "New feature folder, core module or IPC backend: add it to the manifest, the layer list and the diagram edges.",
-        "New decision: add an ADR (ADR-044 is next), raise manifest.adrCount and link the ADR from the pattern or recipe it changes.",
+        "New decision: add an ADR (ADR-046 is next), raise manifest.adrCount and link the ADR from the pattern or recipe it changes.",
         "Scope change: update both PRD copies (docs/ and 02_Docs/), add a dated line to section 6, commit as docs(prd), only with the user's approval.",
         "Fixed deviation: mark it fixed in the same PR. New known deviation: add it with a severity and status open.",
         "New data store or localStorage key: add a row to the data table.",
@@ -4625,8 +4637,8 @@
       {
         "id": "delivery",
         "name": "Entrega",
-        "summary": "Toolchain fija, controles de CI, el workflow de release, la prueba de humo del binario real, los scripts de desarrollo, el sondeo de capacidades y la revisión que mantiene esta página al día.",
-        "path": ".github/workflows, scripts, crates/schemacraft-core/tests, crates/schemacraft-core/probes, docs/architecture",
+        "summary": "Toolchain fija, controles de CI, workflows independientes de descarga directa y empaquetado para Store, la prueba de humo del binario real, los scripts de desarrollo, el sondeo de capacidades y la revisión que mantiene esta página al día.",
+        "path": ".github/workflows, scripts, distribution, crates/schemacraft-core/tests, crates/schemacraft-core/probes, docs/architecture",
         "technologies": [
           "GitHub Actions",
           "windows-latest",
@@ -4635,7 +4647,8 @@
           "Chrome DevTools Protocol",
           "Docker (SQL Server local)",
           "wawoff2",
-          "GitHub Pages"
+          "GitHub Pages",
+          "Windows SDK MakeAppx"
         ],
         "components": [
           {
@@ -4651,6 +4664,17 @@
             "path": ".github/workflows/release.yml",
             "responsibility": "Con un tag v* y sin cachés: revisa que el tag esté en main y coincida con package.json y Cargo.toml y que CHANGELOG.md tenga su entrada, corre los controles, compila el exe y el instalador NSIS con el perfil release completo, instala WebView2 si falta, corre la prueba de humo (sube las capturas), escribe SHA256SUMS.txt y crea un borrador de release en GitHub cuyas notas terminan con esa entrada, después de qué es SchemaCraft, los archivos y la política de firma de código (ADR-027).",
             "patterns": ["Publicación disparada por tag", "Borrador y publicación manual"]
+          },
+          {
+            "id": "microsoft-store-packaging",
+            "name": "Empaquetado para Microsoft Store",
+            "path": "distribution/microsoft-store/package.mjs, .github/workflows/microsoft-store.yml, scripts/check-distribution.mjs, docs/microsoft-store.md",
+            "responsibility": "Adaptador externo de distribución (ADR-045): verifica el SHA-256 del ejecutable de una versión publicada y empaqueta los mismos bytes con MakeAppx como packagedClassicApp/mediumIL, x64, Windows 10 build 19041 o posterior, solo con runFullTrust. Un paquete de producción exige la identidad real de Partner Center; las identidades de prueba no demuestran aceptación en Store. La publicación del portable y del NSIS para el usuario actual sigue independiente de cuentas, identidad y certificados de Store. check-distribution.mjs protege su configuración base y la ausencia de imports de Store en el producto. El formato del proyecto, el identificador Tauri y el servicio de credenciales no cambian; la virtualización de AppData impide prometer preferencias compartidas o migración automática. Evergreen WebView2 sigue siendo un requisito. Validar el paquete, instalar, actualizar, desinstalar y probar una distribución de Store con la identidad real son requisitos de publicación separados, no conclusiones de los controles estáticos.",
+            "patterns": [
+              "Adaptador de distribución fuera del producto",
+              "Mismo ejecutable, verificado por hash",
+              "Canales independientes (ADR-045)"
+            ]
           },
           {
             "id": "smoke-test",
@@ -7582,7 +7606,7 @@
         "La página lleva un solo manifiesto, en el nivel superior de model.json y compartido por ambos idiomas. CI lo compara con el código con scripts/check-architecture-page.mjs (npm run docs:check).",
         "Comando nuevo: agrégalo a manifest.commands y a la tabla de comandos en ambos idiomas.",
         "Carpeta de funcionalidad, módulo del core o backend IPC nuevo: agrégalo al manifiesto, a la lista de capas y a las aristas del diagrama.",
-        "Decisión nueva: agrega un ADR (el siguiente es ADR-044), sube manifest.adrCount y enlaza el ADR desde el patrón o la receta que cambia.",
+        "Decisión nueva: agrega un ADR (el siguiente es ADR-046), sube manifest.adrCount y enlaza el ADR desde el patrón o la receta que cambia.",
         "Cambio de alcance: actualiza ambas copias del PRD (docs/ y 02_Docs/), agrega una línea fechada en la sección 6 y haz commit como docs(prd), solo con aprobación del usuario.",
         "Desviación corregida: márcala como corregida en el mismo PR. Desviación conocida nueva: agrégala con su severidad y estado open.",
         "Almacén de datos o clave de localStorage nueva: agrega una fila a la tabla de datos.",
