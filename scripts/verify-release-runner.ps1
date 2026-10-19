@@ -150,9 +150,30 @@ public static class ReleaseBatchRights {
     }
     [DllImport("advapi32.dll")] static extern uint LsaOpenPolicy(IntPtr system, ref ObjectAttributes attributes, uint access, out IntPtr policy);
     [DllImport("advapi32.dll")] static extern uint LsaEnumerateAccountRights(IntPtr policy, byte[] sid, out IntPtr rights, out uint count);
+    [DllImport("advapi32.dll")] static extern uint LsaAddAccountRights(IntPtr policy, byte[] sid, ref UnicodeString right, uint count);
     [DllImport("advapi32.dll")] static extern uint LsaNtStatusToWinError(uint status);
     [DllImport("advapi32.dll")] static extern uint LsaFreeMemory(IntPtr memory);
     [DllImport("advapi32.dll")] static extern uint LsaClose(IntPtr policy);
+    public static void GrantBatchLogon(string accountSid) {
+        const string name = "SeBatchLogonRight";
+        var attributes = new ObjectAttributes { Length = (uint)Marshal.SizeOf(typeof(ObjectAttributes)) };
+        IntPtr policy;
+        // A fresh SID may not yet have an LSA policy account: LOOKUP_NAMES | CREATE_ACCOUNT.
+        uint status = LsaOpenPolicy(IntPtr.Zero, ref attributes, 0x00000810, out policy);
+        if (status != 0) throw new Win32Exception((int)LsaNtStatusToWinError(status));
+        IntPtr buffer = IntPtr.Zero;
+        try {
+            var sid = new SecurityIdentifier(accountSid);
+            var bytes = new byte[sid.BinaryLength]; sid.GetBinaryForm(bytes, 0);
+            buffer = Marshal.StringToHGlobalUni(name);
+            var right = new UnicodeString { Length = (ushort)(name.Length * 2), MaximumLength = (ushort)((name.Length + 1) * 2), Buffer = buffer };
+            status = LsaAddAccountRights(policy, bytes, ref right, 1);
+            if (status != 0) throw new Win32Exception((int)LsaNtStatusToWinError(status));
+        } finally {
+            if (buffer != IntPtr.Zero) Marshal.FreeHGlobal(buffer);
+            LsaClose(policy);
+        }
+    }
     public static string[] Read(string accountSid) {
         var attributes = new ObjectAttributes { Length = (uint)Marshal.SizeOf(typeof(ObjectAttributes)) };
         IntPtr policy;
@@ -194,6 +215,20 @@ public static class ReleaseBatchRights {
         settings = [ordered]@{ enabled = [bool]$effectiveTask.Settings.Enabled; allowDemandStart = [bool]$effectiveTask.Settings.AllowDemandStart; runOnlyIfIdle = [bool]$effectiveTask.Settings.RunOnlyIfIdle; runOnlyIfNetworkAvailable = [bool]$effectiveTask.Settings.RunOnlyIfNetworkAvailable; disallowStartIfOnBatteries = [bool]$effectiveTask.Settings.DisallowStartIfOnBatteries; stopIfGoingOnBatteries = [bool]$effectiveTask.Settings.StopIfGoingOnBatteries; startWhenAvailable = [bool]$effectiveTask.Settings.StartWhenAvailable; multipleInstances = [string]$effectiveTask.Settings.MultipleInstances; executionTimeLimit = [string]$effectiveTask.Settings.ExecutionTimeLimit; compatibility = [string]$effectiveTask.Settings.Compatibility }
     }
     $report.batchLogonRightsAfterRegistration = @(Read-BatchLogonRights $standardSid)
+    # Hosted run 39324218555 proved that registration left this right absent (event 101, 0x80070569).
+    # Provision only the freshly created account; no groups, deny rules, or task run level change.
+    if (-not $created -or $userName -notmatch '^scverify[0-9a-f]{12}$' -or (Get-LocalUser -SID $account.SID).Name -ne $userName -or $account.SID.Value -ne $standardSid) { throw 'Batch-logon provisioning requires the exact newly created acceptance account.' }
+    if (@($report.batchLogonRightsAfterRegistration | Where-Object { $_.denyBatch }).Count -gt 0) { throw 'A relevant batch-logon deny assignment exists; it must not be overridden by this verifier.' }
+    $directBatchRights = @([ReleaseBatchRights]::Read($standardSid))
+    $report.batchLogonProvisioning = [ordered]@{ sid = $standardSid; right = 'SeBatchLogonRight'; changed = $false; verified = $false; reason = 'Task Scheduler Password logon requires this right for the isolated standard account.'; evidenceRunId = '39324218555'; evidenceEventId = 101; evidenceErrorCode = '0x80070569' }
+    if ($directBatchRights -notcontains 'SeBatchLogonRight') {
+        [ReleaseBatchRights]::GrantBatchLogon($standardSid)
+        $report.batchLogonProvisioning.changed = $true
+    }
+    $report.batchLogonRightsAfterProvisioning = @(Read-BatchLogonRights $standardSid)
+    $directBatchRights = @([ReleaseBatchRights]::Read($standardSid))
+    if ($directBatchRights -notcontains 'SeBatchLogonRight' -or $directBatchRights -contains 'SeDenyBatchLogonRight') { throw 'The newly created account does not have the required direct batch-logon right.' }
+    $report.batchLogonProvisioning.verified = $true
     $requestedAt = [DateTime]::UtcNow
     $report.taskStartRequestedUtc = $requestedAt.ToString('o')
     Start-ScheduledTask -TaskName $taskName
@@ -237,34 +272,50 @@ finally {
         catch { $report.taskStatusError = $_.Exception.Message }
         try { $report.taskEvents = @(Read-OwnedTaskEvents) }
         catch { $report.taskEventsError = $_.Exception.Message }
-        if ((Get-ScheduledTask -TaskName $taskName).State -in @('Running', 'Queued')) {
-            Stop-ScheduledTask -TaskName $taskName
-            $report.workerForcedToStop = $true
+        try {
+            if ((Get-ScheduledTask -TaskName $taskName).State -in @('Running', 'Queued')) {
+                Stop-ScheduledTask -TaskName $taskName
+                $report.workerForcedToStop = $true
+            }
         }
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+        catch { $report.taskStopError = $_.Exception.Message; $report.passed = $false }
+        try { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false }
+        catch { $report.taskRemovalError = $_.Exception.Message; $report.passed = $false }
     }
     if ($taskLogChanged) {
         try { $taskLog.IsEnabled = $false; $taskLog.SaveChanges(); $report.taskOperationalLogRestored = $true }
         catch { $report.taskOperationalLogRestored = $false; $report.taskOperationalLogRestoreError = $_.Exception.Message; $report.passed = $false }
     }
-    if ($null -ne $taskLog) { $taskLog.Dispose() }
+    if ($null -ne $taskLog) {
+        try { $taskLog.Dispose() }
+        catch { $report.taskLogDisposalError = $_.Exception.Message; $report.passed = $false }
+    }
     # Never guess which system process to kill. The disposable VM owns any remaining processes.
     # Evidence includes only known reports and screenshots, not profiles, preferences or credentials.
     if (Test-Path -LiteralPath (Join-Path $staging 'results')) {
+        $report.evidenceCopyErrors = @()
         $evidenceFiles = @('worker-report.json', 'missing-runtime\report.json', 'installer-manifest.json', 'html-viewer\report.json', 'html-viewer\01-diagram.png', 'html-viewer\02-table-triggers.png', 'html-viewer\03-view-definition.png')
         foreach ($session in @('portable', 'installed')) {
             foreach ($name in @('report.json', 'diagram.html', '01-welcome-en-light.png', '02-about.png', '03-welcome-es-dark.png', '04-windows-auth-capture.png')) { $evidenceFiles += Join-Path $session $name }
         }
         foreach ($relative in $evidenceFiles) {
-            $source = Join-Path (Join-Path $staging 'results') $relative
-            if (Test-Path -LiteralPath $source -PathType Leaf) {
-                $destination = Join-Path $output $relative
-                New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
-                Copy-Item -LiteralPath $source -Destination $destination
+            try {
+                $source = Join-Path (Join-Path $staging 'results') $relative
+                if (Test-Path -LiteralPath $source -PathType Leaf) {
+                    $destination = Join-Path $output $relative
+                    New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+                    Copy-Item -LiteralPath $source -Destination $destination
+                }
             }
+            catch { $report.evidenceCopyErrors = @($report.evidenceCopyErrors) + @([ordered]@{ file = $relative; error = $_.Exception.Message }); $report.passed = $false }
         }
     }
-    if ($created) { Disable-LocalUser -SID $account.SID; Remove-LocalUser -SID $account.SID; $report.standardAccountRemoved = $true }
+    if ($created) {
+        try { Disable-LocalUser -SID $account.SID }
+        catch { $report.standardAccountDisableError = $_.Exception.Message; $report.passed = $false }
+        try { Remove-LocalUser -SID $account.SID; $report.standardAccountRemoved = $true }
+        catch { $report.standardAccountRemovalError = $_.Exception.Message; $report.passed = $false }
+    }
     $password = $null
     $report | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $output 'controller-report.json') -Encoding UTF8
 }
