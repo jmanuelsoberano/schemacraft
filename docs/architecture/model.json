@@ -759,7 +759,7 @@
             "id": "release-verification-app",
             "name": "Standard-account release application checks",
             "path": "scripts/smoke-release-standard-user.mjs, scripts/release-cdp.mjs",
-            "responsibility": "Exercises the downloaded and installed release binaries through CDP, with the production frontend and real Rust commands. Checks exact version, welcome, About, language/theme, reload guard and a Windows Authentication capture of the owned local fixture. A connection guard permits only that endpoint. Owns the process, confirms termination and restores preferences before success. Local Windows authentication does not establish domain, remote Kerberos or delegation behavior.",
+            "responsibility": "Exercises the downloaded and installed release binaries through CDP, with the production frontend and real Rust commands. Checks exact version, welcome, About, language/theme, reload guard and a Windows Authentication capture of the owned local fixture. A connection guard permits only that endpoint. After uninstalling, opens the exported HTML in Microsoft Edge and checks table, view and trigger details without Tauri or a SchemaCraft process, blocking the page's HTTP(S) and WebSocket requests. Owns the application and browser processes, confirms termination and restores preferences before success. Local Windows authentication does not establish domain, remote Kerberos or delegation behavior; passing results are recorded separately in the release checklist.",
             "patterns": [
               "Black-box checks of shipped binaries",
               "Owned process lifecycle",
@@ -4724,7 +4724,7 @@
             "id": "release-verification-app",
             "name": "Pruebas de la aplicación con cuenta estándar",
             "path": "scripts/smoke-release-standard-user.mjs, scripts/release-cdp.mjs",
-            "responsibility": "Ejercita los binarios descargados e instalados mediante CDP, con el frontend de producción y comandos Rust reales. Revisa versión exacta, bienvenida, Acerca de, idioma/tema, bloqueo de recarga y captura con autenticación de Windows de la base local propia. Una guarda permite solo ese endpoint. Controla el proceso, confirma su terminación y restaura preferencias antes del éxito. La autenticación local no demuestra dominio, Kerberos remoto ni delegación.",
+            "responsibility": "Ejercita los binarios descargados e instalados mediante CDP, con el frontend de producción y comandos Rust reales. Revisa versión exacta, bienvenida, Acerca de, idioma/tema, bloqueo de recarga y captura con autenticación de Windows de la base local propia. Una guarda permite solo ese endpoint. Después de desinstalar, abre el HTML exportado en Microsoft Edge y revisa detalles de tablas, vistas y desencadenadores sin Tauri ni un proceso SchemaCraft, bloqueando las solicitudes HTTP(S) y WebSocket de la página. Controla los procesos de aplicación y navegador, confirma su terminación y restaura preferencias antes del éxito. La autenticación local no demuestra dominio, Kerberos remoto ni delegación; los resultados aprobados se registran por separado en el checklist de release.",
             "patterns": [
               "Caja negra sobre binarios entregados",
               "Ciclo de vida del proceso propio",

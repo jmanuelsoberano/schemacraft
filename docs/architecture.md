@@ -693,7 +693,11 @@ administrator controller never launches the application, installer or uninstalle
 The worker checks hashes and the installer's manifest (`inspect-pe-manifest.mjs`), exercises
 the portable and installed application (`smoke-release-standard-user.mjs` and `release-cdp.mjs`),
 and verifies per-user registration, installed executable identity, uninstall completion and
-preservation of synthetic data. Every application session backs up preferences as opaque bytes
+preservation of synthetic data. After uninstalling, the worker opens the application's exported
+HTML in Microsoft Edge and verifies table, view and trigger details without a Tauri runtime or
+a running SchemaCraft process. The browser check blocks the page's HTTP(S) and WebSocket
+requests and confirms the exact browser process has terminated before restoring preferences.
+Every application session backs up preferences as opaque bytes
 and restores them only after confirming process termination. Reports and screenshots exclude
 profiles, preferences and credentials.
 

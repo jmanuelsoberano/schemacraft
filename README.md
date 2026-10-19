@@ -135,8 +135,10 @@ the merge commit `vX.Y.Z` and push the tag; the release workflow refuses a tag t
 The separate `verify-release.yml` workflow checks downloaded draft-release assets on a
 disposable Windows Server 2022 runner with a fresh standard account. It verifies hashes, the
 portable and installed application, per-user installation and removal, preserved synthetic data,
-the WebView2 failure path and local Windows Authentication against an owned SQL fixture. It
-does not rebuild or publish the release. Its reports distinguish natural runtime absence from
+the WebView2 failure path and local Windows Authentication against an owned SQL fixture. After
+uninstalling SchemaCraft, it opens the exported HTML in Microsoft Edge without a Tauri runtime
+and with the page's network requests blocked. It does not rebuild or publish the release.
+Its reports distinguish natural runtime absence from
 an injected failure and record the UAC setting: a hosted image with UAC disabled cannot verify
 interactive elevation prompts on Windows 10/11. Local Windows Authentication does not establish
 domain or remote Kerberos behavior. See the [release checklist](docs/release-checklist.md) for
@@ -213,8 +215,11 @@ invisible texts, both options and bound schema filters, and verifies that a deni
 as a login of its own that may not read `sys.check_constraints`, logs in with a wrong password
 and opens a database the login cannot open, and checks that the diagnostic log's events hold
 counts, timings, kinds and error numbers only, with no name of the fixture, login, host, password
-or database. Windows Authentication cannot run in the Linux container; it is validated manually
-against a Windows instance.
+or database. Windows Authentication cannot run in the Linux container. The separate
+`verify-release.yml` workflow exercises it through the real application against an owned local
+Windows SQL Server fixture. A successful application report establishes that local scenario;
+it does not establish domain, remote Kerberos or delegation behavior. The
+[release checklist](docs/release-checklist.md) records whether that verification has passed.
 
 ## Browser preview
 
