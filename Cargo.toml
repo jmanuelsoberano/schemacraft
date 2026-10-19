@@ -16,6 +16,8 @@ schemacraft-core = { path = "crates/schemacraft-core" }
 async-trait = "0.1"
 bb8 = "0.9"
 chrono = { version = "0.4", features = ["serde"] }
+# Stream module definitions without buffering a second copy of the result set.
+futures-util = { version = "0.3", default-features = false }
 keyring = { version = "3", features = ["windows-native"] }
 # resvg, usvg and svg2pdf must agree on one usvg: svg2pdf 0.13 is built against usvg 0.45.
 resvg = { version = "0.45", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }

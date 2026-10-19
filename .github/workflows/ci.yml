@@ -177,7 +177,7 @@ jobs:
         env:
           SCHEMACRAFT_TEST_MSSQL_PORT: "1433"
           SCHEMACRAFT_TEST_MSSQL_MAJOR: "16"
-        run: cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions --test diagnostics_privacy -- --nocapture
+        run: cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions --test diagnostics_privacy --test sqlserver_code -- --nocapture
 
       - name: Inspector integration tests on SQL Server 2019
         # Runs after a failure on 2022 as well, so one run reports both versions. It reuses the
@@ -186,4 +186,4 @@ jobs:
         env:
           SCHEMACRAFT_TEST_MSSQL_PORT: "1434"
           SCHEMACRAFT_TEST_MSSQL_MAJOR: "15"
-        run: cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions --test diagnostics_privacy -- --nocapture
+        run: cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions --test diagnostics_privacy --test sqlserver_code -- --nocapture

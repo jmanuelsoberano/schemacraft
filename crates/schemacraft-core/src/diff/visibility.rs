@@ -8,10 +8,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use super::code::{CodeCounts, readable_texts};
 use super::foreign_keys::KeyIdentity;
 use super::pairing::{Pairing, pair_by_key};
 use crate::model::{
-    Completeness, Definition, Index, QualifiedName, SchemaSnapshot, SnapshotFact, Table,
+    CaptureState, Completeness, Definition, Index, QualifiedName, SchemaSnapshot, SnapshotFact,
+    Table,
 };
 
 /// A fact the previous snapshot could not state and the fresh extraction reads.
@@ -34,6 +36,26 @@ pub struct AvailableFact {
 #[serde(tag = "kind", rename_all = "camelCase")]
 #[ts(export, export_to = "diff/")]
 pub enum CaptureChange {
+    /// Objects were captured for the first time, rather than added to the database.
+    ProgrammabilityRecorded {
+        /// Objects now recorded, per kind.
+        counts: CodeCounts,
+    },
+    /// The connection options explicitly removed the saved code objects.
+    ProgrammabilityNoLongerRecorded {
+        /// Objects left out, per kind.
+        counts: CodeCounts,
+    },
+    /// Module texts were read for the first time.
+    ModuleDefinitionsRecorded {
+        /// Readable texts that will be saved in the project.
+        count: usize,
+    },
+    /// The connection options explicitly removed the saved texts.
+    ModuleDefinitionsNoLongerRecorded {
+        /// Readable texts left out of the project.
+        count: usize,
+    },
     /// Whether indexes and primary keys are enabled or filtered, their included columns, and
     /// whether `CHECK` constraints and foreign keys are trusted: a project saved before 1.2 did not
     /// record them, and until it does it reads as 1.1 read it.
@@ -175,11 +197,41 @@ pub(super) fn capture_changes(
     current: &SchemaSnapshot,
 ) -> Vec<CaptureChange> {
     let count = newly_recorded_states(previous, current);
-    if count == 0 {
-        Vec::new()
-    } else {
-        vec![CaptureChange::IndexAndConstraintStateRecorded { count }]
+    let mut changes = Vec::new();
+    if count != 0 {
+        changes.push(CaptureChange::IndexAndConstraintStateRecorded { count });
     }
+    let before = previous.programmability.as_ref();
+    let Some(after) = current.programmability.as_ref() else {
+        return changes;
+    };
+    if !before.is_some_and(crate::model::Programmability::records_objects)
+        && after.capture.objects == CaptureState::Read
+    {
+        changes.push(CaptureChange::ProgrammabilityRecorded {
+            counts: CodeCounts::of(after),
+        });
+    } else if let Some(before) = before.filter(|before| before.records_objects())
+        && after.capture.objects.is_left_out()
+    {
+        changes.push(CaptureChange::ProgrammabilityNoLongerRecorded {
+            counts: CodeCounts::of(before),
+        });
+    }
+    if !before.is_some_and(crate::model::Programmability::records_texts)
+        && after.capture.definitions == CaptureState::Read
+    {
+        changes.push(CaptureChange::ModuleDefinitionsRecorded {
+            count: readable_texts(after),
+        });
+    } else if let Some(before) = before.filter(|before| before.records_texts())
+        && (after.capture.definitions.is_left_out() || after.capture.objects.is_left_out())
+    {
+        changes.push(CaptureChange::ModuleDefinitionsNoLongerRecorded {
+            count: readable_texts(before),
+        });
+    }
+    changes
 }
 
 /// Whether the state of `index` was recorded: a capture records the three fields together.

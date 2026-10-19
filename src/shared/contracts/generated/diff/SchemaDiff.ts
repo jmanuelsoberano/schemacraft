@@ -2,6 +2,7 @@
 import type { CarriedFact } from "../model/CarriedFact";
 import type { AvailableFact } from "./AvailableFact";
 import type { CaptureChange } from "./CaptureChange";
+import type { CodeDiff } from "./CodeDiff";
 import type { DiffSummary } from "./DiffSummary";
 import type { ForeignKeyChange } from "./ForeignKeyChange";
 import type { ForeignKeyToInvisibleTableChange } from "./ForeignKeyToInvisibleTableChange";
@@ -13,6 +14,10 @@ import type { ViewChange } from "./ViewChange";
  * check.
  */
 export type SchemaDiff = { 
+/**
+ * Changes and visibility of procedures, functions, triggers and view code.
+ */
+code: CodeDiff, 
 /**
  * Tables that appeared, disappeared or changed, by name.
  */
@@ -59,8 +64,8 @@ accessChanged: boolean,
  */
 captureChanges: Array<CaptureChange>, 
 /**
- * Whether any table, view or foreign key appeared, disappeared or changed, as far as the
- * fresh extraction could check.
+ * Whether any table, view, foreign key or code object appeared, disappeared or changed,
+ * as far as the fresh extraction could check.
  */
 hasObjectChanges: boolean, 
 /**

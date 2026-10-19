@@ -38,7 +38,10 @@ describe("inspectorScope", () => {
       },
     ];
     expect(inspectorScope({ ...partial, carriedOver: carried }, [], EVERYTHING)).toMatchObject({
-      coverage: partial.access?.coverage,
+      coverage: {
+        objects: partial.access?.coverage.objects,
+        definitions: partial.access?.coverage.definitions,
+      },
       carriedOver: carried,
     });
 

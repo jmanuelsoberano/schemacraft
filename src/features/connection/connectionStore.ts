@@ -31,6 +31,8 @@ export interface TestedConnection {
   databases: string[];
   /** Schemas of the selected database; empty until a database is chosen. */
   schemas: string[];
+  /** Schemas containing only procedures or functions, offered when code is included. */
+  programmabilityOnlySchemas?: string[];
   /**
    * What the login is predicted to see in the selected database, from the access probe;
    * `null` until a database is chosen.
@@ -50,6 +52,8 @@ export type StageProgress = Partial<Record<InspectionStage, number | null>>;
 export interface RunningInspection {
   jobId: string | null;
   database: string;
+  /** The options of this read, independent of later edits to the form. */
+  options: InspectionOptions;
   stages: StageProgress;
   isCancelling: boolean;
 }
@@ -197,7 +201,13 @@ export const useConnectionStore = create<ConnectionState>()(
           phase: "inspecting",
           failure: null,
           blockedInspection: null,
-          inspection: { jobId: null, database, stages: {}, isCancelling: false },
+          inspection: {
+            jobId: null,
+            database,
+            options: { ...options, schemas: [...options.schemas] },
+            stages: {},
+            isCancelling: false,
+          },
         });
 
         const handleEvent = (event: InspectionEvent) => {
@@ -369,8 +379,15 @@ export const useConnectionStore = create<ConnectionState>()(
         selectDatabase: async (database) => {
           const { draft, tested } = get();
           set({
-            draft: { ...draft, database, schemas: [] },
-            tested: tested === null ? null : { ...tested, schemas: [], access: null },
+            draft: {
+              ...draft,
+              database,
+              schemas: draft.database === database ? draft.schemas : [],
+            },
+            tested:
+              tested === null
+                ? null
+                : { ...tested, schemas: [], programmabilityOnlySchemas: [], access: null },
             failure: null,
             blockedInspection: null,
           });
@@ -386,10 +403,15 @@ export const useConnectionStore = create<ConnectionState>()(
 
           try {
             const backend = await getConnectionBackend();
-            const { schemas, access } = await backend.describeDatabase(built.settings);
+            const { schemas, programmabilityOnlySchemas, access } = await backend.describeDatabase(
+              built.settings,
+            );
             set((state) => ({
               phase: "idle",
-              tested: state.tested === null ? null : { ...state.tested, schemas, access },
+              tested:
+                state.tested === null
+                  ? null
+                  : { ...state.tested, schemas, programmabilityOnlySchemas, access },
             }));
           } catch (caught: unknown) {
             set({ phase: "idle", failure: { error: toOperationError(caught), retry: "test" } });
@@ -491,7 +513,14 @@ export const useConnectionStore = create<ConnectionState>()(
           set({ phase: "applying", failure: null });
           try {
             const backend = await getProjectBackend();
-            const content = await backend.refreshProjectContent(project.content, review.snapshot);
+            const content = await backend.refreshProjectContent(
+              {
+                ...project.content,
+                connection: toSavedConnection(review.settings),
+                inspection: review.options,
+              },
+              review.snapshot,
+            );
             useProjectStore.getState().applyRefreshedContent(content, review.settings);
             void usePreferencesStore
               .getState()

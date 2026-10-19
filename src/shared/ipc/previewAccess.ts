@@ -23,6 +23,7 @@ import type {
   SnapshotFact,
   Table,
 } from "@/shared/contracts";
+import { withUncheckedCode } from "./previewCode";
 
 /** Every schema, views included: the scope of a prediction made before anything is read. */
 const WHOLE_DATABASE: CaptureScope = { schemas: [], includeViews: true };
@@ -337,13 +338,16 @@ export function withUncheckedFacts(
   };
   delete merged.foreignKeysToInvisibleTables;
   delete merged.carriedOver;
-  return {
-    ...merged,
-    ...(invisible.length > 0
-      ? { foreignKeysToInvisibleTables: sortIfKept(invisible, compareKeys) }
-      : {}),
-    ...(carriedOver.length > 0 ? { carriedOver } : {}),
-  };
+  return withUncheckedCode(
+    {
+      ...merged,
+      ...(invisible.length > 0
+        ? { foreignKeysToInvisibleTables: sortIfKept(invisible, compareKeys) }
+        : {}),
+      ...(carriedOver.length > 0 ? { carriedOver } : {}),
+    },
+    previous,
+  );
 }
 
 /** Keys `previous` listed as pointing to an invisible table that `merged` draws as edges. */
@@ -498,5 +502,10 @@ export function accessChanged(previous: SchemaSnapshot, current: SchemaSnapshot)
     snapshot.access === undefined
       ? "none"
       : `${snapshot.access.level}/${snapshot.access.coverage.objects}/${snapshot.access.coverage.definitions}`;
-  return verdict(previous) !== verdict(current);
+  const codeCoverageChanged = (["programmability", "moduleDefinitions"] as const).some((family) => {
+    const before = previous.access?.coverage[family];
+    const after = current.access?.coverage[family];
+    return before !== undefined && after !== undefined && before !== after;
+  });
+  return verdict(previous) !== verdict(current) || codeCoverageChanged;
 }

@@ -22,12 +22,12 @@ use std::collections::BTreeSet;
 use std::hash::{BuildHasher, RandomState};
 use std::sync::LazyLock;
 
-use schemacraft_core::diff::{CaptureChange, SchemaDiff};
+use schemacraft_core::diff::{CaptureChange, CodeCounts, SchemaDiff};
 use schemacraft_core::inspectors::sqlserver::EncryptionMode;
 use schemacraft_core::inspectors::{DatabaseDescription, InspectionOptions, SilentProgress};
 use schemacraft_core::model::{
-    AccessLevel, Completeness, Definition, QualifiedName, SchemaSnapshot, SnapshotFact,
-    UnknownFields,
+    AccessLevel, CaptureState, CarriedPart, CodeObjectRef, Completeness, Definition, NotReadReason,
+    QualifiedName, SchemaSnapshot, SnapshotFact, UnknownFields,
 };
 use schemacraft_core::project::{
     CanvasState, NodeState, Point, Project, ProjectContent, SavedConnection,
@@ -57,6 +57,11 @@ const CONNECT_ONLY: &str = "schemacraft_connect";
 const VIEW_DEFINITION_DENIED_AUDIT: &str = "schemacraft_vd_deny_audit";
 const READER_DENIED_AUDIT: &str = "schemacraft_reader_deny_audit";
 const READER_DENIED_COLUMN: &str = "schemacraft_reader_deny_column";
+const READER_WITH_EXECUTE: &str = "schemacraft_reader_exec";
+const SELECT_SALES: &str = "schemacraft_select_sales";
+const VIEW_DEFINITION_DENIED_EXECUTE: &str = "schemacraft_vd_deny_exec";
+const EXECUTE_ONLY: &str = "schemacraft_exec_only";
+const MODULES_DENIED: &str = "schemacraft_deny_modules";
 /// Only on SQL Server 2022 and later: `VIEW DEFINITION` with `VIEW SECURITY DEFINITION` denied.
 const VIEW_DEFINITION_DENIED_SECURITY: &str = "schemacraft_vd_deny_vsd";
 
@@ -238,6 +243,76 @@ fn without_index_and_constraint_state(snapshot: &mut serde_json::Map<String, Val
     }
 }
 
+/// Removes every new code fact from the historical representation. The version-2 reader wrote
+/// none of them, even when a current capture was used to construct the fixture.
+fn without_code(document: &mut serde_json::Map<String, Value>) {
+    let snapshot = document
+        .get_mut("snapshot")
+        .unwrap()
+        .as_object_mut()
+        .unwrap();
+    snapshot.remove("programmability");
+    if let Some(access) = snapshot.get_mut("access").and_then(Value::as_object_mut) {
+        for (section, keys) in [
+            ("coverage", vec!["programmability", "moduleDefinitions"]),
+            (
+                "counts",
+                vec![
+                    "moduleDefinitions",
+                    "moduleDefinitionsNotVisible",
+                    "moduleDefinitionsEncrypted",
+                ],
+            ),
+            (
+                "scope",
+                vec!["includeProgrammability", "includeModuleDefinitions"],
+            ),
+            ("probe", vec!["executeDenials"]),
+        ] {
+            if let Some(fields) = access.get_mut(section).and_then(Value::as_object_mut) {
+                for key in keys {
+                    fields.remove(key);
+                }
+            }
+        }
+        if let Some(schemas) = access
+            .get_mut("probe")
+            .and_then(|probe| probe.get_mut("schemas"))
+            .and_then(Value::as_array_mut)
+        {
+            for schema in schemas {
+                let schema = schema.as_object_mut().unwrap();
+                schema.remove("hasVisibleProgrammability");
+                schema.remove("isExecuteDenied");
+            }
+        }
+    }
+    for key in ["includeProgrammability", "includeModuleDefinitions"] {
+        document
+            .get_mut("inspection")
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove(key);
+    }
+}
+
+fn first_capture_changes(snapshot: &SchemaSnapshot, state_count: usize) -> Vec<CaptureChange> {
+    let code = snapshot.programmability.as_ref().unwrap();
+    vec![
+        CaptureChange::IndexAndConstraintStateRecorded { count: state_count },
+        CaptureChange::ProgrammabilityRecorded {
+            counts: CodeCounts::of(code),
+        },
+        CaptureChange::ModuleDefinitionsRecorded {
+            count: code
+                .module_definitions()
+                .filter_map(Definition::text)
+                .count(),
+        },
+    ]
+}
+
 /// Writes `document` to a file and opens it as this version opens a project.
 fn reopened(document: &Value) -> SchemaSnapshot {
     let directory = tempfile::tempdir().unwrap();
@@ -259,6 +334,7 @@ fn saved_by_1_1_and_reopened(snapshot: &SchemaSnapshot) -> SchemaSnapshot {
     let mut document = serde_json::to_value(&project).unwrap();
     let root = document.as_object_mut().unwrap();
     root.insert("formatVersion".to_string(), json!(2));
+    without_code(root);
     without_index_and_constraint_state(root.get_mut("snapshot").unwrap().as_object_mut().unwrap());
     reopened(&document)
 }
@@ -278,6 +354,7 @@ fn saved_by_1_0_and_reopened(snapshot: &SchemaSnapshot) -> SchemaSnapshot {
     let root = document.as_object_mut().unwrap();
     root.insert("formatVersion".to_string(), json!(1));
     root.remove("minReaderVersion");
+    without_code(root);
     let saved = root.get_mut("snapshot").unwrap().as_object_mut().unwrap();
     without_index_and_constraint_state(saved);
     for key in ["access", "foreignKeysToInvisibleTables", "carriedOver"] {
@@ -529,14 +606,19 @@ async fn denials_are_unknown_only_where_view_security_definition_hides_them() {
 
     // So its denials are unknown and the level partial, as for the denialsUnknown persona of
     // src/features/access/testFixtures.ts, whose one cause is denials the login cannot see. The
-    // users of the database are hidden from it too, its own included, so it has no user to name.
+    // users of the database are hidden from it too, its own included. USER_NAME() still gives
+    // its identity, so the access report can generate a GRANT for the correct database user.
     let description = describe(&server, VIEW_DEFINITION_DENIED_SECURITY, DATABASE).await;
     assert_eq!(description.schemas, ["audit", "dbo", "sales"]);
     let access = description.access;
     assert_eq!(access.probe.explicit_denials, None, "{access:?}");
     assert!(access.probe.can_read_definitions, "{access:?}");
     assert!(!access.probe.can_read_data, "{access:?}");
-    assert_eq!(access.probe.database_user, None, "{access:?}");
+    assert_eq!(
+        access.probe.database_user.as_deref(),
+        Some(VIEW_DEFINITION_DENIED_SECURITY),
+        "{access:?}"
+    );
     let schemas: Vec<(&str, bool, bool, bool, bool)> = access
         .probe
         .schemas
@@ -912,9 +994,7 @@ async fn a_1_0_project_refreshed_with_the_same_login_changes_nothing() {
         // The keys to invisible tables 1.0 dropped are now available, not newly recorded.
         assert_eq!(
             diff.capture_changes,
-            [CaptureChange::IndexAndConstraintStateRecorded {
-                count: objects_with_state(&upgraded)
-            }],
+            first_capture_changes(&fresh, objects_with_state(&upgraded)),
             "{login}"
         );
 
@@ -974,9 +1054,7 @@ async fn a_1_1_project_refreshed_with_the_same_login_records_the_state_without_c
         assert!(!diff.access_changed, "{login}");
         assert_eq!(
             diff.capture_changes,
-            [CaptureChange::IndexAndConstraintStateRecorded {
-                count: objects_with_state(&fresh)
-            }],
+            first_capture_changes(&fresh, objects_with_state(&fresh)),
             "{login}"
         );
         assert!(!diff.is_up_to_date(), "{login}");
@@ -1252,4 +1330,202 @@ async fn the_capability_probe_returns_counts_only_for_every_login() {
         // included.
         assert_eq!(probe.value("objects", "other"), 1, "{user}");
     }
+}
+
+#[tokio::test]
+async fn code_visibility_follows_engine_permissions_without_changing_the_access_level() {
+    let Some(server) = test_server() else { return };
+    let owner = inspect_as(&server, OWNER, DATABASE).await;
+    let owner_code = owner.programmability.as_ref().unwrap();
+    assert_eq!(
+        CodeCounts::of(owner_code),
+        CodeCounts {
+            procedures: 3,
+            functions: 2,
+            triggers: 2,
+            views: 1
+        }
+    );
+    let all_routines = [
+        "dbo.fn_Tax",
+        "dbo.usp_Maintenance",
+        "sales.fn_OrdersOf",
+        "sales.usp_PlaceOrder",
+        "sales.usp_Secret",
+    ];
+    for (login, expected, coverage, readable, encrypted) in [
+        (OWNER, all_routines.as_slice(), Completeness::Complete, 7, 1),
+        (
+            VIEW_DEFINITION,
+            all_routines.as_slice(),
+            Completeness::Complete,
+            7,
+            1,
+        ),
+        (
+            READER,
+            &["sales.fn_OrdersOf"][..],
+            Completeness::Partial,
+            0,
+            0,
+        ),
+        (
+            READER_WITH_SALES_TEXTS,
+            &[
+                "sales.fn_OrdersOf",
+                "sales.usp_PlaceOrder",
+                "sales.usp_Secret",
+            ][..],
+            Completeness::Partial,
+            5,
+            1,
+        ),
+        (
+            READER_WITH_EXECUTE,
+            &[
+                "sales.fn_OrdersOf",
+                "sales.usp_PlaceOrder",
+                "sales.usp_Secret",
+            ][..],
+            Completeness::Partial,
+            0,
+            1,
+        ),
+        (
+            SELECT_SALES,
+            &["sales.fn_OrdersOf"][..],
+            Completeness::Partial,
+            0,
+            0,
+        ),
+    ] {
+        let snapshot = inspect_as(&server, login, DATABASE).await;
+        let code = snapshot.programmability.as_ref().unwrap();
+        assert_eq!(
+            names(code.routines.iter().map(|routine| &routine.name)),
+            expected,
+            "{login}"
+        );
+        assert_eq!(code.triggers.len(), 2, "{login}");
+        assert_eq!(code.views.len(), 1, "{login}");
+        assert_eq!(
+            code.module_definitions()
+                .filter_map(Definition::text)
+                .count(),
+            readable,
+            "{login}"
+        );
+        let access = snapshot.access.as_ref().unwrap();
+        assert_eq!(
+            access.coverage.programmability,
+            Some(coverage),
+            "{login}: {access:?}"
+        );
+        assert_eq!(
+            access.counts.module_definitions_encrypted, encrypted,
+            "{login}"
+        );
+        let without_code = inspector(settings(
+            &as_login(&server, login, &PASSWORD),
+            Some(DATABASE),
+        ))
+        .inspect(
+            &InspectionOptions {
+                include_programmability: false,
+                ..InspectionOptions::default()
+            },
+            &SilentProgress,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            access.level,
+            without_code.access.as_ref().unwrap().level,
+            "{login}: code never changes the level"
+        );
+    }
+    let executor = describe(&server, EXECUTE_ONLY, DATABASE).await;
+    assert_eq!(executor.access.level, AccessLevel::NothingVisible);
+    assert!(executor.schemas.is_empty() && executor.programmability_only_schemas.is_empty());
+    let captured = inspect_as(&server, EXECUTE_ONLY, DATABASE).await;
+    assert!(captured.tables.is_empty() && captured.views.is_empty());
+    assert_eq!(
+        captured.access.as_ref().unwrap().level,
+        AccessLevel::NothingVisible
+    );
+}
+
+#[tokio::test]
+async fn execute_denied_with_view_definition_does_not_hide_code_on_either_engine() {
+    let Some(server) = test_server() else { return };
+    let owner = inspect_as(&server, OWNER, DATABASE).await;
+    let denied = inspect_as(&server, VIEW_DEFINITION_DENIED_EXECUTE, DATABASE).await;
+    let profile = denied.access.as_ref().unwrap();
+    assert_eq!(profile.probe.execute_denials, Some(1));
+    assert_eq!(profile.probe.explicit_denials, Some(0));
+    assert_eq!(profile.level, AccessLevel::Full);
+    assert_eq!(
+        profile.coverage.programmability,
+        Some(Completeness::Complete)
+    );
+    assert_eq!(
+        profile.coverage.module_definitions,
+        Some(Completeness::Complete)
+    );
+    assert_eq!(denied.programmability, owner.programmability);
+    assert!(SchemaDiff::between(&owner, &denied).is_up_to_date());
+    let identity = as_login(&server, VIEW_DEFINITION_DENIED_EXECUTE, &PASSWORD);
+    assert_eq!(
+        integer(
+            &identity,
+            "SELECT HAS_PERMS_BY_NAME('sales.usp_PlaceOrder', 'OBJECT', 'EXECUTE')"
+        )
+        .await,
+        Some(0)
+    );
+    assert_eq!(integer(&identity, "SELECT COUNT(*) FROM sys.objects WHERE name = N'usp_PlaceOrder' AND schema_id = SCHEMA_ID(N'sales')").await, Some(1));
+}
+
+#[tokio::test]
+async fn a_failed_module_query_keeps_tables_read_and_saved_code_unchecked() {
+    let Some(server) = test_server() else { return };
+    let owner = inspect_as(&server, OWNER, DATABASE).await;
+    let denied = inspect_as(&server, MODULES_DENIED, DATABASE).await;
+    assert_eq!(denied.tables, owner.tables);
+    assert_eq!(denied.views, owner.views);
+    let captured = denied.programmability.as_ref().unwrap();
+    assert_eq!(captured.capture.objects, CaptureState::Read);
+    assert_eq!(
+        captured.capture.definitions,
+        CaptureState::NotRead {
+            reason: NotReadReason::QueryFailed
+        }
+    );
+    assert_eq!(
+        CodeCounts::of(captured),
+        CodeCounts::of(owner.programmability.as_ref().unwrap())
+    );
+    let diff = SchemaDiff::between(&owner, &denied);
+    assert!(diff.is_empty(), "{diff:?}");
+    assert_eq!(diff.capture_changes, []);
+    assert_ne!(diff.code.not_checked, []);
+    assert!(diff.code.not_checked.iter().any(|carried| carried.object
+        == CodeObjectRef::Routine {
+            name: QualifiedName::new("sales", "usp_PlaceOrder")
+        }
+        && carried.part == CarriedPart::Definition));
+    let kept = denied.with_unchecked_facts_from(&owner);
+    let kept_code = kept.programmability.as_ref().unwrap();
+    let old_code = owner.programmability.as_ref().unwrap();
+    assert_eq!(kept_code.views, old_code.views);
+    assert_eq!(kept_code.triggers, old_code.triggers);
+    assert_eq!(kept_code.routines, old_code.routines);
+    assert!(
+        kept_code
+            .carried_over
+            .iter()
+            .all(|carried| carried.read_at == owner.extracted_at)
+    );
+    assert_eq!(kept.clone().with_unchecked_facts_from(&owner), kept);
 }

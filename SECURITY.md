@@ -19,9 +19,18 @@ problem is confirmed.
   stored in the Windows Credential Manager, never in any file written by SchemaCraft.
 - `.scraft` project files contain the schema snapshot and the connection without its password.
   Since 1.1 the snapshot also records what the login could see: its permissions in that
-  database and the name of its database user. Treat project files as you would treat a database
-  diagram: they describe your tables. Exports carry neither the connection nor the permissions,
-  only the visible diagram and, for a partial read, a note saying so.
+  database and the name of its database user. Since 1.2, reading procedures, functions and
+  triggers and saving module code are on by default; the connection dialog offers separate
+  switches for both. Module code includes view definitions and is business logic: it may contain
+  credentials or any other text its authors wrote. Treat a project that saves code as database
+  source code. Turn off "Save their code in the project" to keep object metadata without SQL
+  texts; applying a refresh with it off removes previously saved module texts. Exports carry
+  neither module code, the connection nor the permissions, only the visible diagram and, for a
+  partial read, a note saying so.
+- A code read that fails, times out or sees fewer objects or texts keeps previously saved code
+  that it cannot check, with its last-read date. A permission change does not erase a local
+  copy. Turning off the relevant read option or removing a schema from the selection is an
+  explicit exclusion and does not keep that code.
 - Connections to SQL Server are always encrypted, and the server certificate is validated unless
   you explicitly tick "Trust the server certificate" for that connection.
 - A diagnostic log for bug reports is kept on your computer, in

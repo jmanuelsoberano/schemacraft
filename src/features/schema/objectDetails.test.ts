@@ -356,7 +356,7 @@ describe("describeObjectDetails", () => {
   });
 
   it("lists keys to tables the login cannot see and doubts the incoming ones under partial access", () => {
-    expect(partial.access?.coverage).toEqual({ objects: "partial", definitions: "partial" });
+    expect(partial.access?.coverage).toMatchObject({ objects: "partial", definitions: "partial" });
     const orders = detailsOf(partial, "sales.Orders");
 
     const references = sectionOf(orders, "references");

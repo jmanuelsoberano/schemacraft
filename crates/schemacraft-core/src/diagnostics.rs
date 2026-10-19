@@ -14,7 +14,7 @@
 use std::fmt;
 use std::time::Duration;
 
-use crate::model::AccessLevel;
+use crate::model::{AccessLevel, CaptureState, NotReadReason};
 
 /// The target of every diagnostic event, and the only one the log file accepts. The hyphen keeps
 /// it apart from every module path, the target `tracing` gives an event that names none, so an
@@ -32,6 +32,49 @@ pub const MODULE: &str = module_path!();
 pub trait ClosedKind: fmt::Debug + Copy {}
 
 impl ClosedKind for AccessLevel {}
+
+/// Whether a capture read a family of code facts, as the log records it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodeCapture {
+    /// The family was read.
+    Read,
+    /// The inspection options left it out.
+    OptionOff,
+    /// A query that reads it failed; the inspection went on without it.
+    QueryFailed,
+    /// A query that reads it ran out of time; the inspection went on without it.
+    TimedOut,
+    /// A state this version does not know.
+    Unknown,
+}
+
+impl ClosedKind for CodeCapture {}
+
+impl From<&CaptureState> for CodeCapture {
+    fn from(state: &CaptureState) -> Self {
+        match state {
+            CaptureState::Read => Self::Read,
+            CaptureState::NotRead { reason } => match reason {
+                NotReadReason::OptionOff => Self::OptionOff,
+                NotReadReason::QueryFailed => Self::QueryFailed,
+                NotReadReason::TimedOut => Self::TimedOut,
+                NotReadReason::Unknown => Self::Unknown,
+            },
+            CaptureState::Unknown => Self::Unknown,
+        }
+    }
+}
+
+/// A family of code facts an inspection reads in a stage of its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodeFamily {
+    /// Procedures, functions and triggers, with their parameters and events.
+    Objects,
+    /// The texts of views, procedures, functions and triggers.
+    Definitions,
+}
+
+impl ClosedKind for CodeFamily {}
 
 /// What the log may say about a failure: its kind, the SQL Server error number when the server
 /// sent one, and the catalog query that failed. The message, which names servers, logins,
@@ -110,10 +153,28 @@ pub struct InspectionCompleted {
     pub foreign_keys_to_invisible_tables: usize,
     /// The access verdict, when the access probe ran.
     pub access: Option<AccessLevel>,
+    /// Whether the procedures, functions and triggers were read.
+    pub code: CodeCapture,
+    /// Whether the texts of the modules were read.
+    pub code_texts: CodeCapture,
+    /// Procedures and functions in the snapshot.
+    pub routines: usize,
+    /// DML triggers in the snapshot.
+    pub triggers: usize,
+    /// Views whose code is in the snapshot.
+    pub view_modules: usize,
+    /// Module texts the login could read.
+    pub module_texts: usize,
+    /// Module texts the login could not see.
+    pub module_texts_not_visible: usize,
+    /// Encrypted module texts, which the catalog returns to no login.
+    pub module_texts_encrypted: usize,
     /// Opening the sessions and identifying the server.
     pub connecting: Duration,
-    /// The access probe and the catalog queries, which run together.
+    /// The access probe, the catalog queries and the code stages, which run together.
     pub reading: Duration,
+    /// The code stages within `reading`: the procedures, functions and triggers, then their texts.
+    pub reading_code: Duration,
     /// Building the snapshot from the rows.
     pub assembling: Duration,
     /// The whole inspection.
@@ -144,8 +205,17 @@ pub fn inspection_completed(inspection: &InspectionCompleted) {
         foreign_keys = inspection.foreign_keys,
         foreign_keys_to_invisible_tables = inspection.foreign_keys_to_invisible_tables,
         access = inspection.access.map(tracing::field::debug),
+        code = ?inspection.code,
+        code_texts = ?inspection.code_texts,
+        routines = inspection.routines,
+        triggers = inspection.triggers,
+        view_modules = inspection.view_modules,
+        module_texts = inspection.module_texts,
+        module_texts_not_visible = inspection.module_texts_not_visible,
+        module_texts_encrypted = inspection.module_texts_encrypted,
         connecting_ms = milliseconds(inspection.connecting),
         reading_ms = milliseconds(inspection.reading),
+        code_ms = milliseconds(inspection.reading_code),
         assembling_ms = milliseconds(inspection.assembling),
         elapsed_ms = milliseconds(inspection.total),
         "inspection completed"
@@ -160,6 +230,19 @@ pub fn catalog_query(query: &'static str, rows: usize, elapsed: Duration) {
         rows,
         elapsed_ms = milliseconds(elapsed),
         "catalog query"
+    );
+}
+
+/// A family of code facts could not be read, by the summary of the error; the inspection went on
+/// without it.
+pub fn code_not_read(family: CodeFamily, failure: &ErrorSummary<impl ClosedKind>) {
+    tracing::warn!(
+        target: TARGET,
+        family = ?family,
+        kind = ?failure.kind,
+        sql_error = failure.error_number,
+        query = failure.query,
+        "code not read"
     );
 }
 
@@ -323,9 +406,9 @@ mod tests {
 
     use super::capture::{CapturedEvent, events_of};
     use super::{
-        ErrorSummary, InspectionCompleted, StartupFailure, TARGET, VersionNumber, app_started,
-        catalog_query, command_failed, export_written, inspection_completed, project_opened,
-        project_saved, startup_failed,
+        CodeCapture, CodeFamily, ErrorSummary, InspectionCompleted, StartupFailure, TARGET,
+        VersionNumber, app_started, catalog_query, code_not_read, command_failed, export_written,
+        inspection_completed, project_opened, project_saved, startup_failed,
     };
     use crate::credentials::CredentialError;
     use crate::export::{ExportError, ExportFormat};
@@ -354,37 +437,6 @@ mod tests {
         assert_eq!(failed.field_names(), ["message", "failure"]);
         assert_eq!(failed.field("failure"), Some("WebView2Missing"));
         assert_eq!(failed.level, Level::ERROR);
-
-        let inspection = only_event(|| {
-            inspection_completed(&InspectionCompleted {
-                tables: 12,
-                views: 3,
-                foreign_keys: 9,
-                foreign_keys_to_invisible_tables: 1,
-                access: Some(AccessLevel::Partial),
-                connecting: Duration::from_millis(40),
-                reading: Duration::from_millis(250),
-                assembling: Duration::from_millis(5),
-                total: Duration::from_millis(296),
-            });
-        });
-        assert_eq!(
-            inspection.field_names(),
-            [
-                "message",
-                "tables",
-                "views",
-                "foreign_keys",
-                "foreign_keys_to_invisible_tables",
-                "access",
-                "connecting_ms",
-                "reading_ms",
-                "assembling_ms",
-                "elapsed_ms"
-            ]
-        );
-        assert_eq!(inspection.field("access"), Some("Partial"));
-        assert_eq!(inspection.field("reading_ms"), Some("250"));
 
         let query = only_event(|| catalog_query("columns", 418, Duration::from_millis(31)));
         assert_eq!(
@@ -434,6 +486,79 @@ mod tests {
         assert_eq!(command.field("kind"), Some("QueryFailed"));
         assert_eq!(command.field("sql_error"), Some("229"));
         assert_eq!(command.level, Level::WARN);
+    }
+
+    #[test]
+    fn inspection_events_record_only_their_declared_fields() {
+        let inspection = only_event(|| {
+            inspection_completed(&InspectionCompleted {
+                tables: 12,
+                views: 3,
+                foreign_keys: 9,
+                foreign_keys_to_invisible_tables: 1,
+                access: Some(AccessLevel::Partial),
+                code: CodeCapture::Read,
+                code_texts: CodeCapture::QueryFailed,
+                routines: 14,
+                triggers: 5,
+                view_modules: 3,
+                module_texts: 0,
+                module_texts_not_visible: 0,
+                module_texts_encrypted: 2,
+                connecting: Duration::from_millis(40),
+                reading: Duration::from_millis(250),
+                reading_code: Duration::from_millis(120),
+                assembling: Duration::from_millis(5),
+                total: Duration::from_millis(296),
+            });
+        });
+        assert_eq!(
+            inspection.field_names(),
+            [
+                "message",
+                "tables",
+                "views",
+                "foreign_keys",
+                "foreign_keys_to_invisible_tables",
+                "access",
+                "code",
+                "code_texts",
+                "routines",
+                "triggers",
+                "view_modules",
+                "module_texts",
+                "module_texts_not_visible",
+                "module_texts_encrypted",
+                "connecting_ms",
+                "reading_ms",
+                "code_ms",
+                "assembling_ms",
+                "elapsed_ms"
+            ]
+        );
+        assert_eq!(inspection.field("access"), Some("Partial"));
+        assert_eq!(inspection.field("code"), Some("Read"));
+        assert_eq!(inspection.field("code_texts"), Some("QueryFailed"));
+        assert_eq!(inspection.field("reading_ms"), Some("250"));
+        assert_eq!(inspection.field("code_ms"), Some("120"));
+
+        let code = only_event(|| {
+            code_not_read(
+                CodeFamily::Definitions,
+                &ErrorSummary {
+                    kind: InspectorErrorKind::QueryFailed,
+                    error_number: Some(229),
+                    query: Some("module definitions"),
+                },
+            );
+        });
+        assert_eq!(
+            code.field_names(),
+            ["message", "family", "kind", "sql_error", "query"]
+        );
+        assert_eq!(code.field("family"), Some("Definitions"));
+        assert_eq!(code.field("query"), Some("module definitions"));
+        assert_eq!(code.level, Level::WARN);
     }
 
     #[test]
@@ -491,6 +616,43 @@ mod tests {
             ProjectError::NotFound { path }.log_summary(),
             ErrorSummary::of(ProjectErrorKind::NotFound)
         );
+    }
+
+    #[test]
+    fn a_code_capture_is_logged_by_its_state_alone() {
+        use crate::model::{CaptureState, NotReadReason};
+
+        let states = [
+            (CaptureState::Read, CodeCapture::Read),
+            (
+                CaptureState::NotRead {
+                    reason: NotReadReason::OptionOff,
+                },
+                CodeCapture::OptionOff,
+            ),
+            (
+                CaptureState::NotRead {
+                    reason: NotReadReason::QueryFailed,
+                },
+                CodeCapture::QueryFailed,
+            ),
+            (
+                CaptureState::NotRead {
+                    reason: NotReadReason::TimedOut,
+                },
+                CodeCapture::TimedOut,
+            ),
+            (
+                CaptureState::NotRead {
+                    reason: NotReadReason::Unknown,
+                },
+                CodeCapture::Unknown,
+            ),
+            (CaptureState::Unknown, CodeCapture::Unknown),
+        ];
+        for (state, logged) in states {
+            assert_eq!(CodeCapture::from(&state), logged, "{state:?}");
+        }
     }
 
     #[test]

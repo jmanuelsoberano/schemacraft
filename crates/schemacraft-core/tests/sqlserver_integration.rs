@@ -26,7 +26,7 @@ use schemacraft_core::inspectors::{
 };
 use schemacraft_core::model::{
     AccessLevel, Completeness, Definition, IndexKind, QualifiedName, ReferentialAction,
-    SchemaSnapshot, UnknownFields,
+    RoutineKind, SchemaSnapshot, UnknownFields,
 };
 use schemacraft_core::project::{CanvasState, NodeState, Point};
 use serde::Deserialize;
@@ -64,7 +64,8 @@ const INDEX_DISABLED: u32 = 8655;
 /// Error 1974: the operation needs the clustered index of the table, which is disabled.
 const CLUSTERED_INDEX_DISABLED: u32 = 1974;
 
-/// Budget for inspecting 200 tables; the product target is 3 seconds on a local network.
+/// Budget for inspecting 200 tables and roughly two million characters of code; the product
+/// target is 3 seconds on a local network.
 const STRESS_BUDGET: Duration = Duration::from_secs(5);
 
 #[derive(Default)]
@@ -644,15 +645,42 @@ async fn inspects_two_hundred_tables_within_budget() {
         .await
         .expect("inspection succeeds");
     let elapsed = started.elapsed();
+    let code = snapshot.programmability.as_ref().expect("code was read");
+    let snapshot_bytes = serde_json::to_vec(&snapshot).unwrap().len();
+    let module_characters: usize = code
+        .module_definitions()
+        .filter_map(Definition::text)
+        .map(|text| text.chars().count())
+        .sum();
 
     eprintln!(
-        "inspected {} tables in {elapsed:?} on SQL Server {}",
+        "inspected {} tables, {} routines and {} triggers in {elapsed:?} on SQL Server {}; \
+         snapshot_bytes={snapshot_bytes}, module_characters={module_characters}",
         snapshot.tables.len(),
-        version.product_version
+        code.routines.len(),
+        code.triggers.len(),
+        version.product_version,
     );
     assert_eq!(snapshot.tables.len(), 200);
     assert_eq!(snapshot.foreign_keys.len(), 199);
     assert!(snapshot.tables.iter().all(|table| table.indexes.len() == 2));
+    assert_eq!(snapshot.views.len(), 20);
+    assert_eq!(code.views.len(), 20);
+    assert_eq!(code.triggers.len(), 200);
+    for (kind, expected) in [
+        (RoutineKind::Procedure, 600),
+        (RoutineKind::ScalarFunction, 100),
+        (RoutineKind::InlineTableFunction, 50),
+    ] {
+        assert_eq!(
+            code.routines
+                .iter()
+                .filter(|routine| routine.kind == kind)
+                .count(),
+            expected
+        );
+    }
+    assert!((1_900_000..2_500_000).contains(&module_characters));
     assert!(elapsed < STRESS_BUDGET, "inspection took {elapsed:?}");
 }
 

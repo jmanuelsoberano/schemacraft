@@ -160,6 +160,12 @@
   color: var(--color-text);
 }
 
+.codeProperty {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
 .detailValue {
   display: flex;
   flex-direction: column;
@@ -200,4 +206,9 @@
   font-size: var(--text-sm);
   color: var(--color-text);
   overflow-wrap: anywhere;
+}
+.factGroupTitle {
+  margin: var(--space-2) 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
 }

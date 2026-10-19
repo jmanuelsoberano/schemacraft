@@ -50,6 +50,15 @@ export function definitionsCoverage(snapshot: SchemaSnapshot): FactCoverage {
   return snapshot.access?.coverage.definitions ?? "notRecorded";
 }
 
+/** Coverage of code is independent of the tables-and-expressions access verdict. */
+export function programmabilityCoverage(snapshot: SchemaSnapshot): FactCoverage {
+  return snapshot.access?.coverage.programmability ?? "notRecorded";
+}
+
+export function moduleDefinitionsCoverage(snapshot: SchemaSnapshot): FactCoverage {
+  return snapshot.access?.coverage.moduleDefinitions ?? "notRecorded";
+}
+
 /**
  * Whether a table or view missing from the snapshot, or a count of zero, is a fact. A capture that
  * recorded partial access cannot vouch for absences; a SchemaCraft 1.0 snapshot recorded nothing

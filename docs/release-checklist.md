@@ -1,7 +1,7 @@
 # Release checklist
 
 How a SchemaCraft release is verified against the acceptance criteria of the PRD (section 5) and
-the scope each version adds (section 3.8 for 1.1), what CI covers and what is checked by hand
+the scope each version adds (section 3.8 for 1.1 and 3.9 for 1.2), what CI covers and what is checked by hand
 before a draft release is published. The automated parts run on every pull request and push to
 `main` (`ci.yml`, sized to the change, ADR-033) and on every tag (`release.yml`).
 
@@ -34,6 +34,23 @@ local SQL Server 2022 container, in both languages and themes, before it was mer
 | Tables and views told apart    | Unit tests of the entity listing and its schema and kind sections; a test refuses any colour outside `tokens.css`, which the canvas, the exports and the viewer share.                                                                                                                                                                                                                                                                                 | done  |
 | Inspector panel                | Unit tests of the view-model shared with the HTML viewer, of the panel and what it inspects, of its SQL disclosure and of the side panel widths in a narrow window.                                                                                                                                                                                                                                                                                    | done  |
 | Readable rules                 | A golden file of 72 stored `CHECK` forms, 21 of them left unread on purpose, is checked against SQL Server by the integration tests and read by the frontend tests; further integration tests pin the engine behaviour the sentences rest on; unit tests of the parser, the `CHECK` and foreign key readers, the sentence templates in both languages and the crow's foot geometry.                                                                    | done  |
+
+## Scope of 1.2
+
+The implemented parts of PRD section 3.9 extend the same gates. Each SQL Server integration
+binary runs against both 2019 and 2022; the expected major version prevents a run from silently
+testing the other container. Release publication still requires the manual checks below.
+
+| Part (PRD 3.9)                              | How it is verified                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Measured capability and private diagnostics | The probe reports counts and bytes only; integration and diagnostics tests inspect successful, denied, failed and timed-out operations and reject private names, text and messages from the log.                                                                                                                        |
+| Index and constraint state                  | Core tests pin clustering, included columns, disabled/filtered indexes, trust and partitioned index keys; frontend and export tests pin the resulting rule text, badges and relationship markers.                                                                                                                       |
+| Format 3 and older readers                  | Round trips, migration chains and forward-read tests keep unknown fields and the table interpretation of 1.1; an export sentinel proves module names and texts do not leave the project.                                                                                                                                |
+| Code metadata and texts                     | `sqlserver_code` reads procedures, every SQL function kind, parameters/TVPs, returned columns, view options and DML trigger events/order; assembly tests cover CLR kinds and unknown values. Tests distinguish verbatim readable, encrypted, not-visible and omitted texts.                                             |
+| Code access and scope                       | `sqlserver_permissions` pins reader, schema SELECT/EXECUTE, VIEW DEFINITION plus DENY EXECUTE and execute-only profiles on both engines. Bound schema filters, code-only schemas, views off and both code options are tested. A 2022-only persona checks USER_NAME with VIEW SECURITY DEFINITION denied.                |
+| Code failure and refresh                    | A real denial of `sys.sql_modules` leaves tables readable and saved code intact. Unit tests cover timeouts, normalization, all 14 code properties, first captures, explicit exclusions, whole-object/definition dates and repeated weaker/failing reads. A failed optional read cannot claim the project is up to date. |
+| Connection and review                       | Frontend tests cover default switches, stable schema selections after retesting, stage order, grouped counts, capture/failure lines, both languages and the Rust verdicts consumed by the review.                                                                                                                       |
+| Code extraction budget                      | The stress fixture includes 200 tables, 200 triggers, 600 procedures, 100 scalar functions, 50 inline table functions and 20 views. The integration test enforces the five-second inspection budget and reports the elapsed time and snapshot JSON bytes.                                                               |
 
 ## Automated on every tag
 
@@ -73,6 +90,18 @@ local SQL Server 2022 container, in both languages and themes, before it was mer
       clipboard.
 - [ ] Read a database with views: the entities panel shows Tables and Views sections, and views
       carry the VIEW label on the canvas and in the SVG, PDF and HTML exports.
+- [ ] Back up the application's `preferences.json` before each application test and restore it
+      afterwards. Read `SchemaCraftCode` as owner and reader in both languages and themes, with
+      both code options on and off. Check the two progress stages, code-only schemas, separate
+      access-report rows and saved `programmability` states; time a stress inspection.
+- [ ] Refresh a 1.1 project with code enabled: only aggregate first-capture lines appear for
+      code and "Update project" is offered. Apply the code-change fixture and verify altered
+      bodies, trigger state/order, view check option, a removed function and an added procedure,
+      with no change for a line-ending-only recreation. Read owner to reader and back: no false
+      removals, retained dates, then now-available objects/texts. Turn options off and check
+      counted exclusions. Deny the module catalog read: tables still refresh, saved code is kept
+      and the review reports the failure. Save, reopen and inspect the diagnostic log for counts
+      and timings without SQL or private names.
 - [ ] Open the Inspector with Ctrl+I on a selected table, follow the selection to another one,
       resize the panel and restart the application: it remembers the width.
 - [ ] Select a table with `CHECK` constraints and foreign keys, in English and in Spanish: the
@@ -108,6 +137,9 @@ local SQL Server 2022 container, in both languages and themes, before it was mer
 - NOT FOR REPLICATION on `CHECK` constraints and foreign keys is not read. SQL Server never trusts
   such a rule, so it shows "not trusted". Its sentences do not say that writes by replication
   agents skip it, and its scripted SQL omits NOT FOR REPLICATION. Reading it moves to 1.3.
+- Code comparison normalizes line endings, trailing spaces/tabs and empty edge lines without
+  parsing SQL. The project preserves the original code, but the review is not a semantic SQL
+  comparison. Database/server DDL triggers, dependencies and descriptions are outside this scope.
 
 ## Known limitations of 1.1.0
 
@@ -136,3 +168,29 @@ new build took 1.6 s.
 | NSIS installer                           | 4.8 MB  | 5.0 MB  |
 | Start until the window page is reachable | 0.5 s   | 0.54 s  |
 | Welcome page `DOMContentLoaded`          | 0.1 s   | 0.03 s  |
+
+### Code capture and refresh verification, 2026-10-19
+
+Measured with the 1.2 development debug build against local SQL Server containers. The stress
+fixture has 200 tables, 200 DML triggers, 600 procedures, 100 scalar functions, 50 inline table
+functions and 20 views, with both code options enabled.
+
+| Measurement          | SQL Server 2022 (16.0.4305.5) | SQL Server 2019 (15.0.4500.2) |
+| -------------------- | ----------------------------- | ----------------------------- |
+| Core inspection      | 542.2225 ms                   | 541.4735 ms                   |
+| Serialized snapshot  | 3,156,304 bytes               | 3,156,304 bytes               |
+| Readable module text | 2,028,740 characters          | 2,028,740 characters          |
+
+Two stress captures in the real application took **690.7818–1,078.5906 ms** on SQL Server 2022.
+This includes capture, IPC and project initialization; it is not a backend-only measurement.
+All measurements stay within the five-second inspection budget.
+
+Two real-application sessions verified capture and refresh in English/light and Spanish/dark:
+code options, counted stages, code-only schemas, access-report rows, a format-2 first capture,
+weaker and stronger permissions, a failed module query, opt-out saved and reopened, and changes
+saved and reopened. Both sessions were repeated after visual corrections and passed again.
+The diagnostic output contained neither module SQL, passwords nor fixture identifiers (server,
+login, database, object or path). Each
+session backed up preferences, confirmed that the test process had terminated and restored the
+original preferences byte for byte. This is acceptance evidence for code capture and refresh;
+the release-publication checks above remain open until the full 1.2 release is ready.

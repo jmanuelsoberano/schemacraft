@@ -48,6 +48,7 @@ import {
   withUncheckedFacts,
 } from "./previewAccess";
 import { previewSnapshot } from "./previewConnectionBackend";
+import { codeCaptureChanges, codeDiff } from "./previewCode";
 import type { ProjectBackend } from "./projectBackend";
 
 /** Format the preview writes, as `FORMAT_VERSION` and `MIN_READER_VERSION` on the Rust side. */
@@ -131,12 +132,23 @@ function withoutRecordedState(snapshot: SchemaSnapshot): SchemaSnapshot {
     return copy;
   };
   const keys = snapshot.foreignKeysToInvisibleTables?.map(withoutTrust);
-  return {
+  const older = {
     ...snapshot,
     tables: snapshot.tables.map(table),
     foreignKeys: snapshot.foreignKeys.map(withoutTrust),
     ...(keys === undefined ? {} : { foreignKeysToInvisibleTables: keys }),
   };
+  delete older.programmability;
+  if (older.access !== undefined) {
+    older.access = {
+      ...older.access,
+      coverage: {
+        objects: older.access.coverage.objects,
+        definitions: older.access.coverage.definitions,
+      },
+    };
+  }
+  return older;
 }
 
 /**
@@ -280,6 +292,7 @@ type SchemaChanges = Omit<
   | "captureChanges"
   | "hasObjectChanges"
   | "isUpToDate"
+  | "code"
 >;
 
 function countsOf(changes: readonly { kind: ChangeKind }[]): ChangeCounts {
@@ -294,6 +307,7 @@ function withSummary(changes: Omit<SchemaChanges, "summary">): SchemaChanges {
       tables: countsOf(changes.tables),
       views: countsOf(changes.views),
       foreignKeys: countsOf([...changes.foreignKeys, ...changes.foreignKeysToInvisibleTables]),
+      code: { added: 0, removed: 0, changed: 0 },
     },
   };
 }
@@ -554,11 +568,15 @@ export const previewProjectBackend: ProjectBackend = {
     await wait(300);
     const merged = withUncheckedFacts(current, previous);
     const changedAccess = accessChanged(previous, merged);
-    const recorded = captureChanges(previous, merged);
+    const recorded = [...captureChanges(previous, merged), ...codeCaptureChanges(previous, merged)];
+    const code = codeDiff(previous, merged);
     // A project saved before 1.2 refreshed by the same login: nothing changed but the state now
     // recorded, which the review reports as one line.
     const changes =
-      changedAccess || recorded.length > 0
+      changedAccess ||
+      recorded.length > 0 ||
+      code.notChecked.length > 0 ||
+      code.readFailures.length > 0
         ? visibilityChanges(previous, merged)
         : fabricatedChanges(merged);
     const notChecked = merged.carriedOver ?? [];
@@ -567,9 +585,12 @@ export const previewProjectBackend: ProjectBackend = {
       changes.tables.length > 0 ||
       changes.views.length > 0 ||
       changes.foreignKeys.length > 0 ||
-      changes.foreignKeysToInvisibleTables.length > 0;
+      changes.foreignKeysToInvisibleTables.length > 0 ||
+      code.changes.length > 0;
     return {
       ...changes,
+      code,
+      summary: { ...changes.summary, code: countsOf(code.changes) },
       notChecked,
       nowAvailable,
       accessChanged: changedAccess,
@@ -580,7 +601,10 @@ export const previewProjectBackend: ProjectBackend = {
         notChecked.length === 0 &&
         nowAvailable.length === 0 &&
         !changedAccess &&
-        recorded.length === 0,
+        recorded.length === 0 &&
+        code.notChecked.length === 0 &&
+        code.nowAvailable.length === 0 &&
+        code.readFailures.length === 0,
     };
   },
 

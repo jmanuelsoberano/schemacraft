@@ -231,8 +231,9 @@ AS
 RETURN SELECT OrderId, Status, Total FROM app.Orders WHERE CustomerId = @CustomerId;
 GO
 CREATE FUNCTION app.fn_LinesOf (@OrderId int)
-RETURNS @Lines TABLE (LineNumber smallint NOT NULL, Quantity int NOT NULL)
+RETURNS @Lines TABLE (LineNumber smallint NOT NULL, Quantity int DEFAULT (4) NOT NULL)
 AS
+-- Internal defaults belong to this body; returned-column metadata records structure only.
 BEGIN
     INSERT INTO @Lines (LineNumber, Quantity)
     SELECT LineNumber, Quantity FROM app.OrderLines WHERE OrderId = @OrderId;

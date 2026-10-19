@@ -51,6 +51,10 @@ export function ConnectionForm({ serverFieldRef, passwordFieldRef }: ConnectionF
   // What the access probe predicts for the chosen database; a read that found nothing to see
   // replaces it with its own notice.
   const predictedAccess = tested?.access ?? null;
+  const codeOnlySchemas = draft.includeProgrammability
+    ? (tested?.programmabilityOnlySchemas ?? [])
+    : [];
+  const schemaOptions = [...(tested?.schemas ?? []), ...codeOnlySchemas];
   const showsHistory = mode === "connect" && recentConnections.length > 0;
   const passwordHint =
     draft.passwordIsStored && draft.password === ""
@@ -273,15 +277,20 @@ export function ConnectionForm({ serverFieldRef, passwordFieldRef }: ConnectionF
                     }
                   }}
                 />
-                {tested.schemas.map((schema) => (
+                {schemaOptions.map((schema) => (
                   <Checkbox
                     key={schema}
                     label={schema}
+                    description={
+                      codeOnlySchemas.includes(schema)
+                        ? t("connection.schemas.codeOnly")
+                        : undefined
+                    }
                     checked={draft.schemas.length === 0 || draft.schemas.includes(schema)}
                     disabled={isBusy}
                     onCheckedChange={(checked) => {
                       updateDraft({
-                        schemas: toggleSchema(tested.schemas, draft.schemas, schema, checked),
+                        schemas: toggleSchema(schemaOptions, draft.schemas, schema, checked),
                       });
                     }}
                   />
@@ -298,11 +307,32 @@ export function ConnectionForm({ serverFieldRef, passwordFieldRef }: ConnectionF
             updateDraft({ includeViews });
           }}
         />
+        <Checkbox
+          label={t("connection.field.includeProgrammability")}
+          checked={draft.includeProgrammability}
+          disabled={isBusy}
+          onCheckedChange={(includeProgrammability) => {
+            updateDraft({ includeProgrammability });
+          }}
+        />
+        <Checkbox
+          label={t("connection.field.includeModuleDefinitions")}
+          description={t("connection.field.includeModuleDefinitions.description")}
+          checked={draft.includeModuleDefinitions}
+          disabled={isBusy || !draft.includeProgrammability}
+          onCheckedChange={(includeModuleDefinitions) => {
+            updateDraft({ includeModuleDefinitions });
+          }}
+        />
         {predictedAccess !== null &&
         draft.database !== null &&
         phase !== "loadingSchemas" &&
         blockedInspection === null ? (
-          <AccessCheckNotice access={predictedAccess} database={draft.database} />
+          <AccessCheckNotice
+            access={predictedAccess}
+            database={draft.database}
+            includeCode={draft.includeProgrammability && draft.includeModuleDefinitions}
+          />
         ) : null}
       </section>
 

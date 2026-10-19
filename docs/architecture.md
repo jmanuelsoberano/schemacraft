@@ -220,13 +220,15 @@ instances through SQL Browser, bounds the TCP connection with a timeout, runs th
 handshake and validates idle sessions with `SELECT 1`. Pools live for one operation (test,
 listing, description or inspection) and are dropped afterwards, so the application never keeps
 idle sessions on a server. An inspection opens up to four sessions and runs the access probe
-(ADR-034) and its seven set-based catalog queries concurrently; the schema filter is applied
-while assembling. A foreign key whose referenced table is visible but outside the selection is
+(ADR-034) and its seven set-based table catalog queries concurrently; the table schema filter is
+applied while assembling. Since 1.2 the code stage shares those four sessions and filters every
+query on the server with bound schema parameters (ADR-043). A foreign key whose referenced table is visible but outside the selection is
 dropped, because an edge needs both tables on the diagram; one whose referenced table the login
 cannot see is kept apart (ADR-034). The schema picker lists the schemas in which the access
 probe finds a table or view the login can see: ownership of the fixed-role schemas
 (`db_datareader` and friends) is not reliable in real databases, and an empty schema has nothing
-to filter. Fallback if a regression appears: tiberius 0.12.3 with `bb8-tiberius`.
+to filter. Since 1.2 a separate list includes schemas with visible procedures or functions for
+the code option (ADR-043). Fallback if a regression appears: tiberius 0.12.3 with `bb8-tiberius`.
 
 ### ADR-010: The portable executable relies on the WebView2 runtime
 
@@ -383,7 +385,8 @@ needs travel with the diff, computed in Rust: `hasObjectChanges` (the opposite o
 `isUpToDate`, which also requires no capture line. `reviewChanges.ts` reads them and never works
 them out again, so a fact the lists do not show cannot make the review say the project is up to
 date. A review with a capture line and no object change offers "Update project", and the panel lists
-the line under "Recorded for the first time".
+the line under "Recorded for the first time". Code comparisons, explicit exclusions and failed
+optional reads use the same verdicts and are specified in ADR-043.
 
 ### ADR-017: Preferences live in one Rust-owned file in the user's configuration directory
 
@@ -838,10 +841,12 @@ too, and a `DENY` of it is a syntax error, so a login with `VIEW DEFINITION` see
 counts them, which the 2019 run pins. The branch where the count is unknown has a login of its
 own, `schemacraft_vd_deny_vsd` in `permission_logins_2022.sql`, created only where the server
 reports major version 16 or later: `VIEW DEFINITION` with `VIEW SECURITY DEFINITION` denied. SQL
-Server then hides every denial from it, its own included, and its own database user, so
-`explicitDenials` and `databaseUser` are `null`, and its capture reads every object and text yet
-vouches for no absence: the level is partial, with a partial object list, complete texts and the
-one cause that the login cannot see its denials.
+Server then hides every denial from it, its own included, and its own row in
+`sys.database_principals`. Since 1.2 the probe falls back to `USER_NAME()` for this current user
+only, so `databaseUser` is populated while `explicitDenials` stays `null`. Its capture reads every
+object and text yet vouches for no absence: the level is partial, with a partial object list,
+complete texts and the one cause that the login cannot see its denials. Code visibility has
+separate rules and counts (ADR-043); it never changes this table-access verdict.
 
 ### ADR-035: Project format 2 reads forward: two version numbers, migrations, kept unknown keys
 
@@ -1579,6 +1584,118 @@ not know. Optional fields and a fifth kept level add facts without changing any 
 door format 2 opened stays open both ways: 1.1 can show a 1.2 project and cannot damage it.
 Recording an absent state as "not recorded" keeps the first 1.2 refresh of an old project from reading as
 hundreds of changes and keeps a gap from reading as a fact.
+
+### ADR-043: Code is read independently, kept when it cannot be checked and compared without formatting noise
+
+The code persisted by ADR-042 is now read, refreshed and reviewed. Procedures and functions are
+independent objects; DML triggers follow the table or view they belong to; view modules add code
+facts to the views already on the diagram. None becomes a canvas node. Reading code is optional,
+and a failed optional read must neither fail a successful table inspection nor erase an earlier
+capture.
+
+`inspectors/sqlserver/programmability.rs` reads five metadata queries before one module-text
+query: objects (`V`, `P`, `PC`, `FN`, `FS`, `IF`, `TF`, `FT`, `AF`), table and view DML triggers
+(`TR`, `TA`, `parent_class = 1`), trigger events, parameters and table-function result columns.
+`code_assembly.rs` maps those rows purely and sorts them deterministically. Parameters retain
+their declaration order, type, `OUTPUT` and `READONLY`; table-valued parameters retain their table
+type. Parameter 0 is a scalar or aggregate function's return type, never a normal parameter or a
+table function's return type. Returned columns describe structure only: defaults on a
+multi-statement function's internal return-table variable remain in its SQL body and are neither
+queried nor persisted separately. The existing `Column` contract is retained with no default
+expression for these result columns. Trigger timing, enabled and `NOT FOR REPLICATION` flags are
+independent; firing order is recorded per INSERT, UPDATE and DELETE event. A view records
+`WITH CHECK OPTION` and whether it has a unique clustered index. CLR bodies are `clr`, with no
+SQL text; SQL bodies retain `readable`, `encrypted`, `notVisible` and `notRecorded` separately.
+
+Every code query binds the schema filter on the server. A selection longer than 2,000 schemas
+runs in bounded chunks and deduplicates the returned identities; it never falls back to all
+schemas. Turning views off excludes their modules and their triggers in SQL. Text rows stream
+from `sys.sql_modules` and are consumed one at a time; the driver rows are not collected alongside
+a second copy of every body. Stored texts are unchanged, including an empty readable string.
+An absent text row after a successful read is `notVisible`; `OBJECTPROPERTY(IsEncrypted)`
+distinguishes encryption, including for a login that cannot read the text. A deliberate text
+opt-out is `notRecorded` even for an encrypted module.
+
+The table catalog and probe still use their existing `try_join!`; a surrounding `join!` waits for
+that result and the code stage independently, on the same four-session pool. The code stage returns
+its capture outcome instead of propagating a query error. A metadata error leaves both families
+`notRead`; a text error keeps the metadata and leaves only definitions `notRead`. Driver timeouts
+and SQL Server error 1222 retain `timedOut`; other failures are `queryFailed`. A failed code lease
+is marked broken through the pool manager before it returns, so a partly consumed response cannot
+poison a waiting table query. Progress reports `ReadingProgrammability` with the routine and
+trigger count, then `ReadingModuleDefinitions` with the readable-text count; a failed stage has
+no count. Diagnostics retain the static query name, error kind and number, outcome, counts and
+timings, never driver messages, names or SQL text (ADR-041).
+
+The access probe records code visibility and `EXECUTE` denials separately. Table access still
+depends only on tables, views and `CHECK`/`DEFAULT` texts. The shared code-object coverage is complete
+only when `VIEW DEFINITION` covers the selected schemas and no relevant denial is known or
+unknown; `SELECT` or `db_datareader` alone cannot vouch for a complete procedure/function list.
+The permission fixture pins the following on SQL Server 2019 and 2022: a reader sees table
+functions and the triggers of visible parents but no procedures or scalar functions; schema
+`SELECT` does not reveal procedures; schema `EXECUTE` reveals only its permitted routines;
+`VIEW DEFINITION` still reveals a procedure denied `EXECUTE`. That last measured combination
+does not reduce code coverage. An encrypted module is not a permission gap, and a CLR module is
+not counted as a SQL text. A failed or omitted family has no coverage verdict. The schema picker
+can add code-only schemas while objects are requested, but a login with no visible table or view
+still cannot start an inspection. The current-user fallback of ADR-034 does not claim that the
+denials became visible.
+
+`model/code_carry_over.rs` extends the existing pure refresh merge. A missing routine is kept
+when its schema may hide routines, and missing view modules and triggers follow their retained
+parents. A query failure or timeout keeps in-scope code; readable text that becomes not visible
+is kept, but fresh encryption is never replaced by an old readable body. If the text query fails
+and the fresh state is unrecorded or unknown, a previously known definition state is kept too,
+including not-visible and encrypted states; a freshly known encrypted state or CLR implementation
+always wins. This failure rule preserves historical evidence and is separate from carrying a
+readable text after a successful but weaker read. Each kept whole object
+or definition carries the date it was last read; repeated weaker reads keep that date, and code
+whose parent was retained inherits the parent's older date. Turning objects off, turning texts
+off, excluding a schema or excluding views is an explicit scope choice and does not preserve the
+facts left out. These decisions happen before comparison and again when applying the refresh.
+
+`diff/code.rs` pairs routines by qualified name, triggers by parent and name, and view modules by
+view. It compares all recorded properties: kind, implementation, parameters, scalar return type,
+returned columns, trigger timing/events/firing order/enabled/replication, view check/indexed
+flags, definition and encryption. A readable-to-encrypted transition is an encryption change,
+not newly available text. SQL comparison makes line endings LF, removes spaces and tabs at each
+line end and removes empty edge lines; it does not rewrite the stored text. It does not parse SQL
+or infer semantic equivalence. A first capture has one aggregate line for objects and one for
+texts; explicitly leaving a previously recorded family out has an aggregate exclusion line.
+Known encrypted or not-visible states retained through a failure still count as previous capture
+evidence. Code kept and code newly readable have their own lists, separate from 1.1's
+`SnapshotFact`. `CodeDiff.readFailures` also reports an unsuccessful observation when no code was
+saved before it: it prevents `isUpToDate` without claiming an object changed. The Rust verdicts
+remain the only authority for the review's action and empty state (ADR-016). One bounded
+limitation follows from storing only the last capture outcome: a successful empty family followed
+by a saved failed read has no retained object or known text to prove its earlier success. When it
+recovers, the review records that family again with a zero count and no object change. The same
+applies to an all-CLR catalog's empty SQL-text family. Retaining that recovery line lets the user
+save the successful outcome; format 3 adds no separate history marker for empty captures.
+
+The connection dialog offers two switches, both on by default: read procedures/functions/triggers,
+and save their code. The latter includes view text and explains that it saves business logic in
+the project. Retesting the same database preserves the selected schemas, and applying a refresh
+keeps that attempt's options and connection, without its password. Disabled code stages are
+omitted from progress. A review with partial code coverage limits its no-change verdict to what
+the login could read even when table access is full. The access report and
+review explain code coverage, encrypted/omitted/unreadable states and failed reads; the review
+groups object changes and lists changed properties without a line diff. Object browsing and a
+code viewer are a later step. Exports continue to omit code entirely (ADR-042).
+
+Evidence: Microsoft's [metadata visibility rules](https://learn.microsoft.com/en-us/sql/relational-databases/security/metadata-visibility-configuration?view=sql-server-ver16),
+[module catalog](https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-sql-modules-transact-sql?view=sql-server-ver16),
+[parameter catalog](https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-parameters-transact-sql?view=sql-server-ver16)
+and [trigger event catalog](https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-trigger-events-transact-sql?view=sql-server-ver16)
+define the queried columns and permissions; `sqlserver_permissions` and `sqlserver_code` pin the
+permission combinations on both tested engine versions instead of inferring them from a general
+permission hierarchy. Unit tests cover CLR shapes, timeouts, bound scope limits, normalization,
+every compared property, first captures, exclusions and repeated weaker/failing refreshes.
+
+Why: a partial catalog is useful only if it cannot be mistaken for a complete one. Independent
+outcomes preserve the table inspection, retained facts preserve the user's saved knowledge and
+the review separates database changes from what this attempt could establish. This adds no
+connection pool, canvas entity, stored credential, export payload or file-format version.
 
 ## Milestones
 

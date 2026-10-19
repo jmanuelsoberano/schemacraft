@@ -8,9 +8,11 @@ mod access;
 mod assembly;
 mod bound_defaults;
 mod catalog;
+mod code_assembly;
 mod data_types;
 mod errors;
 mod pool;
+mod programmability;
 mod settings;
 
 use async_trait::async_trait;
@@ -26,12 +28,12 @@ pub use settings::{
 use self::assembly::SnapshotIdentity;
 use self::catalog::CatalogSession;
 use self::pool::{ConnectionPool, PoolSettings, checkout_error, open_pool};
-use crate::diagnostics::{self, InspectionCompleted};
+use crate::diagnostics::{self, CodeCapture, InspectionCompleted};
 use crate::inspectors::{
     DatabaseDescription, DatabaseInspector, InspectionOptions, InspectionProgress, InspectionStage,
     InspectorError, ProgressReporter, ServerInformation,
 };
-use crate::model::SchemaSnapshot;
+use crate::model::{Definition, Programmability, SchemaSnapshot};
 
 /// Sessions opened for a full inspection, so catalog queries run in parallel.
 const INSPECTION_CONNECTIONS: u32 = 4;
@@ -98,10 +100,18 @@ impl SqlServerInspector {
             target: &target,
             connect_timeout: self.settings.connect_timeout(),
         };
-        let (probe, rows) = tokio::try_join!(
-            access::fetch_access_stage(&session, progress),
-            catalog::fetch_catalog(&session, progress),
-        )?;
+        // Code is an optional capture: its failure must leave a successful table catalog usable.
+        let (catalog_result, code) = tokio::join!(
+            async {
+                tokio::try_join!(
+                    access::fetch_access_stage(&session, progress),
+                    catalog::fetch_catalog(&session, progress),
+                )
+            },
+            programmability::fetch_code_stage(&session, progress, options),
+        );
+        let (probe, rows) = catalog_result?;
+        let reading_code = code.elapsed;
         let read = started.elapsed();
 
         progress.report(InspectionProgress::stage(InspectionStage::Assembling));
@@ -114,15 +124,26 @@ impl SqlServerInspector {
                 server_version: Some(server.product),
                 extracted_at: Utc::now(),
             },
+            code,
         );
 
         let total = started.elapsed();
+        let code = CodeSummary::of(snapshot.programmability.as_ref());
         diagnostics::inspection_completed(&InspectionCompleted {
             tables: snapshot.tables.len(),
             views: snapshot.views.len(),
             foreign_keys: snapshot.foreign_keys.len(),
             foreign_keys_to_invisible_tables: snapshot.foreign_keys_to_invisible_tables.len(),
             access: snapshot.access.as_ref().map(|profile| profile.level),
+            code: code.objects,
+            code_texts: code.definitions,
+            routines: code.routines,
+            triggers: code.triggers,
+            view_modules: code.view_modules,
+            module_texts: code.readable,
+            module_texts_not_visible: code.not_visible,
+            module_texts_encrypted: code.encrypted,
+            reading_code,
             connecting: connected,
             reading: read.saturating_sub(connected),
             assembling: total.saturating_sub(read),
@@ -133,6 +154,49 @@ impl SqlServerInspector {
             snapshot.tables.len(),
         ));
         Ok(snapshot)
+    }
+}
+
+/// Aggregate code facts for the privacy-preserving diagnostic event.
+struct CodeSummary {
+    objects: CodeCapture,
+    definitions: CodeCapture,
+    routines: usize,
+    triggers: usize,
+    view_modules: usize,
+    readable: usize,
+    not_visible: usize,
+    encrypted: usize,
+}
+
+impl CodeSummary {
+    fn of(programmability: Option<&Programmability>) -> Self {
+        let mut summary = Self {
+            objects: CodeCapture::Unknown,
+            definitions: CodeCapture::Unknown,
+            routines: 0,
+            triggers: 0,
+            view_modules: 0,
+            readable: 0,
+            not_visible: 0,
+            encrypted: 0,
+        };
+        if let Some(code) = programmability {
+            summary.objects = CodeCapture::from(&code.capture.objects);
+            summary.definitions = CodeCapture::from(&code.capture.definitions);
+            summary.routines = code.routines.len();
+            summary.triggers = code.triggers.len();
+            summary.view_modules = code.views.len();
+            for definition in code.module_definitions() {
+                match definition {
+                    Definition::Readable { .. } => summary.readable += 1,
+                    Definition::NotVisible => summary.not_visible += 1,
+                    Definition::Encrypted => summary.encrypted += 1,
+                    Definition::NotRecorded | Definition::Unknown => {}
+                }
+            }
+        }
+        summary
     }
 }
 

@@ -425,6 +425,70 @@ pub(crate) fn sample_programmability() -> Programmability {
     }
 }
 
+/// A current full capture with code, without any facts carried from another capture.
+pub(crate) fn code_snapshot() -> SchemaSnapshot {
+    let mut snapshot = sample_snapshot();
+    let mut code = sample_programmability();
+    code.carried_over.clear();
+    for routine in &mut code.routines {
+        if let Some(definition) = routine.body.definition_mut()
+            && matches!(definition, Definition::NotVisible | Definition::NotRecorded)
+        {
+            *definition = Definition::readable(
+                "CREATE FUNCTION sales.tvf_OrdersOf() RETURNS TABLE AS RETURN SELECT 1 AS OrderId;",
+            );
+        }
+    }
+    for trigger in &mut code.triggers {
+        if let Some(definition) = trigger.body.definition_mut()
+            && *definition == Definition::NotRecorded
+        {
+            *definition = Definition::readable(
+                "CREATE TRIGGER sales.TR_RecentOrders_Insert ON sales.RecentOrders INSTEAD OF INSERT AS SELECT 1;",
+            );
+        }
+    }
+    snapshot.programmability = Some(code);
+    if let Some(access) = &mut snapshot.access {
+        access.scope.include_programmability = true;
+        access.scope.include_module_definitions = true;
+        access.coverage.programmability = Some(Completeness::Complete);
+        access.coverage.module_definitions = Some(Completeness::Complete);
+        access.probe.execute_denials = Some(0);
+    }
+    snapshot
+}
+
+/// A reader sees table functions and trigger metadata but no module text or procedures.
+pub(crate) fn code_reader_snapshot() -> SchemaSnapshot {
+    let mut snapshot = code_snapshot();
+    snapshot.extracted_at += Duration::days(1);
+    if let Some(code) = &mut snapshot.programmability {
+        code.routines
+            .retain(|routine| routine.kind == RoutineKind::InlineTableFunction);
+        for view in &mut code.views {
+            view.definition = Definition::NotVisible;
+        }
+        for body in code
+            .routines
+            .iter_mut()
+            .map(|routine| &mut routine.body)
+            .chain(code.triggers.iter_mut().map(|trigger| &mut trigger.body))
+        {
+            if let Some(definition) = body.definition_mut() {
+                *definition = Definition::NotVisible;
+            }
+        }
+    }
+    let mut access = schema_reader_profile(&["dbo", "sales"], AccessCounts::of(&snapshot));
+    access.scope.include_programmability = true;
+    access.scope.include_module_definitions = true;
+    access.coverage.programmability = Some(Completeness::Partial);
+    access.coverage.module_definitions = Some(Completeness::NotAvailable);
+    snapshot.access = Some(access);
+    snapshot
+}
+
 /// The sample schema, read by the `sales` reader, with every fact SchemaCraft 1.2 added
 /// recorded: the code, the state of every index, key and constraint, and the code facts of the
 /// access profile, which is judged again as a capture that read the code would judge it.

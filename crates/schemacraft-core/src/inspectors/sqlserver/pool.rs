@@ -4,6 +4,7 @@
 //! resolve the address (named instances go through SQL Browser), open TCP with a timeout, run
 //! the login handshake and validate idle connections with a trivial query.
 
+use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
 use bb8::{ManageConnection, Pool, RunError};
@@ -18,6 +19,34 @@ use crate::inspectors::InspectorError;
 pub(super) type SqlServerConnection = Client<Compat<TcpStream>>;
 /// Pool of sessions sharing one configuration.
 pub(super) type ConnectionPool = Pool<TiberiusConnectionManager>;
+
+/// A pooled session that can be retired after a failed, interrupted code read. The driver
+/// cannot recover a response that timed out midway; returning it would poison a table query.
+pub(super) struct ManagedConnection {
+    client: SqlServerConnection,
+    discarded: bool,
+}
+
+impl ManagedConnection {
+    /// Prevents this session from being offered to another query when its lease ends.
+    pub(super) fn discard(&mut self) {
+        self.discarded = true;
+    }
+}
+
+impl Deref for ManagedConnection {
+    type Target = SqlServerConnection;
+
+    fn deref(&self) -> &Self::Target {
+        &self.client
+    }
+}
+
+impl DerefMut for ManagedConnection {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.client
+    }
+}
 
 /// Opens and validates sessions for one connection configuration.
 pub(super) struct TiberiusConnectionManager {
@@ -38,7 +67,7 @@ impl TiberiusConnectionManager {
 }
 
 impl ManageConnection for TiberiusConnectionManager {
-    type Connection = SqlServerConnection;
+    type Connection = ManagedConnection;
     type Error = InspectorError;
 
     async fn connect(&self) -> Result<Self::Connection, Self::Error> {
@@ -61,6 +90,10 @@ impl ManageConnection for TiberiusConnectionManager {
 
         Client::connect(self.config.clone(), tcp.compat_write())
             .await
+            .map(|client| ManagedConnection {
+                client,
+                discarded: false,
+            })
             .map_err(|error| classify_connect_error(&error, &context))
     }
 
@@ -75,8 +108,8 @@ impl ManageConnection for TiberiusConnectionManager {
         Ok(())
     }
 
-    fn has_broken(&self, _connection: &mut Self::Connection) -> bool {
-        false
+    fn has_broken(&self, connection: &mut Self::Connection) -> bool {
+        connection.discarded
     }
 }
 

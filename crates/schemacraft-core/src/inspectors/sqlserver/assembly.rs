@@ -10,12 +10,14 @@ use super::catalog::{
     CatalogRows, CheckConstraintRow, ColumnRow, ForeignKeyColumnRow, ForeignKeyRow, IndexColumnRow,
     IndexRow, ObjectKind, ObjectRow,
 };
+use super::code_assembly::assemble_programmability;
 use super::data_types::{CatalogTypeInformation, data_type_from_catalog};
+use super::programmability::CodeRead;
 use crate::inspectors::InspectionOptions;
 use crate::model::{
-    AccessCounts, AccessProbe, AccessProfile, CaptureScope, CheckConstraint, Column, Definition,
-    ForeignKey, ForeignKeyColumnPair, ForeignKeyToInvisibleTable, Index, IndexKind, PrimaryKey,
-    QualifiedName, ReferentialAction, SchemaSnapshot, Table, UnknownFields, View,
+    AccessCounts, AccessProbe, AccessProfile, CaptureScope, CaptureState, CheckConstraint, Column,
+    Definition, ForeignKey, ForeignKeyColumnPair, ForeignKeyToInvisibleTable, Index, IndexKind,
+    PrimaryKey, QualifiedName, ReferentialAction, SchemaSnapshot, Table, UnknownFields, View,
 };
 
 const CLUSTERED_INDEX_TYPE: u8 = 1;
@@ -38,11 +40,16 @@ pub(super) struct SnapshotIdentity {
 /// relationship edge needs both tables in the diagram. One whose referenced table the login
 /// cannot see is kept in [`SchemaSnapshot::foreign_keys_to_invisible_tables`], because dropping
 /// it would say the relationship does not exist.
+///
+/// The `code` the code stage read becomes [`SchemaSnapshot::programmability`], which always
+/// says what was read: a family the options left out or that could not be read is recorded as
+/// such, never as empty. The access profile judges the coverage of code only for what was read.
 pub(super) fn assemble_snapshot(
     rows: &CatalogRows,
     probe: AccessProbe,
     options: &InspectionOptions,
     identity: SnapshotIdentity,
+    code: CodeRead,
 ) -> SchemaSnapshot {
     let included = included_objects(&rows.objects, options);
     let mut columns = group_columns(&rows.columns, &included);
@@ -118,6 +125,9 @@ pub(super) fn assemble_snapshot(
         (&left.referencing_table, &left.name).cmp(&(&right.referencing_table, &right.name))
     });
 
+    let programmability = assemble_programmability(code, rows, &included, options);
+    let read_objects = programmability.capture.objects == CaptureState::Read;
+    let read_texts = read_objects && programmability.capture.definitions == CaptureState::Read;
     let mut snapshot = SchemaSnapshot {
         database_name: identity.database_name,
         server_version: identity.server_version,
@@ -128,25 +138,26 @@ pub(super) fn assemble_snapshot(
         foreign_keys,
         foreign_keys_to_invisible_tables: to_invisible_tables,
         carried_over: Vec::new(),
-        // No code is read: absent says it was not captured, never that there is none.
-        programmability: None,
+        programmability: Some(programmability),
         unknown: UnknownFields::new(),
     };
     let counts = AccessCounts::of(&snapshot);
-    snapshot.access = Some(AccessProfile::observed(
-        probe,
-        CaptureScope::from(options),
-        counts,
-    ));
+    let scope = CaptureScope {
+        include_programmability: read_objects,
+        include_module_definitions: read_texts,
+        ..CaptureScope::from(options)
+    };
+    snapshot.access = Some(AccessProfile::observed(probe, scope, counts));
     snapshot
 }
 
-struct IncludedObject {
-    name: QualifiedName,
-    kind: ObjectKind,
+/// A table or view of the catalog that the options keep.
+pub(super) struct IncludedObject {
+    pub(super) name: QualifiedName,
+    pub(super) kind: ObjectKind,
 }
 
-fn included_objects(
+pub(super) fn included_objects(
     objects: &[ObjectRow],
     options: &InspectionOptions,
 ) -> BTreeMap<i32, IncludedObject> {
@@ -170,11 +181,16 @@ fn group_columns(
     rows: &[ColumnRow],
     included: &BTreeMap<i32, IncludedObject>,
 ) -> BTreeMap<i32, Vec<Column>> {
+    columns_by_object(rows, |object_id| included.contains_key(&object_id))
+}
+
+/// The columns of the objects `keep` picks, in ordinal order and numbered from 1, by object.
+pub(super) fn columns_by_object(
+    rows: &[ColumnRow],
+    keep: impl Fn(i32) -> bool,
+) -> BTreeMap<i32, Vec<Column>> {
     let mut grouped: BTreeMap<i32, Vec<(i32, Column)>> = BTreeMap::new();
-    for row in rows
-        .iter()
-        .filter(|row| included.contains_key(&row.object_id))
-    {
+    for row in rows.iter().filter(|row| keep(row.object_id)) {
         grouped
             .entry(row.object_id)
             .or_default()
@@ -432,9 +448,11 @@ mod tests {
         CatalogRows, CheckConstraintRow, ColumnRow, ForeignKeyColumnRow, ForeignKeyRow,
         IndexColumnRow, IndexRow, ObjectKind, ObjectRow,
     };
+    use crate::inspectors::sqlserver::programmability::CodeRead;
     use crate::model::{
-        AccessCounts, AccessLevel, AccessProbe, CaptureScope, Completeness, Definition, IndexKind,
-        QualifiedName, ReferentialAction, SchemaAccess, SchemaSnapshot,
+        AccessCounts, AccessLevel, AccessProbe, CaptureScope, CaptureState, Completeness,
+        Definition, IndexKind, NotReadReason, QualifiedName, ReferentialAction, SchemaAccess,
+        SchemaSnapshot,
     };
 
     const CUSTOMERS: i32 = 100;
@@ -662,6 +680,8 @@ mod tests {
                     .single()
                     .unwrap_or_default(),
             },
+            // The code is assembled and tested in `code_assembly`.
+            CodeRead::option_off(),
         )
     }
 
@@ -980,10 +1000,16 @@ mod tests {
     }
 
     #[test]
-    fn records_no_code_it_did_not_read() {
+    fn records_that_it_did_not_read_code_and_judges_none() {
         let snapshot = assemble(&InspectionOptions::default());
 
-        assert_eq!(snapshot.programmability, None);
+        let code = snapshot.programmability.as_ref().unwrap();
+        let off = CaptureState::NotRead {
+            reason: NotReadReason::OptionOff,
+        };
+        assert_eq!(code.capture.objects, off);
+        assert_eq!(code.capture.definitions, off);
+        assert!(code.routines.is_empty() && code.triggers.is_empty() && code.views.is_empty());
         let access = snapshot.access.as_ref().unwrap();
         assert_eq!(access.probe.execute_denials, None);
         assert_eq!(access.coverage.programmability, None);

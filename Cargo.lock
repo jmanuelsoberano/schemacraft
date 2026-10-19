@@ -3504,6 +3504,7 @@ dependencies = [
  "async-trait",
  "bb8",
  "chrono",
+ "futures-util",
  "keyring",
  "resvg",
  "secrecy",

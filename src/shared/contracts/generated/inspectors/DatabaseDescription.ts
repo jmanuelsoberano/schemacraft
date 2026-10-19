@@ -11,6 +11,16 @@ export type DatabaseDescription = {
  */
 schemas: Array<string>, 
 /**
- * Access predicted for a capture of the whole database.
+ * User schemas in which the login sees procedures or functions and no table or view, in
+ * name order, or empty when no table or view is visible anywhere. The schema picker offers
+ * them, as holding procedures and functions only, when those objects are to be read: a login
+ * that sees no table or view still sees nothing to read ([`AccessLevel::NothingVisible`]).
+ *
+ * [`AccessLevel::NothingVisible`]: crate::model::AccessLevel::NothingVisible
+ */
+programmabilityOnlySchemas: Array<string>, 
+/**
+ * Access predicted for a capture of the whole database with the default options, code
+ * included.
  */
 access: AccessProfile, };

@@ -3,6 +3,7 @@ import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { describeSnapshotFact } from "@/features/access/snapshotFacts";
+import { useProjectStore } from "@/features/project/projectStore";
 import { describeColumn, formatDataType } from "@/features/schema/dataType";
 import type { DefaultLabels } from "@/features/schema/dataType";
 import { definitionText, isUnknownDefinition } from "@/features/schema/definition";
@@ -40,6 +41,7 @@ import { classNames } from "@/shared/ui/classNames";
 
 import styles from "./ReviewChangesPanel.module.css";
 import { hasObjectChanges, isUpToDate } from "./reviewChanges";
+import { CaptureChangeItem, CodeChangeItem, CodeFactsSection } from "./CodeReview";
 
 interface ReviewChangesPanelProps {
   diff: SchemaDiff;
@@ -545,14 +547,11 @@ function NowAvailableSection({ facts }: { facts: readonly AvailableFact[] }) {
  * state of every index and constraint of a project saved before 1.2. Applied, but not changes.
  */
 function CaptureRecordedSection({ changes }: { changes: readonly CaptureChange[] }) {
-  const { t, tCount } = useI18n();
+  const { t } = useI18n();
   return (
-    <Section title={t("review.section.captureRecorded")} icon={ListChecks}>
+    <Section title={t("review.section.capture")} icon={ListChecks}>
       {changes.map((change) => (
-        <li key={change.kind} className={styles.factItem}>
-          <span className={styles.captureLabel}>{t("review.capture.indexAndConstraintState")}</span>
-          <span className={styles.meta}>{tCount("review.capture.objects", change.count)}</span>
-        </li>
+        <CaptureChangeItem key={change.kind} change={change} />
       ))}
     </Section>
   );
@@ -560,10 +559,20 @@ function CaptureRecordedSection({ changes }: { changes: readonly CaptureChange[]
 
 /** What a review without any schema change still brings to the project. */
 function noChangeDescription(diff: SchemaDiff, t: Translator["t"]): string {
-  if (diff.nowAvailable.length > 0) {
+  const removesCode = (change: CaptureChange) =>
+    change.kind === "programmabilityNoLongerRecorded" ||
+    change.kind === "moduleDefinitionsNoLongerRecorded";
+  if (diff.captureChanges.some(removesCode)) {
+    return t(
+      diff.captureChanges.some((change) => !removesCode(change))
+        ? "review.noChanges.captureChanged"
+        : "review.noChanges.captureRemoved",
+    );
+  }
+  if (diff.nowAvailable.length > 0 || diff.code.nowAvailable.length > 0) {
     return t("review.noChanges.nowAvailable");
   }
-  if (diff.notChecked.length > 0) {
+  if (diff.notChecked.length > 0 || diff.code.notChecked.length > 0) {
     return t("review.noChanges.notChecked");
   }
   if (diff.captureChanges.length > 0) {
@@ -579,11 +588,26 @@ function noChangeDescription(diff: SchemaDiff, t: Translator["t"]): string {
  */
 export function ReviewChangesPanel({ diff, capture }: ReviewChangesPanelProps) {
   const { t, tCount } = useI18n();
+  const previous = useProjectStore((state) => state.project?.content.snapshot);
   const { summary } = diff;
-  const isPartialCapture = capture.access?.level === "partial";
+  const codeCapture = capture.programmability?.capture;
+  const coverage = capture.access?.coverage;
+  const isPartialCapture =
+    capture.access?.level === "partial" ||
+    (codeCapture?.objects.status === "read" &&
+      coverage?.programmability !== undefined &&
+      coverage.programmability !== "complete") ||
+    (codeCapture?.definitions.status === "read" &&
+      coverage?.moduleDefinitions !== undefined &&
+      coverage.moduleDefinitions !== "complete");
   const hasChanges = hasObjectChanges(diff);
+  const viewCode = diff.code.changes.filter((change) => change.object.kind === "view");
+  const routines = diff.code.changes.filter((change) => change.object.kind === "routine");
+  const triggers = diff.code.changes.filter((change) => change.object.kind === "trigger");
+  const notCheckedCount = diff.notChecked.length + diff.code.notChecked.length;
+  const codeFailed = diff.code.readFailures.length > 0;
 
-  if (isUpToDate(diff)) {
+  if (isUpToDate(diff) && !codeFailed) {
     return isPartialCapture ? (
       <Alert variant="success" title={t("review.empty.partial.title")}>
         {t("review.empty.partial.description")}
@@ -597,9 +621,23 @@ export function ReviewChangesPanel({ diff, capture }: ReviewChangesPanelProps) {
 
   return (
     <div className={styles.panel}>
-      {diff.notChecked.length > 0 ? (
+      {codeFailed ? (
+        <Alert variant="info" title={t("review.code.failed.title")}>
+          {diff.code.readFailures.map((failure) => (
+            <p key={failure.family}>
+              {t(
+                failure.family === "objects"
+                  ? "access.report.programmability"
+                  : "access.report.moduleDefinitions",
+              )}
+              : {t(`access.code.${failure.reason}`)}
+            </p>
+          ))}
+        </Alert>
+      ) : null}
+      {notCheckedCount > 0 ? (
         <Alert variant="info" icon={ShieldQuestionMark} title={t("review.notChecked.title")}>
-          {tCount("review.notChecked.body", diff.notChecked.length)}
+          {tCount("review.notChecked.body", notCheckedCount)}
         </Alert>
       ) : null}
       {hasChanges ? (
@@ -607,13 +645,14 @@ export function ReviewChangesPanel({ diff, capture }: ReviewChangesPanelProps) {
           <SummaryChip label={t("review.section.tables")} counts={summary.tables} />
           <SummaryChip label={t("review.section.views")} counts={summary.views} />
           <SummaryChip label={t("review.section.foreignKeys")} counts={summary.foreignKeys} />
+          <SummaryChip label={t("review.section.code")} counts={summary.code} />
         </div>
       ) : (
         <Alert
-          variant="success"
+          variant={codeFailed ? "info" : "success"}
           title={isPartialCapture ? t("review.empty.partial.title") : t("review.noChanges.title")}
         >
-          {noChangeDescription(diff, t)}
+          {codeFailed ? t("review.code.failed") : noChangeDescription(diff, t)}
         </Alert>
       )}
       {diff.tables.length > 0 ? (
@@ -623,10 +662,27 @@ export function ReviewChangesPanel({ diff, capture }: ReviewChangesPanelProps) {
           ))}
         </Section>
       ) : null}
-      {diff.views.length > 0 ? (
+      {diff.views.length > 0 || viewCode.length > 0 ? (
         <Section title={t("review.section.views")}>
           {diff.views.map((change) => (
             <ViewItem key={entityKey(change.name)} change={change} />
+          ))}
+          {viewCode.map((change) => (
+            <CodeChangeItem key={JSON.stringify(change.object)} change={change} />
+          ))}
+        </Section>
+      ) : null}
+      {routines.length > 0 ? (
+        <Section title={t("review.section.routines")}>
+          {routines.map((change) => (
+            <CodeChangeItem key={JSON.stringify(change.object)} change={change} />
+          ))}
+        </Section>
+      ) : null}
+      {triggers.length > 0 ? (
+        <Section title={t("review.section.triggers")}>
+          {triggers.map((change) => (
+            <CodeChangeItem key={JSON.stringify(change.object)} change={change} />
           ))}
         </Section>
       ) : null}
@@ -653,10 +709,21 @@ export function ReviewChangesPanel({ diff, capture }: ReviewChangesPanelProps) {
         </Section>
       ) : null}
       {diff.nowAvailable.length > 0 ? <NowAvailableSection facts={diff.nowAvailable} /> : null}
+      {diff.code.nowAvailable.length > 0 ? (
+        <CodeFactsSection entries={diff.code.nowAvailable} snapshot={capture} mode="nowAvailable" />
+      ) : null}
       {diff.captureChanges.length > 0 ? (
         <CaptureRecordedSection changes={diff.captureChanges} />
       ) : null}
       {diff.notChecked.length > 0 ? <NotCheckedSection facts={diff.notChecked} /> : null}
+      {diff.code.notChecked.length > 0 ? (
+        <CodeFactsSection
+          entries={diff.code.notChecked}
+          snapshot={capture}
+          previous={previous}
+          mode="notChecked"
+        />
+      ) : null}
       {diff.accessChanged && hasChanges ? (
         <p className={styles.note}>{t("review.accessChanged")}</p>
       ) : null}

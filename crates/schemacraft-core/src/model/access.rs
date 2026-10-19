@@ -26,9 +26,12 @@ pub struct AccessProbe {
     /// none for a login that enters as the database owner, which no denial applies to.
     /// `None` when the login cannot see its own denials, so some may exist.
     pub explicit_denials: Option<u32>,
-    /// Explicit denials of `EXECUTE` for the login and its roles, which may hide procedures and
-    /// functions. `None` when the probe did not count them, as before 1.2, or the login cannot
-    /// see its own denials; either way some may exist.
+    /// Explicit denials of `EXECUTE` for the login and its roles, at the database, schema and
+    /// object level. They hide a procedure or function from a login that sees it only through
+    /// `EXECUTE`, never from one that holds `VIEW DEFINITION`, which is the only kind of login
+    /// that can list every procedure and function (`tests/sqlserver_permissions.rs` pins both on
+    /// SQL Server 2019 and 2022). `None` when the probe did not count them, as before 1.2, or the
+    /// login cannot see its own denials; either way some may exist.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub execute_denials: Option<u32>,
@@ -37,7 +40,7 @@ pub struct AccessProbe {
     /// Per-schema facts, for the schemas the login can see.
     pub schemas: Vec<SchemaAccess>,
     /// Database user the login maps to, used to name it in a `GRANT` script; `None` when the
-    /// login reaches the database without a user of its own.
+    /// login reaches the database without a user of its own, or cannot tell.
     pub database_user: Option<String>,
 }
 
@@ -62,8 +65,10 @@ pub struct SchemaAccess {
     /// when the probe did not ask, as before 1.2.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub has_visible_programmability: bool,
-    /// Whether an explicit denial of `EXECUTE` on the schema can hide some of its procedures and
-    /// functions; `false` as well when the probe did not ask, as before 1.2.
+    /// Whether an explicit denial of `EXECUTE` on the schema itself can hide some of its
+    /// procedures and functions from a login without `VIEW DEFINITION`; `false` as well when the
+    /// probe did not ask, as before 1.2. Denials on single objects are counted in
+    /// [`AccessProbe::execute_denials`] only, since a hidden object's schema cannot be named.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_execute_denied: bool,
 }
@@ -158,7 +163,7 @@ pub struct AccessCounts {
     /// Module texts the login cannot see.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub module_definitions_not_visible: u32,
-    /// Module texts that are encrypted, which no login can read.
+    /// Encrypted module texts, which the catalog returns to no login.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub module_definitions_encrypted: u32,
 }
@@ -241,25 +246,36 @@ pub struct CaptureScope {
     pub schemas: Vec<String>,
     /// Whether views were read alongside tables.
     pub include_views: bool,
-    /// Whether procedures, functions and triggers were asked for; `false` for every capture
-    /// that did not ask, those made before 1.2 included.
+    /// Whether procedures, functions and triggers were read: asked for, and read without a
+    /// failure. `false` for every capture that did not read them, those made before 1.2 included,
+    /// so the coverage of code is judged only where code was read.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub include_programmability: bool,
-    /// Whether the texts of views, procedures, functions and triggers were asked for; `false`
-    /// for every capture that did not ask.
+    /// Whether the texts of views, procedures, functions and triggers were read, as
+    /// `include_programmability` says of the objects; `false` for every capture that did not
+    /// read them.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub include_module_definitions: bool,
 }
 
 impl CaptureScope {
-    /// Every schema, views included, and no code: nothing judges code from the permissions
-    /// alone.
+    /// Every schema, views included, and no code.
     pub fn everything() -> Self {
         Self {
             schemas: Vec::new(),
             include_views: true,
             include_programmability: false,
             include_module_definitions: false,
+        }
+    }
+
+    /// Every schema, views included, with the procedures, functions and triggers and their
+    /// texts: what a capture with the default options reads.
+    pub fn everything_with_code() -> Self {
+        Self {
+            include_programmability: true,
+            include_module_definitions: true,
+            ..Self::everything()
         }
     }
 
@@ -288,29 +304,36 @@ pub struct AccessProfile {
 }
 
 impl AccessProfile {
-    /// What a capture of the whole database would see, judged from the permissions alone. The
-    /// connection dialog shows it before anything is read.
+    /// What a capture of the whole database with the default options would see, code included,
+    /// judged from the permissions alone. The connection dialog shows it before anything is
+    /// read.
     pub fn predicted(probe: AccessProbe) -> Self {
-        let scope = CaptureScope::everything();
+        let scope = CaptureScope::everything_with_code();
         let counts = AccessCounts::default();
-        let definitions = predicted_definitions(&probe);
-        Self::judged(probe, scope, counts, definitions)
+        let texts = Texts {
+            definitions: predicted_definitions(&probe),
+            module_definitions: predicted_module_definitions(&probe),
+        };
+        Self::judged(probe, scope, counts, texts)
     }
 
-    /// What a finished capture saw, given the scope it read and what it found.
+    /// What a finished capture saw, given the scope it read and what it found. The coverage of
+    /// code is judged only for the families the scope says were read.
     pub fn observed(probe: AccessProbe, scope: CaptureScope, counts: AccessCounts) -> Self {
-        let definitions = observed_definitions(counts);
-        Self::judged(probe, scope, counts, definitions)
+        let texts = Texts {
+            definitions: observed_definitions(counts),
+            module_definitions: observed_module_definitions(counts),
+        };
+        Self::judged(probe, scope, counts, texts)
     }
 
-    fn judged(
-        probe: AccessProbe,
-        scope: CaptureScope,
-        counts: AccessCounts,
-        definitions: Completeness,
-    ) -> Self {
+    fn judged(probe: AccessProbe, scope: CaptureScope, counts: AccessCounts, texts: Texts) -> Self {
+        let Texts {
+            definitions,
+            module_definitions,
+        } = texts;
         let objects = objects_coverage(&probe, &scope, counts);
-        let (level, coverage) = if probe.sees_objects {
+        let (level, mut coverage) = if probe.sees_objects {
             let coverage = AccessCoverage::of_objects_and_texts(objects, definitions);
             let level = if coverage.is_full() {
                 AccessLevel::Full
@@ -331,6 +354,20 @@ impl AccessProfile {
             );
             (AccessLevel::NothingVisible, coverage)
         };
+        // Judged apart, after the level, which they never change. A login that sees nothing and
+        // found no module has read no text, whatever the counts of nothing say.
+        let module_definitions =
+            if level == AccessLevel::NothingVisible && counts.module_definitions == 0 {
+                Completeness::NotAvailable
+            } else {
+                module_definitions
+            };
+        coverage.programmability = scope
+            .include_programmability
+            .then(|| programmability_coverage(&probe, &scope));
+        coverage.module_definitions = (scope.include_programmability
+            && scope.include_module_definitions)
+            .then_some(module_definitions);
         Self {
             probe,
             scope,
@@ -346,6 +383,73 @@ impl AccessProfile {
     /// when the login can read the whole database, because then it does not exist.
     pub fn lists_every_object_in(&self, schema: &str) -> bool {
         lists_every_object_in(&self.probe, schema)
+    }
+
+    /// Whether the login sees every procedure and function of `schema`, so one missing from the
+    /// capture really does not exist there. That takes `VIEW DEFINITION` on the schema, granted
+    /// on it or on the database: `SELECT`, `db_datareader` among them, hides procedures and
+    /// scalar functions entirely while it shows tables, views and table functions, and `EXECUTE`
+    /// shows only what it may run. A denial of `VIEW DEFINITION`, `SELECT` or `CONTROL`, or one
+    /// the login cannot see, makes the answer `false`; a denial of `EXECUTE` does not, because it
+    /// hides nothing from a login that holds `VIEW DEFINITION`. A schema the probe does not list
+    /// counts as fully visible only when the login holds `VIEW DEFINITION` on the database.
+    /// `tests/sqlserver_permissions.rs` pins each of these on SQL Server 2019 and 2022.
+    pub fn lists_every_programmable_object_in(&self, schema: &str) -> bool {
+        lists_every_programmable_object_in(&self.probe, schema)
+    }
+}
+
+/// The text coverages a profile is judged with, both of the same origin: predicted from the
+/// permissions or observed in a capture.
+#[derive(Clone, Copy)]
+struct Texts {
+    /// `CHECK` and `DEFAULT` texts.
+    definitions: Completeness,
+    /// Texts of views, procedures, functions and triggers.
+    module_definitions: Completeness,
+}
+
+fn lists_every_programmable_object_in(probe: &AccessProbe, schema: &str) -> bool {
+    if probe.explicit_denials != Some(0) {
+        return false;
+    }
+    probe
+        .schemas
+        .iter()
+        .find(|access| access.name == schema)
+        .map_or(probe.can_read_definitions, |access| {
+            access.can_read_definitions && !access.is_denied
+        })
+}
+
+/// Procedures, functions and triggers: complete when every schema in scope lists every one of
+/// them. Triggers follow their table, so a schema whose procedures are all visible shows every
+/// trigger too. Otherwise some may be missing, and none could be read only when the login sees
+/// no table, no view and no procedure or function at all.
+fn programmability_coverage(probe: &AccessProbe, scope: &CaptureScope) -> Completeness {
+    let schemas_in_scope_list_everything = if scope.schemas.is_empty() {
+        probe
+            .schemas
+            .iter()
+            .all(|access| lists_every_programmable_object_in(probe, &access.name))
+    } else {
+        scope
+            .schemas
+            .iter()
+            .all(|schema| lists_every_programmable_object_in(probe, schema))
+    };
+    let has_scope_evidence = probe.can_read_definitions || !probe.schemas.is_empty();
+    if probe.explicit_denials == Some(0) && has_scope_evidence && schemas_in_scope_list_everything {
+        Completeness::Complete
+    } else if probe.sees_objects
+        || probe
+            .schemas
+            .iter()
+            .any(|access| access.has_visible_programmability)
+    {
+        Completeness::Partial
+    } else {
+        Completeness::NotAvailable
     }
 }
 
@@ -402,13 +506,43 @@ fn observed_definitions(counts: AccessCounts) -> Completeness {
     }
 }
 
+/// Module texts of a finished capture, as [`observed_definitions`] judges the `CHECK` and
+/// `DEFAULT` texts. An encrypted module has no text for any login, so it is never a gap, and a
+/// CLR module has no text to count.
+fn observed_module_definitions(counts: AccessCounts) -> Completeness {
+    let readable_by_some_login = counts
+        .module_definitions
+        .saturating_sub(counts.module_definitions_encrypted);
+    if counts.module_definitions_not_visible == 0 {
+        Completeness::Complete
+    } else if counts.module_definitions_not_visible >= readable_by_some_login {
+        Completeness::NotAvailable
+    } else {
+        Completeness::Partial
+    }
+}
+
 /// Texts a capture would read, from the `VIEW DEFINITION` flags of the schemas that hold
 /// visible objects, or of the database when none does.
 fn predicted_definitions(probe: &AccessProbe) -> Completeness {
+    predicted_texts(probe, |access| access.has_visible_objects)
+}
+
+/// Module texts a capture would read, from the `VIEW DEFINITION` flags of the schemas that hold
+/// a visible table, view, procedure or function, or of the database when none does.
+fn predicted_module_definitions(probe: &AccessProbe) -> Completeness {
+    predicted_texts(probe, |access| {
+        access.has_visible_objects || access.has_visible_programmability
+    })
+}
+
+/// Texts a capture would read in the schemas `holds_texts` picks, from their `VIEW DEFINITION`
+/// flags, or from the database's when it picks none.
+fn predicted_texts(probe: &AccessProbe, holds_texts: fn(&SchemaAccess) -> bool) -> Completeness {
     let flags: Vec<bool> = probe
         .schemas
         .iter()
-        .filter(|access| access.has_visible_objects)
+        .filter(|access| holds_texts(access))
         .map(|access| access.can_read_definitions)
         .collect();
     if flags.is_empty() {
@@ -613,7 +747,7 @@ mod tests {
         for persona in personas() {
             let profile = AccessProfile::predicted(persona.probe.clone());
             assert_eq!(verdict(&profile), persona.predicted, "{}", persona.name);
-            assert_eq!(profile.scope, CaptureScope::everything());
+            assert_eq!(profile.scope, CaptureScope::everything_with_code());
             assert_eq!(profile.counts, AccessCounts::default());
         }
     }
@@ -749,6 +883,320 @@ mod tests {
         assert!(!with_partial_texts.is_full());
     }
 
+    fn with_code(mut schema: SchemaAccess) -> SchemaAccess {
+        schema.has_visible_programmability = true;
+        schema
+    }
+
+    /// `found` with `total` module texts, of which `not_visible` cannot be read and `encrypted`
+    /// are encrypted.
+    fn modules(found: AccessCounts, total: u32, not_visible: u32, encrypted: u32) -> AccessCounts {
+        AccessCounts {
+            module_definitions: total,
+            module_definitions_not_visible: not_visible,
+            module_definitions_encrypted: encrypted,
+            ..found
+        }
+    }
+
+    /// One login of the permission fixture as a capture that reads code sees it: the level, and
+    /// the coverage of the procedures, functions and triggers and of their texts, predicted and
+    /// observed after finding `found`.
+    struct CodePersona {
+        name: &'static str,
+        probe: AccessProbe,
+        found: AccessCounts,
+        level: AccessLevel,
+        predicted: (Completeness, Completeness),
+        observed: (Completeness, Completeness),
+    }
+
+    // Keep the permission matrix together so predicted and observed verdicts can be compared.
+    #[allow(clippy::too_many_lines)]
+    fn code_personas() -> Vec<CodePersona> {
+        use AccessLevel::{Full, NothingVisible, Partial};
+        use Completeness::{Complete, NotAvailable};
+
+        let code_in_dbo_and_sales = |definitions: bool, data: bool| {
+            vec![
+                schema("audit", definitions, data),
+                with_code(schema("dbo", definitions, data)),
+                with_code(schema("sales", definitions, data)),
+            ]
+        };
+
+        let mut denied_execute = probe(true, false, code_in_dbo_and_sales(true, false));
+        denied_execute.execute_denials = Some(1);
+
+        let mut execute_only = probe(
+            false,
+            false,
+            vec![
+                schema("audit", false, false),
+                schema("dbo", false, false),
+                with_code(schema("sales", false, false)),
+            ],
+        );
+        execute_only.sees_objects = false;
+        for access in &mut execute_only.schemas {
+            access.has_visible_objects = false;
+        }
+
+        let select_on_sales = probe(
+            false,
+            false,
+            vec![
+                schema("audit", false, false),
+                schema("dbo", false, false),
+                with_code(schema("sales", false, true)),
+            ],
+        );
+
+        let mut unknown_denials = probe(true, true, code_in_dbo_and_sales(true, true));
+        unknown_denials.explicit_denials = None;
+
+        vec![
+            CodePersona {
+                name: "db_owner, with one encrypted procedure",
+                probe: probe(true, true, code_in_dbo_and_sales(true, true)),
+                found: modules(counts(12, 0, 0), 8, 0, 1),
+                level: Full,
+                predicted: (Complete, Complete),
+                observed: (Complete, Complete),
+            },
+            CodePersona {
+                name: "VIEW DEFINITION only",
+                probe: probe(true, false, code_in_dbo_and_sales(true, false)),
+                found: modules(counts(12, 0, 0), 8, 0, 1),
+                level: Full,
+                predicted: (Complete, Complete),
+                observed: (Complete, Complete),
+            },
+            CodePersona {
+                name: "only encrypted modules",
+                probe: probe(true, true, code_in_dbo_and_sales(true, true)),
+                found: modules(counts(12, 0, 0), 2, 0, 2),
+                level: Full,
+                predicted: (Complete, Complete),
+                observed: (Complete, Complete),
+            },
+            CodePersona {
+                // db_datareader hides procedures and scalar functions and shows the view, the
+                // inline function and the triggers without their texts.
+                name: "db_datareader",
+                probe: probe(false, true, code_in_dbo_and_sales(false, true)),
+                found: modules(counts(12, 12, 0), 4, 4, 0),
+                level: Partial,
+                predicted: (Completeness::Partial, NotAvailable),
+                observed: (Completeness::Partial, NotAvailable),
+            },
+            CodePersona {
+                // The procedures of sales are listed without their texts, the encrypted one as
+                // encrypted.
+                name: "db_datareader with EXECUTE on sales",
+                probe: probe(false, true, code_in_dbo_and_sales(false, true)),
+                found: modules(counts(12, 12, 0), 6, 5, 1),
+                level: Partial,
+                predicted: (Completeness::Partial, NotAvailable),
+                observed: (Completeness::Partial, NotAvailable),
+            },
+            CodePersona {
+                // Every text of sales is readable, and dbo's procedure and function are not
+                // listed at all, so the texts found are complete while the list is not.
+                name: "db_datareader with VIEW DEFINITION on sales",
+                probe: probe(
+                    false,
+                    true,
+                    vec![
+                        schema("audit", false, true),
+                        with_code(schema("dbo", false, true)),
+                        with_code(schema("sales", true, true)),
+                    ],
+                ),
+                found: modules(counts(12, 7, 0), 5, 0, 1),
+                level: Partial,
+                predicted: (Completeness::Partial, Completeness::Partial),
+                observed: (Completeness::Partial, Complete),
+            },
+            CodePersona {
+                name: "SELECT on the schema sales",
+                probe: select_on_sales,
+                found: modules(counts(6, 6, 0), 4, 4, 0),
+                level: Partial,
+                predicted: (Completeness::Partial, NotAvailable),
+                observed: (Completeness::Partial, NotAvailable),
+            },
+            CodePersona {
+                // A denial of EXECUTE hides nothing from a login with VIEW DEFINITION.
+                name: "VIEW DEFINITION with DENY EXECUTE on a procedure",
+                probe: denied_execute,
+                found: modules(counts(12, 0, 0), 8, 0, 1),
+                level: Full,
+                predicted: (Complete, Complete),
+                observed: (Complete, Complete),
+            },
+            CodePersona {
+                name: "EXECUTE on sales only",
+                probe: execute_only,
+                found: modules(AccessCounts::default(), 2, 1, 1),
+                level: NothingVisible,
+                predicted: (Completeness::Partial, NotAvailable),
+                observed: (Completeness::Partial, NotAvailable),
+            },
+            CodePersona {
+                name: "CONNECT only",
+                probe: without_objects(probe(false, false, vec![schema("dbo", false, false)])),
+                found: AccessCounts::default(),
+                level: NothingVisible,
+                predicted: (NotAvailable, NotAvailable),
+                observed: (NotAvailable, NotAvailable),
+            },
+            CodePersona {
+                name: "denials the login cannot see",
+                probe: unknown_denials,
+                found: modules(counts(12, 0, 0), 8, 0, 1),
+                level: Partial,
+                predicted: (Completeness::Partial, Complete),
+                observed: (Completeness::Partial, Complete),
+            },
+        ]
+    }
+
+    fn code_verdict(profile: &AccessProfile) -> (Option<Completeness>, Option<Completeness>) {
+        (
+            profile.coverage.programmability,
+            profile.coverage.module_definitions,
+        )
+    }
+
+    #[test]
+    fn an_empty_visible_schema_list_does_not_prove_code_coverage() {
+        let profile = AccessProfile::predicted(without_objects(probe(false, false, vec![])));
+        assert_eq!(profile.level, AccessLevel::NothingVisible);
+        assert_eq!(
+            profile.coverage.programmability,
+            Some(Completeness::NotAvailable)
+        );
+    }
+
+    #[test]
+    fn the_coverage_of_code_classifies_every_persona_and_never_changes_the_level() {
+        for persona in code_personas() {
+            let predicted = AccessProfile::predicted(persona.probe.clone());
+            assert_eq!(
+                code_verdict(&predicted),
+                (Some(persona.predicted.0), Some(persona.predicted.1)),
+                "{}",
+                persona.name
+            );
+            assert_eq!(predicted.level, persona.level, "{}", persona.name);
+
+            let observed = AccessProfile::observed(
+                persona.probe.clone(),
+                CaptureScope::everything_with_code(),
+                persona.found,
+            );
+            assert_eq!(
+                code_verdict(&observed),
+                (Some(persona.observed.0), Some(persona.observed.1)),
+                "{}",
+                persona.name
+            );
+            assert_eq!(observed.level, persona.level, "{}", persona.name);
+
+            // The same capture without code reaches the same level and object verdicts.
+            let without_code = AccessProfile::observed(
+                persona.probe,
+                CaptureScope::everything(),
+                AccessCounts {
+                    module_definitions: 0,
+                    module_definitions_not_visible: 0,
+                    module_definitions_encrypted: 0,
+                    ..persona.found
+                },
+            );
+            assert_eq!(
+                verdict(&without_code),
+                verdict(&observed),
+                "{}",
+                persona.name
+            );
+            assert_eq!(
+                code_verdict(&without_code),
+                (None, None),
+                "{}",
+                persona.name
+            );
+        }
+    }
+
+    #[test]
+    fn the_coverage_of_texts_is_judged_only_where_the_texts_were_read() {
+        let objects_only = CaptureScope {
+            include_module_definitions: false,
+            ..CaptureScope::everything_with_code()
+        };
+        let profile = AccessProfile::observed(
+            probe(true, true, uniform(true, true)),
+            objects_only,
+            AccessCounts::default(),
+        );
+        assert_eq!(code_verdict(&profile), (Some(Completeness::Complete), None));
+        // Texts are never judged without the objects.
+        let texts_only = CaptureScope {
+            include_programmability: false,
+            ..CaptureScope::everything_with_code()
+        };
+        let profile = AccessProfile::observed(
+            probe(true, true, uniform(true, true)),
+            texts_only,
+            AccessCounts::default(),
+        );
+        assert_eq!(code_verdict(&profile), (None, None));
+    }
+
+    #[test]
+    fn lists_every_programmable_object_only_with_view_definition_and_no_denial() {
+        let lists = |probe: AccessProbe, schema: &str| {
+            AccessProfile::predicted(probe).lists_every_programmable_object_in(schema)
+        };
+
+        // VIEW DEFINITION on the database, or on the schema.
+        assert!(lists(probe(true, false, uniform(true, false)), "sales"));
+        assert!(lists(probe(true, false, uniform(true, false)), "archive"));
+        let sales_only = probe(
+            false,
+            true,
+            vec![schema("dbo", false, true), schema("sales", true, true)],
+        );
+        assert!(lists(sales_only.clone(), "sales"));
+        assert!(!lists(sales_only.clone(), "dbo"));
+        // A schema the probe does not list is vouched for only by the database's grant.
+        assert!(!lists(sales_only, "archive"));
+
+        // SELECT, as db_datareader holds it, hides procedures and scalar functions.
+        assert!(!lists(probe(false, true, uniform(false, true)), "sales"));
+        assert!(!lists(probe(true, true, uniform(false, true)), "sales"));
+
+        // A denial of VIEW DEFINITION, SELECT or CONTROL, or one the login cannot see.
+        let mut denied = probe(true, true, uniform(true, true));
+        denied.explicit_denials = Some(1);
+        assert!(!lists(denied, "dbo"));
+        let mut unknown = probe(true, true, uniform(true, true));
+        unknown.explicit_denials = None;
+        assert!(!lists(unknown, "dbo"));
+        let mut denied_schema = probe(true, true, uniform(true, true));
+        denied_schema.schemas[2].is_denied = true;
+        denied_schema.explicit_denials = Some(1);
+        assert!(!lists(denied_schema, "sales"));
+
+        // A denial of EXECUTE, on the database, a schema or an object, hides nothing from it.
+        let mut execute_denied = probe(true, false, uniform(true, false));
+        execute_denied.execute_denials = Some(2);
+        execute_denied.schemas[2].is_execute_denied = true;
+        assert!(lists(execute_denied, "sales"));
+    }
+
     #[test]
     fn counts_the_texts_and_the_invisible_keys_of_a_snapshot() {
         assert_eq!(AccessCounts::of(&sample_snapshot()), counts(2, 0, 0));
@@ -791,7 +1239,11 @@ mod tests {
     #[test]
     fn code_facts_are_left_out_until_they_are_recorded() {
         // A profile without code facts reads and writes as 1.1 did.
-        let profile = AccessProfile::predicted(probe(false, true, uniform(false, true)));
+        let profile = AccessProfile::observed(
+            probe(false, true, uniform(false, true)),
+            CaptureScope::everything(),
+            AccessCounts::default(),
+        );
         let json = serde_json::to_value(&profile).unwrap();
         for (object, keys) in [
             (&json["probe"], &["executeDenials"][..]),

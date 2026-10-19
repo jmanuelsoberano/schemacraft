@@ -8,6 +8,16 @@ All notable changes to SchemaCraft are documented here. The format follows
 
 ### Added
 
+- Read procedures, functions, DML triggers and view code with separate options to read the
+  objects and to save their SQL texts, both on by default. The schema picker also offers schemas
+  containing only visible procedures or functions. The access report separates code visibility
+  from table access and distinguishes encrypted code, code not visible to the login, a read
+  that failed and an option left off.
+- Refresh compares parameters, return types, returned columns, trigger events and firing order,
+  view options and module code. It ignores line-ending and trailing-space differences in code,
+  keeps the original text, preserves saved code it cannot check with its last-read date, and
+  lists a first code capture once by family. A failed code read leaves the table inspection
+  usable and appears in the review even when the project had no saved code.
 - A capability probe script, `crates/schemacraft-core/probes/capability-probe.sql`, measures what
   SchemaCraft would read from a SQL Server database and returns numbers only, so a database that
   cannot be shared can still be measured. It is read-only and returns no name and no text; the
@@ -41,6 +51,14 @@ All notable changes to SchemaCraft are documented here. The format follows
 
 ### Fixed
 
+- Testing the same connection and database again keeps the selected schema filter, including
+  during refresh.
+- Applying a refresh keeps its chosen connection and read options, without saving the password.
+  Progress omits disabled code stages, and partial code coverage qualifies the review's
+  no-change message even when table access is complete.
+- On SQL Server 2022, the access report identifies the current database user when
+  `VIEW SECURITY DEFINITION` is denied, while still reporting the denials it cannot inspect as
+  unknown.
 - A nonclustered unique constraint or primary key whose index is disabled no longer makes a foreign
   key read "at most one" or draw the one-to-one marker; the sentence now says the index is disabled.
   A unique index that is enabled and has no filter now makes the key one-to-one, and a filtered one

@@ -12,7 +12,8 @@ function diff(partial: Partial<SchemaDiff> = {}): SchemaDiff {
     views: [],
     foreignKeys: [],
     foreignKeysToInvisibleTables: [],
-    summary: { tables: none, views: none, foreignKeys: none },
+    summary: { tables: none, views: none, foreignKeys: none, code: none },
+    code: { changes: [], notChecked: [], nowAvailable: [], readFailures: [] },
     notChecked: [],
     nowAvailable: [],
     accessChanged: false,
@@ -33,7 +34,7 @@ describe("the review's verdicts", () => {
 
   it("take Rust's word on schema changes", () => {
     const changed = diff({
-      summary: { tables: none, views: none, foreignKeys: { ...none, added: 1 } },
+      summary: { tables: none, views: none, foreignKeys: { ...none, added: 1 }, code: none },
       hasObjectChanges: true,
       isUpToDate: false,
     });

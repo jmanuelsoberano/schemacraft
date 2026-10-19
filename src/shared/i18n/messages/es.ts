@@ -351,11 +351,15 @@ export const spanishMessages: MessageCatalog = {
     "Actualiza el proyecto para registrar lo que ve este inicio de sesión.",
   "review.noChanges.captureRecorded":
     "Esta lectura registra detalles que el proyecto aún no tenía. Actualiza el proyecto para conservarlos.",
+  "review.noChanges.captureRemoved":
+    "Al actualizar el proyecto, se eliminará el código guardado que estas opciones de lectura excluyen.",
+  "review.noChanges.captureChanged":
+    "Estas opciones de lectura cambian lo que registra el proyecto. Revisa los detalles siguientes antes de actualizarlo.",
   "review.notChecked.title": "No se pudo comprobar todo",
   "review.notChecked.body.one":
-    "{count} elemento no es visible para este inicio de sesión, así que no se comprobó y conserva su valor guardado.",
+    "No se pudo comprobar {count} elemento y conserva su valor guardado.",
   "review.notChecked.body.other":
-    "{count} elementos no son visibles para este inicio de sesión, así que no se comprobaron y conservan sus valores guardados.",
+    "No se pudieron comprobar {count} elementos y conservan sus valores guardados.",
   "review.section.notChecked": "Sin comprobar",
   "review.section.nowAvailable": "Ahora disponible",
   "review.section.captureRecorded": "Registrado por primera vez",
@@ -591,7 +595,8 @@ export const spanishMessages: MessageCatalog = {
   "access.report.description.notRecorded": "Esquema leído el {date}.",
   "access.report.notRecorded":
     "Este proyecto se guardó antes de que SchemaCraft registrara el acceso. Actualiza desde la base de datos para comprobarlo.",
-  "access.report.full": "Este inicio de sesión leyó todo el esquema.",
+  "access.report.full":
+    "Este inicio de sesión leyó todas las tablas, vistas y sus expresiones CHECK y DEFAULT.",
   "access.report.empty":
     "Este inicio de sesión podía ver todos los objetos y la base de datos no tenía tablas ni vistas.",
   "access.report.partial": "Este inicio de sesión no pudo leer todo el esquema.",
@@ -621,6 +626,88 @@ export const spanishMessages: MessageCatalog = {
     "Para leerlo todo, tu DBA puede ejecutar este script. SchemaCraft solo lo copia y nunca lo ejecuta.",
   "access.report.dbaOnly":
     "Puede que un GRANT no sirva aquí. Tu DBA puede revisar los permisos de este inicio de sesión.",
+
+  "connection.schemas.codeOnly": "Solo procedimientos y funciones",
+  "connection.field.includeProgrammability": "Leer procedimientos, funciones y desencadenadores",
+  "connection.field.includeModuleDefinitions": "Guardar su código en el proyecto",
+  "connection.field.includeModuleDefinitions.description":
+    "Incluye el código de las vistas. El código guardado puede contener lógica de negocio y credenciales.",
+  "connection.stage.readingProgrammability": "Leyendo procedimientos, funciones y desencadenadores",
+  "connection.stage.readingModuleDefinitions": "Leyendo código de los módulos",
+  "access.notice.code":
+    "Parte del código puede no ser visible para este usuario; se marcará como no disponible.",
+  "access.report.programmability": "Procedimientos, funciones y desencadenadores",
+  "access.report.moduleDefinitions":
+    "Código de vistas, procedimientos, funciones y desencadenadores",
+  "access.code.notRecorded":
+    "No registrado en este proyecto. Actualiza desde la base de datos para leerlo.",
+  "access.code.optionOff": "Excluido por las opciones de lectura.",
+  "review.code.failed.title": "No se pudo comprobar parte del código",
+  "access.code.queryFailed":
+    "Falló la consulta de código. El código guardado se conserva como no comprobado.",
+  "access.code.timedOut":
+    "La consulta de código agotó el tiempo de espera. El código guardado se conserva como no comprobado.",
+  "access.code.unknown": "La lectura de código no registró su resultado.",
+  "access.code.objectsPartial":
+    "Pueden existir otros procedimientos o funciones que este usuario no ve. Se necesita VIEW DEFINITION para confirmar la lista.",
+  "access.code.textsPartial":
+    "Parte del código no es visible para este usuario. Los módulos cifrados y los objetos CLR no son faltas de permisos.",
+  "access.code.executeDenied":
+    "Una denegación de EXECUTE puede limitar la lista de procedimientos y funciones. Pide al administrador que la revise.",
+  "access.code.executeUnknown":
+    "Este usuario no puede confirmar si hay denegaciones de EXECUTE que impidan ver procedimientos o funciones.",
+  "access.code.textCounts": "{readable} de {total} legibles · {encrypted} cifrados",
+  "access.code.carried.one": "{count} dato de código conservado de una lectura anterior",
+  "access.code.carried.other": "{count} datos de código conservados de una lectura anterior",
+  "code.kind.procedure": "Procedimiento",
+  "code.kind.function": "Función",
+  "code.kind.trigger": "Desencadenador",
+  "code.kind.view": "Código de vista",
+  "code.kind.unknown": "Objeto de código",
+  "code.part.whole": "Objeto",
+  "code.part.definition": "Código",
+  "code.part.unknown": "Dato no reconocido",
+  "code.count.procedure.one": "{count} procedimiento",
+  "code.count.procedure.other": "{count} procedimientos",
+  "code.count.function.one": "{count} función",
+  "code.count.function.other": "{count} funciones",
+  "code.count.trigger.one": "{count} desencadenador",
+  "code.count.trigger.other": "{count} desencadenadores",
+  "code.count.view.one": "{count} vista",
+  "code.count.view.other": "{count} vistas",
+  "code.count.unknown.one": "{count} objeto de código",
+  "code.count.unknown.other": "{count} objetos de código",
+  "review.section.routines": "Procedimientos y funciones",
+  "review.section.triggers": "Desencadenadores",
+  "review.section.code": "Objetos de código",
+  "review.section.capture": "Cambios en lo que registra el proyecto",
+  "review.capture.programmabilityRecorded": "El proyecto registrará estos objetos de código.",
+  "review.capture.programmabilityNoLongerRecorded":
+    "Estos objetos de código y su código guardado se eliminarán del proyecto.",
+  "review.capture.moduleDefinitionsRecorded.one":
+    "Se guardará el código de {count} módulo en este archivo de proyecto.",
+  "review.capture.moduleDefinitionsRecorded.other":
+    "Se guardará el código de {count} módulos en este archivo de proyecto.",
+  "review.capture.moduleDefinitionsNoLongerRecorded.one":
+    "Se eliminará de este proyecto el código guardado de {count} módulo.",
+  "review.capture.moduleDefinitionsNoLongerRecorded.other":
+    "Se eliminará de este proyecto el código guardado de {count} módulos.",
+  "review.code.property.definition": "Cambió el código",
+  "review.code.property.encryption": "Cambió el cifrado",
+  "review.code.property.implementation": "Cambió la implementación (SQL o CLR)",
+  "review.code.property.parameters": "Cambiaron los parámetros",
+  "review.code.property.returnType": "Cambió el tipo devuelto",
+  "review.code.property.columns": "Cambiaron las columnas devueltas",
+  "review.code.property.timing": "Cambió el momento de ejecución del desencadenador",
+  "review.code.property.events": "Cambiaron los eventos del desencadenador",
+  "review.code.property.firingOrder": "Cambió el orden de ejecución",
+  "review.code.property.enabled": "Cambió el estado habilitado",
+  "review.code.property.notForReplication": "Cambió NOT FOR REPLICATION",
+  "review.code.property.checkOption": "Cambió WITH CHECK OPTION",
+  "review.code.property.indexed": "Cambió el estado de vista indexada",
+  "review.code.property.kind": "Cambió el tipo de objeto",
+  "review.code.failed":
+    "No se pudo leer parte del código. Las tablas se leyeron; el código guardado se conserva como no comprobado.",
 
   ...spanishRuleMessages,
 };

@@ -168,7 +168,7 @@ They are skipped unless the `SCHEMACRAFT_TEST_MSSQL_*` variables are set; with
 ```
 
 ```powershell
-cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions --test diagnostics_privacy -- --nocapture
+cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions --test sqlserver_code --test diagnostics_privacy -- --nocapture
 ```
 
 The script starts SQL Server 2022 as `schemacraft-mssql` on port 14333. With `-Version 2019` it
@@ -176,7 +176,7 @@ starts SQL Server 2019 as `schemacraft-mssql2019` on port 14334, so both can run
 pass it to `env` as well (`.\scripts\dev-sqlserver.ps1 env -Version 2019`). `env` also prints
 `SCHEMACRAFT_TEST_MSSQL_MAJOR`, the major version the server must report (16 for 2022, 15 for
 2019), which a test in each binary checks, so a run cannot test the wrong server. CI runs the
-three binaries against both versions, in one job.
+four binaries against both versions, in one job.
 
 `sqlserver_integration` seeds six databases on the container: `SchemaCraftFixture`, covering
 keys, indexes, constraints, alias types and views; `SchemaCraftFixtureChanged`, the same fixture
@@ -192,9 +192,13 @@ sections that wait on it fail and report only their error number.
 only, a reader with the `VIEW DEFINITION` of one schema, `SELECT` on two tables, `CONNECT` only,
 two variants of a schema `DENY` and a column `DENY`, plus, on SQL Server 2022, `VIEW DEFINITION`
 with `VIEW SECURITY DEFINITION` denied, a permission 2019 does not have, and runs the capability
-probe as several of them. It creates these server logins itself, with the `schemacraft_` prefix
+probe as several of them. It also pins procedure and function visibility with schema `SELECT`,
+schema `EXECUTE` and `VIEW DEFINITION` with an `EXECUTE` denial. It creates these server logins itself, with the `schemacraft_` prefix
 and a password made up for each run, so run it only against a disposable server such as these
-containers. `diagnostics_privacy` reads the same database as `sa`, as the `db_datareader` login and
+containers. `sqlserver_code` reads the `SchemaCraftCode` fixture as the owner and as a reader,
+checks parameters, table functions, view options, trigger events and firing order, encrypted and
+invisible texts, both options and bound schema filters, and verifies that a denied
+`sys.sql_modules` read keeps the tables and the saved code on refresh. `diagnostics_privacy` reads the same database as `sa`, as the `db_datareader` login and
 as a login of its own that may not read `sys.check_constraints`, logs in with a wrong password
 and opens a database the login cannot open, and checks that the diagnostic log's events hold
 counts, timings, kinds and error numbers only, with no name of the fixture, login, host, password
@@ -231,6 +235,25 @@ carry neither, beyond the one-line note of a partial read, and draw what was kep
 object on the diagram. A project reopens
 without a database; refresh reconnects through the connection dialog and shows the differences
 before applying them, keeping the positions of surviving tables.
+
+The connection dialog enables "Read procedures, functions and triggers" and "Save their code in
+the project" by default. The second option includes view code and can be turned off while keeping
+the object metadata; turning off the first leaves out both. Both respect the schema filter, and
+leaving out views also leaves out their code and triggers. Schemas containing only visible
+procedures or functions are offered while the first option is on. Testing the same connection
+and database again keeps the selection.
+
+Table-function columns record the returned structure. Defaults on a function's internal
+return-table variable remain in its SQL body; they are not read or saved as separate column
+defaults.
+
+A refresh keeps code it cannot check because of reduced permissions, a failed read or a timeout,
+with the date it was last read. Its review distinguishes this from a database change and reports
+a failed code read even when there was no saved code. Turning an option off or excluding a schema
+is an explicit choice to omit that code: applying the refresh removes the previously saved facts
+in that scope. Code comparison ignores line endings, spaces and tabs at line ends and blank edge
+lines, while the project keeps SQL Server's original text. The first capture lists objects and
+texts in aggregate instead of reporting each as added.
 
 SchemaCraft 1.2 saves projects in format 3. It opens 1.0 and 1.1 projects and converts them when
 they are saved. SchemaCraft 1.1 opens a project saved by 1.2 read-only, without its code, and 1.0
@@ -296,7 +319,11 @@ available to this login, or a table not visible to it, to the report with "Why?"
 says "None" only when it is complete. A login that sees no table or
 view at all is told so and cannot start a read. Refreshing a project with a
 login that sees less never removes what it cannot see: those items are kept and listed as not
-checked.
+checked. Code coverage is reported separately: `db_datareader` can see table functions and
+triggers yet miss procedures and scalar functions. `VIEW DEFINITION` completes the code catalog
+in its granted scope when no relevant denial prevents it. An encrypted module is identified as
+encrypted, even for the owner, and CLR code has no SQL text to save. None of these code states
+changes the table-access verdict or permits reading when no table or view is visible.
 
 ## Measuring a database without sharing it
 

@@ -7,6 +7,8 @@ import type {
   DatabaseDescription,
   InspectionEvent,
   InspectionOptions,
+  OpenedProject,
+  Project,
   ProjectContent,
   SchemaDiff,
   SchemaSnapshot,
@@ -56,8 +58,8 @@ const credentialsBackend = vi.hoisted(() => ({
 const projectBackend = vi.hoisted(() => ({
   pickProjectToOpen: vi.fn(),
   pickProjectToSave: vi.fn(),
-  readProject: vi.fn(),
-  writeProject: vi.fn(),
+  readProject: vi.fn<(path: string) => Promise<OpenedProject>>(),
+  writeProject: vi.fn<(path: string, content: ProjectContent) => Promise<Project>>(),
   computeSchemaDiff:
     vi.fn<(previous: SchemaSnapshot, current: SchemaSnapshot) => Promise<SchemaDiff>>(),
   refreshProjectContent:
@@ -134,7 +136,8 @@ function diff(partial: Partial<SchemaDiff> = {}): SchemaDiff {
     views: [],
     foreignKeys: [],
     foreignKeysToInvisibleTables: [],
-    summary: { tables: noChanges, views: noChanges, foreignKeys: noChanges },
+    summary: { tables: noChanges, views: noChanges, foreignKeys: noChanges, code: noChanges },
+    code: { changes: [], notChecked: [], nowAvailable: [], readFailures: [] },
     notChecked: [],
     nowAvailable: [],
     accessChanged: false,
@@ -151,7 +154,11 @@ const emptyPreferences = { formatVersion: 1, recentConnections: [], recentProjec
 async function testedAgainstShop(access: AccessProfile): Promise<void> {
   connectionBackend.testConnection.mockResolvedValue(server);
   connectionBackend.listDatabases.mockResolvedValue(["Shop"]);
-  connectionBackend.describeDatabase.mockResolvedValue({ schemas: ["dbo", "sales"], access });
+  connectionBackend.describeDatabase.mockResolvedValue({
+    schemas: ["dbo", "sales"],
+    programmabilityOnlySchemas: [],
+    access,
+  });
   useConnectionStore.getState().updateDraft({
     server: "db",
     authenticationMode: "sqlLogin",
@@ -165,6 +172,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   storage.items.clear();
   preferencesBackend.rememberConnection.mockResolvedValue(emptyPreferences);
+  preferencesBackend.rememberProject.mockResolvedValue(emptyPreferences);
+  credentialsBackend.hasStoredPassword.mockResolvedValue(false);
   useConnectionStore.setState({
     draft: emptyConnectionDraft,
     isDialogOpen: true,
@@ -187,6 +196,62 @@ beforeEach(() => {
 });
 
 describe("selecting a database", () => {
+  it("keeps the running read's options when the form changes", async () => {
+    await testedAgainstShop(personas.owner);
+    useConnectionStore
+      .getState()
+      .updateDraft({ includeModuleDefinitions: false, schemas: ["dbo"] });
+    let finish: (value: SchemaSnapshot) => void = () => undefined;
+    connectionBackend.inspectDatabase.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const running = useConnectionStore.getState().inspect();
+    await vi.waitFor(() => {
+      expect(connectionBackend.inspectDatabase).toHaveBeenCalledOnce();
+    });
+    useConnectionStore.getState().updateDraft({
+      includeProgrammability: false,
+      includeModuleDefinitions: true,
+      schemas: ["sales"],
+    });
+    expect(useConnectionStore.getState().inspection?.options).toEqual({
+      schemas: ["dbo"],
+      includeViews: true,
+      includeProgrammability: true,
+      includeModuleDefinitions: false,
+    });
+    finish(snapshot(personas.owner));
+    await running;
+  });
+  it("preserves the chosen schemas when testing the same database during refresh", async () => {
+    await testedAgainstShop(personas.owner);
+    useConnectionStore.setState({ mode: "refresh" });
+    useConnectionStore.getState().updateDraft({ schemas: ["sales"] });
+    await useConnectionStore.getState().testConnection();
+    expect(useConnectionStore.getState().draft.schemas).toEqual(["sales"]);
+    connectionBackend.inspectDatabase.mockResolvedValue(snapshot(personas.owner));
+    await useConnectionStore.getState().inspect();
+    expect(connectionBackend.inspectDatabase).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ schemas: ["sales"] }),
+      expect.any(Function),
+    );
+  });
+
+  it("clears the schema filter when a different database is selected", async () => {
+    await testedAgainstShop(personas.owner);
+    useConnectionStore.getState().updateDraft({ schemas: ["sales"] });
+    connectionBackend.describeDatabase.mockResolvedValue({
+      schemas: ["dbo"],
+      programmabilityOnlySchemas: ["code_only"],
+      access: personas.owner,
+    });
+    await useConnectionStore.getState().selectDatabase("Other");
+    expect(useConnectionStore.getState().draft.schemas).toEqual([]);
+    expect(useConnectionStore.getState().tested?.programmabilityOnlySchemas).toEqual(["code_only"]);
+  });
   it("keeps the schemas and the predicted access of the database", async () => {
     await testedAgainstShop(personas.reader);
 
@@ -211,7 +276,7 @@ describe("selecting a database", () => {
 
     const selecting = useConnectionStore.getState().selectDatabase("Other");
     expect(useConnectionStore.getState().tested?.access).toBeNull();
-    resolve({ schemas: ["dbo"], access: personas.owner });
+    resolve({ schemas: ["dbo"], programmabilityOnlySchemas: [], access: personas.owner });
     await selecting;
 
     expect(useConnectionStore.getState().tested?.access).toEqual(personas.owner);
@@ -344,6 +409,91 @@ describe("a login with partial access", () => {
     expect(projectBackend.refreshProjectContent).toHaveBeenCalledWith(project.content, weaker);
     expect(useProjectStore.getState().project?.content.snapshot).toBe(weaker);
     expect(useConnectionStore.getState().phase).toBe("idle");
+  });
+});
+
+describe("the applied refresh source", () => {
+  it.each([
+    { includeProgrammability: false, includeModuleDefinitions: false },
+    { includeProgrammability: true, includeModuleDefinitions: false },
+  ])("saves options %j and the chosen database/login for the next refresh", async (codeOptions) => {
+    useProjectStore
+      .getState()
+      .loadFromInspection(snapshot(personas.owner), liveSettings(), everything());
+    useProjectStore.setState((state) => ({
+      project: state.project === null ? null : { ...state.project, liveSettings: null },
+    }));
+    await useConnectionStore.getState().refresh();
+    connectionBackend.testConnection.mockResolvedValue(server);
+    connectionBackend.listDatabases.mockResolvedValue(["Shop", "Archive"]);
+    connectionBackend.describeDatabase.mockResolvedValue({
+      schemas: ["dbo"],
+      access: personas.owner,
+      programmabilityOnlySchemas: [],
+    });
+    useConnectionStore.getState().updateDraft({
+      database: "Archive",
+      username: "archive_reader",
+      password: "another-secret",
+      schemas: ["dbo"],
+      includeViews: false,
+      ...codeOptions,
+    });
+    await useConnectionStore.getState().testConnection();
+    const refreshed = { ...snapshot(personas.owner), databaseName: "Archive" };
+    connectionBackend.inspectDatabase.mockResolvedValue(refreshed);
+    projectBackend.computeSchemaDiff.mockResolvedValue(diff({ isUpToDate: false }));
+    projectBackend.refreshProjectContent.mockImplementation((content, current) =>
+      Promise.resolve({ ...content, snapshot: current }),
+    );
+    await useConnectionStore.getState().inspect();
+    await useConnectionStore.getState().applyReview();
+    const options = { schemas: ["dbo"], includeViews: false, ...codeOptions };
+    const content = useProjectStore.getState().project?.content;
+    expect(content?.inspection).toEqual(options);
+    expect(content?.connection).toMatchObject({
+      database: "Archive",
+      authentication: { mode: "sqlLogin", username: "archive_reader" },
+    });
+    expect(JSON.stringify(content)).not.toContain("another-secret");
+
+    let saved: Project | undefined;
+    projectBackend.writeProject.mockImplementation((_path, current) => {
+      saved = {
+        ...current,
+        formatVersion: 3,
+        minReaderVersion: 2,
+        savedAt: "2026-10-19T10:00:00Z",
+        savedWith: "SchemaCraft 1.2.0",
+      };
+      return Promise.resolve(saved);
+    });
+    useProjectStore.setState((state) => ({
+      project: state.project === null ? null : { ...state.project, path: "refresh.scraft" },
+    }));
+    await useProjectStore.getState().saveProject();
+    if (saved === undefined) throw new Error("The refreshed project should have been saved");
+    projectBackend.readProject.mockResolvedValue({ project: saved, isReadOnly: false });
+    useProjectStore.getState().openProject("refresh.scraft");
+    await vi.waitFor(() => {
+      expect(useProjectStore.getState().phase).toBe("idle");
+    });
+    expect(useProjectStore.getState().failure).toBeNull();
+    await useConnectionStore.getState().refresh();
+    expect(useConnectionStore.getState().draft).toMatchObject({
+      database: "Archive",
+      username: "archive_reader",
+      ...options,
+    });
+    useConnectionStore.getState().updateDraft({ password: "another-secret" });
+    await useConnectionStore.getState().testConnection();
+    await useConnectionStore.getState().inspect();
+    const lastCall = connectionBackend.inspectDatabase.mock.lastCall;
+    expect(lastCall?.[0]).toMatchObject({
+      database: "Archive",
+      authentication: { username: "archive_reader" },
+    });
+    expect(lastCall?.[1]).toEqual(options);
   });
 });
 

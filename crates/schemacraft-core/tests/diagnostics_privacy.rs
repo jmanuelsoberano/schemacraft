@@ -32,7 +32,7 @@ use schemacraft_core::diagnostics;
 use schemacraft_core::inspectors::{
     InspectionOptions, InspectorError, InspectorErrorKind, SilentProgress,
 };
-use schemacraft_core::model::SchemaSnapshot;
+use schemacraft_core::model::{CaptureState, NotReadReason, SchemaSnapshot};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::layer::SubscriberExt;
@@ -55,6 +55,8 @@ const READER: &str = "schemacraft_reader";
 const CONNECT_ONLY: &str = "schemacraft_connect";
 /// A reader that may not read `sys.check_constraints`.
 const NO_CHECKS: &str = "schemacraft_no_checks";
+/// A login with VIEW DEFINITION whose optional module-text query is denied.
+const NO_MODULES: &str = "schemacraft_deny_modules";
 
 /// Fragments of the server's messages for the failures below, which name the login, the
 /// database and the catalog view.
@@ -64,6 +66,7 @@ const MESSAGE_FRAGMENTS: &[&str] = &[
     "permission was denied",
     "mssqlsystemresource",
     "check_constraints",
+    "sql_modules",
 ];
 
 /// Password of the logins of the run, made up as `sqlserver_permissions.rs` makes up its own.
@@ -202,6 +205,7 @@ async fn forbidden(server: &TestServer) -> BTreeSet<String> {
             READER,
             CONNECT_ONLY,
             NO_CHECKS,
+            NO_MODULES,
             DATABASE,
             EMPTY_DATABASE,
         ]
@@ -288,6 +292,12 @@ async fn an_inspection_as_sa_logs_counts_and_timings_only() {
         "columns",
         "indexes",
         "check constraints",
+        "code objects",
+        "triggers",
+        "trigger events",
+        "parameters",
+        "code columns",
+        "module definitions",
     ] {
         assert!(
             queries
@@ -295,6 +305,18 @@ async fn an_inspection_as_sa_logs_counts_and_timings_only() {
                 .any(|line| line.contains(&format!("query=\"{query}\""))),
             "no line for {query}:\n{text}"
         );
+    }
+    for field in [
+        "code=Read",
+        "code_texts=Read",
+        "routines=5",
+        "triggers=2",
+        "view_modules=1",
+        "module_texts=7",
+        "module_texts_not_visible=0",
+        "module_texts_encrypted=1",
+    ] {
+        assert!(completed[0].contains(field), "missing {field}: {text}");
     }
 }
 
@@ -385,6 +407,36 @@ async fn a_denied_catalog_query_logs_its_kind_number_and_query_only() {
     assert!(failed[0].contains("kind=QueryFailed"), "{text}");
     assert!(failed[0].contains("sql_error=229"), "{text}");
     assert!(failed[0].contains(r#"query="check constraints""#), "{text}");
+}
+
+#[tokio::test]
+async fn a_denied_module_query_logs_a_partial_code_failure_and_completes_the_inspection() {
+    let Some(server) = test_server() else { return };
+    let forbidden = forbidden(&server).await;
+    let (capture, guard) = capture();
+    let snapshot = inspect_as(&as_login(&server, NO_MODULES, &PASSWORD), DATABASE)
+        .await
+        .unwrap();
+    drop(guard);
+    let text = capture.text();
+    assert_no_leak(&text, &forbidden);
+    assert_eq!(snapshot.tables.len(), 6);
+    assert_eq!(
+        snapshot
+            .programmability
+            .as_ref()
+            .unwrap()
+            .capture
+            .definitions,
+        CaptureState::NotRead {
+            reason: NotReadReason::QueryFailed
+        }
+    );
+    assert_eq!(lines_of(&text, "inspection completed").len(), 1, "{text}");
+    assert!(lines_of(&text, "command failed").is_empty(), "{text}");
+    assert!(text.contains("sql_error=229"), "{text}");
+    assert!(text.contains("code_texts=QueryFailed"), "{text}");
+    assert!(text.contains(r#"query="module definitions""#), "{text}");
 }
 
 #[test]

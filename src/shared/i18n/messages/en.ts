@@ -349,11 +349,13 @@ export const englishMessages = {
   "review.noChanges.accessChanged": "Update the project to record what this login can see.",
   "review.noChanges.captureRecorded":
     "This read records details the project didn't have yet. Update the project to keep them.",
+  "review.noChanges.captureRemoved":
+    "Updating the project will remove the saved code excluded by these inspection options.",
+  "review.noChanges.captureChanged":
+    "These inspection options change what the project records. Review the details below before updating it.",
   "review.notChecked.title": "Not everything could be checked",
-  "review.notChecked.body.one":
-    "{count} item isn't visible to this login, so it was not checked and keeps its saved value.",
-  "review.notChecked.body.other":
-    "{count} items aren't visible to this login, so they were not checked and keep their saved values.",
+  "review.notChecked.body.one": "{count} item could not be checked and keeps its saved value.",
+  "review.notChecked.body.other": "{count} items could not be checked and keep their saved values.",
   "review.section.notChecked": "Not checked",
   "review.section.nowAvailable": "Now available",
   "review.section.captureRecorded": "Recorded for the first time",
@@ -575,7 +577,8 @@ export const englishMessages = {
   "access.report.description.notRecorded": "Schema read on {date}.",
   "access.report.notRecorded":
     "This project was saved before SchemaCraft recorded access. Refresh from the database to check it.",
-  "access.report.full": "This login read the whole schema.",
+  "access.report.full":
+    "This login read all tables, views and their CHECK and DEFAULT expressions.",
   "access.report.empty":
     "This login could see every object, and the database had no tables or views.",
   "access.report.partial": "This login couldn't read the whole schema.",
@@ -602,6 +605,84 @@ export const englishMessages = {
     "To read everything, your DBA can run this script. SchemaCraft only copies it and never runs it.",
   "access.report.dbaOnly":
     "A GRANT may not help here. Your DBA can review the permissions of this login.",
+
+  "connection.schemas.codeOnly": "Procedures and functions only",
+  "connection.field.includeProgrammability": "Read procedures, functions and triggers",
+  "connection.field.includeModuleDefinitions": "Save their code in the project",
+  "connection.field.includeModuleDefinitions.description":
+    "Includes view code. Saved code can contain business logic and credentials.",
+  "connection.stage.readingProgrammability": "Reading procedures, functions and triggers",
+  "connection.stage.readingModuleDefinitions": "Reading module code",
+  "access.notice.code":
+    "Some module code may not be visible to this login; it will be marked as not available.",
+  "access.report.programmability": "Procedures, functions and triggers",
+  "access.report.moduleDefinitions": "Code of views, procedures, functions and triggers",
+  "access.code.notRecorded": "Not recorded in this project. Refresh from the database to read it.",
+  "access.code.optionOff": "Left out by the inspection options.",
+  "access.code.queryFailed": "The code query failed. Saved code is kept as not checked.",
+  "review.code.failed.title": "Some code could not be checked",
+  "access.code.timedOut": "The code query timed out. Saved code is kept as not checked.",
+  "access.code.unknown": "The code capture did not record its outcome.",
+  "access.code.objectsPartial":
+    "Other procedures or functions may exist that this login cannot see. VIEW DEFINITION is needed to confirm the list.",
+  "access.code.textsPartial":
+    "Some module code is not visible to this login. Encrypted modules and CLR objects are not permission gaps.",
+  "access.code.executeDenied":
+    "An EXECUTE denial may limit the procedure and function list. Ask your DBA to review it.",
+  "access.code.executeUnknown":
+    "This login cannot confirm whether EXECUTE denials hide procedures or functions.",
+  "access.code.textCounts": "{readable} of {total} readable · {encrypted} encrypted",
+  "access.code.carried.one": "{count} code fact kept from an earlier read",
+  "access.code.carried.other": "{count} code facts kept from an earlier read",
+  "code.kind.procedure": "Procedure",
+  "code.kind.function": "Function",
+  "code.kind.trigger": "Trigger",
+  "code.kind.view": "View code",
+  "code.kind.unknown": "Code object",
+  "code.part.whole": "Object",
+  "code.part.definition": "Code",
+  "code.part.unknown": "Unrecognised fact",
+  "code.count.procedure.one": "{count} procedure",
+  "code.count.procedure.other": "{count} procedures",
+  "code.count.function.one": "{count} function",
+  "code.count.function.other": "{count} functions",
+  "code.count.trigger.one": "{count} trigger",
+  "code.count.trigger.other": "{count} triggers",
+  "code.count.view.one": "{count} view",
+  "code.count.view.other": "{count} views",
+  "code.count.unknown.one": "{count} code object",
+  "code.count.unknown.other": "{count} code objects",
+  "review.section.routines": "Procedures and functions",
+  "review.section.triggers": "Triggers",
+  "review.section.code": "Code objects",
+  "review.section.capture": "Changes to what the project records",
+  "review.capture.programmabilityRecorded": "The project will now record these code objects.",
+  "review.capture.programmabilityNoLongerRecorded":
+    "These code objects and their saved code will be removed from the project.",
+  "review.capture.moduleDefinitionsRecorded.one":
+    "The code of {count} module will be saved in this project file.",
+  "review.capture.moduleDefinitionsRecorded.other":
+    "The code of {count} modules will be saved in this project file.",
+  "review.capture.moduleDefinitionsNoLongerRecorded.one":
+    "The saved code of {count} module will be removed from this project.",
+  "review.capture.moduleDefinitionsNoLongerRecorded.other":
+    "The saved code of {count} modules will be removed from this project.",
+  "review.code.property.definition": "Code changed",
+  "review.code.property.encryption": "Encryption changed",
+  "review.code.property.implementation": "Implementation changed (SQL or CLR)",
+  "review.code.property.parameters": "Parameters changed",
+  "review.code.property.returnType": "Return type changed",
+  "review.code.property.columns": "Result columns changed",
+  "review.code.property.timing": "Trigger timing changed",
+  "review.code.property.events": "Trigger events changed",
+  "review.code.property.firingOrder": "Firing order changed",
+  "review.code.property.enabled": "Enabled state changed",
+  "review.code.property.notForReplication": "NOT FOR REPLICATION changed",
+  "review.code.property.checkOption": "WITH CHECK OPTION changed",
+  "review.code.property.indexed": "Indexed view state changed",
+  "review.code.property.kind": "Object kind changed",
+  "review.code.failed":
+    "Some code could not be read. Tables were refreshed; previously saved code is kept as not checked.",
 
   ...englishRuleMessages,
 } as const;

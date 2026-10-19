@@ -4,7 +4,7 @@ use ts_rs::TS;
 use super::InspectorError;
 use super::sqlserver::SqlServerConnectionSettings;
 use crate::credentials::{CredentialKey, CredentialStore};
-use crate::model::{AccessProbe, AccessProfile, CaptureScope};
+use crate::model::{AccessProbe, AccessProfile, CaptureScope, SchemaAccess};
 
 /// Everything needed to reach a database, tagged by engine so the right inspector is chosen.
 ///
@@ -81,12 +81,18 @@ impl InspectionOptions {
     pub fn includes_schema(&self, schema: &str) -> bool {
         self.schemas.is_empty() || self.schemas.iter().any(|included| included == schema)
     }
+
+    /// Whether the texts of the modules are read: they are asked for, and so are the objects
+    /// they belong to.
+    pub fn reads_module_definitions(&self) -> bool {
+        self.include_programmability && self.include_module_definitions
+    }
 }
 
 impl From<&InspectionOptions> for CaptureScope {
-    /// The scope an access profile records for a capture made with these options. The
-    /// inspectors read no code, so the scope never says that its capture asked for code,
-    /// whatever the options say: a profile records what its capture read.
+    /// The scope these options ask for, without code: whether code was read is known only once
+    /// the capture tried, so the inspector sets the code flags itself
+    /// ([`CaptureScope::include_programmability`]). A profile records what its capture read.
     fn from(options: &InspectionOptions) -> Self {
         Self {
             schemas: options.schemas.clone(),
@@ -105,21 +111,38 @@ impl From<&InspectionOptions> for CaptureScope {
 pub struct DatabaseDescription {
     /// User schemas holding at least one table or view the login can see, in name order.
     pub schemas: Vec<String>,
-    /// Access predicted for a capture of the whole database.
+    /// User schemas in which the login sees procedures or functions and no table or view, in
+    /// name order, or empty when no table or view is visible anywhere. The schema picker offers
+    /// them, as holding procedures and functions only, when those objects are to be read: a login
+    /// that sees no table or view still sees nothing to read ([`AccessLevel::NothingVisible`]).
+    ///
+    /// [`AccessLevel::NothingVisible`]: crate::model::AccessLevel::NothingVisible
+    pub programmability_only_schemas: Vec<String>,
+    /// Access predicted for a capture of the whole database with the default options, code
+    /// included.
     pub access: AccessProfile,
 }
 
 impl DatabaseDescription {
     /// Describes a database from the access facts of the login.
     pub fn from_probe(probe: AccessProbe) -> Self {
-        let schemas = probe
-            .schemas
-            .iter()
-            .filter(|schema| schema.has_visible_objects)
-            .map(|schema| schema.name.clone())
-            .collect();
+        let names = |keep: fn(&SchemaAccess) -> bool| -> Vec<String> {
+            probe
+                .schemas
+                .iter()
+                .filter(|schema| keep(schema))
+                .map(|schema| schema.name.clone())
+                .collect()
+        };
+        let schemas = names(|schema| schema.has_visible_objects);
+        let programmability_only_schemas = if probe.sees_objects {
+            names(|schema| schema.has_visible_programmability && !schema.has_visible_objects)
+        } else {
+            Vec::new()
+        };
         Self {
             schemas,
+            programmability_only_schemas,
             access: AccessProfile::predicted(probe),
         }
     }
@@ -145,7 +168,7 @@ pub struct ServerInformation {
 #[cfg(test)]
 mod tests {
     use super::{DatabaseDescription, InspectionOptions};
-    use crate::model::{AccessLevel, AccessProbe, CaptureScope, SchemaAccess};
+    use crate::model::{AccessLevel, AccessProbe, CaptureScope, Completeness, SchemaAccess};
 
     #[test]
     fn a_description_offers_only_schemas_with_visible_objects() {
@@ -175,8 +198,100 @@ mod tests {
         let description = DatabaseDescription::from_probe(probe);
 
         assert_eq!(description.schemas, ["dbo", "sales"]);
+        assert_eq!(
+            description.programmability_only_schemas,
+            Vec::<String>::new()
+        );
         assert_eq!(description.access.level, AccessLevel::Partial);
         assert_eq!(description.access.probe.schemas.len(), 3);
+    }
+
+    #[test]
+    fn a_description_lists_apart_the_schemas_that_hold_only_code() {
+        let schema = |name: &str, has_visible_objects, has_visible_programmability| SchemaAccess {
+            name: name.to_string(),
+            can_read_definitions: true,
+            can_read_data: true,
+            is_denied: false,
+            has_visible_objects,
+            has_visible_programmability,
+            is_execute_denied: false,
+        };
+        let probe = AccessProbe {
+            can_read_definitions: true,
+            can_read_data: true,
+            explicit_denials: Some(0),
+            execute_denials: Some(0),
+            sees_objects: true,
+            schemas: vec![
+                schema("app", true, true),
+                schema("code_only", false, true),
+                schema("empty", false, false),
+            ],
+            database_user: Some("dbo".to_string()),
+        };
+
+        let description = DatabaseDescription::from_probe(probe);
+
+        assert_eq!(description.schemas, ["app"]);
+        assert_eq!(description.programmability_only_schemas, ["code_only"]);
+        // The prediction judges code, as a capture with the default options reads it.
+        assert_eq!(
+            description.access.coverage.programmability,
+            Some(Completeness::Complete)
+        );
+        assert_eq!(
+            description.access.coverage.module_definitions,
+            Some(Completeness::Complete)
+        );
+        let json = serde_json::to_value(&description).unwrap_or_default();
+        assert_eq!(
+            json.get("programmabilityOnlySchemas")
+                .and_then(|schemas| schemas.get(0))
+                .and_then(serde_json::Value::as_str),
+            Some("code_only")
+        );
+    }
+
+    #[test]
+    fn code_only_schemas_are_not_offered_without_a_visible_table_or_view() {
+        let description = DatabaseDescription::from_probe(AccessProbe {
+            can_read_definitions: false,
+            can_read_data: false,
+            explicit_denials: Some(0),
+            execute_denials: Some(0),
+            sees_objects: false,
+            schemas: vec![SchemaAccess {
+                name: "sales".to_string(),
+                can_read_definitions: false,
+                can_read_data: false,
+                is_denied: false,
+                has_visible_objects: false,
+                has_visible_programmability: true,
+                is_execute_denied: false,
+            }],
+            database_user: Some("executor".to_string()),
+        });
+
+        assert_eq!(description.schemas, Vec::<String>::new());
+        assert_eq!(
+            description.programmability_only_schemas,
+            Vec::<String>::new()
+        );
+        assert_eq!(description.access.level, AccessLevel::NothingVisible);
+        // The picker restriction does not discard the underlying visibility evidence.
+        assert!(
+            description
+                .access
+                .probe
+                .schemas
+                .iter()
+                .any(|schema| schema.has_visible_programmability)
+        );
+        assert_eq!(
+            description.access.coverage.programmability,
+            Some(Completeness::Partial)
+        );
     }
 
     #[test]
@@ -226,6 +341,22 @@ mod tests {
         let off = Some(&serde_json::Value::Bool(false));
         assert_eq!(written.get("includeProgrammability"), off);
         assert_eq!(written.get("includeModuleDefinitions"), off);
+    }
+
+    #[test]
+    fn module_texts_are_read_only_with_their_objects() {
+        let options = InspectionOptions::default();
+        assert!(options.reads_module_definitions());
+        let objects_off = InspectionOptions {
+            include_programmability: false,
+            ..InspectionOptions::default()
+        };
+        assert!(!objects_off.reads_module_definitions());
+        let texts_off = InspectionOptions {
+            include_module_definitions: false,
+            ..InspectionOptions::default()
+        };
+        assert!(!texts_off.reads_module_definitions());
     }
 
     #[test]

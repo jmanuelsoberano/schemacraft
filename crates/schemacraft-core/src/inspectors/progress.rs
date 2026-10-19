@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-/// Phase of an inspection. The access check and the catalog stages run concurrently, so they
-/// may complete in any order.
+/// Phase of an inspection. The access check, the catalog stages and the code stages run
+/// concurrently, so they may complete in any order; only the module texts are read after the
+/// procedures, functions and triggers they belong to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "inspectors/")]
@@ -21,6 +22,14 @@ pub enum InspectionStage {
     ReadingForeignKeys,
     /// Reading check constraints.
     ReadingConstraints,
+    /// Reading procedures, functions and triggers, with their parameters and events, when the
+    /// options ask for them. Its count is the procedures, functions and triggers read; it comes
+    /// without one when they could not be read, which does not stop the inspection.
+    ReadingProgrammability,
+    /// Reading the texts of views, procedures, functions and triggers, when the options ask for
+    /// them. Its count is the texts the login can read; it comes without one when they could not
+    /// be read, which does not stop the inspection.
+    ReadingModuleDefinitions,
     /// Building the snapshot from the catalog rows.
     Assembling,
     /// The snapshot is ready.
@@ -56,7 +65,8 @@ impl InspectionProgress {
 /// Receives progress updates from an inspection. Implementations must return quickly.
 pub trait ProgressReporter: Send + Sync {
     /// Called when connecting and assembling start, when the access check finishes, when a
-    /// catalog query that carries a count finishes, and once at completion.
+    /// catalog query that carries a count finishes, when each code stage finishes, and once at
+    /// completion.
     fn report(&self, progress: InspectionProgress);
 }
 

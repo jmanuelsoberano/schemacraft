@@ -96,6 +96,7 @@ impl SchemaSnapshot {
             self.sort_lists();
         }
         self.carried_over = ledger.into_facts();
+        self.keep_unchecked_code(previous);
         self
     }
 

@@ -1,7 +1,7 @@
 // Why a login sees less than the whole schema, worked out from the access profile frozen in a
 // capture, and whether a GRANT can fix it. Every notice names one of these causes, so the user
 // reads a specific reason and a specific next step instead of a vague warning.
-import type { AccessProfile, SchemaAccess } from "@/shared/contracts";
+import type { AccessProfile, SchemaAccess, SchemaSnapshot } from "@/shared/contracts";
 import type { Translator } from "@/shared/i18n/useI18n";
 
 export type AccessCause =
@@ -171,4 +171,43 @@ export function describeAccessCause(cause: AccessCause, translator: Translator):
     case "someObjects":
       return t("access.cause.someObjects");
   }
+}
+
+/** Code gaps are reported apart from the access verdict used by diagrams and exports. */
+export function codeCaptureCause(
+  snapshot: SchemaSnapshot,
+  family: "objects" | "definitions",
+  translator: Translator,
+): string | null {
+  const { t } = translator;
+  const state = snapshot.programmability?.capture[family];
+  if (state === undefined) return t("access.code.notRecorded");
+  if (state.status === "unknown") return t("access.code.unknown");
+  if (state.status === "notRead") return t(`access.code.${state.reason}`);
+  const profile = snapshot.access;
+  const completeness =
+    family === "objects" ? profile?.coverage.programmability : profile?.coverage.moduleDefinitions;
+  if (completeness === undefined || completeness === "complete") return null;
+  if (family === "definitions") return t("access.code.textsPartial");
+  if (profile?.probe.executeDenials === undefined) return t("access.code.executeUnknown");
+  if (profile.probe.executeDenials > 0) return t("access.code.executeDenied");
+  return t("access.code.objectsPartial");
+}
+
+/** A failed query or an option is never diagnosed as a missing permission. */
+export function codeGrantHelps(snapshot: SchemaSnapshot): boolean {
+  const access = snapshot.access;
+  const capture = snapshot.programmability?.capture;
+  return (
+    access !== undefined &&
+    capture !== undefined &&
+    access.probe.explicitDenials === 0 &&
+    access.probe.executeDenials === 0 &&
+    ((capture.objects.status === "read" &&
+      access.coverage.programmability !== undefined &&
+      access.coverage.programmability !== "complete") ||
+      (capture.definitions.status === "read" &&
+        access.coverage.moduleDefinitions !== undefined &&
+        access.coverage.moduleDefinitions !== "complete"))
+  );
 }

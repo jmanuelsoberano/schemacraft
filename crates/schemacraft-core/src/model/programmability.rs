@@ -55,6 +55,36 @@ pub struct Programmability {
 }
 
 impl Programmability {
+    /// An optional read that did not capture any code.
+    pub fn not_read(reason: NotReadReason) -> Self {
+        Self {
+            capture: CodeCapture {
+                objects: CaptureState::NotRead { reason },
+                definitions: CaptureState::NotRead { reason },
+            },
+            views: Vec::new(),
+            routines: Vec::new(),
+            triggers: Vec::new(),
+            carried_over: Vec::new(),
+            unknown: UnknownFields::default(),
+        }
+    }
+
+    /// Whether this snapshot records objects, including ones retained after a failed read.
+    pub fn records_objects(&self) -> bool {
+        self.capture.objects == CaptureState::Read
+            || !self.views.is_empty()
+            || !self.routines.is_empty()
+            || !self.triggers.is_empty()
+    }
+
+    /// Whether module texts were checked, or a previously known state is still held: readable,
+    /// not visible or encrypted. A failed refresh does not make that evidence a first capture.
+    pub fn records_texts(&self) -> bool {
+        self.capture.definitions == CaptureState::Read
+            || self.module_definitions().any(Definition::is_known)
+    }
+
     /// The texts of every SQL module listed: views, and the procedures, functions and triggers
     /// written in T-SQL. CLR modules have no text.
     pub fn module_definitions(&self) -> impl Iterator<Item = &Definition> {
@@ -101,6 +131,18 @@ pub enum CaptureState {
     /// A state written by a newer version, read as "not known to have been read".
     #[serde(other)]
     Unknown,
+}
+
+impl CaptureState {
+    /// Only an explicit connection option authorizes discarding saved facts.
+    pub fn is_left_out(&self) -> bool {
+        matches!(
+            self,
+            Self::NotRead {
+                reason: NotReadReason::OptionOff
+            }
+        )
+    }
 }
 
 /// Why a capture did not read a family of facts.
@@ -250,7 +292,7 @@ pub struct TriggerEvent {
 }
 
 /// A data modification statement.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "model/")]
 pub enum DmlEvent {
@@ -299,6 +341,14 @@ pub enum ModuleBody {
 }
 
 impl ModuleBody {
+    /// The editable definition slot of a SQL module.
+    pub fn definition_mut(&mut self) -> Option<&mut Definition> {
+        match self {
+            Self::Sql { definition } => Some(definition),
+            Self::Clr | Self::Unknown => None,
+        }
+    }
+
     /// The text of a T-SQL module; `None` for a CLR module, which has none.
     pub fn definition(&self) -> Option<&Definition> {
         match self {
@@ -333,6 +383,34 @@ pub enum CodeObjectRef {
     /// An object written by a newer version.
     #[serde(other)]
     Unknown,
+}
+
+impl ViewModule {
+    /// Identity shared by refresh and comparison.
+    pub fn object_ref(&self) -> CodeObjectRef {
+        CodeObjectRef::View {
+            name: self.view.clone(),
+        }
+    }
+}
+
+impl Routine {
+    /// Identity shared by refresh and comparison.
+    pub fn object_ref(&self) -> CodeObjectRef {
+        CodeObjectRef::Routine {
+            name: self.name.clone(),
+        }
+    }
+}
+
+impl Trigger {
+    /// Identity shared by refresh and comparison.
+    pub fn object_ref(&self) -> CodeObjectRef {
+        CodeObjectRef::Trigger {
+            parent: self.parent.clone(),
+            name: self.name.clone(),
+        }
+    }
 }
 
 /// A code object or text kept from an earlier capture, and when it was last read.

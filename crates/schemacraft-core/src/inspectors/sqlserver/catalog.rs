@@ -473,7 +473,12 @@ fn map_object_row(row: &Row) -> Result<ObjectRow, InspectorError> {
 }
 
 fn map_column_row(row: &Row) -> Result<ColumnRow, InspectorError> {
-    let query = COLUMNS.name;
+    column_row(row, COLUMNS.name)
+}
+
+/// Maps a row with the select list of [`COLUMNS`], which the code stage reads for the columns of
+/// table functions too.
+pub(super) fn column_row(row: &Row, query: &'static str) -> Result<ColumnRow, InspectorError> {
     Ok(ColumnRow {
         object_id: required(row, "object_id", query)?,
         column_id: required(row, "column_id", query)?,

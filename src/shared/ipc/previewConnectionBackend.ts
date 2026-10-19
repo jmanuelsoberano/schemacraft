@@ -29,6 +29,8 @@ import type {
 import type { ConnectionBackend } from "./connectionBackend";
 import { OperationError } from "./operationError";
 import { nameKey, observedAccess, predictedAccess } from "./previewAccess";
+import { moduleDefinitions, previewProgrammability, withCodeCoverage } from "./previewCode";
+import type { PreviewCodeFailure } from "./previewCode";
 
 const EVERYTHING: InspectionOptions = {
   schemas: [],
@@ -45,6 +47,8 @@ const STAGES: readonly InspectionStage[] = [
   "readingIndexes",
   "readingForeignKeys",
   "readingConstraints",
+  "readingProgrammability",
+  "readingModuleDefinitions",
   "assembling",
   "completed",
 ];
@@ -144,19 +148,22 @@ function seesSchema(login: PreviewLogin, schema: string): boolean {
 
 /** Permission facts the access probe reports for `login`. Every login sees its own denials. */
 function probeOf(login: PreviewLogin): AccessProbe {
-  const schemas = (login.holdsFixture ? ["dbo", "hr", "sales"] : ["dbo"]).map(
+  const schemas = (login.holdsFixture ? ["code_only", "dbo", "hr", "sales"] : ["dbo"]).map(
     (name): SchemaAccess => ({
       name,
       canReadDefinitions: grantIn(login, name).definitions,
       canReadData: grantIn(login, name).data,
       isDenied: false,
-      hasVisibleObjects: login.holdsFixture && seesSchema(login, name),
+      hasVisibleObjects: name !== "code_only" && login.holdsFixture && seesSchema(login, name),
+      hasVisibleProgrammability: login.holdsFixture && grantIn(login, name).definitions,
+      isExecuteDenied: false,
     }),
   );
   return {
     canReadDefinitions: login.database.definitions,
     canReadData: login.database.data,
     explicitDenials: 0,
+    executeDenials: 0,
     seesObjects: schemas.some((schema) => schema.hasVisibleObjects),
     schemas,
     databaseUser: login.databaseUser,
@@ -435,6 +442,7 @@ export function previewSnapshot(
   database: string,
   access: PreviewAccess = "full",
   options: InspectionOptions = EVERYTHING,
+  codeFailure?: PreviewCodeFailure,
 ): SchemaSnapshot {
   const login = LOGINS[access];
   const fixture: PreviewDatabase = login.holdsFixture
@@ -477,12 +485,23 @@ export function previewSnapshot(
   // Empty lists are left out, as the Rust side leaves them out of the JSON.
   const invisible =
     toInvisibleTables.length > 0 ? { foreignKeysToInvisibleTables: toInvisibleTables } : {};
-  const scope = { schemas: options.schemas, includeViews: options.includeViews };
+  const scope = { ...options };
+  const programmability = previewProgrammability(
+    { tables, views },
+    options,
+    (schema) => grantIn(login, schema).definitions,
+    login.holdsFixture,
+    codeFailure,
+  );
   return {
     databaseName: database,
     serverVersion: "Microsoft SQL Server 2022 (preview)",
     extractedAt: new Date().toISOString(),
-    access: observedAccess(probeOf(login), scope, { tables, views, ...invisible }),
+    access: withCodeCoverage(
+      observedAccess(probeOf(login), scope, { tables, views, ...invisible }),
+      programmability,
+    ),
+    programmability,
     tables,
     views,
     foreignKeys,
@@ -510,6 +529,16 @@ function stageCount(stage: InspectionStage, snapshot: SchemaSnapshot): number | 
       return snapshot.foreignKeys.length + (snapshot.foreignKeysToInvisibleTables?.length ?? 0);
     case "readingConstraints":
       return sum(snapshot.tables.map((item) => item.checkConstraints.length));
+    case "readingProgrammability":
+      return snapshot.programmability === undefined
+        ? 0
+        : snapshot.programmability.routines.length + snapshot.programmability.triggers.length;
+    case "readingModuleDefinitions":
+      return snapshot.programmability === undefined
+        ? 0
+        : moduleDefinitions(snapshot.programmability).filter(
+            (definition) => definition.status === "readable",
+          ).length;
     case "completed":
       return snapshot.tables.length;
   }
@@ -533,7 +562,7 @@ export const previewConnectionBackend: ConnectionBackend = {
 
   async listDatabases(): Promise<string[]> {
     await wait(300);
-    return ["AdventureWorks2022", "Northwind", "SchemaCraftFixture"];
+    return ["AdventureWorks2022", "Northwind", "SchemaCraftCode", "SchemaCraftFixture"];
   },
 
   async describeDatabase(settings): Promise<DatabaseDescription> {
@@ -543,7 +572,19 @@ export const previewConnectionBackend: ConnectionBackend = {
       schemas: probe.schemas
         .filter((schema) => schema.hasVisibleObjects)
         .map((schema) => schema.name),
-      access: predictedAccess(probe),
+      programmabilityOnlySchemas: probe.seesObjects
+        ? probe.schemas
+            .filter((schema) => schema.hasVisibleProgrammability && !schema.hasVisibleObjects)
+            .map((schema) => schema.name)
+        : [],
+      access: {
+        ...predictedAccess(probe),
+        coverage: {
+          ...predictedAccess(probe).coverage,
+          programmability: probe.canReadDefinitions ? "complete" : "partial",
+          moduleDefinitions: probe.canReadDefinitions ? "complete" : "partial",
+        },
+      },
     };
   },
 
@@ -562,8 +603,21 @@ export const previewConnectionBackend: ConnectionBackend = {
       settings.database ?? "Northwind",
       previewAccessFor(settings),
       options,
+      settings.host.includes("code-timeout")
+        ? "timeout"
+        : settings.host.includes("code-fail")
+          ? "objects"
+          : settings.host.includes("deny-modules")
+            ? "definitions"
+            : undefined,
     );
     for (const stage of STAGES) {
+      if (stage === "readingProgrammability" && !options.includeProgrammability) continue;
+      if (
+        stage === "readingModuleDefinitions" &&
+        (!options.includeProgrammability || !options.includeModuleDefinitions)
+      )
+        continue;
       await wait(settings.host.includes("slow") ? 900 : 350);
       if (cancelledJobs.has(jobId)) {
         cancelledJobs.delete(jobId);

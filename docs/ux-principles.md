@@ -71,13 +71,20 @@ reopened project reconnects without typing it; the field says when a remembered 
 used. Passwords are never stored in project files or in the history. Errors are specific and
 actionable. Choosing a database also checks what the login can see there: full access adds
 nothing, partial access adds one polite line under the database section, and a login that sees
-no table or view gets a clear notice with reading disabled.
+no table or view gets a clear notice with reading disabled. Testing the same connection and
+database again preserves the schema filter. Two switches, on by default, read procedures,
+functions and triggers and save their code in the project; the second is disabled when the first
+is off, and explains that saved code is business logic. The schema picker includes schemas with
+only visible procedures or functions while objects are requested. Leaving out views leaves out
+their code and their triggers too.
 
 ### Introspection
 
-A progress indicator names the current stage (permissions, tables, columns, keys, indexes) and
+A progress indicator names the current stage (permissions, tables, columns, keys, indexes,
+procedures/functions/triggers, module code) and
 the counts so far. The user can cancel at any moment, even while connecting. On completion the
-diagram appears already laid out.
+diagram appears already laid out. Progress omits stages whose read option is off. A failed code read does not prevent the table diagram from
+opening; the access report says which optional read failed or timed out.
 
 ### Reading with partial access
 
@@ -91,7 +98,10 @@ in the status bar and one dismissible bar above the entities lead to the Access 
 the DBA. Closing the bar moves focus to the entities search, and the bar stays closed for the
 same server, database and verdict. The canvas carries no warnings. An empty database gets a
 neutral empty state. The words are "not visible to this login" and "no visible para este inicio
-de sesión"; "hidden" and "oculto" stay reserved for tables hidden on the canvas.
+de sesión"; "hidden" and "oculto" stay reserved for tables hidden on the canvas. Code has separate
+coverage lines in the access report: a complete table list does not imply a complete procedure
+list, and encrypted code, code not visible to the login, code left out and a failed read are
+different states. Code coverage never changes the table-access chip or the export note.
 
 ### Opening and saving a project
 
@@ -198,7 +208,16 @@ state of its indexes, keys and constraints in one counted line under "Recorded f
 time", never as hundreds of changes, except an index aligned with a partitioned table, whose key
 columns 1.1 read with the partitioning column first and which that refresh shows once as changed,
 and an index or a constraint whose state changed shows the same marks as the Inspector on both sides
-of the change.
+of the change. Code objects have their own grouped changes: procedures, functions, triggers and
+view code, with the properties that changed and no inline SQL diff. A weaker or failed read keeps
+what it cannot check with the original date, and an object or text made readable is now available.
+The first code capture has one counted line for objects and one for texts. A code read failure
+appears even when there was no saved code, so the review cannot claim the project is up to date.
+Turning off code reading, turning off text saving or removing a schema deliberately excludes the
+corresponding saved code when the review is applied. Applying also keeps the chosen read options
+and connection without its password, so the next refresh repeats that scope. If code coverage is
+partial, a no-change review says only that nothing changed in what the login can read, even when
+the table-access verdict is full.
 
 ### Exporting
 

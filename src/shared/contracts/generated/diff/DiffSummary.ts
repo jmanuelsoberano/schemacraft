@@ -6,6 +6,10 @@ import type { ChangeCounts } from "./ChangeCounts";
  */
 export type DiffSummary = { 
 /**
+ * Code object changes, including the code of views.
+ */
+code: ChangeCounts, 
+/**
  * Table changes.
  */
 tables: ChangeCounts, 

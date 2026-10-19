@@ -23,6 +23,7 @@
 //! whether the project is up to date, are computed here and travel with the diff, so the
 //! interface never works them out again.
 
+mod code;
 mod entities;
 mod foreign_keys;
 mod pairing;
@@ -30,6 +31,11 @@ mod visibility;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+
+pub use code::{
+    AvailableCode, CodeChange, CodeCounts, CodeDiff, CodeProperty, CodeReadFailure, CodeReadFamily,
+    comparable_text,
+};
 
 pub use entities::{
     CheckConstraintChange, ColumnChange, ColumnProperty, IndexChange, PrimaryKeyChange,
@@ -47,6 +53,8 @@ use crate::model::{CarriedFact, SchemaSnapshot};
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "diff/")]
 pub struct SchemaDiff {
+    /// Changes and visibility of procedures, functions, triggers and view code.
+    pub code: CodeDiff,
     /// Tables that appeared, disappeared or changed, by name.
     pub tables: Vec<TableChange>,
     /// Views that appeared, disappeared or changed, by name.
@@ -74,8 +82,8 @@ pub struct SchemaDiff {
     /// each, such as the state of indexes and constraints next to a project saved before 1.2.
     /// They are not changes of the database.
     pub capture_changes: Vec<CaptureChange>,
-    /// Whether any table, view or foreign key appeared, disappeared or changed, as far as the
-    /// fresh extraction could check.
+    /// Whether any table, view, foreign key or code object appeared, disappeared or changed,
+    /// as far as the fresh extraction could check.
     has_object_changes: bool,
     /// Whether the review has nothing to report: no object changed, nothing was kept unchecked,
     /// nothing became readable or was recorded for the first time, and the verdict on access is
@@ -111,6 +119,7 @@ impl SchemaDiff {
             &keys_unrecorded_before,
         );
         let summary = DiffSummary {
+            code: ChangeCounts::default(),
             tables: ChangeCounts::of(tables.iter().map(TableChange::kind)),
             views: ChangeCounts::of(views.iter().map(ViewChange::kind)),
             foreign_keys: ChangeCounts::of(
@@ -130,7 +139,11 @@ impl SchemaDiff {
         let access_changed = visibility::access_changed(previous, &merged);
         let capture_changes = visibility::capture_changes(previous, &merged);
 
+        let code = code::diff_code(previous, &merged);
+        let mut summary = summary;
+        summary.code = ChangeCounts::of(code.changes.iter().map(CodeChange::kind));
         let mut diff = Self {
+            code,
             tables,
             views,
             foreign_keys,
@@ -147,6 +160,9 @@ impl SchemaDiff {
         diff.is_up_to_date = !diff.has_object_changes
             && diff.not_checked.is_empty()
             && diff.now_available.is_empty()
+            && diff.code.not_checked.is_empty()
+            && diff.code.now_available.is_empty()
+            && diff.code.read_failures.is_empty()
             && !diff.access_changed
             && diff.capture_changes.is_empty();
         diff
@@ -158,6 +174,7 @@ impl SchemaDiff {
             && self.views.is_empty()
             && self.foreign_keys.is_empty()
             && self.foreign_keys_to_invisible_tables.is_empty()
+            && self.code.is_empty()
     }
 
     /// Whether any object appeared, disappeared or changed: the opposite of [`Self::is_empty`],
@@ -224,6 +241,8 @@ impl ChangeCounts {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "diff/")]
 pub struct DiffSummary {
+    /// Code object changes, including the code of views.
+    pub code: ChangeCounts,
     /// Table changes.
     pub tables: ChangeCounts,
     /// View changes.
@@ -235,7 +254,7 @@ pub struct DiffSummary {
 impl DiffSummary {
     /// Changes of any kind across all object types.
     pub fn total(&self) -> usize {
-        self.tables.total() + self.views.total() + self.foreign_keys.total()
+        self.tables.total() + self.views.total() + self.foreign_keys.total() + self.code.total()
     }
 }
 

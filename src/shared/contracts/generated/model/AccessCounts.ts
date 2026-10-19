@@ -26,6 +26,6 @@ moduleDefinitions?: number,
  */
 moduleDefinitionsNotVisible?: number, 
 /**
- * Module texts that are encrypted, which no login can read.
+ * Encrypted module texts, which the catalog returns to no login.
  */
 moduleDefinitionsEncrypted?: number, };
