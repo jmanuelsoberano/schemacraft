@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use ts_rs::TS;
 
+use crate::diagnostics::{ClosedKind, ErrorSummary};
+
 /// Failure to produce an export file.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ExportError {
@@ -51,7 +53,14 @@ impl ExportError {
             Self::Cancelled => ExportErrorKind::Cancelled,
         }
     }
+
+    /// What the diagnostic log may record of this error: its kind, never the path.
+    pub fn log_summary(&self) -> ErrorSummary<ExportErrorKind> {
+        ErrorSummary::of(self.kind())
+    }
 }
+
+impl ClosedKind for ExportErrorKind {}
 
 /// Serialisable classification of an [`ExportError`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

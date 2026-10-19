@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { accessSummary } from "@/features/schema/coverage";
-import type { AccessProfile, CanvasState, SchemaSnapshot } from "@/shared/contracts";
+import type {
+  AccessProfile,
+  CanvasState,
+  Programmability,
+  SchemaSnapshot,
+} from "@/shared/contracts";
 
 import { buildStandalonePage, embedJson } from "./buildStandalonePage";
 import { carriesAccessNote, visibleProjection } from "./viewerData";
@@ -156,7 +161,6 @@ const NEVER_EXPORTED = [
   '"audit"',
   '"payroll"',
   '"internal"',
-  '"routines"',
   '"gridSize"',
   '"color"',
   "FK_B_Regions",
@@ -343,6 +347,201 @@ describe("buildStandalonePage", () => {
     for (const secret of NEVER_EXPORTED) {
       expect(page, secret).not.toContain(secret);
     }
+  });
+
+  it("exports visible trigger metadata and view settings without any module text or routine", () => {
+    const sentinelText = { status: "readable", text: "SELECT SENTINEL FROM dbo.A" } as const;
+    const extension = { futureText: "EXTENSION_SENTINEL" };
+    const hostileName = '</script><img src=x onerror="alert(1)">';
+    const programmability: Programmability = {
+      ...extension,
+      capture: {
+        ...extension,
+        objects: { status: "read", ...extension },
+        definitions: { status: "read", ...extension },
+      },
+      views: [
+        {
+          ...extension,
+          view: { schema: "dbo", name: "V", ...extension },
+          definition: { ...sentinelText, ...extension },
+          hasCheckOption: true,
+          isIndexed: false,
+        },
+        {
+          view: { schema: "dbo", name: "HiddenView_SENTINEL" },
+          definition: sentinelText,
+          hasCheckOption: false,
+          isIndexed: true,
+        },
+      ],
+      routines: [
+        {
+          name: { schema: "dbo", name: "usp_SENTINEL" },
+          kind: "procedure",
+          body: { language: "sql", definition: sentinelText },
+          parameters: [
+            {
+              name: "@SENTINEL_Id",
+              ordinalPosition: 1,
+              dataType: {
+                name: "int",
+                length: null,
+                precision: null,
+                scale: null,
+                userDefinedTypeName: null,
+              },
+              isOutput: true,
+              isReadOnly: false,
+            },
+          ],
+          returns: null,
+          columns: [],
+        },
+        {
+          name: { schema: "dbo", name: "fn_SENTINEL" },
+          kind: "scalarFunction",
+          body: { language: "sql", definition: { status: "encrypted" } },
+          parameters: [],
+          returns: null,
+          columns: [],
+        },
+      ],
+      triggers: [
+        {
+          ...extension,
+          parent: { schema: "dbo", name: "A", ...extension },
+          name: "TR_A_Log",
+          timing: "after",
+          events: [{ event: "insert", order: "first", ...extension }],
+          isEnabled: true,
+          isNotForReplication: false,
+          body: { language: "sql", definition: { ...sentinelText, ...extension }, ...extension },
+        },
+        {
+          parent: { schema: "dbo", name: "V" },
+          name: hostileName,
+          timing: "insteadOf",
+          events: [{ event: "update", order: "last" }],
+          isEnabled: false,
+          isNotForReplication: true,
+          body: { language: "clr", ...extension },
+        },
+        {
+          parent: { schema: "dbo", name: "B" },
+          name: "TR_Hidden_SENTINEL",
+          timing: "after",
+          events: [],
+          isEnabled: true,
+          isNotForReplication: false,
+          body: { language: "sql", definition: sentinelText },
+        },
+      ],
+      carriedOver: [
+        {
+          object: { kind: "routine", name: { schema: "dbo", name: "usp_SENTINEL" } },
+          part: "whole",
+          readAt: "2026-10-12T08:00:00Z",
+        },
+      ],
+    };
+    const withCode: SchemaSnapshot = {
+      ...partialSnapshot,
+      views: [
+        ...partialSnapshot.views,
+        { name: { schema: "dbo", name: "HiddenView_SENTINEL" }, columns: [] },
+      ],
+      access: {
+        ...partialAccess,
+        coverage: {
+          ...partialAccess.coverage,
+          programmability: "partial",
+          moduleDefinitions: "notAvailable",
+        },
+      },
+      programmability,
+    };
+
+    const projected = visibleProjection(withCode, {
+      ...decoratedCanvas,
+      nodes: [
+        ...decoratedCanvas.nodes,
+        {
+          name: { schema: "dbo", name: "HiddenView_SENTINEL" },
+          position: { x: 0, y: 0 },
+          isCollapsed: false,
+          isHidden: true,
+        },
+      ],
+    });
+    const page = buildStandalonePage({
+      data: {
+        generator: "SchemaCraft 1.2.0",
+        exportedAt: "2026-10-18T20:00:00Z",
+        locale: "en",
+        theme: "light",
+        detailLevel: "full",
+        messages: viewerMessages("en"),
+        ...projected,
+      },
+      viewerScript: "",
+      viewerStyles: "",
+      fontFaces: "",
+    });
+
+    expect(projected.snapshot.programmability).toEqual({
+      capture: { objects: { status: "read" }, definitions: { status: "read" } },
+      views: [
+        {
+          view: { schema: "dbo", name: "V" },
+          definition: { status: "unknown" },
+          hasCheckOption: true,
+          isIndexed: false,
+        },
+      ],
+      routines: [],
+      triggers: [
+        {
+          parent: { schema: "dbo", name: "A" },
+          name: "TR_A_Log",
+          timing: "after",
+          events: [{ event: "insert", order: "first" }],
+          isEnabled: true,
+          isNotForReplication: false,
+          body: { language: "sql", definition: { status: "unknown" } },
+        },
+        {
+          parent: { schema: "dbo", name: "V" },
+          name: hostileName,
+          timing: "insteadOf",
+          events: [{ event: "update", order: "last" }],
+          isEnabled: false,
+          isNotForReplication: true,
+          body: { language: "clr" },
+        },
+      ],
+    });
+    expect(projected.access).toEqual({
+      level: "partial",
+      coverage: { objects: "partial", definitions: "notAvailable" },
+    });
+    for (const secret of [
+      "SENTINEL",
+      '"moduleDefinitions"',
+      '"encrypted"',
+      '"futureText"',
+      ...NEVER_EXPORTED,
+    ]) {
+      expect(page, secret).not.toContain(secret);
+    }
+    expect(page).toContain('"name":"TR_A_Log"');
+    expect(page).not.toContain(hostileName);
+    expect(page).not.toContain("<img");
+    const embedded =
+      /<script id="schemacraft-data" type="application\/json">(.*?)<\/script>/su.exec(page)?.[1];
+    expect(embedded).toBeDefined();
+    const decoded = JSON.parse(embedded ?? "null") as { snapshot: SchemaSnapshot };
+    expect(decoded.snapshot.programmability?.triggers[1]?.name).toBe(hostileName);
   });
 
   it("escapes what would close the data script", () => {

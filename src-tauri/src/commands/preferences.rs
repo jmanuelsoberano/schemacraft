@@ -8,7 +8,7 @@ use schemacraft_core::preferences::Preferences;
 use schemacraft_core::project::SavedConnection;
 use tauri::{AppHandle, Manager, State};
 
-use super::run_blocking;
+use super::{logged, run_blocking};
 use crate::error::CommandError;
 use crate::state::AppState;
 
@@ -28,7 +28,7 @@ pub async fn remember_connection(
     app: AppHandle,
     connection: SavedConnection,
 ) -> Result<Preferences, CommandError> {
-    update(app, move |preferences| {
+    update("remember_connection", app, move |preferences| {
         preferences.remember_connection(connection, Utc::now());
     })
     .await
@@ -40,7 +40,7 @@ pub async fn forget_connection(
     app: AppHandle,
     connection: SavedConnection,
 ) -> Result<Preferences, CommandError> {
-    update(app, move |preferences| {
+    update("forget_connection", app, move |preferences| {
         preferences.forget_connection(&connection);
     })
     .await
@@ -49,7 +49,7 @@ pub async fn forget_connection(
 /// Puts `path` at the top of the recent projects.
 #[tauri::command]
 pub async fn remember_project(app: AppHandle, path: PathBuf) -> Result<Preferences, CommandError> {
-    update(app, move |preferences| {
+    update("remember_project", app, move |preferences| {
         preferences.remember_project(&path.to_string_lossy(), Utc::now());
     })
     .await
@@ -58,16 +58,20 @@ pub async fn remember_project(app: AppHandle, path: PathBuf) -> Result<Preferenc
 /// Removes `path` from the recent projects, for example after it failed to open.
 #[tauri::command]
 pub async fn forget_project(app: AppHandle, path: PathBuf) -> Result<Preferences, CommandError> {
-    update(app, move |preferences| {
+    update("forget_project", app, move |preferences| {
         preferences.forget_project(&path.to_string_lossy());
     })
     .await
 }
 
-/// Applies `change` and saves the file on a blocking thread.
+/// Applies `change` and saves the file on a blocking thread, for `command`.
 async fn update(
+    command: &'static str,
     app: AppHandle,
     change: impl FnOnce(&mut Preferences) + Send + 'static,
 ) -> Result<Preferences, CommandError> {
-    Ok(run_blocking(move || app.state::<AppState>().preferences.update(change)).await??)
+    logged(command, async move {
+        Ok(run_blocking(move || app.state::<AppState>().preferences.update(change)).await??)
+    })
+    .await
 }

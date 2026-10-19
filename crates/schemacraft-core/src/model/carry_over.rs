@@ -74,9 +74,9 @@ impl SchemaSnapshot {
     /// * saved foreign keys of kept tables;
     /// * the referenced side of saved foreign keys whose referenced table is now invisible. The
     ///   entry this extraction listed in [`Self::foreign_keys_to_invisible_tables`] keeps what
-    ///   it read (the actions and the enabled flag) and gets back the referenced table and
-    ///   columns of the saved key. When its referencing columns changed, the saved pairs no
-    ///   longer apply: the entry stays as read and the saved key is not kept.
+    ///   it read (the actions, the enabled flag and the trust) and gets back the referenced
+    ///   table and columns of the saved key. When its referencing columns changed, the saved
+    ///   pairs no longer apply: the entry stays as read and the saved key is not kept.
     ///
     /// Each kept fact is listed in [`Self::carried_over`] with the moment it was last read: the
     /// `read_at` of `previous` when it was already carried there, or that of its table when the
@@ -96,6 +96,7 @@ impl SchemaSnapshot {
             self.sort_lists();
         }
         self.carried_over = ledger.into_facts();
+        self.keep_unchecked_code(previous);
         self
     }
 
@@ -322,6 +323,7 @@ fn completed_with_referenced_side(
         on_delete: invisible.on_delete,
         on_update: invisible.on_update,
         is_enabled: invisible.is_enabled,
+        is_trusted: invisible.is_trusted,
     })
 }
 
@@ -590,6 +592,7 @@ mod tests {
         profile.scope = CaptureScope {
             schemas: vec!["sales".to_string()],
             include_views: false,
+            ..CaptureScope::everything()
         };
         current.views.clear();
 
@@ -712,6 +715,7 @@ mod tests {
         let mut current = reader_snapshot();
         current.foreign_keys_to_invisible_tables[0].on_delete = ReferentialAction::Cascade;
         current.foreign_keys_to_invisible_tables[0].is_enabled = false;
+        current.foreign_keys_to_invisible_tables[0].is_trusted = Some(false);
 
         let merged = current.with_unchecked_facts_from(&previous);
 
@@ -721,6 +725,7 @@ mod tests {
             [ForeignKey {
                 on_delete: ReferentialAction::Cascade,
                 is_enabled: false,
+                is_trusted: Some(false),
                 ..previous.foreign_keys[0].clone()
             }]
         );

@@ -5,7 +5,8 @@
 //! touching the database. Files are pretty-printed JSON with camelCase keys, written atomically
 //! and tagged with a format version and the oldest reader version that may open them. Older
 //! files are upgraded when read; keys written by a newer version are kept at the document
-//! root, the snapshot root, the canvas and each node, so saving does not drop them.
+//! root, the snapshot root, the snapshot's programmability, the canvas and each node, so saving
+//! does not drop them.
 
 mod canvas;
 mod connection;
@@ -23,5 +24,7 @@ pub use file::{read_project, write_project};
 /// File extension of project files, without the dot.
 pub const PROJECT_FILE_EXTENSION: &str = "scraft";
 
+#[cfg(test)]
+mod forward_read;
 #[cfg(test)]
 pub(crate) mod test_fixtures;

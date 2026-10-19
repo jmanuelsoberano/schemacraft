@@ -21,3 +21,7 @@ Thumbs.db
 
 # Smoke test output
 smoke-test/
+
+# Capability probe results (they describe someone else's database)
+crates/schemacraft-core/probes/*.csv
+probe.csv

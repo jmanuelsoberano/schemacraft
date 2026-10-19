@@ -15,4 +15,9 @@ columns: Array<string>,
 /**
  * Whether the key is backed by the clustered index.
  */
-isClustered: boolean, };
+isClustered: boolean, 
+/**
+ * `false` when the index behind the key is disabled, so the key enforces nothing; `None`
+ * when the capture did not record the state, as before 1.2.
+ */
+isEnabled?: boolean, };

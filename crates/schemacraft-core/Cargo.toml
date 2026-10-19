@@ -16,6 +16,7 @@ name = "schemacraft_core"
 async-trait = { workspace = true }
 bb8 = { workspace = true }
 chrono = { workspace = true }
+futures-util = { workspace = true }
 resvg = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true }
@@ -34,6 +35,8 @@ keyring = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# Captures the diagnostic events in tests; the application installs its own subscriber.
+tracing-subscriber = { workspace = true }
 
 [lints]
 workspace = true

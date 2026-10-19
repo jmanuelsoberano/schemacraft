@@ -12,6 +12,7 @@ import type { LucideIcon } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 
 import { useProjectStore } from "@/features/project/projectStore";
+import { qualifiedNameLabel } from "@/features/schema/entities";
 import type { MessageKey } from "@/shared/i18n/messages/en";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { Kbd } from "@/shared/ui/Kbd";
@@ -100,7 +101,11 @@ export function CanvasContextMenu({ showAll }: CanvasContextMenuProps) {
         >
           {key !== null ? (
             <>
-              <DropdownMenu.Label className={menuStyles.label}>{key}</DropdownMenu.Label>
+              {nodeState !== undefined ? (
+                <DropdownMenu.Label className={menuStyles.label}>
+                  {qualifiedNameLabel(nodeState.name)}
+                </DropdownMenu.Label>
+              ) : null}
               <MenuItem
                 icon={Crosshair}
                 label={t("canvas.menu.center")}

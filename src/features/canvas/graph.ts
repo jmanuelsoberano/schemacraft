@@ -1,6 +1,6 @@
 import type { Edge, Node } from "@xyflow/react";
 
-import { entityKey, foreignKeyId } from "@/features/schema/entities";
+import { entityKey, foreignKeyId, qualifiedNameLabel } from "@/features/schema/entities";
 import {
   foreignKeyChildCardinality,
   foreignKeyExplanation,
@@ -142,6 +142,7 @@ export function buildRelationEdges(
       type: RELATION_EDGE_TYPE,
       source,
       target,
+      ariaLabel: `${foreignKey.name}: ${qualifiedNameLabel(foreignKey.referencingTable)} → ${qualifiedNameLabel(foreignKey.referencedTable)}`,
       data: {
         foreignKey,
         sourceRows,

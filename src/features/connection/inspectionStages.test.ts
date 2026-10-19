@@ -1,8 +1,46 @@
 import { describe, expect, it } from "vitest";
 
-import { DISPLAYED_STAGES, stageStatus } from "./inspectionStages";
+import { DISPLAYED_STAGES, displayedStages, stageStatus } from "./inspectionStages";
 
 describe("stageStatus", () => {
+  it("omits code stages switched off for this read", () => {
+    const options = {
+      schemas: [],
+      includeViews: true,
+      includeProgrammability: true,
+      includeModuleDefinitions: true,
+    };
+    expect(displayedStages(options)).toEqual(DISPLAYED_STAGES);
+    expect(displayedStages({ ...options, includeModuleDefinitions: false })).toContain(
+      "readingProgrammability",
+    );
+    expect(displayedStages({ ...options, includeModuleDefinitions: false })).not.toContain(
+      "readingModuleDefinitions",
+    );
+    for (const includeModuleDefinitions of [true, false]) {
+      const stages = displayedStages({
+        ...options,
+        includeProgrammability: false,
+        includeModuleDefinitions,
+      });
+      expect(stages).not.toContain("readingProgrammability");
+      expect(stages).not.toContain("readingModuleDefinitions");
+    }
+  });
+  it("lists object metadata before module texts and completes them independently", () => {
+    expect(DISPLAYED_STAGES.indexOf("readingProgrammability")).toBeLessThan(
+      DISPLAYED_STAGES.indexOf("readingModuleDefinitions"),
+    );
+    expect(DISPLAYED_STAGES.indexOf("readingModuleDefinitions")).toBeLessThan(
+      DISPLAYED_STAGES.indexOf("assembling"),
+    );
+    const progress = { connecting: null, readingProgrammability: 12 };
+    expect(stageStatus(progress, "readingProgrammability")).toBe("done");
+    expect(stageStatus(progress, "readingModuleDefinitions")).toBe("active");
+    expect(
+      stageStatus({ ...progress, readingModuleDefinitions: 10 }, "readingModuleDefinitions"),
+    ).toBe("done");
+  });
   it("shows every stage pending before anything is reported", () => {
     for (const stage of DISPLAYED_STAGES) {
       expect(stageStatus({}, stage)).toBe("pending");

@@ -7,7 +7,7 @@ import { classNames } from "@/shared/ui/classNames";
 
 import styles from "./InspectionProgressPanel.module.css";
 import type { RunningInspection } from "./connectionStore";
-import { DISPLAYED_STAGES, stageStatus } from "./inspectionStages";
+import { displayedStages, stageStatus } from "./inspectionStages";
 
 interface InspectionProgressPanelProps {
   inspection: RunningInspection;
@@ -25,7 +25,7 @@ export function InspectionProgressPanel({ inspection }: InspectionProgressPanelP
       </div>
       <ProgressBar label={title} />
       <ul className={styles.stages}>
-        {DISPLAYED_STAGES.map((stage) => {
+        {displayedStages(inspection.options).map((stage) => {
           const status = stageStatus(inspection.stages, stage);
           const count = inspection.stages[stage];
           return (

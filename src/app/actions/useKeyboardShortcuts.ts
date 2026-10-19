@@ -1,5 +1,6 @@
 import { isDesktopRuntime } from "@/shared/ipc/runtime";
 import { useEffect } from "react";
+import { isOwnedByCodeViewer } from "@/shared/ui/codeViewerKeyboard";
 
 import type { ActionId, AppAction } from "./action";
 import { isApplePlatform, isReservedBrowserShortcut, matchesShortcut } from "./shortcut";
@@ -43,6 +44,7 @@ export function useKeyboardShortcuts(actions: readonly AppAction[]): void {
       if (event.defaultPrevented) {
         return;
       }
+      if (isOwnedByCodeViewer(event, applePlatform)) return;
       const reserved =
         insideTauri && isReservedBrowserShortcut(event, applePlatform, allowDevtools);
       if (event.repeat) {

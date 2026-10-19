@@ -10,7 +10,7 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use ts_rs::TS;
 
-use super::run_blocking;
+use super::{logged, run_blocking};
 use crate::error::CommandError;
 use crate::state::AppState;
 
@@ -35,11 +35,14 @@ pub async fn test_connection(
     app: AppHandle,
     settings: ConnectionSettings,
 ) -> Result<ServerInformation, CommandError> {
-    let inspector = create_inspector(with_stored_password(&app, settings).await?)?;
-    tracing::debug!("test_connection requested");
-    let information = inspector.test_connection().await?;
-    tracing::debug!(product = %information.product, "test_connection succeeded");
-    Ok(information)
+    logged("test_connection", async move {
+        let inspector = create_inspector(with_stored_password(&app, settings).await?)?;
+        tracing::debug!("test_connection requested");
+        let information = inspector.test_connection().await?;
+        tracing::debug!(product = %information.product, "test_connection succeeded");
+        Ok(information)
+    })
+    .await
 }
 
 /// Databases the login can open, for the database picker.
@@ -48,8 +51,11 @@ pub async fn list_databases(
     app: AppHandle,
     settings: ConnectionSettings,
 ) -> Result<Vec<String>, CommandError> {
-    let inspector = create_inspector(with_stored_password(&app, settings).await?)?;
-    Ok(inspector.list_databases().await?)
+    logged("list_databases", async move {
+        let inspector = create_inspector(with_stored_password(&app, settings).await?)?;
+        Ok(inspector.list_databases().await?)
+    })
+    .await
 }
 
 /// User schemas of the selected database, for the schema filter, and what the login is
@@ -59,14 +65,17 @@ pub async fn describe_database(
     app: AppHandle,
     settings: ConnectionSettings,
 ) -> Result<DatabaseDescription, CommandError> {
-    let inspector = create_inspector(with_stored_password(&app, settings).await?)?;
-    let description = inspector.describe_database().await?;
-    tracing::debug!(
-        schemas = description.schemas.len(),
-        access = ?description.access.level,
-        "describe_database succeeded"
-    );
-    Ok(description)
+    logged("describe_database", async move {
+        let inspector = create_inspector(with_stored_password(&app, settings).await?)?;
+        let description = inspector.describe_database().await?;
+        tracing::debug!(
+            schemas = description.schemas.len(),
+            access = ?description.access.level,
+            "describe_database succeeded"
+        );
+        Ok(description)
+    })
+    .await
 }
 
 /// Extracts the schema, streaming progress through `on_event`. `cancel_inspection` stops it
@@ -78,22 +87,25 @@ pub async fn inspect_database(
     options: InspectionOptions,
     on_event: Channel<InspectionEvent>,
 ) -> Result<SchemaSnapshot, CommandError> {
-    let inspector = create_inspector(with_stored_password(&app, settings).await?)?;
-    let state = app.state::<AppState>();
-    let (job_id, cancellation) = state.inspection_jobs.start();
-    tracing::debug!(job_id, "inspect_database started");
-    send(
-        &on_event,
-        InspectionEvent::Started {
-            job_id: job_id.clone(),
-        },
-    );
+    logged("inspect_database", async move {
+        let inspector = create_inspector(with_stored_password(&app, settings).await?)?;
+        let state = app.state::<AppState>();
+        let (job_id, cancellation) = state.inspection_jobs.start();
+        tracing::debug!(job_id, "inspect_database started");
+        send(
+            &on_event,
+            InspectionEvent::Started {
+                job_id: job_id.clone(),
+            },
+        );
 
-    let reporter = ChannelProgress { channel: on_event };
-    let result = inspector.inspect(&options, &reporter, cancellation).await;
+        let reporter = ChannelProgress { channel: on_event };
+        let result = inspector.inspect(&options, &reporter, cancellation).await;
 
-    state.inspection_jobs.finish(&job_id);
-    Ok(result?)
+        state.inspection_jobs.finish(&job_id);
+        Ok(result?)
+    })
+    .await
 }
 
 /// Cancels a running inspection; the `inspect_database` call then fails with `cancelled`.
@@ -106,7 +118,9 @@ pub fn cancel_inspection(state: State<'_, AppState>, job_id: String) -> Result<(
     if state.inspection_jobs.cancel(&job_id) {
         Ok(())
     } else {
-        Err(CommandError::unknown_job(&job_id))
+        let error = CommandError::unknown_job(&job_id);
+        error.log("cancel_inspection");
+        Err(error)
     }
 }
 

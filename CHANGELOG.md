@@ -6,6 +6,84 @@ All notable changes to SchemaCraft are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Tables and views show their triggers in the Inspector and HTML viewer, with firing events,
+  per-event order and disabled/replication states. View settings remain visible in HTML while
+  Definition says "Not included in this file"; only the app opens a trigger's source page.
+- A neutral trigger count in every canvas detail level and export, with a dashed badge when
+  every trigger is disabled. Static exports include a legend and explain unread triggers.
+  HTML includes only visible-parent trigger metadata, without module code or routine objects.
+- The Objects panel lists procedures and functions in collapsed sections with pages of 200.
+  Search and the command palette reach their details, including triggers and their parent
+  tables or views. The Inspector shows parameters, return structures, firing conditions and
+  view code, with explicit states for encrypted, unavailable, omitted and previously saved code.
+- A read-only SQL viewer with line numbers, exact-text copying, a remembered wrap preference
+  (off initially), and local find with Ctrl+F, F3 and Shift+F3. Escape leaves the find bar before
+  returning to the object; Ctrl+A selects only the source. Module code stays out of exports.
+- Read procedures, functions, DML triggers and view code with separate options to read the
+  objects and to save their SQL texts, both on by default. The schema picker also offers schemas
+  containing only visible procedures or functions. The access report separates code visibility
+  from table access and distinguishes encrypted code, code not visible to the login, a read
+  that failed and an option left off.
+- Refresh compares parameters, return types, returned columns, trigger events and firing order,
+  view options and module code. It ignores line-ending and trailing-space differences in code,
+  keeps the original text, preserves saved code it cannot check with its last-read date, and
+  lists a first code capture once by family. A failed code read leaves the table inspection
+  usable and appears in the review even when the project had no saved code.
+- A capability probe script, `crates/schemacraft-core/probes/capability-probe.sql`, measures what
+  SchemaCraft would read from a SQL Server database and returns numbers only, so a database that
+  cannot be shared can still be measured. It is read-only and returns no name and no text; the
+  README says how to run it and what to share.
+- A local diagnostic log for bug reports, in `%LOCALAPPDATA%\com.jmanuelsoberano.schemacraft\logs`:
+  one file per day, at most seven files kept, the crash file among them, with versions, counts,
+  timings, sizes and error kinds and numbers only, never names, code, paths or passwords, and
+  never sent anywhere. The place of a crash goes
+  to `schemacraft-panic.log`. About shows the folder and opens it, and so does "Open diagnostic
+  log folder" in the command palette.
+- The Inspector and the HTML viewer show the state SQL Server keeps for keys, indexes and
+  constraints: "disabled" on a primary key, index or constraint that enforces nothing, "filtered"
+  on an index that covers only the rows of a filter, an `INCLUDE (…)` line for included columns,
+  and "not trusted" on a `CHECK` or foreign key SQL Server does not trust, for example one added
+  `WITH NOCHECK`. Such a rule says that the rows already in the table may not follow it and words
+  its rules for the rows inserted, and those whose rule columns are changed, from now on, and its
+  scripted SQL adds the key `WITH NOCHECK`.
+- A refresh reports an index that was disabled or enabled again and a `CHECK` or foreign key whose
+  trust changed. The first refresh of a project saved by an earlier version records these states
+  in one line instead of reporting each object as changed.
+
+### Changed
+
+- SQL Server 2019 and 2022 are the tested versions: the integration tests run against both on
+  every change to the core. SQL Server 2016 and 2017 are supported on a best-effort basis, without
+  tests.
+- Projects are saved in format 3, which can hold the code of views, procedures, functions and
+  triggers and the state of indexes, keys and constraints. Projects saved by 1.0 and 1.1 open and
+  are converted when saved. SchemaCraft 1.1 opens a project saved by 1.2 read-only, without its
+  code, and SchemaCraft 1.0 cannot open it.
+
+### Fixed
+
+- Objects whose schema or name contains a dot no longer share diagram identity. Selection,
+  visibility, layout, relationships, refresh and export keep them separate; qualified labels
+  delimit ambiguous names without exposing internal keys. Existing projects need no migration.
+- Testing the same connection and database again keeps the selected schema filter, including
+  during refresh.
+- Applying a refresh keeps its chosen connection and read options, without saving the password.
+  Progress omits disabled code stages, and partial code coverage qualifies the review's
+  no-change message even when table access is complete.
+- On SQL Server 2022, the access report identifies the current database user when
+  `VIEW SECURITY DEFINITION` is denied, while still reporting the denials it cannot inspect as
+  unknown.
+- A nonclustered unique constraint or primary key whose index is disabled no longer makes a foreign
+  key read "at most one" or draw the one-to-one marker; the sentence now says the index is disabled.
+  A unique index that is enabled and has no filter now makes the key one-to-one, and a filtered one
+  never does. Existing diagrams and exports may change their markers after a refresh; a project
+  keeps the reading of 1.1 until then.
+- The key columns of an index aligned with a partitioned table no longer start with the
+  partitioning column SQL Server adds to it on its own. The first refresh reports such an index as
+  changed.
+
 ## [1.1.0] - 2026-10-18
 
 Logins with limited permissions are explained, tables and views are told apart, an Inspector

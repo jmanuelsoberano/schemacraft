@@ -52,6 +52,22 @@
   font-size: var(--text-sm);
 }
 
+.log {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.logMissing {
+  color: var(--color-text-secondary);
+}
+
+.logNote {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
 .builtWith {
   margin: var(--space-2) 0 0;
   color: var(--color-text-muted);

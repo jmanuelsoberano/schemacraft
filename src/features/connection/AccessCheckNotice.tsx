@@ -15,6 +15,7 @@ import { Alert } from "@/shared/ui/Alert";
 interface AccessCheckNoticeProps {
   access: AccessProfile;
   database: string;
+  includeCode?: boolean;
 }
 
 /**
@@ -22,15 +23,28 @@ interface AccessCheckNoticeProps {
  * access adds nothing; partial access gets one polite line, an empty database a neutral note,
  * and a login that sees nothing a blocking notice with the GRANT that would fix it.
  */
-export function AccessCheckNotice({ access, database }: AccessCheckNoticeProps) {
+export function AccessCheckNotice({
+  access,
+  database,
+  includeCode = false,
+}: AccessCheckNoticeProps) {
   const translator = useI18n();
   const { t, locale } = translator;
   const cause = primaryCause(access);
   const causeText = cause === null ? null : describeAccessCause(cause, translator);
+  const codeGap =
+    includeCode &&
+    access.coverage.moduleDefinitions !== undefined &&
+    access.coverage.moduleDefinitions !== "complete";
+  const codeText = codeGap ? t("access.notice.code") : null;
 
   switch (access.level) {
     case "full":
-      return null;
+      return codeGap ? (
+        <Alert variant="info" title={t("access.report.moduleDefinitions")}>
+          {codeText}
+        </Alert>
+      ) : null;
     case "partial":
       return (
         <Alert
@@ -39,6 +53,7 @@ export function AccessCheckNotice({ access, database }: AccessCheckNoticeProps) 
           title={t("access.notice.partial.title", { database })}
         >
           {causeText} {t(`access.notice.partial.readAnyway.${partialReadOutcome(access)}`)}
+          {codeGap ? <> {codeText}</> : null}
         </Alert>
       );
     case "empty":

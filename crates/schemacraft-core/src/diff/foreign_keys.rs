@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use super::ChangeKind;
+use super::entities::recorded_state_differs;
 use super::pairing::{Pairing, pair_by_key};
 use super::visibility::Baseline;
 use crate::model::{ForeignKey, ForeignKeyToInvisibleTable, QualifiedName, SchemaSnapshot};
@@ -79,6 +80,9 @@ pub enum ForeignKeyProperty {
     OnUpdate,
     /// Whether the constraint is enabled.
     Enabled,
+    /// Whether SQL Server trusts the key to hold for the rows already in the referencing table,
+    /// compared only when both snapshots recorded it.
+    Trust,
 }
 
 /// Change of a foreign key to a table the login cannot see. Only the referencing side of such a
@@ -194,7 +198,8 @@ pub(super) fn diff_foreign_keys_to_invisible_tables(
 
 /// Keys listed in `previous` with an invisible target that `current` lists as ordinary keys
 /// with the same referencing side: the login now sees the table they point to. A key whose
-/// referencing side changed at the same time is left out, so the change is not hidden.
+/// referencing side changed at the same time, its trust included where both recorded it, is left
+/// out, so the change is not hidden.
 pub(super) fn keys_whose_target_became_visible<'a>(
     previous: &'a [ForeignKeyToInvisibleTable],
     current: &'a [ForeignKey],
@@ -212,6 +217,10 @@ pub(super) fn keys_whose_target_became_visible<'a>(
                     && key.on_delete == invisible.on_delete
                     && key.on_update == invisible.on_update
                     && key.is_enabled == invisible.is_enabled
+                    && !recorded_state_differs(
+                        key.is_trusted.as_ref(),
+                        invisible.is_trusted.as_ref(),
+                    )
             })
         })
         .map(invisible_identity_of)
@@ -273,6 +282,10 @@ fn referencing_side_differences(
             ForeignKeyProperty::Enabled,
             before.is_enabled != after.is_enabled,
         ),
+        (
+            ForeignKeyProperty::Trust,
+            recorded_state_differs(before.is_trusted.as_ref(), after.is_trusted.as_ref()),
+        ),
     ];
     candidates
         .into_iter()
@@ -301,6 +314,10 @@ fn properties_that_differ(before: &ForeignKey, after: &ForeignKey) -> Vec<Foreig
         (
             ForeignKeyProperty::Enabled,
             before.is_enabled != after.is_enabled,
+        ),
+        (
+            ForeignKeyProperty::Trust,
+            recorded_state_differs(before.is_trusted.as_ref(), after.is_trusted.as_ref()),
         ),
     ];
     candidates
@@ -467,6 +484,66 @@ mod tests {
         assert_eq!(changes[0].kind(), ChangeKind::Changed);
         assert_eq!(changes[0].name(), "FK_Orders_Customers");
         assert_eq!(changes[0].referencing_table().to_string(), "sales.Orders");
+    }
+
+    #[test]
+    fn trust_is_compared_only_when_both_sides_recorded_it() {
+        let with_trust = |is_trusted: Option<bool>| ForeignKey {
+            is_trusted,
+            ..orders_to_customers()
+        };
+        let properties = |before: Option<bool>, after: Option<bool>| match diff_foreign_keys(
+            &[with_trust(before)],
+            &[with_trust(after)],
+            &none(),
+        )
+        .as_slice()
+        {
+            [] => vec![],
+            [ForeignKeyChange::Changed { properties, .. }] => properties.clone(),
+            other => panic!("expected at most one changed key, got {other:?}"),
+        };
+
+        assert_eq!(properties(None, Some(false)), []);
+        assert_eq!(properties(Some(true), None), []);
+        assert_eq!(
+            properties(Some(true), Some(false)),
+            [ForeignKeyProperty::Trust]
+        );
+
+        let invisible = |is_trusted: Option<bool>| ForeignKeyToInvisibleTable {
+            is_trusted,
+            ..orders_to_invisible_customers()
+        };
+        let changes = diff_foreign_keys_to_invisible_tables(
+            &[invisible(Some(false))],
+            &[invisible(Some(true))],
+            &none(),
+            &none(),
+        );
+        assert!(matches!(
+            changes.as_slice(),
+            [ForeignKeyToInvisibleTableChange::Changed { properties, .. }]
+                if properties == &[ForeignKeyProperty::Trust]
+        ));
+        assert_eq!(
+            diff_foreign_keys_to_invisible_tables(
+                &[invisible(None)],
+                &[invisible(Some(true))],
+                &none(),
+                &none(),
+            ),
+            []
+        );
+
+        // A target that became visible hides no change of trust both sides recorded.
+        let unrecorded = [invisible(None)];
+        assert_eq!(
+            keys_whose_target_became_visible(&unrecorded, &[with_trust(Some(false))]).len(),
+            1
+        );
+        let trusted = [invisible(Some(true))];
+        assert!(keys_whose_target_became_visible(&trusted, &[with_trust(Some(false))]).is_empty());
     }
 
     #[test]

@@ -15,4 +15,9 @@ version: string,
 /**
  * `true` for development builds, where extra diagnostics are shown in the UI.
  */
-isDebugBuild: boolean, };
+isDebugBuild: boolean, 
+/**
+ * Folder of the diagnostic log, shown in the about dialog; `None` when this session writes
+ * no log because the folder could not be created (ADR-041).
+ */
+logDirectory: string | null, };

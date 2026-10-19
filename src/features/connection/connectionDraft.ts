@@ -23,6 +23,10 @@ export interface ConnectionDraft {
   /** Empty means every schema. */
   schemas: string[];
   includeViews: boolean;
+  /** Read procedures, functions and triggers; on unless the user turns it off. */
+  includeProgrammability: boolean;
+  /** Save the code of views, procedures, functions and triggers in the project. */
+  includeModuleDefinitions: boolean;
   encryption: EncryptionMode;
   trustServerCertificate: boolean;
 }
@@ -39,6 +43,8 @@ export const emptyConnectionDraft: ConnectionDraft = {
   database: null,
   schemas: [],
   includeViews: true,
+  includeProgrammability: true,
+  includeModuleDefinitions: true,
   encryption: "mandatory",
   trustServerCertificate: false,
 };
@@ -96,5 +102,10 @@ function passwordSource(draft: ConnectionDraft): PasswordSource {
 }
 
 export function draftToInspectionOptions(draft: ConnectionDraft): InspectionOptions {
-  return { schemas: draft.schemas, includeViews: draft.includeViews };
+  return {
+    schemas: draft.schemas,
+    includeViews: draft.includeViews,
+    includeProgrammability: draft.includeProgrammability,
+    includeModuleDefinitions: draft.includeModuleDefinitions,
+  };
 }

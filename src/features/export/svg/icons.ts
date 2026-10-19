@@ -6,6 +6,8 @@ export const ICON_TABLE = "sc-icon-table";
 export const ICON_VIEW = "sc-icon-view";
 export const ICON_KEY = "sc-icon-key";
 export const ICON_LINK = "sc-icon-link";
+export const ICON_TRIGGER = "sc-icon-trigger";
+export const ICON_TRIGGER_DISABLED = "sc-icon-trigger-disabled";
 
 const STROKE_ATTRIBUTES =
   'fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
@@ -32,5 +34,17 @@ export const ICON_SYMBOLS = [
   symbol(
     ICON_LINK,
     '<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/>',
+  ),
+].join("");
+
+/** Kept separate so diagrams without trigger badges retain their original symbol set. */
+export const TRIGGER_ICON_SYMBOLS = [
+  symbol(
+    ICON_TRIGGER,
+    '<path d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z"/>',
+  ),
+  symbol(
+    ICON_TRIGGER_DISABLED,
+    '<path d="M10.768 5.111 13.44 2.44a1.5 1.5 0 012.474 1.561l-1.633 4.625"/><path d="m18.889 13.232.672-.672A1.5 1.5 0 0018.5 10h-2.844"/><path d="m2 2 20 20"/><path d="m7.94 7.94-3.5 3.499A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l5.5-5.5"/>',
   ),
 ].join("");

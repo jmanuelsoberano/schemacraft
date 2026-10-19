@@ -41,6 +41,26 @@ IF SUSER_ID(N'schemacraft_reader_deny_column') IS NULL
     CREATE LOGIN schemacraft_reader_deny_column WITH PASSWORD = N'$(PASSWORD)', CHECK_POLICY = OFF;
 ELSE
     ALTER LOGIN schemacraft_reader_deny_column WITH PASSWORD = N'$(PASSWORD)', CHECK_POLICY = OFF;
+IF SUSER_ID(N'schemacraft_reader_exec') IS NULL
+    CREATE LOGIN schemacraft_reader_exec WITH PASSWORD = N'$(PASSWORD)', CHECK_POLICY = OFF;
+ELSE
+    ALTER LOGIN schemacraft_reader_exec WITH PASSWORD = N'$(PASSWORD)', CHECK_POLICY = OFF;
+IF SUSER_ID(N'schemacraft_select_sales') IS NULL
+    CREATE LOGIN schemacraft_select_sales WITH PASSWORD = N'$(PASSWORD)', CHECK_POLICY = OFF;
+ELSE
+    ALTER LOGIN schemacraft_select_sales WITH PASSWORD = N'$(PASSWORD)', CHECK_POLICY = OFF;
+IF SUSER_ID(N'schemacraft_vd_deny_exec') IS NULL
+    CREATE LOGIN schemacraft_vd_deny_exec WITH PASSWORD = N'$(PASSWORD)', CHECK_POLICY = OFF;
+ELSE
+    ALTER LOGIN schemacraft_vd_deny_exec WITH PASSWORD = N'$(PASSWORD)', CHECK_POLICY = OFF;
+IF SUSER_ID(N'schemacraft_exec_only') IS NULL
+    CREATE LOGIN schemacraft_exec_only WITH PASSWORD = N'$(PASSWORD)', CHECK_POLICY = OFF;
+ELSE
+    ALTER LOGIN schemacraft_exec_only WITH PASSWORD = N'$(PASSWORD)', CHECK_POLICY = OFF;
+IF SUSER_ID(N'schemacraft_deny_modules') IS NULL
+    CREATE LOGIN schemacraft_deny_modules WITH PASSWORD = N'$(PASSWORD)', CHECK_POLICY = OFF;
+ELSE
+    ALTER LOGIN schemacraft_deny_modules WITH PASSWORD = N'$(PASSWORD)', CHECK_POLICY = OFF;
 GO
 USE SchemaCraftPermissions;
 GO
@@ -75,6 +95,25 @@ DENY VIEW DEFINITION ON SCHEMA::audit TO schemacraft_reader_deny_audit;
 CREATE USER schemacraft_reader_deny_column FOR LOGIN schemacraft_reader_deny_column;
 ALTER ROLE db_datareader ADD MEMBER schemacraft_reader_deny_column;
 DENY SELECT ON dbo.Customers (Name) TO schemacraft_reader_deny_column;
+-- EXECUTE exposes procedures but does not grant their source text.
+CREATE USER schemacraft_reader_exec FOR LOGIN schemacraft_reader_exec;
+ALTER ROLE db_datareader ADD MEMBER schemacraft_reader_exec;
+GRANT EXECUTE ON SCHEMA::sales TO schemacraft_reader_exec;
+-- An explicit schema SELECT and the fixed reader role are tested independently.
+CREATE USER schemacraft_select_sales FOR LOGIN schemacraft_select_sales;
+GRANT SELECT ON SCHEMA::sales TO schemacraft_select_sales;
+-- On both supported engines this denial does not hide metadata already exposed by VIEW
+-- DEFINITION. It must not make the table coverage partial either.
+CREATE USER schemacraft_vd_deny_exec FOR LOGIN schemacraft_vd_deny_exec;
+GRANT VIEW DEFINITION TO schemacraft_vd_deny_exec;
+DENY EXECUTE ON OBJECT::sales.usp_PlaceOrder TO schemacraft_vd_deny_exec;
+-- Procedures alone still give no table or view to diagram.
+CREATE USER schemacraft_exec_only FOR LOGIN schemacraft_exec_only;
+GRANT EXECUTE ON SCHEMA::sales TO schemacraft_exec_only;
+-- An optional query failure must preserve the table capture and the saved module texts.
+CREATE USER schemacraft_deny_modules FOR LOGIN schemacraft_deny_modules;
+GRANT VIEW DEFINITION TO schemacraft_deny_modules;
+DENY SELECT ON sys.sql_modules TO schemacraft_deny_modules;
 GO
 USE SchemaCraftPermissionsEmpty;
 GO

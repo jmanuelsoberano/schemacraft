@@ -8,12 +8,14 @@ import type {
   ForeignKeyToInvisibleTable,
   Index,
   IndexKind,
+  NotReadReason,
   PrimaryKey,
   QualifiedName,
   ReferentialAction,
   SchemaSnapshot,
   SnapshotFact,
   Table,
+  Trigger,
   View,
 } from "@/shared/contracts";
 
@@ -25,6 +27,8 @@ import { readCheckConstraint } from "./rules/checkReader";
 import type { CheckReading } from "./rules/checkReader";
 import { foreignKeyExplanation } from "./rules/foreignKeyReader";
 import type { ExplanationScope, ForeignKeyExplanation } from "./rules/foreignKeyReader";
+import { triggerCapture, triggerReadAt, triggersOf } from "./triggerDetails";
+import type { ModuleRef } from "./modules";
 
 /**
  * The facts about one table or view that the Inspector and the viewer's detail panel show,
@@ -47,6 +51,8 @@ export interface DetailsScope {
   isSchemaFiltered: boolean;
   /** Only the entities and keys on the diagram are known, as in an exported HTML file. */
   isDiagramOnly: boolean;
+  /** SQL definitions are available only in the desktop Inspector. */
+  definitions: "included" | "excluded";
 }
 
 /**
@@ -69,6 +75,8 @@ export type ListCompleteness =
   | { status: "notVisible" }
   /** A 1.0 file, which dropped keys to tables the login could not see without a trace. */
   | { status: "notRecorded" }
+  /** The optional trigger-metadata read was omitted or failed. */
+  | { status: "notRead"; reason: NotReadReason }
   /** The object was kept from an earlier read, so this capture checked none of its lists. */
   | { status: "notChecked"; readAt: string }
   /** Only the diagram's entities and keys are known. */
@@ -94,6 +102,8 @@ export interface KeyFacts {
   name: string;
   columns: readonly string[];
   isClustered: boolean;
+  /** `false` when its index is disabled; `null` when the file did not record it (before 1.2). */
+  isEnabled: boolean | null;
 }
 
 export interface IndexFacts {
@@ -101,6 +111,12 @@ export interface IndexFacts {
   columns: readonly string[];
   kind: IndexKind;
   isClustered: boolean;
+  /** `INCLUDE` columns in index order; `null` when the file did not record them. */
+  includedColumns: readonly string[] | null;
+  /** Whether it covers only the rows of a filter; `null` when the file did not record it. */
+  isFiltered: boolean | null;
+  /** `false` when it is disabled; `null` when the file did not record it. */
+  isEnabled: boolean | null;
 }
 
 export interface CheckFacts {
@@ -108,6 +124,11 @@ export interface CheckFacts {
   expression: FactText;
   /** `null` when the file did not record whether the constraint is enabled. */
   isEnabled: boolean | null;
+  /**
+   * `false` when SQL Server marks it as not trusted, so the rows already in the table may not
+   * follow it; `null` when the file did not record it.
+   */
+  isTrusted: boolean | null;
   /** The constraint in words, or why it is not: its text cannot be read or put into words. */
   reading: CheckReading;
 }
@@ -139,6 +160,11 @@ export interface RelationFacts {
   onDelete: ReferentialAction;
   onUpdate: ReferentialAction;
   isEnabled: boolean;
+  /**
+   * `false` when SQL Server marks it as not trusted, so the rows already in the referencing table
+   * may not follow it; `null` when the file did not record it.
+   */
+  isTrusted: boolean | null;
   /** The other table: the referenced one under "references", the referencing one under "referenced by". */
   target: RelationTarget;
   /** When the key was kept from an earlier read, the moment it was last read; `null` otherwise. */
@@ -153,7 +179,25 @@ export interface RelationFacts {
 }
 
 export type DetailSectionKind =
-  "columns" | "primaryKey" | "indexes" | "checks" | "references" | "referencedBy";
+  | "columns"
+  | "primaryKey"
+  | "indexes"
+  | "checks"
+  | "triggers"
+  | "references"
+  | "referencedBy"
+  | "viewDefinition";
+
+export interface TriggerFacts extends Omit<Trigger, "body"> {
+  ref: Extract<ModuleRef, { kind: "trigger" }>;
+  notCheckedSince: string | null;
+}
+
+export interface ViewDefinitionFacts {
+  included: boolean;
+  hasCheckOption: boolean | null;
+  isIndexed: boolean | null;
+}
 
 interface SectionFacts<Kind extends DetailSectionKind, Item> {
   kind: Kind;
@@ -167,8 +211,14 @@ export type DetailSection =
   | SectionFacts<"primaryKey", KeyFacts>
   | SectionFacts<"indexes", IndexFacts>
   | SectionFacts<"checks", CheckFacts>
+  | (SectionFacts<"triggers", TriggerFacts> & {
+      parentKind: EntityKind;
+      /** The desktop has code dates; an export keeps only its parent's history. */
+      hasCodeHistory: boolean;
+    })
   | SectionFacts<"references", RelationFacts>
-  | SectionFacts<"referencedBy", RelationFacts>;
+  | SectionFacts<"referencedBy", RelationFacts>
+  | { kind: "viewDefinition"; definition: ViewDefinitionFacts };
 
 export interface ObjectDetails {
   key: string;
@@ -181,12 +231,13 @@ export interface ObjectDetails {
   sections: readonly DetailSection[];
 }
 
-/** The sections of a table, in the order both renderers show them. A view has columns only. */
+/** The sections of a table in both renderers. Views have columns, triggers and definition. */
 export const TABLE_SECTIONS: readonly DetailSectionKind[] = [
   "columns",
   "primaryKey",
   "indexes",
   "checks",
+  "triggers",
   "references",
   "referencedBy",
 ];
@@ -267,7 +318,12 @@ function columnFacts(
 }
 
 function keyFacts(key: PrimaryKey): KeyFacts {
-  return { name: key.name, columns: key.columns, isClustered: key.isClustered };
+  return {
+    name: key.name,
+    columns: key.columns,
+    isClustered: key.isClustered,
+    isEnabled: key.isEnabled ?? null,
+  };
 }
 
 function indexFacts(index: Index): IndexFacts {
@@ -276,18 +332,17 @@ function indexFacts(index: Index): IndexFacts {
     columns: index.columns,
     kind: index.kind,
     isClustered: index.isClustered,
+    includedColumns: index.includedColumns ?? null,
+    isFiltered: index.isFiltered ?? null,
+    isEnabled: index.isEnabled ?? null,
   };
 }
 
 /**
- * A `CHECK` of the table `texts` belongs to, read against the table's columns. A text kept
+ * A `CHECK` of `table`, whose texts `texts` dates, read against the table's columns. A text kept
  * from an earlier read is read as well; its date says how far it is vouched for.
  */
-function checkFacts(
-  constraint: CheckConstraint,
-  columns: readonly Column[],
-  texts: TextMoments,
-): CheckFacts {
+function checkFacts(constraint: CheckConstraint, table: Table, texts: TextMoments): CheckFacts {
   return {
     name: constraint.name,
     expression: factText(
@@ -295,7 +350,8 @@ function checkFacts(
       textReadAt(texts, { kind: "checkConstraint", name: constraint.name }),
     ),
     isEnabled: constraint.isEnabled,
-    reading: readCheckConstraint(constraint, columns, texts.ownerKey),
+    isTrusted: constraint.isTrusted ?? null,
+    reading: readCheckConstraint(constraint, table.columns, table.name),
   };
 }
 
@@ -343,6 +399,7 @@ function relation(context: TableContext, key: ForeignKey, other: QualifiedName):
     onDelete: key.onDelete,
     onUpdate: key.onUpdate,
     isEnabled: key.isEnabled,
+    isTrusted: key.isTrusted ?? null,
     target: target(context, other),
     notCheckedSince:
       context.moments.get(
@@ -363,6 +420,7 @@ function relationToInvisibleTable(
     onDelete: key.onDelete,
     onUpdate: key.onUpdate,
     isEnabled: key.isEnabled,
+    isTrusted: key.isTrusted ?? null,
     target: { status: "notVisible" },
     notCheckedSince:
       context.moments.get(carriedFactId(context.key, { kind: "foreignKey", name: key.name })) ??
@@ -377,6 +435,37 @@ function ownCompleteness(objectReadAt: string | null): ListCompleteness {
   return objectReadAt === null
     ? { status: "complete" }
     : { status: "notChecked", readAt: objectReadAt };
+}
+
+function triggerSection(
+  snapshot: SchemaSnapshot,
+  parent: QualifiedName,
+  parentKind: EntityKind,
+  scope: DetailsScope,
+): Extract<DetailSection, { kind: "triggers" }> {
+  const completeness = triggerCapture(snapshot, parent, scope.carriedOver);
+  const parentDate =
+    scope.carriedOver.find(
+      (item) =>
+        entityKey(item.object) === entityKey(parent) &&
+        (item.fact.kind === "table" || item.fact.kind === "view"),
+    )?.readAt ?? null;
+  return {
+    kind: "triggers",
+    parentKind,
+    hasCodeHistory: scope.definitions === "included",
+    completeness,
+    items: triggersOf(snapshot, parent).map((trigger) => ({
+      parent: trigger.parent,
+      name: trigger.name,
+      timing: trigger.timing,
+      events: trigger.events,
+      isEnabled: trigger.isEnabled,
+      isNotForReplication: trigger.isNotForReplication,
+      ref: { kind: "trigger", parent: trigger.parent, name: trigger.name },
+      notCheckedSince: triggerReadAt(snapshot, trigger) ?? parentDate,
+    })),
+  };
 }
 
 /**
@@ -467,11 +556,10 @@ function describeTable(snapshot: SchemaSnapshot, table: Table, scope: DetailsSco
       },
       {
         kind: "checks",
-        items: table.checkConstraints.map((constraint) =>
-          checkFacts(constraint, table.columns, texts),
-        ),
+        items: table.checkConstraints.map((constraint) => checkFacts(constraint, table, texts)),
         completeness: ownCompleteness(context.objectReadAt),
       },
+      triggerSection(snapshot, table.name, "table", scope),
       {
         kind: "references",
         items: [
@@ -493,11 +581,12 @@ function describeTable(snapshot: SchemaSnapshot, table: Table, scope: DetailsSco
   };
 }
 
-function describeView(view: View, scope: DetailsScope): ObjectDetails {
+function describeView(snapshot: SchemaSnapshot, view: View, scope: DetailsScope): ObjectDetails {
   const key = entityKey(view.name);
   const moments = readMoments(scope.carriedOver);
   const objectReadAt = moments.get(carriedFactId(key, { kind: "view" })) ?? null;
   const texts: TextMoments = { ownerKey: key, moments, objectReadAt };
+  const module = snapshot.programmability?.views.find((item) => entityKey(item.view) === key);
   return {
     key,
     name: view.name,
@@ -510,13 +599,22 @@ function describeView(view: View, scope: DetailsScope): ObjectDetails {
         items: view.columns.map((column) => columnFacts(column, texts, new Set(), new Set())),
         completeness: ownCompleteness(objectReadAt),
       },
+      triggerSection(snapshot, view.name, "view", scope),
+      {
+        kind: "viewDefinition",
+        definition: {
+          included: scope.definitions === "included",
+          hasCheckOption: module?.hasCheckOption ?? null,
+          isIndexed: module?.isIndexed ?? null,
+        },
+      },
     ],
   };
 }
 
 /**
  * The details of the table or view `key` names, or `null` when the snapshot has no such
- * entity. Tables get the six sections of {@link TABLE_SECTIONS}; views get their columns.
+ * entity. Tables get {@link TABLE_SECTIONS}; views get columns, triggers and definition.
  */
 export function describeObjectDetails(
   snapshot: SchemaSnapshot,
@@ -528,5 +626,5 @@ export function describeObjectDetails(
     return describeTable(snapshot, table, scope);
   }
   const view = snapshot.views.find((candidate) => entityKey(candidate.name) === key);
-  return view === undefined ? null : describeView(view, scope);
+  return view === undefined ? null : describeView(snapshot, view, scope);
 }

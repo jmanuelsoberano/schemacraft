@@ -21,7 +21,12 @@ describe("savedConnectionToDraft", () => {
   };
 
   it("reproduces the connection with an empty password and the given inspection options", () => {
-    const draft = savedConnectionToDraft(saved, { schemas: ["sales"], includeViews: false });
+    const draft = savedConnectionToDraft(saved, {
+      schemas: ["sales"],
+      includeViews: false,
+      includeProgrammability: true,
+      includeModuleDefinitions: false,
+    });
     expect(draft).toMatchObject({
       server: "localhost\\SQLEXPRESS",
       authenticationMode: "sqlLogin",
@@ -30,17 +35,21 @@ describe("savedConnectionToDraft", () => {
       database: "Shop",
       schemas: ["sales"],
       includeViews: false,
+      includeProgrammability: true,
+      includeModuleDefinitions: false,
       encryption: "optional",
       trustServerCertificate: true,
     });
   });
 
-  it("defaults to every schema and views included", () => {
+  it("defaults to every schema, views included and code read and saved", () => {
     const draft = savedConnectionToDraft({ ...saved, authentication: { mode: "integrated" } });
     expect(draft.authenticationMode).toBe("integrated");
     expect(draft.username).toBe("");
     expect(draft.schemas).toEqual([]);
     expect(draft.includeViews).toBe(true);
+    expect(draft.includeProgrammability).toBe(true);
+    expect(draft.includeModuleDefinitions).toBe(true);
   });
 
   it("describes and keys connections by endpoint", () => {

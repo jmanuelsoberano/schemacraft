@@ -7,12 +7,15 @@ use super::connection::SavedConnection;
 use crate::inspectors::InspectionOptions;
 use crate::model::{SchemaSnapshot, UnknownFields};
 
-/// Newest project format this build writes and reads.
-pub const FORMAT_VERSION: u32 = 2;
+/// Newest project format this build writes and reads. Format 3 adds the snapshot's
+/// `programmability` and optional state facts to indexes, keys, constraints and the access
+/// profile; every one is a key that format 2 readers keep or ignore (ADR-042).
+pub const FORMAT_VERSION: u32 = 3;
 
 /// Oldest format a reader must understand to open the files this build writes. A reader whose
 /// format is older than a file's but at least the file's `minReaderVersion` opens it read-only;
-/// an older reader refuses it.
+/// an older reader refuses it. Format 3 changes no meaning and no closed enum of format 2, so
+/// SchemaCraft 1.1 still opens these files, read-only.
 pub const MIN_READER_VERSION: u32 = 2;
 
 /// Keys of the file header. Content arriving from the frontend may still carry them among its

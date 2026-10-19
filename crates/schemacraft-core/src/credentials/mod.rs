@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use ts_rs::TS;
 
+use crate::diagnostics::{ClosedKind, ErrorSummary};
+
 pub use memory::InMemoryCredentialStore;
 pub use system::SystemCredentialStore;
 
@@ -75,7 +77,14 @@ impl CredentialError {
             Self::StoreFailed { .. } => CredentialErrorKind::StoreFailed,
         }
     }
+
+    /// What the diagnostic log may record of this error: its kind, never the store's message.
+    pub fn log_summary(&self) -> ErrorSummary<CredentialErrorKind> {
+        ErrorSummary::of(self.kind())
+    }
 }
+
+impl ClosedKind for CredentialErrorKind {}
 
 /// Serialisable classification of a [`CredentialError`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

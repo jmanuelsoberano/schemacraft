@@ -131,6 +131,31 @@
   line-height: 16px;
 }
 
+.triggers {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
+}
+
+.triggersDisabled {
+  border-style: dashed;
+}
+
+.triggerIcon {
+  width: 12px;
+  height: 12px;
+}
+
 .collapse {
   display: inline-flex;
   flex: none;

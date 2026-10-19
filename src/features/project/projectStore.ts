@@ -4,6 +4,7 @@ import { ensurePlaced, spreadForDetailLevel, withPositions } from "@/features/ca
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { placeRefreshedEntities } from "@/features/canvas/refreshPlacement";
 import { usePreferencesStore } from "@/features/preferences/preferencesStore";
+import { findModule } from "@/features/schema/modules";
 import type {
   CanvasState,
   ConnectionSettings,
@@ -200,6 +201,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
       }
       const { project: file, isReadOnly } = await backend.readProject(chosen);
       const content = contentOf(file);
+      useCanvasUiStore.getState().clearSelection();
       set((state) => ({
         phase: "idle",
         history: EMPTY_HISTORY,
@@ -232,6 +234,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
     history: EMPTY_HISTORY,
 
     loadFromInspection: (snapshot, settings, inspection) => {
+      useCanvasUiStore.getState().clearSelection();
       const previous = get().project;
       const canvas = ensurePlaced(
         {
@@ -379,6 +382,10 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
     },
 
     applyRefreshedContent: (content, settings) => {
+      const { selectedModule, clearSelection } = useCanvasUiStore.getState();
+      if (selectedModule !== null && findModule(content.snapshot, selectedModule) === null) {
+        clearSelection();
+      }
       const placement = placeRefreshedEntities(content.canvas, content.snapshot);
       set((state) =>
         state.project === null

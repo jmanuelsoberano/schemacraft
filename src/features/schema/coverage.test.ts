@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import type { AccessProfile, Completeness, SchemaSnapshot } from "@/shared/contracts";
 
 import {
+  accessSummary,
   definitionsCoverage,
   emptySchemaReason,
   listsEveryObject,
   objectsCoverage,
+  routinesListNotice,
 } from "./coverage";
 
 function profile(objects: Completeness, definitions: Completeness): AccessProfile {
@@ -54,7 +56,12 @@ function snapshot(access?: AccessProfile, tables = [table]): SchemaSnapshot {
   };
 }
 
-const everything = { schemas: [], includeViews: true };
+const everything = {
+  schemas: [],
+  includeViews: true,
+  includeProgrammability: true,
+  includeModuleDefinitions: true,
+};
 
 describe("coverage", () => {
   it("reads the frozen verdicts and says when none were recorded", () => {
@@ -64,6 +71,23 @@ describe("coverage", () => {
     expect(definitionsCoverage(snapshot(profile("complete", "notAvailable")))).toBe("notAvailable");
     expect(objectsCoverage(snapshot(profile("partial", "complete")))).toBe("partial");
     expect(objectsCoverage(snapshot(profile("notAvailable", "notAvailable")))).toBe("partial");
+  });
+
+  it("summarises the verdicts on objects and texts, never the coverage of code", () => {
+    const withCode: AccessProfile = {
+      ...profile("complete", "complete"),
+      coverage: {
+        objects: "complete",
+        definitions: "complete",
+        programmability: "partial",
+        moduleDefinitions: "notAvailable",
+      },
+    };
+    expect(accessSummary(snapshot(withCode))).toEqual({
+      level: "full",
+      coverage: { objects: "complete", definitions: "complete" },
+    });
+    expect(accessSummary(snapshot())).toBeNull();
   });
 
   it("vouches for absences only when the object list is complete or was never judged", () => {
@@ -79,16 +103,72 @@ describe("coverage", () => {
     expect(emptySchemaReason(empty(), everything)).toBe("database");
     expect(
       emptySchemaReason(empty(profile("complete", "complete")), {
+        ...everything,
         schemas: ["sales"],
-        includeViews: true,
       }),
     ).toBe("selection");
     expect(
       emptySchemaReason(empty(profile("complete", "complete")), {
-        schemas: [],
+        ...everything,
         includeViews: false,
       }),
     ).toBe("selection");
     expect(emptySchemaReason(empty(profile("partial", "complete")), everything)).toBe("notVisible");
+  });
+
+  it("keeps a code-only snapshot inspectable, including a TVF read with partial coverage", () => {
+    const codeOnly: SchemaSnapshot = {
+      ...snapshot(profile("partial", "notAvailable"), []),
+      programmability: {
+        capture: { objects: { status: "read" }, definitions: { status: "read" } },
+        views: [],
+        triggers: [],
+        routines: [
+          {
+            name: { schema: "sales", name: "VisibleRows" },
+            kind: "inlineTableFunction",
+            parameters: [],
+            returns: null,
+            columns: [],
+            body: { language: "sql", definition: { status: "notVisible" } },
+          },
+        ],
+      },
+    };
+    expect(emptySchemaReason(codeOnly, everything)).toBeNull();
+    expect(routinesListNotice(codeOnly)).toBe("partial");
+  });
+
+  it("distinguishes excluded, failed, timed out and unrecorded lists from permission limits", () => {
+    expect(routinesListNotice(snapshot())).toBe("notRecorded");
+    for (const reason of ["optionOff", "queryFailed", "timedOut", "unknown"] as const) {
+      expect(
+        routinesListNotice({
+          ...snapshot(),
+          programmability: {
+            capture: { objects: { status: "notRead", reason }, definitions: { status: "unknown" } },
+            views: [],
+            routines: [],
+            triggers: [],
+          },
+        }),
+      ).toBe(reason);
+    }
+    const complete = profile("complete", "complete");
+    complete.coverage.programmability = "complete";
+    expect(
+      routinesListNotice({
+        ...snapshot(complete),
+        programmability: {
+          capture: {
+            objects: { status: "read" },
+            definitions: { status: "notRead", reason: "optionOff" },
+          },
+          views: [],
+          routines: [],
+          triggers: [],
+        },
+      }),
+    ).toBeNull();
   });
 });

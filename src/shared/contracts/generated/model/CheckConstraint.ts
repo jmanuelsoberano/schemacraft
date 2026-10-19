@@ -17,4 +17,10 @@ expression: Definition,
  * `false` when the constraint exists but is disabled (`NOCHECK`) in the database; `None`
  * when the file that holds it did not record the state.
  */
-isEnabled: boolean | null, };
+isEnabled: boolean | null, 
+/**
+ * `false` when SQL Server does not trust the rule, so the rows already in the table may not
+ * follow it (`is_not_trusted`, after `WITH NOCHECK`, a re-enable without `WITH CHECK` or on a
+ * NOT FOR REPLICATION rule); `None` when the capture did not record it, as before 1.2.
+ */
+isTrusted?: boolean, };

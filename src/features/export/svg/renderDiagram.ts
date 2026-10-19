@@ -20,7 +20,7 @@ import {
   rowCenterY,
   rowsFor,
 } from "@/features/canvas/geometry";
-import type { ColumnRow, EntityDescriptor } from "@/features/canvas/geometry";
+import type { ColumnRow, EntityDescriptor, TriggerBadge } from "@/features/canvas/geometry";
 import {
   gridPosition,
   nodeStatesByKey,
@@ -29,7 +29,8 @@ import {
   tablesByKey,
 } from "@/features/canvas/graph";
 import { formatDataType } from "@/features/schema/dataType";
-import { entityKey } from "@/features/schema/entities";
+import { displayIdentifier, entityKey } from "@/features/schema/entities";
+import { triggerCapture } from "@/features/schema/triggerDetails";
 import type {
   CanvasState,
   DetailLevel,
@@ -38,7 +39,16 @@ import type {
   Table,
 } from "@/shared/contracts";
 
-import { ICON_KEY, ICON_LINK, ICON_SYMBOLS, ICON_TABLE, ICON_VIEW } from "./icons";
+import {
+  ICON_KEY,
+  ICON_LINK,
+  ICON_SYMBOLS,
+  ICON_TABLE,
+  ICON_VIEW,
+  ICON_TRIGGER,
+  ICON_TRIGGER_DISABLED,
+  TRIGGER_ICON_SYMBOLS,
+} from "./icons";
 import { DIAGRAM_PALETTES } from "./palette";
 import type { DiagramPalette, ExportTheme } from "./palette";
 import {
@@ -64,6 +74,8 @@ export interface DiagramInput {
 export interface DiagramLabels {
   /** The label on a view card, "VIEW" in English. */
   view: string;
+  /** Full sentences for the badge's accessible name, with no module names or SQL. */
+  triggers: (badge: TriggerBadge) => string;
 }
 
 export interface RenderOptions {
@@ -87,10 +99,12 @@ export interface RenderOptions {
    * partial access. The document grows to make room for it.
    */
   footnote?: string;
+  /** Static exports explain trigger badges and any unverified trigger metadata below the drawing. */
+  triggerNotes?: { legend: string; notRead: string; notChecked: string };
 }
 
 /** What sizes the document besides the diagram, as {@link renderDiagramSvg} will draw it. */
-export type MeasureOptions = Pick<RenderOptions, "padding" | "footnote">;
+export type MeasureOptions = Pick<RenderOptions, "padding" | "footnote" | "triggerNotes">;
 
 export interface DiagramExtent {
   /** Width in CSS pixels, padding included. */
@@ -135,6 +149,9 @@ const PILL_PADDING = 6;
 const LABEL_HEIGHT = 16;
 const LABEL_PADDING = 5;
 const LABEL_RADIUS = 4;
+const TRIGGER_ICON_SIZE = 12;
+const TRIGGER_PADDING = 5;
+const TRIGGER_GAP = 3;
 const CORNER_RADIUS = 10;
 /** Space between the lowest node and the footnote, and the height of the footnote line. */
 const FOOTNOTE_GAP = 16;
@@ -163,7 +180,7 @@ interface PlacedFootnote {
 interface Layout {
   placed: PlacedEntity[];
   relations: ForeignKey[];
-  footnote: PlacedFootnote | null;
+  footnotes: PlacedFootnote[];
   extent: DiagramExtent;
 }
 
@@ -177,6 +194,7 @@ function layoutDiagram(
   detailLevel: DetailLevel,
   padding: number,
   footnote: string | undefined,
+  triggerNotes: RenderOptions["triggerNotes"],
 ): Layout {
   const entities = describeEntities(input.snapshot);
   const states = nodeStatesByKey(input.canvas.nodes);
@@ -230,23 +248,34 @@ function layoutDiagram(
 
   let width = Math.ceil(maxX - minX + padding * 2);
   let height = Math.ceil(maxY - minY + padding * 2);
-  let placedFootnote: PlacedFootnote | null = null;
-  if (footnote !== undefined && footnote !== "") {
-    const top = maxY - minY + padding + FOOTNOTE_GAP;
-    placedFootnote = {
-      text: footnote,
+  const notes = footnote ? [footnote] : [];
+  if (triggerNotes !== undefined) {
+    if (placed.some((item) => item.entity.triggers !== null)) notes.push(triggerNotes.legend);
+    if (input.snapshot.programmability?.capture.objects.status !== "read") {
+      notes.push(triggerNotes.notRead);
+    } else if (
+      placed.some((item) => triggerCapture(input.snapshot, item.entity.name).status !== "complete")
+    ) {
+      notes.push(triggerNotes.notChecked);
+    }
+  }
+  const footnotes: PlacedFootnote[] = [];
+  for (const [index, note] of notes.filter((text) => text !== "").entries()) {
+    const top = maxY - minY + padding + FOOTNOTE_GAP + index * FOOTNOTE_LINE_HEIGHT;
+    footnotes.push({
+      text: note,
       x: padding,
       y: baseline(top + FOOTNOTE_LINE_HEIGHT / 2, FOOTNOTE_FONT.size),
-    };
+    });
     // Sized with the estimate, which runs wider than the fonts for prose, so that measuring
     // without a text measurer and drawing with one agree and the line always fits.
-    width = Math.max(width, Math.ceil(estimateTextWidth(footnote, FOOTNOTE_FONT) + padding * 2));
+    width = Math.max(width, Math.ceil(estimateTextWidth(note, FOOTNOTE_FONT) + padding * 2));
     height = Math.ceil(top + FOOTNOTE_LINE_HEIGHT + padding);
   }
   return {
     placed,
     relations,
-    footnote: placedFootnote,
+    footnotes,
     extent: {
       width,
       height,
@@ -262,11 +291,21 @@ export function measureDiagram(
   detailLevel: DetailLevel,
   options: MeasureOptions = {},
 ): DiagramExtent {
-  return layoutDiagram(input, detailLevel, options.padding ?? DEFAULT_PADDING, options.footnote)
-    .extent;
+  return layoutDiagram(
+    input,
+    detailLevel,
+    options.padding ?? DEFAULT_PADDING,
+    options.footnote,
+    options.triggerNotes,
+  ).extent;
 }
 
-function styles(palette: DiagramPalette, fontFaces: string, hasFootnote: boolean): string {
+function styles(
+  palette: DiagramPalette,
+  fontFaces: string,
+  hasFootnote: boolean,
+  hasTriggers: boolean,
+): string {
   const rules = [
     `.sc-background{fill:${palette.canvas}}`,
     `.sc-node-fill{fill:${palette.surfaceRaised}}`,
@@ -297,6 +336,14 @@ function styles(palette: DiagramPalette, fontFaces: string, hasFootnote: boolean
     `.sc-marker-active{fill:none;stroke:${palette.accent};stroke-width:2}`,
     `.sc-marker-fill-active{fill:${palette.canvas};stroke:${palette.accent};stroke-width:2}`,
   ];
+  if (hasTriggers) {
+    rules.push(
+      `.sc-trigger-badge{fill:none;stroke:${palette.borderStrong};stroke-width:1}`,
+      `.sc-trigger-disabled{stroke-dasharray:3 2}`,
+      `.sc-trigger-icon{stroke:${palette.textSecondary}}`,
+      `.sc-trigger-count{font-family:${SANS_FONT_STACK};font-size:10px;font-weight:600;fill:${palette.textSecondary};text-anchor:middle}`,
+    );
+  }
   // Only documents with a footnote carry its rule, so other exports stay byte for byte the same.
   if (hasFootnote) {
     rules.push(
@@ -366,22 +413,30 @@ function renderEntity(
   const count = String(entity.columns.length);
   const pillWidth = Math.ceil(measure(count, COUNT_FONT)) + PILL_PADDING * 2;
   const pillX = NODE_WIDTH - HEADER_PADDING_RIGHT - pillWidth;
+  const trigger = entity.triggers;
+  const triggerCount = trigger === null ? "" : String(trigger.count);
+  const triggerWidth =
+    trigger === null
+      ? 0
+      : Math.ceil(measure(triggerCount, COUNT_FONT)) +
+        TRIGGER_PADDING * 2 +
+        2 +
+        TRIGGER_ICON_SIZE +
+        TRIGGER_GAP;
+  const triggerX = pillX - GAP - triggerWidth;
+  const beforeCount = trigger === null ? pillX : triggerX;
   const labelWidth = isView ? Math.ceil(measure(labels.view, COUNT_FONT)) + LABEL_PADDING * 2 : 0;
-  const labelX = pillX - GAP - labelWidth;
+  const labelX = beforeCount - GAP - labelWidth;
   const titleX = HEADER_PADDING_LEFT + ICON_SIZE + GAP;
-  const titleMaxWidth = (isView ? labelX : pillX) - GAP - titleX;
-  const schema = `${entity.name.schema}.`;
+  const titleMaxWidth = (isView ? labelX : beforeCount) - GAP - titleX;
+  const schema = `${displayIdentifier(entity.name.schema)}.`;
   const schemaWidth = measure(schema, TITLE_FONT);
   let shownSchema = schema;
-  let shownName = fitText(entity.name.name, titleMaxWidth - schemaWidth, NAME_FONT, measure);
+  const name = displayIdentifier(entity.name.name);
+  let shownName = fitText(name, titleMaxWidth - schemaWidth, NAME_FONT, measure);
   if (schemaWidth > titleMaxWidth * 0.6) {
     shownSchema = fitText(schema, titleMaxWidth * 0.6, TITLE_FONT, measure);
-    shownName = fitText(
-      entity.name.name,
-      titleMaxWidth - measure(shownSchema, TITLE_FONT),
-      NAME_FONT,
-      measure,
-    );
+    shownName = fitText(name, titleMaxWidth - measure(shownSchema, TITLE_FONT), NAME_FONT, measure);
   }
   parts.push(
     icon(
@@ -404,6 +459,25 @@ function renderEntity(
     );
     parts.push(
       `<text class="sc-kind-label-text" x="${coordinate(labelX + labelWidth / 2)}" y="${coordinate(baseline(HEADER_HEIGHT / 2, COUNT_FONT.size))}">${escapeXml(labels.view)}</text>`,
+    );
+  }
+  if (trigger !== null) {
+    const label = escapeXml(labels.triggers(trigger));
+    parts.push(`<g class="sc-triggers" role="img" aria-label="${label}"><title>${label}</title>`);
+    parts.push(
+      `<rect class="sc-trigger-badge${trigger.allDisabled ? " sc-trigger-disabled" : ""}" x="${coordinate(triggerX + 0.5)}" y="${(HEADER_HEIGHT - PILL_HEIGHT) / 2 + 0.5}" width="${triggerWidth - 1}" height="${PILL_HEIGHT - 1}" rx="${PILL_HEIGHT / 2}"/>`,
+    );
+    parts.push(
+      icon(
+        trigger.allDisabled ? ICON_TRIGGER_DISABLED : ICON_TRIGGER,
+        "sc-trigger-icon",
+        triggerX + TRIGGER_PADDING + 1,
+        (HEADER_HEIGHT - TRIGGER_ICON_SIZE) / 2,
+        TRIGGER_ICON_SIZE,
+      ),
+    );
+    parts.push(
+      `<text class="sc-trigger-count" x="${coordinate(triggerX + triggerWidth - TRIGGER_PADDING - 1 - Math.ceil(measure(triggerCount, COUNT_FONT)) / 2)}" y="${coordinate(baseline(HEADER_HEIGHT / 2, COUNT_FONT.size))}">${triggerCount}</text></g>`,
     );
   }
   const pillY = (HEADER_HEIGHT - PILL_HEIGHT) / 2;
@@ -490,12 +564,14 @@ export function renderDiagramSvg(input: DiagramInput, options: RenderOptions): R
   const padding = options.padding ?? DEFAULT_PADDING;
   const measure = options.measureText ?? estimateTextWidth;
   const palette = DIAGRAM_PALETTES[options.theme];
-  const { placed, relations, footnote, extent } = layoutDiagram(
+  const { placed, relations, footnotes, extent } = layoutDiagram(
     input,
     options.detailLevel,
     padding,
     options.footnote,
+    options.triggerNotes,
   );
+  const hasTriggers = placed.some((item) => item.entity.triggers !== null);
   const placedByKey = new Map(placed.map((item) => [item.entity.key, item]));
 
   const parts: string[] = [];
@@ -507,8 +583,10 @@ export function renderDiagramSvg(input: DiagramInput, options: RenderOptions): R
   if (options.description !== undefined) {
     parts.push(`<desc>${escapeXml(options.description)}</desc>`);
   }
-  parts.push(`<style>${styles(palette, options.fontFaces ?? "", footnote !== null)}</style>`);
-  parts.push(`<defs>${ICON_SYMBOLS}${markers()}</defs>`);
+  parts.push(
+    `<style>${styles(palette, options.fontFaces ?? "", footnotes.length > 0, hasTriggers)}</style>`,
+  );
+  parts.push(`<defs>${ICON_SYMBOLS}${hasTriggers ? TRIGGER_ICON_SYMBOLS : ""}${markers()}</defs>`);
   if (options.background ?? true) {
     parts.push(`<rect class="sc-background" width="${extent.width}" height="${extent.height}"/>`);
   }
@@ -523,7 +601,7 @@ export function renderDiagramSvg(input: DiagramInput, options: RenderOptions): R
     parts.push(renderEntity(item, measure, options.detailLevel, options.labels));
   }
   parts.push("</g>");
-  if (footnote !== null) {
+  for (const footnote of footnotes) {
     parts.push(
       `<text class="sc-footnote" x="${coordinate(footnote.x)}" y="${coordinate(footnote.y)}">${escapeXml(footnote.text)}</text>`,
     );

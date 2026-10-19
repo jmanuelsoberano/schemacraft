@@ -1,4 +1,4 @@
-import type { InspectionStage } from "@/shared/contracts";
+import type { InspectionOptions, InspectionStage } from "@/shared/contracts";
 
 import type { StageProgress } from "./connectionStore";
 
@@ -14,8 +14,20 @@ export const DISPLAYED_STAGES: readonly DisplayedStage[] = [
   "readingIndexes",
   "readingForeignKeys",
   "readingConstraints",
+  "readingProgrammability",
+  "readingModuleDefinitions",
   "assembling",
 ];
+
+/** Optional stages exist only when this read requested them. */
+export function displayedStages(options: InspectionOptions): readonly DisplayedStage[] {
+  return DISPLAYED_STAGES.filter((stage) => {
+    if (stage === "readingProgrammability") return options.includeProgrammability;
+    if (stage === "readingModuleDefinitions")
+      return options.includeProgrammability && options.includeModuleDefinitions;
+    return true;
+  });
+}
 
 const CATALOG_STAGES: readonly InspectionStage[] = [
   "checkingAccess",
@@ -24,6 +36,8 @@ const CATALOG_STAGES: readonly InspectionStage[] = [
   "readingIndexes",
   "readingForeignKeys",
   "readingConstraints",
+  "readingProgrammability",
+  "readingModuleDefinitions",
 ];
 
 export type StageStatus = "pending" | "active" | "done";
@@ -53,6 +67,8 @@ export function stageStatus(progress: StageProgress, stage: InspectionStage): St
     case "readingIndexes":
     case "readingForeignKeys":
     case "readingConstraints":
+    case "readingProgrammability":
+    case "readingModuleDefinitions":
       if (reported(stage)) return "done";
       return reported("connecting") || catalogStarted ? "active" : "pending";
   }

@@ -1,0 +1,1230 @@
+{
+  "formatVersion": 2,
+  "minReaderVersion": 2,
+  "savedAt": "2026-10-19T00:11:53.332103200Z",
+  "savedWith": "SchemaCraft 1.1.0",
+  "connection": {
+    "provider": "sqlServer",
+    "host": "localhost",
+    "instance": null,
+    "port": 14333,
+    "database": "SchemaCraftFixture",
+    "authentication": {
+      "mode": "sqlLogin",
+      "username": "sa"
+    },
+    "encryption": "mandatory",
+    "trustServerCertificate": true
+  },
+  "inspection": {
+    "schemas": [
+      "dbo",
+      "sales"
+    ],
+    "includeViews": true
+  },
+  "snapshot": {
+    "databaseName": "SchemaCraftFixture",
+    "serverVersion": "Microsoft SQL Server 2022 (RTM-CU27-GDR) (KB5126934) - 16.0.4305.5 (X64)",
+    "extractedAt": "2026-10-19T00:11:53.331308Z",
+    "access": {
+      "probe": {
+        "canReadDefinitions": false,
+        "canReadData": false,
+        "explicitDenials": 0,
+        "seesObjects": true,
+        "schemas": [
+          {
+            "name": "dbo",
+            "canReadDefinitions": false,
+            "canReadData": false,
+            "isDenied": false,
+            "hasVisibleObjects": false
+          },
+          {
+            "name": "hr",
+            "canReadDefinitions": false,
+            "canReadData": false,
+            "isDenied": false,
+            "hasVisibleObjects": false
+          },
+          {
+            "name": "sales",
+            "canReadDefinitions": false,
+            "canReadData": false,
+            "isDenied": false,
+            "hasVisibleObjects": true
+          },
+          {
+            "name": "staging",
+            "canReadDefinitions": false,
+            "canReadData": false,
+            "isDenied": false,
+            "hasVisibleObjects": false
+          }
+        ],
+        "databaseUser": "schemacraft_two_tables"
+      },
+      "scope": {
+        "schemas": [
+          "dbo",
+          "sales"
+        ],
+        "includeViews": true
+      },
+      "level": "partial",
+      "coverage": {
+        "objects": "partial",
+        "definitions": "notAvailable"
+      },
+      "counts": {
+        "definitions": 4,
+        "definitionsNotVisible": 4,
+        "foreignKeysToInvisibleTables": 2
+      }
+    },
+    "tables": [
+      {
+        "name": {
+          "schema": "dbo",
+          "name": "CustomerTags"
+        },
+        "columns": [
+          {
+            "name": "CustomerId",
+            "ordinalPosition": 1,
+            "dataType": {
+              "name": "int",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "TagId",
+            "ordinalPosition": 2,
+            "dataType": {
+              "name": "int",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          }
+        ],
+        "primaryKey": {
+          "name": "PK_CustomerTags",
+          "columns": [
+            "CustomerId",
+            "TagId"
+          ],
+          "isClustered": true
+        },
+        "indexes": [],
+        "checkConstraints": []
+      },
+      {
+        "name": {
+          "schema": "dbo",
+          "name": "Customers"
+        },
+        "columns": [
+          {
+            "name": "CustomerId",
+            "ordinalPosition": 1,
+            "dataType": {
+              "name": "int",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": true,
+            "isComputed": false
+          },
+          {
+            "name": "Name",
+            "ordinalPosition": 2,
+            "dataType": {
+              "name": "nvarchar",
+              "length": {
+                "kind": "fixed",
+                "value": 120
+              },
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "Email",
+            "ordinalPosition": 3,
+            "dataType": {
+              "name": "varchar",
+              "length": {
+                "kind": "fixed",
+                "value": 254
+              },
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "Notes",
+            "ordinalPosition": 4,
+            "dataType": {
+              "name": "nvarchar",
+              "length": {
+                "kind": "max"
+              },
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": true,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "CreatedAt",
+            "ordinalPosition": 5,
+            "dataType": {
+              "name": "datetime2",
+              "length": null,
+              "precision": 3,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": {
+              "status": "readable",
+              "text": "(sysutcdatetime())"
+            },
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "IsActive",
+            "ordinalPosition": 6,
+            "dataType": {
+              "name": "bit",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": {
+              "status": "readable",
+              "text": "((1))"
+            },
+            "isIdentity": false,
+            "isComputed": false
+          }
+        ],
+        "primaryKey": {
+          "name": "PK_Customers",
+          "columns": [
+            "CustomerId"
+          ],
+          "isClustered": true
+        },
+        "indexes": [
+          {
+            "name": "UQ_Customers_Email",
+            "columns": [
+              "Email"
+            ],
+            "kind": "uniqueConstraint",
+            "isClustered": false
+          }
+        ],
+        "checkConstraints": [
+          {
+            "name": "CK_Customers_Email",
+            "expression": {
+              "status": "readable",
+              "text": "([Email] like '%@%')"
+            },
+            "isEnabled": true
+          }
+        ]
+      },
+      {
+        "name": {
+          "schema": "dbo",
+          "name": "Tags"
+        },
+        "columns": [
+          {
+            "name": "TagId",
+            "ordinalPosition": 1,
+            "dataType": {
+              "name": "int",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "Label",
+            "ordinalPosition": 2,
+            "dataType": {
+              "name": "nvarchar",
+              "length": {
+                "kind": "fixed",
+                "value": 50
+              },
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          }
+        ],
+        "primaryKey": {
+          "name": "PK_Tags",
+          "columns": [
+            "TagId"
+          ],
+          "isClustered": true
+        },
+        "indexes": [],
+        "checkConstraints": []
+      },
+      {
+        "name": {
+          "schema": "sales",
+          "name": "OrderLines"
+        },
+        "columns": [
+          {
+            "name": "OrderId",
+            "ordinalPosition": 1,
+            "dataType": {
+              "name": "int",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "LineNumber",
+            "ordinalPosition": 2,
+            "dataType": {
+              "name": "smallint",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "ProductCode",
+            "ordinalPosition": 3,
+            "dataType": {
+              "name": "varchar",
+              "length": {
+                "kind": "fixed",
+                "value": 32
+              },
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "Quantity",
+            "ordinalPosition": 4,
+            "dataType": {
+              "name": "int",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "UnitPrice",
+            "ordinalPosition": 5,
+            "dataType": {
+              "name": "money",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "Discount",
+            "ordinalPosition": 6,
+            "dataType": {
+              "name": "real",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": true,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "Payload",
+            "ordinalPosition": 7,
+            "dataType": {
+              "name": "varbinary",
+              "length": {
+                "kind": "max"
+              },
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": true,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "RowVersion",
+            "ordinalPosition": 8,
+            "dataType": {
+              "name": "timestamp",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          }
+        ],
+        "primaryKey": {
+          "name": "PK_OrderLines",
+          "columns": [
+            "OrderId",
+            "LineNumber"
+          ],
+          "isClustered": true
+        },
+        "indexes": [],
+        "checkConstraints": [
+          {
+            "name": "CK_OrderLines_Quantity",
+            "expression": {
+              "status": "readable",
+              "text": "([Quantity]>(0))"
+            },
+            "isEnabled": false
+          }
+        ]
+      },
+      {
+        "name": {
+          "schema": "sales",
+          "name": "Orders"
+        },
+        "columns": [
+          {
+            "name": "OrderId",
+            "ordinalPosition": 1,
+            "dataType": {
+              "name": "int",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": true,
+            "isComputed": false
+          },
+          {
+            "name": "CustomerId",
+            "ordinalPosition": 2,
+            "dataType": {
+              "name": "int",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "SalesRepId",
+            "ordinalPosition": 3,
+            "dataType": {
+              "name": "int",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": true,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "PlacedAt",
+            "ordinalPosition": 4,
+            "dataType": {
+              "name": "datetime2",
+              "length": null,
+              "precision": 7,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": {
+              "status": "readable",
+              "text": "(sysutcdatetime())"
+            },
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "Status",
+            "ordinalPosition": 5,
+            "dataType": {
+              "name": "char",
+              "length": {
+                "kind": "fixed",
+                "value": 1
+              },
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": {
+              "status": "readable",
+              "text": "('N')"
+            },
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "Subtotal",
+            "ordinalPosition": 6,
+            "dataType": {
+              "name": "decimal",
+              "length": null,
+              "precision": 18,
+              "scale": 2,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "TaxRate",
+            "ordinalPosition": 7,
+            "dataType": {
+              "name": "decimal",
+              "length": null,
+              "precision": 5,
+              "scale": 4,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "Total",
+            "ordinalPosition": 8,
+            "dataType": {
+              "name": "decimal",
+              "length": null,
+              "precision": 25,
+              "scale": 6,
+              "userDefinedTypeName": null
+            },
+            "isNullable": true,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": true
+          }
+        ],
+        "primaryKey": {
+          "name": "PK_Orders",
+          "columns": [
+            "OrderId"
+          ],
+          "isClustered": true
+        },
+        "indexes": [
+          {
+            "name": "IX_Orders_CustomerId",
+            "columns": [
+              "CustomerId"
+            ],
+            "kind": "nonUnique",
+            "isClustered": false
+          },
+          {
+            "name": "UX_Orders_Customer_PlacedAt",
+            "columns": [
+              "CustomerId",
+              "PlacedAt"
+            ],
+            "kind": "uniqueIndex",
+            "isClustered": false
+          },
+          {
+            "name": "IX_Orders_Open",
+            "columns": [
+              "Status"
+            ],
+            "kind": "nonUnique",
+            "isClustered": false
+          }
+        ],
+        "checkConstraints": [
+          {
+            "name": "CK_Orders_Status",
+            "expression": {
+              "status": "readable",
+              "text": "([Status]='C' OR [Status]='S' OR [Status]='P' OR [Status]='N')"
+            },
+            "isEnabled": true
+          }
+        ]
+      },
+      {
+        "name": {
+          "schema": "sales",
+          "name": "Shipments"
+        },
+        "columns": [
+          {
+            "name": "ShipmentId",
+            "ordinalPosition": 1,
+            "dataType": {
+              "name": "uniqueidentifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": {
+              "status": "readable",
+              "text": "(newid())"
+            },
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "OrderId",
+            "ordinalPosition": 2,
+            "dataType": {
+              "name": "int",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "LineNumber",
+            "ordinalPosition": 3,
+            "dataType": {
+              "name": "smallint",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "ShippedAt",
+            "ordinalPosition": 4,
+            "dataType": {
+              "name": "datetimeoffset",
+              "length": null,
+              "precision": 0,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": true,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "Carrier",
+            "ordinalPosition": 5,
+            "dataType": {
+              "name": "nvarchar",
+              "length": {
+                "kind": "fixed",
+                "value": 60
+              },
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": true,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          }
+        ],
+        "primaryKey": {
+          "name": "PK_Shipments",
+          "columns": [
+            "ShipmentId"
+          ],
+          "isClustered": true
+        },
+        "indexes": [],
+        "checkConstraints": []
+      }
+    ],
+    "views": [
+      {
+        "name": {
+          "schema": "sales",
+          "name": "RecentOrders"
+        },
+        "columns": [
+          {
+            "name": "OrderId",
+            "ordinalPosition": 1,
+            "dataType": {
+              "name": "int",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "CustomerName",
+            "ordinalPosition": 2,
+            "dataType": {
+              "name": "nvarchar",
+              "length": {
+                "kind": "fixed",
+                "value": 120
+              },
+              "precision": null,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "PlacedAt",
+            "ordinalPosition": 3,
+            "dataType": {
+              "name": "datetime2",
+              "length": null,
+              "precision": 7,
+              "scale": null,
+              "userDefinedTypeName": null
+            },
+            "isNullable": false,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          },
+          {
+            "name": "Total",
+            "ordinalPosition": 4,
+            "dataType": {
+              "name": "decimal",
+              "length": null,
+              "precision": 25,
+              "scale": 6,
+              "userDefinedTypeName": null
+            },
+            "isNullable": true,
+            "defaultExpression": null,
+            "isIdentity": false,
+            "isComputed": false
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "FK_CustomerTags_Customers",
+        "referencingTable": {
+          "schema": "dbo",
+          "name": "CustomerTags"
+        },
+        "referencedTable": {
+          "schema": "dbo",
+          "name": "Customers"
+        },
+        "columnPairs": [
+          {
+            "referencingColumn": "CustomerId",
+            "referencedColumn": "CustomerId"
+          }
+        ],
+        "onDelete": "cascade",
+        "onUpdate": "noAction",
+        "isEnabled": true
+      },
+      {
+        "name": "FK_CustomerTags_Tags",
+        "referencingTable": {
+          "schema": "dbo",
+          "name": "CustomerTags"
+        },
+        "referencedTable": {
+          "schema": "dbo",
+          "name": "Tags"
+        },
+        "columnPairs": [
+          {
+            "referencingColumn": "TagId",
+            "referencedColumn": "TagId"
+          }
+        ],
+        "onDelete": "noAction",
+        "onUpdate": "noAction",
+        "isEnabled": true
+      },
+      {
+        "name": "FK_OrderLines_Orders",
+        "referencingTable": {
+          "schema": "sales",
+          "name": "OrderLines"
+        },
+        "referencedTable": {
+          "schema": "sales",
+          "name": "Orders"
+        },
+        "columnPairs": [
+          {
+            "referencingColumn": "OrderId",
+            "referencedColumn": "OrderId"
+          }
+        ],
+        "onDelete": "cascade",
+        "onUpdate": "noAction",
+        "isEnabled": true
+      },
+      {
+        "name": "FK_Orders_Customers",
+        "referencingTable": {
+          "schema": "sales",
+          "name": "Orders"
+        },
+        "referencedTable": {
+          "schema": "dbo",
+          "name": "Customers"
+        },
+        "columnPairs": [
+          {
+            "referencingColumn": "CustomerId",
+            "referencedColumn": "CustomerId"
+          }
+        ],
+        "onDelete": "noAction",
+        "onUpdate": "cascade",
+        "isEnabled": true
+      },
+      {
+        "name": "FK_Shipments_OrderLines",
+        "referencingTable": {
+          "schema": "sales",
+          "name": "Shipments"
+        },
+        "referencedTable": {
+          "schema": "sales",
+          "name": "OrderLines"
+        },
+        "columnPairs": [
+          {
+            "referencingColumn": "OrderId",
+            "referencedColumn": "OrderId"
+          },
+          {
+            "referencingColumn": "LineNumber",
+            "referencedColumn": "LineNumber"
+          }
+        ],
+        "onDelete": "noAction",
+        "onUpdate": "noAction",
+        "isEnabled": true
+      },
+      {
+        "name": "FK_Shipments_Orders_Disabled",
+        "referencingTable": {
+          "schema": "sales",
+          "name": "Shipments"
+        },
+        "referencedTable": {
+          "schema": "sales",
+          "name": "Orders"
+        },
+        "columnPairs": [
+          {
+            "referencingColumn": "OrderId",
+            "referencedColumn": "OrderId"
+          }
+        ],
+        "onDelete": "noAction",
+        "onUpdate": "noAction",
+        "isEnabled": false
+      }
+    ],
+    "foreignKeysToInvisibleTables": [
+      {
+        "name": "FK_Orders_Employees",
+        "referencingTable": {
+          "schema": "sales",
+          "name": "Orders"
+        },
+        "columns": [
+          "SalesRepId"
+        ],
+        "onDelete": "setNull",
+        "onUpdate": "noAction",
+        "isEnabled": true
+      }
+    ],
+    "carriedOver": [
+      {
+        "object": {
+          "schema": "dbo",
+          "name": "CustomerTags"
+        },
+        "fact": {
+          "kind": "table"
+        },
+        "readAt": "2026-10-19T00:11:53.276024200Z"
+      },
+      {
+        "object": {
+          "schema": "dbo",
+          "name": "CustomerTags"
+        },
+        "fact": {
+          "kind": "foreignKey",
+          "name": "FK_CustomerTags_Customers"
+        },
+        "readAt": "2026-10-19T00:11:53.276024200Z"
+      },
+      {
+        "object": {
+          "schema": "dbo",
+          "name": "CustomerTags"
+        },
+        "fact": {
+          "kind": "foreignKey",
+          "name": "FK_CustomerTags_Tags"
+        },
+        "readAt": "2026-10-19T00:11:53.276024200Z"
+      },
+      {
+        "object": {
+          "schema": "dbo",
+          "name": "Customers"
+        },
+        "fact": {
+          "kind": "table"
+        },
+        "readAt": "2026-10-19T00:11:53.276024200Z"
+      },
+      {
+        "object": {
+          "schema": "dbo",
+          "name": "Tags"
+        },
+        "fact": {
+          "kind": "table"
+        },
+        "readAt": "2026-10-19T00:11:53.276024200Z"
+      },
+      {
+        "object": {
+          "schema": "sales",
+          "name": "OrderLines"
+        },
+        "fact": {
+          "kind": "checkConstraint",
+          "name": "CK_OrderLines_Quantity"
+        },
+        "readAt": "2026-10-19T00:11:53.276024200Z"
+      },
+      {
+        "object": {
+          "schema": "sales",
+          "name": "Orders"
+        },
+        "fact": {
+          "kind": "columnDefault",
+          "column": "PlacedAt"
+        },
+        "readAt": "2026-10-19T00:11:53.276024200Z"
+      },
+      {
+        "object": {
+          "schema": "sales",
+          "name": "Orders"
+        },
+        "fact": {
+          "kind": "columnDefault",
+          "column": "Status"
+        },
+        "readAt": "2026-10-19T00:11:53.276024200Z"
+      },
+      {
+        "object": {
+          "schema": "sales",
+          "name": "Orders"
+        },
+        "fact": {
+          "kind": "checkConstraint",
+          "name": "CK_Orders_Status"
+        },
+        "readAt": "2026-10-19T00:11:53.276024200Z"
+      },
+      {
+        "object": {
+          "schema": "sales",
+          "name": "Orders"
+        },
+        "fact": {
+          "kind": "foreignKey",
+          "name": "FK_Orders_Customers"
+        },
+        "readAt": "2026-10-19T00:11:53.276024200Z"
+      },
+      {
+        "object": {
+          "schema": "sales",
+          "name": "RecentOrders"
+        },
+        "fact": {
+          "kind": "view"
+        },
+        "readAt": "2026-10-19T00:11:53.276024200Z"
+      },
+      {
+        "object": {
+          "schema": "sales",
+          "name": "Shipments"
+        },
+        "fact": {
+          "kind": "table"
+        },
+        "readAt": "2026-10-19T00:11:53.276024200Z"
+      },
+      {
+        "object": {
+          "schema": "sales",
+          "name": "Shipments"
+        },
+        "fact": {
+          "kind": "foreignKey",
+          "name": "FK_Shipments_OrderLines"
+        },
+        "readAt": "2026-10-19T00:11:53.276024200Z"
+      },
+      {
+        "object": {
+          "schema": "sales",
+          "name": "Shipments"
+        },
+        "fact": {
+          "kind": "foreignKey",
+          "name": "FK_Shipments_Orders_Disabled"
+        },
+        "readAt": "2026-10-19T00:11:53.276024200Z"
+      }
+    ],
+    "lineage": [
+      {
+        "step": "capture"
+      },
+      1.5,
+      null
+    ]
+  },
+  "canvas": {
+    "detailLevel": "full",
+    "layout": "manual",
+    "viewport": {
+      "x": -40.0,
+      "y": -20.0,
+      "zoom": 0.85
+    },
+    "nodes": [
+      {
+        "name": {
+          "schema": "dbo",
+          "name": "CustomerTags"
+        },
+        "position": {
+          "x": 40.0,
+          "y": 360.0
+        },
+        "isCollapsed": false,
+        "isHidden": false
+      },
+      {
+        "name": {
+          "schema": "dbo",
+          "name": "Customers"
+        },
+        "position": {
+          "x": 40.0,
+          "y": 60.0
+        },
+        "isCollapsed": false,
+        "isHidden": false
+      },
+      {
+        "name": {
+          "schema": "dbo",
+          "name": "Tags"
+        },
+        "position": {
+          "x": 40.0,
+          "y": 560.0
+        },
+        "isCollapsed": true,
+        "isHidden": false
+      },
+      {
+        "name": {
+          "schema": "sales",
+          "name": "OrderLines"
+        },
+        "position": {
+          "x": 800.0,
+          "y": 60.0
+        },
+        "isCollapsed": false,
+        "isHidden": false
+      },
+      {
+        "name": {
+          "schema": "sales",
+          "name": "Orders"
+        },
+        "position": {
+          "x": 420.0,
+          "y": 60.0
+        },
+        "isCollapsed": false,
+        "isHidden": false,
+        "colour": "teal"
+      },
+      {
+        "name": {
+          "schema": "sales",
+          "name": "RecentOrders"
+        },
+        "position": {
+          "x": 420.0,
+          "y": 460.0
+        },
+        "isCollapsed": false,
+        "isHidden": true
+      },
+      {
+        "name": {
+          "schema": "sales",
+          "name": "Shipments"
+        },
+        "position": {
+          "x": 800.0,
+          "y": 400.0
+        },
+        "isCollapsed": false,
+        "isHidden": false
+      }
+    ],
+    "gridSize": 16
+  },
+  "reviewNotes": {
+    "approved": true,
+    "by": "dba"
+  }
+}

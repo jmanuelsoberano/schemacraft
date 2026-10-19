@@ -11,4 +11,15 @@ schemas: Array<string>,
 /**
  * Whether views are extracted alongside tables.
  */
-includeViews: boolean, };
+includeViews: boolean, 
+/**
+ * Whether procedures, functions and triggers are read. On unless the user turns it off, so
+ * a project saved before 1.2, which has no such option, reads them on its next refresh.
+ */
+includeProgrammability: boolean, 
+/**
+ * Whether the code of views, procedures, functions and triggers is read and saved in the
+ * project; it only applies while `include_programmability` is on. On unless the user turns
+ * it off, like `include_programmability`.
+ */
+includeModuleDefinitions: boolean, };

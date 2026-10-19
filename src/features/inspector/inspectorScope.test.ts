@@ -3,9 +3,14 @@ import { describe, expect, it } from "vitest";
 import type { CarriedFact, InspectionOptions, NodeState } from "@/shared/contracts";
 import { previewSnapshot } from "@/shared/ipc/previewConnectionBackend";
 
-import { inspectedKey, inspectorScope } from "./inspectorScope";
+import { inspectedTarget, inspectorScope } from "./inspectorScope";
 
-const EVERYTHING: InspectionOptions = { schemas: [], includeViews: true };
+const EVERYTHING: InspectionOptions = {
+  schemas: [],
+  includeViews: true,
+  includeProgrammability: true,
+  includeModuleDefinitions: true,
+};
 
 function node(schema: string, name: string, isHidden = false): NodeState {
   return { name: { schema, name }, position: { x: 0, y: 0 }, isCollapsed: false, isHidden };
@@ -33,7 +38,10 @@ describe("inspectorScope", () => {
       },
     ];
     expect(inspectorScope({ ...partial, carriedOver: carried }, [], EVERYTHING)).toMatchObject({
-      coverage: partial.access?.coverage,
+      coverage: {
+        objects: partial.access?.coverage.objects,
+        definitions: partial.access?.coverage.definitions,
+      },
       carriedOver: carried,
     });
 
@@ -46,17 +54,25 @@ describe("inspectorScope", () => {
 
   it("marks a read narrowed to some schemas, which dropped the keys leaving them", () => {
     const snapshot = previewSnapshot("Shop", "full");
-    expect(inspectorScope(snapshot, [], { schemas: ["sales"], includeViews: true })).toMatchObject({
+    expect(inspectorScope(snapshot, [], { ...EVERYTHING, schemas: ["sales"] })).toMatchObject({
       isSchemaFiltered: true,
     });
     expect(inspectorScope(snapshot, [], EVERYTHING)).toMatchObject({ isSchemaFiltered: false });
   });
 });
 
-describe("inspectedKey", () => {
-  it("is the one selected entity, and nothing when none or several are selected", () => {
-    expect(inspectedKey(["sales.Orders"])).toBe("sales.Orders");
-    expect(inspectedKey([])).toBeNull();
-    expect(inspectedKey(["sales.Orders", "hr.Employees"])).toBeNull();
+describe("inspectedTarget", () => {
+  it("gives entities precedence over a module, and multiple selection its own empty state", () => {
+    const module = { kind: "routine" as const, name: { schema: "sales", name: "PlaceOrder" } };
+    expect(inspectedTarget(["sales.Orders"], module)).toEqual({
+      kind: "entity",
+      key: "sales.Orders",
+    });
+    expect(inspectedTarget(["sales.Orders", "hr.Employees"], module)).toEqual({
+      kind: "multiple",
+      count: 2,
+    });
+    expect(inspectedTarget([], module)).toEqual({ kind: "module", ref: module });
+    expect(inspectedTarget([], null)).toEqual({ kind: "none" });
   });
 });

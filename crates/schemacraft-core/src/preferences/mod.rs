@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use ts_rs::TS;
 
+use crate::diagnostics::{ClosedKind, ErrorSummary};
 use crate::fs::{FileError, format_version, read_bytes, write_json_atomically};
 use crate::project::SavedConnection;
 
@@ -106,10 +107,12 @@ impl Preferences {
 
     /// Writes the preferences file atomically.
     pub fn save(&self, path: &Path) -> Result<(), PreferencesError> {
-        write_json_atomically(path, self).map_err(|error| PreferencesError::Write {
-            path: path.display().to_string(),
-            details: error.to_string(),
-        })
+        write_json_atomically(path, self)
+            .map(|_bytes| ())
+            .map_err(|error| PreferencesError::Write {
+                path: path.display().to_string(),
+                details: error.to_string(),
+            })
     }
 
     /// Moves `connection` to the front of the history, replacing an entry for the same
@@ -218,7 +221,15 @@ impl PreferencesError {
             Self::UnsupportedFormatVersion { .. } => PreferencesErrorKind::UnsupportedFormatVersion,
         }
     }
+
+    /// What the diagnostic log may record of this error: its kind, never the path or the
+    /// parser message, which can quote a server or a login from the file.
+    pub fn log_summary(&self) -> ErrorSummary<PreferencesErrorKind> {
+        ErrorSummary::of(self.kind())
+    }
 }
+
+impl ClosedKind for PreferencesErrorKind {}
 
 /// Serialisable classification of a [`PreferencesError`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

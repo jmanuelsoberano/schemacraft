@@ -2,6 +2,7 @@ import { isDesktopRuntime } from "@/shared/ipc/runtime";
 import { useEffect } from "react";
 
 import { isEditableTarget } from "@/app/actions/useKeyboardShortcuts";
+import { isCodeViewerTarget } from "@/shared/ui/codeViewerKeyboard";
 
 /**
  * Inside the desktop shell the webview behaves like an application, not a web page: no browser
@@ -15,7 +16,7 @@ export function useDesktopShellGuards(): void {
       return undefined;
     }
     const suppressContextMenu = (event: MouseEvent) => {
-      if (!isEditableTarget(event.target)) {
+      if (!isEditableTarget(event.target) && !isCodeViewerTarget(event.target)) {
         event.preventDefault();
       }
     };
@@ -25,7 +26,7 @@ export function useDesktopShellGuards(): void {
       }
     };
     const suppressDrag = (event: DragEvent) => {
-      if (!isEditableTarget(event.target)) {
+      if (!isEditableTarget(event.target) && !isCodeViewerTarget(event.target)) {
         event.preventDefault();
       }
     };

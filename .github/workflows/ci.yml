@@ -112,10 +112,12 @@ jobs:
           path: smoke-test
           if-no-files-found: error
 
+  # One job with a service per SQL Server version rather than a matrix, whose jobs GitHub names
+  # after their values: the branch ruleset requires this check by its name.
   integration:
     name: SQL Server integration tests (Linux)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     services:
       mssql:
         image: mcr.microsoft.com/mssql/server:2022-latest
@@ -129,12 +131,27 @@ jobs:
           --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'SchemaCraft!Ci2026' -C -Q 'SELECT 1' || exit 1"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 12
+          --health-retries 20
+      # Images from 2019 CU28 on carry mssql-tools18, so the health command is the same.
+      mssql2019:
+        image: mcr.microsoft.com/mssql/server:2019-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "SchemaCraft!Ci2026"
+          MSSQL_PID: Developer
+        ports:
+          - 1434:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'SchemaCraft!Ci2026' -C -Q 'SELECT 1' || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
     env:
       SCHEMACRAFT_TEST_MSSQL_HOST: localhost
-      SCHEMACRAFT_TEST_MSSQL_PORT: "1433"
       SCHEMACRAFT_TEST_MSSQL_USER: sa
       SCHEMACRAFT_TEST_MSSQL_PASSWORD: "SchemaCraft!Ci2026"
+      # A missing server variable fails the tests instead of skipping them.
+      SCHEMACRAFT_TEST_REQUIRE_SERVER: "1"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -151,8 +168,22 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         if: steps.changes.outputs.core == 'true'
 
-      - name: Inspector integration tests
-        # sqlserver_permissions creates its own low-privilege logins with a password generated
-        # for the run, so no password beyond the service's sa one is configured here.
+      - name: Inspector integration tests on SQL Server 2022
+        # sqlserver_permissions and diagnostics_privacy create their own low-privilege logins
+        # with a password generated for the run, so no password beyond the service's sa one is
+        # configured here. diagnostics_privacy checks that the diagnostic log holds no name of
+        # what it reads. A test checks that the server reports the major version named here.
         if: steps.changes.outputs.core == 'true'
-        run: cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions -- --nocapture
+        env:
+          SCHEMACRAFT_TEST_MSSQL_PORT: "1433"
+          SCHEMACRAFT_TEST_MSSQL_MAJOR: "16"
+        run: cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions --test diagnostics_privacy --test sqlserver_code -- --nocapture
+
+      - name: Inspector integration tests on SQL Server 2019
+        # Runs after a failure on 2022 as well, so one run reports both versions. It reuses the
+        # test binaries the step above built.
+        if: ${{ !cancelled() && steps.changes.outputs.core == 'true' }}
+        env:
+          SCHEMACRAFT_TEST_MSSQL_PORT: "1434"
+          SCHEMACRAFT_TEST_MSSQL_MAJOR: "15"
+        run: cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions --test diagnostics_privacy --test sqlserver_code -- --nocapture

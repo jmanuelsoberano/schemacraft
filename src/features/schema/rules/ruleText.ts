@@ -4,7 +4,7 @@ import type { Locale } from "@/shared/i18n/locales";
 import type { RuleMessageKey, RulePluralBase } from "@/shared/i18n/messages/rules/en";
 import type { CatalogTranslator } from "@/shared/i18n/translator";
 
-import { entityKey } from "../entities";
+import { entityKey, qualifiedNameLabel } from "../entities";
 
 /**
  * Sentences as data. A reader says what a rule means as a message key with typed arguments
@@ -35,6 +35,8 @@ export type RuleArgument =
   | { kind: "now"; utc: boolean }
   /** A SQL keyword kept as written, e.g. `CASCADE`. */
   | { kind: "keyword"; text: string }
+  /** Names of database objects other than tables and columns, such as indexes, as written. */
+  | { kind: "names"; names: readonly string[]; join: ListJoin }
   /** A count, formatted for the locale, e.g. 1,048,576. */
   | { kind: "number"; value: number };
 
@@ -55,7 +57,28 @@ export type RuleGroup =
    * The rules of a constraint SQL Server does not check now (`isRecorded`), or whose state
    * the file did not record.
    */
-  | { kind: "whenEnabled"; isRecorded: boolean };
+  | { kind: "whenEnabled"; isRecorded: boolean }
+  /**
+   * The rules of an enabled constraint SQL Server marks as not trusted: they hold for the rows
+   * inserted from now on and for those whose `columns` are changed, the columns a `CHECK` reads or
+   * a key's referencing columns, since SQL Server checks an UPDATE only when it writes one of them.
+   */
+  | { kind: "whenWritten"; rule: RuleKind; columns: readonly string[] };
+
+/** What kind of constraint a reading is of. */
+export type RuleKind = "check" | "foreignKey";
+
+/**
+ * What SQL Server enforces of a constraint as the snapshot records it: whether it is enabled
+ * (`null` when the file did not record it) and whether SQL Server trusts it, that is, vouches that
+ * the rows already in `table` follow it (`null` when the file did not record it, as before 1.2).
+ */
+export interface RuleState {
+  rule: RuleKind;
+  table: QualifiedName;
+  isEnabled: boolean | null;
+  isTrusted: boolean | null;
+}
 
 export type RuleNode =
   | { kind: "sentence"; text: RuleText }
@@ -128,6 +151,58 @@ export function enabledRules(isEnabled: boolean | null, rules: readonly RuleNode
   ];
 }
 
+/**
+ * The sentence an enabled constraint gets when SQL Server marks it as not trusted, as after
+ * `WITH NOCHECK`; nothing otherwise. It claims no cause: a key added without checking, one
+ * enabled again without `WITH CHECK`, and one NOT FOR REPLICATION, which SQL Server never trusts
+ * even when it checked every row, all leave the same flag. A disabled constraint, never trusted,
+ * reads under "When enabled:" instead.
+ */
+export function untrustedRules(state: RuleState): RuleNode[] {
+  return state.isEnabled === true && state.isTrusted === false
+    ? [sentence("rule.trust.notVerified", { table: { kind: "table", name: state.table } })]
+    : [];
+}
+
+/**
+ * The rules of a constraint as SQL Server enforces them: under "When enabled:" when it is
+ * disabled or its state was not recorded (see {@link enabledRules}), `always` included; when it
+ * is enabled but not trusted, after the sentence that the rows already there may not follow it
+ * and under "When a row is inserted or its … is changed:", naming `columns`, since SQL Server
+ * checks an UPDATE only when it writes one of them (the columns a `CHECK` reads, a key's
+ * referencing columns), so a row that breaks the rule stays as it is while its other columns
+ * change; as they are otherwise, trust the file did not record included. The sentences in
+ * `always` hold for every row whatever the trust, as a key's sentences about the referenced table
+ * do, and follow the group.
+ */
+export function stateRules(
+  state: RuleState,
+  rules: readonly RuleNode[],
+  columns: readonly string[],
+  always: readonly RuleNode[] = [],
+): RuleNode[] {
+  const untrusted = untrustedRules(state);
+  if (untrusted.length === 0) {
+    return enabledRules(state.isEnabled, [...rules, ...always]);
+  }
+  return [
+    ...untrusted,
+    {
+      kind: "group",
+      group: { kind: "whenWritten", rule: state.rule, columns },
+      heading: {
+        plural: "rule.whenWritten",
+        count: columns.length,
+        args: {
+          columns: { kind: "columns", entity: entityKey(state.table), names: columns, join: "and" },
+        },
+      },
+      items: rules,
+    },
+    ...always,
+  ];
+}
+
 const LIST_TYPES = { and: "conjunction", or: "disjunction" } as const;
 
 const listFormats = new Map<string, Intl.ListFormat>();
@@ -187,7 +262,7 @@ function argumentParts(argument: RuleArgument, translator: RuleTranslator): Rule
       // Always qualified, so a sentence reads the same in the Inspector, the exported viewer
       // and the canvas, whichever table it is shown next to.
       const key = entityKey(argument.name);
-      return [{ kind: "table", key, label: key }];
+      return [{ kind: "table", key, label: qualifiedNameLabel(argument.name) }];
     }
     case "referencedTable":
       return [{ kind: "text", text: translator.template("rule.value.referencedTable") }];
@@ -206,6 +281,8 @@ function argumentParts(argument: RuleArgument, translator: RuleTranslator): Rule
       ];
     case "keyword":
       return [{ kind: "code", text: argument.text }];
+    case "names":
+      return listParts(argument.names, argument.join, locale, (text) => ({ kind: "code", text }));
     case "number":
       return [{ kind: "text", text: numberFormat(locale).format(argument.value) }];
   }

@@ -9,7 +9,11 @@ import type { PluralBase } from "../../translator";
  *
  * Every sentence states only what SQL Server enforces when a value is written: a `CHECK`
  * accepts a row whose expression is unknown, so rules over nullable columns sit under a
- * "When … has a value:" heading, and a disabled constraint's rules sit under "When enabled:".
+ * "When … has a value:" heading, a disabled constraint's rules sit under "When enabled:", and an
+ * enabled constraint SQL Server marks as not trusted says so first, without a cause, and puts its
+ * rules under "When a row is inserted or its … is changed:", naming the columns whose change SQL
+ * Server checks; a key's sentences about the referenced table hold for every row and follow that
+ * group. A disabled index limits nothing, and a filtered one only the rows its filter selects.
  */
 export const englishRuleMessages = {
   "rule.check.eq": "{column} must be equal to {value}",
@@ -92,6 +96,18 @@ export const englishRuleMessages = {
     "A row in {parent} can be referenced by any number of rows of the same table, or by none",
   "rule.fk.self.parentOne":
     "A row in {parent} can be referenced by at most one row of the same table",
+  "rule.fk.parentManyDisabled.one":
+    "A row in {parent} can be referenced by any number of rows in {child}, or by none, because the index {indexes} is disabled",
+  "rule.fk.parentManyDisabled.other":
+    "A row in {parent} can be referenced by any number of rows in {child}, or by none, because the indexes {indexes} are disabled",
+  "rule.fk.self.parentManyDisabled.one":
+    "A row in {parent} can be referenced by any number of rows of the same table, or by none, because the index {indexes} is disabled",
+  "rule.fk.self.parentManyDisabled.other":
+    "A row in {parent} can be referenced by any number of rows of the same table, or by none, because the indexes {indexes} are disabled",
+  "rule.fk.parentFiltered":
+    "A row in {parent} can be referenced by at most one of the rows in {child} that the filter of the unique index {index} selects",
+  "rule.fk.self.parentFiltered":
+    "A row in {parent} can be referenced by at most one of the rows of the same table that the filter of the unique index {index} selects",
   "rule.fk.delete.noAction":
     "Deleting a row in {parent} is blocked if, once the statement has run, rows in {child} still point to it",
   "rule.fk.self.delete.noAction":
@@ -142,6 +158,10 @@ export const englishRuleMessages = {
 
   "rule.whenEnabled": "When enabled:",
   "rule.whenEnabled.notRecorded": "If enabled (this file did not record whether it is):",
+  "rule.trust.notVerified":
+    "Rows already in {table} may not follow this rule: SQL Server marks it as not trusted",
+  "rule.whenWritten.one": "When a row is inserted or its {columns} is changed:",
+  "rule.whenWritten.other": "When a row is inserted or any of its {columns} is changed:",
   "rule.value.now": "the server's date and time when the value is saved",
   "rule.value.utcNow": "the UTC date and time when the value is saved",
   "rule.value.referencedTable": "the referenced table",
@@ -152,6 +172,8 @@ export const englishRuleMessages = {
     "Text comparisons follow the column's collation, which may ignore case, accents or some characters, and two texts that differ only in trailing spaces count as equal.",
   "rule.note.derived":
     "SchemaCraft words these rules from their definitions. SQL Server checks them when values are written, so rows saved before a rule existed may not follow it.",
+  "rule.note.derivedRecorded":
+    "SchemaCraft words these rules from their definitions. SQL Server checks them when values are written.",
   "rule.sql.show": "Show SQL",
   "rule.sql.hide": "Hide SQL",
   "rule.sql.copy": "Copy SQL",

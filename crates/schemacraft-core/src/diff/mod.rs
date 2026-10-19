@@ -14,7 +14,16 @@
 //! the saved snapshot could not state and the fresh one reads. A saved snapshot that recorded
 //! no access, as in a 1.0 file, could not hold bound defaults, defaults whose text was not
 //! visible or keys to invisible tables, so their appearance next to it is no change either.
+//!
+//! A state recorded on one side only is never a change either: whether an index or a primary key
+//! is enabled or filtered, its included columns, and whether a `CHECK` or a foreign key is
+//! trusted are compared only when both snapshots recorded them. A capture that records such a
+//! family for the first time, next to a project saved before 1.2, says so in `capture_changes`,
+//! one counted line for the family. The verdicts the review needs, whether any object changed and
+//! whether the project is up to date, are computed here and travel with the diff, so the
+//! interface never works them out again.
 
+mod code;
 mod entities;
 mod foreign_keys;
 mod pairing;
@@ -23,13 +32,18 @@ mod visibility;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+pub use code::{
+    AvailableCode, CodeChange, CodeCounts, CodeDiff, CodeProperty, CodeReadFailure, CodeReadFamily,
+    comparable_text,
+};
+
 pub use entities::{
     CheckConstraintChange, ColumnChange, ColumnProperty, IndexChange, PrimaryKeyChange,
     TableChange, ViewChange,
 };
 pub use foreign_keys::{ForeignKeyChange, ForeignKeyProperty, ForeignKeyToInvisibleTableChange};
-pub use visibility::AvailableFact;
 use visibility::Baseline;
+pub use visibility::{AvailableFact, CaptureChange};
 
 use crate::model::{CarriedFact, SchemaSnapshot};
 
@@ -39,6 +53,8 @@ use crate::model::{CarriedFact, SchemaSnapshot};
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "diff/")]
 pub struct SchemaDiff {
+    /// Changes and visibility of procedures, functions, triggers and view code.
+    pub code: CodeDiff,
     /// Tables that appeared, disappeared or changed, by name.
     pub tables: Vec<TableChange>,
     /// Views that appeared, disappeared or changed, by name.
@@ -62,6 +78,17 @@ pub struct SchemaDiff {
     /// Whether the fresh extraction reached another verdict on what its login sees, including
     /// a first verdict for a snapshot that recorded none.
     pub access_changed: bool,
+    /// Families of facts the fresh extraction records and the saved snapshot did not, one line
+    /// each, such as the state of indexes and constraints next to a project saved before 1.2.
+    /// They are not changes of the database.
+    pub capture_changes: Vec<CaptureChange>,
+    /// Whether any table, view, foreign key or code object appeared, disappeared or changed,
+    /// as far as the fresh extraction could check.
+    has_object_changes: bool,
+    /// Whether the review has nothing to report: no object changed, nothing was kept unchecked,
+    /// nothing became readable or was recorded for the first time, and the verdict on access is
+    /// the same.
+    is_up_to_date: bool,
 }
 
 impl SchemaDiff {
@@ -92,6 +119,7 @@ impl SchemaDiff {
             &keys_unrecorded_before,
         );
         let summary = DiffSummary {
+            code: ChangeCounts::default(),
             tables: ChangeCounts::of(tables.iter().map(TableChange::kind)),
             views: ChangeCounts::of(views.iter().map(ViewChange::kind)),
             foreign_keys: ChangeCounts::of(
@@ -109,8 +137,13 @@ impl SchemaDiff {
             &keys_unrecorded_before,
         );
         let access_changed = visibility::access_changed(previous, &merged);
+        let capture_changes = visibility::capture_changes(previous, &merged);
 
-        Self {
+        let code = code::diff_code(previous, &merged);
+        let mut summary = summary;
+        summary.code = ChangeCounts::of(code.changes.iter().map(CodeChange::kind));
+        let mut diff = Self {
+            code,
             tables,
             views,
             foreign_keys,
@@ -119,7 +152,20 @@ impl SchemaDiff {
             not_checked: merged.carried_over,
             now_available,
             access_changed,
-        }
+            capture_changes,
+            has_object_changes: false,
+            is_up_to_date: false,
+        };
+        diff.has_object_changes = !diff.is_empty();
+        diff.is_up_to_date = !diff.has_object_changes
+            && diff.not_checked.is_empty()
+            && diff.now_available.is_empty()
+            && diff.code.not_checked.is_empty()
+            && diff.code.now_available.is_empty()
+            && diff.code.read_failures.is_empty()
+            && !diff.access_changed
+            && diff.capture_changes.is_empty();
+        diff
     }
 
     /// Whether the snapshots describe the same schema, as far as the fresh one could check.
@@ -128,16 +174,21 @@ impl SchemaDiff {
             && self.views.is_empty()
             && self.foreign_keys.is_empty()
             && self.foreign_keys_to_invisible_tables.is_empty()
+            && self.code.is_empty()
+    }
+
+    /// Whether any object appeared, disappeared or changed: the opposite of [`Self::is_empty`],
+    /// as it travels to the review.
+    pub fn has_object_changes(&self) -> bool {
+        self.has_object_changes
     }
 
     /// Whether a review has nothing to report: the same schema, nothing the fresh extraction
-    /// could not check, nothing newly readable and the same verdict on access. A refresh that
-    /// is not up to date has something to show even when [`Self::is_empty`] holds.
+    /// could not check, nothing newly readable or newly recorded and the same verdict on access.
+    /// A refresh that is not up to date has something to show even when [`Self::is_empty`]
+    /// holds.
     pub fn is_up_to_date(&self) -> bool {
-        self.is_empty()
-            && self.not_checked.is_empty()
-            && self.now_available.is_empty()
-            && !self.access_changed
+        self.is_up_to_date
     }
 }
 
@@ -190,6 +241,8 @@ impl ChangeCounts {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "diff/")]
 pub struct DiffSummary {
+    /// Code object changes, including the code of views.
+    pub code: ChangeCounts,
     /// Table changes.
     pub tables: ChangeCounts,
     /// View changes.
@@ -201,7 +254,7 @@ pub struct DiffSummary {
 impl DiffSummary {
     /// Changes of any kind across all object types.
     pub fn total(&self) -> usize {
-        self.tables.total() + self.views.total() + self.foreign_keys.total()
+        self.tables.total() + self.views.total() + self.foreign_keys.total() + self.code.total()
     }
 }
 
@@ -217,14 +270,14 @@ mod tests {
     use chrono::Duration;
 
     use super::{
-        AvailableFact, ChangeKind, ForeignKeyChange, ForeignKeyProperty,
-        ForeignKeyToInvisibleTableChange, SchemaDiff, TableChange,
+        AvailableFact, CaptureChange, ChangeKind, ForeignKeyChange, ForeignKeyProperty,
+        ForeignKeyToInvisibleTableChange, IndexChange, SchemaDiff, TableChange,
     };
     use crate::model::test_fixtures::{
         reader_snapshot, sample_snapshot, schema_reader_profile, with_access,
     };
     use crate::model::{
-        AccessCounts, Column, Definition, ForeignKeyToInvisibleTable, QualifiedName,
+        AccessCounts, Column, Completeness, Definition, ForeignKeyToInvisibleTable, QualifiedName,
         ReferentialAction, SchemaSnapshot, SnapshotFact, SqlDataType, Table,
     };
 
@@ -337,6 +390,160 @@ mod tests {
         assert_eq!(now_available(&diff), hidden_texts());
         assert_eq!(diff.not_checked, []);
         assert!(diff.access_changed);
+    }
+
+    #[test]
+    fn a_coverage_of_code_counts_only_when_both_captures_judged_it() {
+        let previous = sample_snapshot();
+        let with_code = |programmability, module_definitions| {
+            let mut snapshot = sample_snapshot();
+            let profile = snapshot.access.as_mut().unwrap();
+            profile.coverage.programmability = programmability;
+            profile.coverage.module_definitions = module_definitions;
+            snapshot
+        };
+
+        // The first capture that judges code is no change of access.
+        let first = with_code(
+            Some(Completeness::Partial),
+            Some(Completeness::NotAvailable),
+        );
+        assert!(!SchemaDiff::between(&previous, &first).access_changed);
+        assert!(SchemaDiff::between(&previous, &first).is_up_to_date());
+        // Two captures that judged it and disagree are.
+        let later = with_code(
+            Some(Completeness::Complete),
+            Some(Completeness::NotAvailable),
+        );
+        assert!(SchemaDiff::between(&first, &later).access_changed);
+        let texts = with_code(Some(Completeness::Partial), Some(Completeness::Complete));
+        assert!(SchemaDiff::between(&first, &texts).access_changed);
+        assert!(!SchemaDiff::between(&first, &first.clone()).access_changed);
+    }
+
+    /// The sample as a 1.2 capture reads it: the state of every index, key and constraint.
+    fn with_state_recorded(mut snapshot: SchemaSnapshot) -> SchemaSnapshot {
+        for table in &mut snapshot.tables {
+            if let Some(key) = table.primary_key.as_mut() {
+                key.is_enabled = Some(true);
+            }
+            for index in &mut table.indexes {
+                index.included_columns = Some(vec!["Notes".to_string()]);
+                index.is_filtered = Some(false);
+                index.is_enabled = Some(true);
+            }
+            for constraint in &mut table.check_constraints {
+                constraint.is_trusted = Some(true);
+            }
+        }
+        for key in &mut snapshot.foreign_keys {
+            key.is_trusted = Some(false);
+        }
+        for key in &mut snapshot.foreign_keys_to_invisible_tables {
+            key.is_trusted = Some(true);
+        }
+        snapshot
+    }
+
+    #[test]
+    fn index_and_key_state_recorded_on_one_side_only_is_no_change() {
+        let previous = sample_snapshot();
+        let recorded = with_state_recorded(sample_snapshot());
+
+        let first = SchemaDiff::between(&previous, &recorded);
+        assert!(first.is_empty(), "{first:?}");
+        assert!(!first.has_object_changes());
+        // The sample holds two primary keys, two indexes, one CHECK and one foreign key.
+        assert_eq!(
+            first.capture_changes,
+            [CaptureChange::IndexAndConstraintStateRecorded { count: 6 }]
+        );
+        assert!(!first.is_up_to_date());
+        assert!(SchemaDiff::between(&recorded, &previous).is_empty());
+        assert_eq!(
+            SchemaDiff::between(&recorded, &previous).capture_changes,
+            []
+        );
+        let again = SchemaDiff::between(&recorded, &recorded.clone());
+        assert_eq!(again.capture_changes, []);
+        assert!(again.is_up_to_date());
+
+        // Recorded on both sides, a different state is a change.
+        let mut disabled = recorded.clone();
+        disabled.tables[0].indexes[0].is_enabled = Some(false);
+        disabled.tables[1].primary_key.as_mut().unwrap().is_enabled = Some(false);
+        let diff = SchemaDiff::between(&recorded, &disabled);
+        let [
+            TableChange::Changed {
+                primary_key: None,
+                indexes,
+                ..
+            },
+            TableChange::Changed {
+                primary_key: Some(_),
+                ..
+            },
+        ] = diff.tables.as_slice()
+        else {
+            panic!("expected an index and a key change: {:?}", diff.tables);
+        };
+        assert_eq!(indexes.len(), 1);
+        assert!(diff.has_object_changes());
+        assert_eq!(diff.capture_changes, []);
+    }
+
+    #[test]
+    fn the_first_refresh_reports_once_an_index_whose_partitioning_column_1_1_read_as_a_key() {
+        // 1.1 read the partitioning column SQL Server adds to an index aligned with a partitioned
+        // table as its first key column, and recorded no state.
+        let mut previous = sample_snapshot();
+        previous.tables[0].indexes[0]
+            .columns
+            .insert(0, "PartitionYear".to_string());
+        let recorded = with_state_recorded(sample_snapshot());
+
+        let diff = SchemaDiff::between(&previous, &recorded);
+        let [TableChange::Changed { indexes, .. }] = diff.tables.as_slice() else {
+            panic!("expected one table change: {:?}", diff.tables);
+        };
+        let [IndexChange::Changed { before, after }] = indexes.as_slice() else {
+            panic!("expected one index change: {indexes:?}");
+        };
+        assert_eq!(before.columns[0], "PartitionYear");
+        assert_eq!(after.columns, recorded.tables[0].indexes[0].columns);
+        assert!(diff.has_object_changes());
+        // The state of every object is still recorded in the one counted line.
+        assert_eq!(
+            diff.capture_changes,
+            [CaptureChange::IndexAndConstraintStateRecorded { count: 6 }]
+        );
+    }
+
+    #[test]
+    fn a_key_kept_over_a_weaker_refresh_takes_the_trust_the_capture_read() {
+        let previous = with_state_recorded(sample_snapshot());
+        let mut current = with_state_recorded(reader_snapshot());
+        current.foreign_keys_to_invisible_tables[0].is_trusted = Some(true);
+
+        let diff = SchemaDiff::between(&previous, &current);
+
+        let [
+            ForeignKeyChange::Changed {
+                before,
+                after,
+                properties,
+            },
+        ] = diff.foreign_keys.as_slice()
+        else {
+            panic!("expected one changed key, got {diff:?}");
+        };
+        assert_eq!(properties, &[ForeignKeyProperty::Trust]);
+        assert_eq!(
+            (before.is_trusted, after.is_trusted),
+            (Some(false), Some(true))
+        );
+        // Recorded on both sides, so nothing is newly recorded.
+        assert_eq!(diff.capture_changes, []);
     }
 
     #[test]
@@ -652,6 +859,21 @@ mod tests {
         assert_eq!(json["notChecked"], serde_json::json!([]));
         assert_eq!(json["nowAvailable"], serde_json::json!([]));
         assert_eq!(json["accessChanged"], false);
+        assert_eq!(json["captureChanges"], serde_json::json!([]));
+        assert_eq!(json["hasObjectChanges"], true);
+        assert_eq!(json["isUpToDate"], false);
+
+        let first = serde_json::to_value(SchemaDiff::between(
+            &previous,
+            &with_state_recorded(sample_snapshot()),
+        ))
+        .unwrap();
+        assert_eq!(
+            first["captureChanges"],
+            serde_json::json!([{ "kind": "indexAndConstraintStateRecorded", "count": 6 }])
+        );
+        assert_eq!(first["hasObjectChanges"], false);
+        assert_eq!(first["isUpToDate"], false);
 
         let weaker =
             serde_json::to_value(SchemaDiff::between(&previous, &reader_snapshot())).unwrap();

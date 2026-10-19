@@ -156,10 +156,13 @@ const outcome: ExportOutcome = {
   height: null,
 };
 
-function openProject(): void {
-  useProjectStore
-    .getState()
-    .loadFromInspection(snapshot, connection, { schemas: [], includeViews: true });
+function openProject(capture: SchemaSnapshot = snapshot): void {
+  useProjectStore.getState().loadFromInspection(capture, connection, {
+    schemas: [],
+    includeViews: true,
+    includeProgrammability: true,
+    includeModuleDefinitions: true,
+  });
 }
 
 /** The document the store handed to the Rust side in its last export. */
@@ -267,7 +270,7 @@ describe("runExport", () => {
     expect(request.document).not.toContain(">VIEW<");
     expect(request.document).toContain("<style>@font-face{font-family:Inter}");
     expect(request.document).toContain("with SchemaCraft 1.1.0</desc>");
-    expect(request.document).not.toContain("sc-footnote");
+    expect(request.document).toContain("No se leyeron los desencadenadores de este diagrama.");
     expect(useExportStore.getState().outcome).toEqual(outcome);
     expect(useExportStore.getState().phase).toBe("idle");
   });
@@ -283,6 +286,67 @@ describe("runExport", () => {
     expect(request.destination).toBe("C:\\out\\shop.svg");
     expect(request.document).toContain(">VIEW</text>");
     expect(request.document).not.toContain("@font-face");
+  });
+
+  it("passes translated trigger counts and legends to every static format without code or names", async () => {
+    const capture: SchemaSnapshot = {
+      ...snapshot,
+      programmability: {
+        capture: { objects: { status: "read" }, definitions: { status: "read" } },
+        routines: [],
+        views: [],
+        triggers: [
+          {
+            parent: { schema: "dbo", name: "Customers" },
+            name: "trg_PrivateName",
+            timing: "insteadOf",
+            events: [{ event: "insert", order: "unspecified" }],
+            isEnabled: true,
+            isNotForReplication: false,
+            body: {
+              language: "sql",
+              definition: { status: "readable", text: "PRIVATE_BODY_SENTINEL" },
+            },
+          },
+        ],
+      },
+    };
+    for (const locale of ["en", "es"] as const) {
+      settings.locale = locale;
+      for (const format of ["svg", "pdf", "png"] as const) {
+        openProject(capture);
+        useExportStore.getState().open({ format, embedFonts: false });
+        await useExportStore
+          .getState()
+          .runExport({ ...labels, destination: `C:\\out\\triggers.${format}` });
+        const request = exportBackend.exportDiagram.mock.calls.at(-1)?.[0];
+        expect(request?.format).toBe(format);
+        expect(request?.document).toContain(
+          locale === "en" ? "1 trigger is enabled." : "1 desencadenador está habilitado.",
+        );
+        expect(request?.document).toContain(
+          locale === "en" ? "Trigger badge:" : "Indicador de desencadenadores:",
+        );
+        expect(request?.document).toContain("INSTEAD OF");
+        expect(request?.document).not.toContain("trg_PrivateName");
+        expect(request?.document).not.toContain("PRIVATE_BODY_SENTINEL");
+      }
+    }
+  });
+
+  it("does not add a trigger note when the read established that there are no triggers", async () => {
+    openProject({
+      ...snapshot,
+      programmability: {
+        capture: { objects: { status: "read" }, definitions: { status: "read" } },
+        routines: [],
+        views: [],
+        triggers: [],
+      },
+    });
+    useExportStore.getState().open({ embedFonts: false });
+    await useExportStore.getState().runExport({ ...labels, destination: "C:\\out\\empty.svg" });
+    expect(exportedRequest().document).not.toContain("sc-footnote");
   });
 
   it("asks for a destination when none is given and stops when the dialog is cancelled", async () => {

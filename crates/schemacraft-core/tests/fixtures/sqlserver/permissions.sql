@@ -68,6 +68,19 @@ CREATE TABLE audit.ChangeLog (
     ChangedAt datetime2(3) NOT NULL CONSTRAINT DF_ChangeLog_ChangedAt DEFAULT (sysutcdatetime())
 );
 GO
+-- Index and constraint state, which every login that sees the table reads: a filtered index, a
+-- disabled index with an included column, and a CHECK enabled again without checking the rows
+-- already there, so it is not trusted.
+CREATE INDEX IX_Orders_Open ON sales.Orders (CustomerId) WHERE Status = 'N';
+GO
+CREATE INDEX IX_OrderLines_Product ON sales.OrderLines (ProductId) INCLUDE (Quantity);
+GO
+ALTER INDEX IX_OrderLines_Product ON sales.OrderLines DISABLE;
+GO
+ALTER TABLE dbo.Products NOCHECK CONSTRAINT CK_Products_Price;
+GO
+ALTER TABLE dbo.Products CHECK CONSTRAINT CK_Products_Price;
+GO
 -- A legacy bound default: no row in sys.default_constraints, readable with OBJECT_DEFINITION.
 CREATE DEFAULT dbo.LegacyZero AS 0;
 GO
@@ -83,6 +96,50 @@ SELECT o.OrderId, o.Status, COUNT(l.LineNumber) AS LineCount
 FROM sales.Orders AS o
 LEFT JOIN sales.OrderLines AS l ON l.OrderId = o.OrderId
 GROUP BY o.OrderId, o.Status;
+GO
+-- Code in two schemas, for the capability probe as each login: procedures, an encrypted one,
+-- functions of two kinds and a trigger on a table and on a view. No table, view, CHECK or
+-- DEFAULT, so what the inspector reads stays the same.
+CREATE PROCEDURE sales.usp_PlaceOrder
+    @CustomerId int,
+    @OrderId int OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO sales.Orders (CustomerId) VALUES (@CustomerId);
+    SET @OrderId = CAST(SCOPE_IDENTITY() AS int);
+END;
+GO
+CREATE PROCEDURE sales.usp_Secret
+WITH ENCRYPTION
+AS
+SELECT COUNT(*) AS Orders FROM sales.Orders;
+GO
+CREATE PROCEDURE dbo.usp_Maintenance
+AS
+SELECT COUNT(*) AS Customers FROM dbo.Customers;
+GO
+CREATE FUNCTION dbo.fn_Tax (@Amount decimal(10, 2))
+RETURNS decimal(10, 2)
+AS
+BEGIN
+    RETURN @Amount * 0.16;
+END;
+GO
+CREATE FUNCTION sales.fn_OrdersOf (@CustomerId int)
+RETURNS TABLE
+AS
+RETURN SELECT OrderId, Status FROM sales.Orders WHERE CustomerId = @CustomerId;
+GO
+CREATE TRIGGER sales.TR_Orders_Insert ON sales.Orders
+AFTER INSERT
+AS
+SET NOCOUNT ON;
+GO
+CREATE TRIGGER sales.TR_OrderSummary_Insert ON sales.OrderSummary
+INSTEAD OF INSERT
+AS
+SET NOCOUNT ON;
 GO
 -- Denials made to public reach every user, yet never dbo: sa and the database owner enter as
 -- dbo, for which SQL Server checks no permission.

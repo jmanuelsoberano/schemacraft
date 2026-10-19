@@ -48,6 +48,7 @@ let preferences: Preferences = {
     { path: "C:\\Projects\\northwind.scraft", lastOpenedAt: minutesAgo(40) },
     { path: "C:\\Projects\\northwind-reporting.scraft", lastOpenedAt: minutesAgo(3 * 60) },
     { path: "C:\\Projects\\northwind-next.scraft", lastOpenedAt: minutesAgo(26 * 60) },
+    { path: "C:\\Projects\\northwind-1.1.scraft", lastOpenedAt: minutesAgo(30 * 60) },
     { path: "C:\\Projects\\northwind-1.0.scraft", lastOpenedAt: minutesAgo(2 * 24 * 60) },
     { path: "C:\\Projects\\adventureworks.scraft", lastOpenedAt: minutesAgo(5 * 24 * 60) },
   ],

@@ -5,6 +5,7 @@ import { foreignKeyExplanation } from "@/features/schema/rules/foreignKeyReader"
 import type {
   Column,
   ForeignKey,
+  Index,
   NodeState,
   QualifiedName,
   SchemaSnapshot,
@@ -310,6 +311,66 @@ describe("relationEnds", () => {
         end: endMarkerKind(explanation.optionality),
       });
     }
+  });
+
+  it("follows the state of the unique index behind the key, as a refresh records it", () => {
+    const keyNamed = (name: string): ForeignKey => {
+      const found = shop.foreignKeys.find((candidate) => candidate.name === name);
+      if (found === undefined) {
+        throw new Error("the fixture changed");
+      }
+      return found;
+    };
+    /** The referencing table of `foreignKey` with one unique index of `kind` on its key column. */
+    const startWith = (
+      foreignKey: ForeignKey,
+      kind: "uniqueConstraint" | "uniqueIndex",
+      state: Pick<Index, "includedColumns" | "isFiltered" | "isEnabled">,
+    ) =>
+      relationEnds(
+        table(
+          foreignKey.referencingTable.schema,
+          foreignKey.referencingTable.name,
+          [column("Id"), column("OrderId", true)],
+          ["Id"],
+          [{ name: "UX_Order", columns: ["OrderId"], kind, isClustered: false, ...state }],
+        ),
+        foreignKey,
+      ).start;
+    const refunds = keyNamed("FK_Refunds_Orders");
+    const invoices = keyNamed("FK_Invoices_Orders");
+
+    // An enabled unique index without a filter makes the key one-to-one, which 1.1 left as a
+    // crow's foot; a filtered or disabled one, or one whose state was not recorded, does not.
+    expect(startWith(refunds, "uniqueIndex", { isEnabled: true, isFiltered: false })).toBe(
+      "zeroOrOne",
+    );
+    expect(startWith(refunds, "uniqueIndex", { isEnabled: true, isFiltered: true })).toBe("many");
+    expect(startWith(refunds, "uniqueIndex", { isEnabled: false, isFiltered: false })).toBe("many");
+    expect(startWith(refunds, "uniqueIndex", {})).toBe("many");
+    // A unique constraint whose index is disabled limits nothing; one whose state was not
+    // recorded keeps the 1.1 reading.
+    expect(startWith(invoices, "uniqueConstraint", { isEnabled: false })).toBe("many");
+    expect(startWith(invoices, "uniqueConstraint", { isEnabled: true })).toBe("zeroOrOne");
+    expect(startWith(invoices, "uniqueConstraint", {})).toBe("zeroOrOne");
+
+    // A disabled clustered primary key takes no row, and SQL Server keeps the key disabled until
+    // it is rebuilt, unique again; a disabled nonclustered one limits nothing.
+    const keyedByOrder = (isClustered: boolean) =>
+      relationEnds(
+        {
+          ...table(
+            refunds.referencingTable.schema,
+            refunds.referencingTable.name,
+            [column("OrderId")],
+            ["OrderId"],
+          ),
+          primaryKey: { name: "PK_Refunds", columns: ["OrderId"], isClustered, isEnabled: false },
+        },
+        refunds,
+      ).start;
+    expect(keyedByOrder(true)).toBe("zeroOrOne");
+    expect(keyedByOrder(false)).toBe("many");
   });
 
   it("keeps the plain ends when the referencing table is not known", () => {

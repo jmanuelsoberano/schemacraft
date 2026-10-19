@@ -16,7 +16,7 @@ structure as an interactive map: layers, components, data stores, flows and how 
 ```
 schemacraft/
 ├── crates/schemacraft-core/   Rust library, free of Tauri: everything the app knows and does
-│   ├── src/model/             pure schema types (tables, columns, keys, snapshot), access profile, carry-over
+│   ├── src/model/             pure schema types (tables, columns, keys, snapshot, code objects), access profile, carry-over
 │   ├── src/inspectors/        DatabaseInspector strategy, errors, progress, SQL Server implementation and access probe
 │   ├── src/project/           .scraft documents and their migrations, saved connections, canvas state
 │   ├── src/diff/              comparison of two snapshots behind "refresh from database"
@@ -24,9 +24,11 @@ schemacraft/
 │   ├── src/credentials/       CredentialStore strategy: Windows Credential Manager, memory
 │   ├── src/export/            SVG to PNG and PDF rendering with bundled fonts
 │   ├── src/fs.rs              atomic file writes shared by projects, preferences and exports
+│   ├── src/diagnostics.rs     typed events of the local diagnostic log: counts, timings and kinds only
 │   ├── assets/fonts/          TTF fonts embedded in the exports
-│   └── tests/                 integration tests, SQL fixtures, golden CHECK forms and low-privilege logins (run against a real server)
-├── src-tauri/                 Rust binary: Tauri host, IPC commands, job registry, logging, configuration
+│   ├── probes/                capability probe: a read-only T-SQL script, run by hand with the login SchemaCraft uses, that returns numbers only
+│   └── tests/                 integration tests, SQL fixtures, golden CHECK forms, low-privilege logins and the probe's allowlist (run against a real server)
+├── src-tauri/                 Rust binary: Tauri host, IPC commands, job registry, logging and the diagnostic log file, configuration
 ├── src/                       React + TypeScript frontend
 │   ├── app/                   composition root: shell, actions, palette, global styles, dev hooks
 │   │   ├── actions/           action registry, keyboard shortcuts, action buttons
@@ -54,7 +56,7 @@ schemacraft/
 │   │   └── ui/                accessible UI primitives (Radix based), the resizer of both side panels
 │   └── viewer/                standalone viewer embedded in exported HTML files, drawing the shared details view-model and its rules
 ├── assets/brand/              source artwork for the application icon
-├── scripts/                   SQL Server container, font preparation, smoke test, page check, CI change filter, release notes
+├── scripts/                   SQL Server containers, font preparation, smoke test, page check, CI change filter, release notes
 ├── docs/                      PRD, decision records, UX principles, release checklist
 │   └── architecture/          interactive architecture page and its model (GitHub Pages)
 └── .github/workflows/         CI on every pull request, sized to the change; release on every tag
@@ -106,6 +108,11 @@ the workspace; tests opt out locally. Library errors use `thiserror` enums; the 
 them to a serialisable error payload for the frontend (introduced with the first fallible command
 in milestone 2). The release profile sets `panic = "abort"`, which is consistent with the rule: a
 panic is a bug, not a flow.
+
+Since 1.2 a panic still leaves a trace although release builds have no console: the hook that
+logging installs appends the panic's file and line, never its message, to
+`schemacraft-panic.log` next to the diagnostic log, through `std::fs` rather than the logger,
+before `panic = "abort"` ends the process (ADR-041).
 
 ### ADR-005: React 19 and React Flow for the canvas, own SVG renderer for export
 
@@ -197,6 +204,15 @@ focusing one of its controls sets on the canvas. The four layout strategies, col
 all, the three themes and the two languages have no shortcut: they live in the layout menu, the
 top bar and the palette, and Ctrl+Shift+L repeats the last layout.
 
+Since 1.2 `help.openLogFolder` (ADR-041) has no shortcut either: opening the log folder is a step
+of a bug report, not of daily work, so it lives in the palette and in the about dialog (F1), and it
+is unavailable when the session writes no log.
+
+The module Inspector's code controls are local too (ADR-044): Find, next/previous match, Wrap
+and Copy operate on the displayed source. Opening a routine or trigger takes a `ModuleRef`, so
+it follows the same argument-taking exception as selecting a table. The shortcut listener leaves
+keys owned by the code viewer to that surface before applying global actions or browser guards.
+
 Why: labels, icons and shortcuts shown in tooltips can never disagree with what the keyboard does,
 and adding a feature means adding one action rather than touching every surface.
 
@@ -209,13 +225,15 @@ instances through SQL Browser, bounds the TCP connection with a timeout, runs th
 handshake and validates idle sessions with `SELECT 1`. Pools live for one operation (test,
 listing, description or inspection) and are dropped afterwards, so the application never keeps
 idle sessions on a server. An inspection opens up to four sessions and runs the access probe
-(ADR-034) and its seven set-based catalog queries concurrently; the schema filter is applied
-while assembling. A foreign key whose referenced table is visible but outside the selection is
+(ADR-034) and its seven set-based table catalog queries concurrently; the table schema filter is
+applied while assembling. Since 1.2 the code stage shares those four sessions and filters every
+query on the server with bound schema parameters (ADR-043). A foreign key whose referenced table is visible but outside the selection is
 dropped, because an edge needs both tables on the diagram; one whose referenced table the login
 cannot see is kept apart (ADR-034). The schema picker lists the schemas in which the access
 probe finds a table or view the login can see: ownership of the fixed-role schemas
 (`db_datareader` and friends) is not reliable in real databases, and an empty schema has nothing
-to filter. Fallback if a regression appears: tiberius 0.12.3 with `bb8-tiberius`.
+to filter. Since 1.2 a separate list includes schemas with visible procedures or functions for
+the code option (ADR-043). Fallback if a regression appears: tiberius 0.12.3 with `bb8-tiberius`.
 
 ### ADR-010: The portable executable relies on the WebView2 runtime
 
@@ -316,6 +334,11 @@ The canvas state is the Memento of the diagram: an immutable, serialisable value
 produces when a project is saved and restores when it is opened. Milestone 4 adds the
 caretaker (undo and redo) on top of the same value.
 
+Since 1.2 the header says `formatVersion` 3 and `minReaderVersion` 2, and the snapshot can hold
+the code of views, procedures, functions and triggers under `programmability`, apart from the
+tables and views (ADR-042). A project of 1.0 or 1.1 is upgraded when it is read and saved as
+format 3.
+
 ### ADR-016: The diff matches objects by name and is reviewed before it is applied
 
 `SchemaDiff::between` pairs tables and views by schema-qualified name, foreign keys by
@@ -351,6 +374,24 @@ is up to date only when none of these is present either (`SchemaDiff::is_up_to_d
 it offers to apply, worded "Update project" when no object changed. Applying runs the same merge
 (`ProjectContent::with_refreshed_snapshot`), so the project keeps every fact the review called
 not checked and lists it in `snapshot.carriedOver`.
+
+Since 1.2 a state recorded on one side only is never a change: an index or a primary key compares
+its enabled, filtered and included-column state only when both snapshots recorded it, a `CHECK`
+and a foreign key compare their trust the same way (`ForeignKeyProperty::Trust`, also for a key
+whose referenced table became visible or invisible), and `access_changed` compares a coverage of
+code only when both captures judged it (ADR-042). A capture that records such a family of facts
+for the first time, as the first 1.2 refresh of a 1.1 project records the state of its indexes and
+constraints, says so in `SchemaDiff::capture_changes`, one line per family with a count
+(`indexAndConstraintStateRecorded`: the indexes, primary keys, `CHECK`s and foreign keys held by
+both snapshots whose state is now recorded), never as a change of each object. The one exception is
+an index aligned with a partitioned table: 1.1 read the partitioning column as its first key column,
+so the first 1.2 refresh reports that index as changed, once (ADR-039). The verdicts the review
+needs travel with the diff, computed in Rust: `hasObjectChanges` (the opposite of `is_empty`) and
+`isUpToDate`, which also requires no capture line. `reviewChanges.ts` reads them and never works
+them out again, so a fact the lists do not show cannot make the review say the project is up to
+date. A review with a capture line and no object change offers "Update project", and the panel lists
+the line under "Recorded for the first time". Code comparisons, explicit exclusions and failed
+optional reads use the same verdicts and are specified in ADR-043.
 
 ### ADR-017: Preferences live in one Rust-owned file in the user's configuration directory
 
@@ -450,7 +491,10 @@ setting, like the viewport. Transient interaction state (selection, hover, zoom 
 refresh highlights, context menu, layout in progress, whether the Inspector is open and its
 request for focus, the rule the Inspector highlights) lives in `canvasUiStore` and is never
 saved; the Inspector derives what it shows from the selection and holds no state of its own
-(ADR-038, ADR-039). After a refresh,
+(ADR-038, ADR-039). Since 1.2 `selectedModule` and the node-deselection request are transient too
+(ADR-044): selecting a module clears selected entities, selecting an entity clears the module,
+and a new document or removal of the selected module clears it. No module creates a canvas node,
+saved selection or undo step. After a refresh,
 `refreshPlacement.ts` places new tables in free space next to the
 tables they reference, or in a row below the diagram, and highlights them; surviving positions
 never move.
@@ -497,10 +541,18 @@ the design tokens converted to sRGB hex (`palette.ts`), because renderers outsid
 understand neither `oklch()` nor `light-dark()`; a test recomputes the conversion, so the palette
 cannot drift from `tokens.css` (ADR-037). Styles are plain class rules without combinators, the
 subset every SVG consumer shares. The renderer holds no text of its own: the caller passes the
-labels it needs already translated (`RenderOptions.labels`, today the VIEW label), so the exports
+labels it needs already translated (`RenderOptions.labels.view` and `.triggers`), so the exports
 speak the interface language and the viewer its own. Text stays text, selectable in SVG and PDF;
 names that do not fit are shortened with an ellipsis, measured with a canvas in the webview and
 estimated in tests. The renderer is deterministic for a given input, which the unit tests check.
+
+Since 1.2 a neutral trigger pill sits between the VIEW label and the column count in the same
+38 px header. Its width is reserved before the entity name is shortened. `geometry.ts` supplies
+the count and enabled/disabled variant; the caller supplies the full translated accessible
+description, also used as the SVG title. Static exports add a trigger legend only when a badge
+is drawn and a separate note when triggers were not read. A mixed capture instead says that
+some trigger metadata could not be checked. These notes take measured document space. A
+successful capture with no triggers keeps the previous diagram output byte for byte.
 
 Why: the PRD asks for continuous vector output with selectable text that matches the screen.
 One renderer, shared with the standalone viewer, keeps the drawing rules in a single place.
@@ -556,6 +608,16 @@ note that a key may be missing. The panel no longer announces its whole content 
 `aria-live` on every click: choosing a search result or following a relation link moves focus
 to the panel's heading, so a keyboard or screen-reader user lands on the entity they chose.
 
+Since 1.2 the explicit snapshot projection also includes the code capture state, trigger
+metadata for visible parents and module settings for visible views. Definitions pass through
+`withoutText`; routines, saved module bodies, unknown properties and the carried-code ledger
+never enter the file. Whole objects retained without a fresh read are excluded from that subset;
+the parent's existing kept-fact date still qualifies its details. Trigger names travel like
+index and constraint names. Keys to hidden tables still lose their names and their metadata.
+View Definition says "Not included in this file"; WITH CHECK OPTION and indexed-view settings
+remain visible when read. Procedures and functions are not exported as objects, although an
+exported CHECK or DEFAULT expression may name one.
+
 Why: the user chose the full viewer over pre-rendered pictures; it keeps the file lighter for
 large schemas and lets the reader explore. Sharing the renderer avoids a second drawing
 implementation.
@@ -564,11 +626,11 @@ implementation.
 
 Inside Tauri the webview's browser habits are switched off at the window, in the capture phase
 so no component can let them through: the browser context menu is suppressed everywhere except
-text fields (the diagram and the entities panel open their own), middle-click autoscroll and
+text fields and the read-only code viewer (the diagram and the Objects panel open their own), middle-click autoscroll and
 dragging images or links out of the window are prevented, and every accelerator that would
 reload, print, find, zoom, navigate history or (outside development) open the developer tools is
 swallowed, held keys included. Where the habit has an application meaning it is mapped instead:
-F5 refreshes from the database, Ctrl+P exports a PDF, Ctrl+F searches the entities, Ctrl+Shift+H
+F5 refreshes from the database, Ctrl+P exports a PDF, Ctrl+F searches Objects outside the code viewer, Ctrl+Shift+H
 shows every hidden entity and Ctrl+Shift+L repeats the last layout; Ctrl+I (the Inspector) and
 Ctrl+1 to Ctrl+3 (the detail levels) need no mapping, because WebView2 reserves neither (only
 Ctrl+Shift+I, the developer tools). Both side panels, the entities panel and the Inspector,
@@ -578,6 +640,12 @@ for both at their width, `fitSidePanels` (`app/shell/sidePanelWidths.ts`) narrow
 Inspector last and neither below its minimum, so the canvas keeps 320 px and the top bar's
 controls stay in the window; the remembered widths do not change, and the handles' widest
 width follows the room left.
+
+Since 1.2 the code viewer owns Ctrl+F, F3, Shift+F3 and source selection inside its region
+(ADR-044). Escape first closes its find field; with find closed it reaches the Inspector and
+returns focus home. The source's native context menu remains available for selecting and copying
+text, and Tab is never captured. Global actions such as Ctrl+K, Ctrl+I, F1 and F5 retain their
+usual behavior outside editable fields.
 
 Why: a reload threw the open project away and the print dialog printed the page chrome; both
 reached the user. Suppressing the defaults in one place keeps every future screen covered, and
@@ -721,7 +789,21 @@ separate job, because a job skipped through a failed dependency would count as p
 Why: a pull request that only touches the documentation should not wait fifteen minutes for a
 Rust build, and the required checks must still fail closed when the classification itself fails.
 
-### ADR-034: Honest access: one capability probe, and unknown is not none
+Since 1.2 the integration job reads SQL Server 2019 as well as 2022. It has two services, `mssql`
+(2022) on port 1433 and `mssql2019` on 1434, and two steps that run the SQL Server test binaries,
+one against each server. Each step names the major version its server must report in
+`SCHEMACRAFT_TEST_MSSQL_MAJOR`, and `connects_to_the_expected_major_version` checks it, so a wrong
+port cannot test one version twice. The 2019 step runs after a failure on 2022 as well
+(`!cancelled()`), so one run reports both versions; it reuses the binaries the first step built,
+and the job's timeout grew from 30 to 40 minutes. A matrix would be the usual shape, but GitHub
+names each matrix job after its values and the branch ruleset requires this check by name, so two
+services in the one job keep the required check without a change to the ruleset. The job also sets
+`SCHEMACRAFT_TEST_REQUIRE_SERVER=1`, under which a missing server variable fails every SQL Server
+test instead of skipping it, so the job can no longer pass without having reached a server. The
+classification is unchanged: what both runs read lives under `crates/`, and the CI definition
+counts as core.
+
+### ADR-034: Honest access: one access probe, and unknown is not none
 
 A login may see only part of a database, and SQL Server says so silently: the catalog views
 leave out the objects it cannot see and return `NULL` for the texts it cannot read. SchemaCraft
@@ -785,6 +867,19 @@ the user, so the application must. One probe classifies every tested permission 
 round trip, `VIEW DEFINITION` is the single grant that completes the schema without exposing
 data, and disclosing in grades keeps the common case, full access, free of warnings.
 
+Since 1.2 the access probe is verified on SQL Server 2019 as well as 2022 (ADR-033). SQL Server
+2019 does not know `VIEW SECURITY DEFINITION`: `HAS_PERMS_BY_NAME` answers `NULL` for it, to `sa`
+too, and a `DENY` of it is a syntax error, so a login with `VIEW DEFINITION` sees its denials and
+counts them, which the 2019 run pins. The branch where the count is unknown has a login of its
+own, `schemacraft_vd_deny_vsd` in `permission_logins_2022.sql`, created only where the server
+reports major version 16 or later: `VIEW DEFINITION` with `VIEW SECURITY DEFINITION` denied. SQL
+Server then hides every denial from it, its own included, and its own row in
+`sys.database_principals`. Since 1.2 the probe falls back to `USER_NAME()` for this current user
+only, so `databaseUser` is populated while `explicitDenials` stays `null`. Its capture reads every
+object and text yet vouches for no absence: the level is partial, with a partial object list,
+complete texts and the one cause that the login cannot see its denials. Code visibility has
+separate rules and counts (ADR-043); it never changes this table-access verdict.
+
 ### ADR-035: Project format 2 reads forward: two version numbers, migrations, kept unknown keys
 
 The header of a project carries two numbers, like the read and write versions of an SQLite
@@ -832,6 +927,14 @@ numbers let a later version add facts without locking 1.1 out, opening read-only
 version from destroying what it does not understand, and migrations on raw JSON keep today's
 types free of yesterday's shapes.
 
+Since 1.2 SchemaCraft writes format 3 with `minReaderVersion` 2 (ADR-042), refuses a file whose
+`minReaderVersion` is above 3 and upgrades formats 1 and 2. Keys a newer version wrote are kept at
+five levels: the snapshot's `programmability` joins the four above, so later families of code can
+arrive without a bump. Format 3 adds only keys that 1.1 keeps or ignores and changes neither a
+meaning nor a closed enum, which `project/forward_read.rs` tests, so 1.1 opens a 1.2 file read-only.
+`migrations::format_2_to_3` rewrites the header only, and `fixtures/format-2.scraft`, written by the
+SchemaCraft 1.1.0 core, is the fixture of the previous format.
+
 ### ADR-036: Tables and views are told apart by section, label, icon and colour
 
 A database view is drawn as a card like a table, and 1.0 told them apart only by a tint on the
@@ -848,6 +951,11 @@ everything is expanded and the toggles are disabled, so a match is never hidden 
 section. An absent kind omits its level the same way, and under partial coverage the single
 footer of ADR-034 stays the honest marker, so an omitted Views section never claims "none".
 
+Since 1.2 this panel is named Objects and also lists procedures and functions (ADR-044). Those
+two sections always keep their kind headers when present, even when a schema contains only one
+routine kind, and start collapsed. The existing singleton-header rule still applies to tables
+and views. Searching opens matching sections temporarily without changing their session state.
+
 On the canvas a view carries a solid VIEW label (VISTA in Spanish, key `entity.view.label`)
 between its name and the column count, the Lucide Glasses icon, the convention of SQL Server
 Management Studio, and the `--color-view` tokens, a teal (hue 195) well apart from the violet of
@@ -863,6 +971,12 @@ PDF and PNG match the canvas; the HTML viewer passes the same `entity.view.label
 catalogue subset embedded in the file (ADR-038), and names the kind next to every search result
 and in its detail panel. The command palette shows a kind icon and a Table or View label on
 every entity row.
+
+Since 1.2, a separate neutral trigger pill is present at all three detail levels and
+at semantic zoom. A solid outline and Zap icon count enabled triggers; when all are disabled,
+a dashed outline and ZapOff icon count the total instead. INSTEAD OF is expressed in the
+translated accessible description, tooltip and SVG title. No colour alone carries its state,
+and the header remains 38 px high in the canvas and every export.
 
 The word "view" therefore means a database view and nothing else in the interface, in both
 languages: the viewport commands read "Fit diagram to window" and "Center on screen" ("Ajustar el
@@ -894,6 +1008,16 @@ keeps a `Map` key of its own (`nameKey` in `previewAccess.ts`) that never stands
 import only `shared/` and itself (ADR-031), so the viewer bundle can always take it and no entity
 helper can grow a dependency on a store.
 
+Entity keys are opaque: each schema and object component escapes `%`, `.`, `[` and `]` before
+joining with a dot. Thus `[a.b].c` and `a.[b.c]` remain distinct, literal escape-looking names
+cannot alias encoded names, and entity keys cannot collide with tagged JSON module keys.
+`foreignKeyId` applies the same encoding to the constraint name, including in layout input.
+Human text uses `qualifiedNameLabel` or `displayIdentifier`, which delimit dotted or bracketed
+identifiers using SQL Server brackets. Searches use the original names rather than encoded keys.
+The saved project and Rust comparisons already use separate schema/name fields, so this changes
+neither the project format nor saved positions. Older projects regain independent nodes when
+opened; already-lost layout choices cannot be reconstructed.
+
 Markers and routing: `canvas/edgeGeometry.ts` holds `RELATION_MARKER_SHAPES` (the width,
 reference point, path and optional circle of each marker kind), `MARKER_HEIGHT`,
 `MARKER_REF_Y`, `MARKER_ORIENT`, `startMarkerKind`, `endMarkerKind` and `relationPath`, which
@@ -919,6 +1043,11 @@ translucent shadows, which the test does not police. A new colour is a
 token first and then, when an export or the viewer needs it, a `DiagramPalette` entry with its
 `PALETTE_TOKENS` line; the test's failure message prints the expected hex.
 
+The trigger badge follows the same rule: `geometry.ts` owns `triggerBadge` and
+`EntityDescriptor.triggers`, and `triggerBadgeText.ts` owns the translated description. Both
+canvas and exports consume these values. Unread or unverified trigger metadata cannot produce
+a current count; a successful capture with no triggers draws no badge.
+
 Why: a copy that is "kept in step" by hand is a bug waiting for its second editor, and the
 viewer's key badge had already drifted from the application's warning colour. One module per
 rule, a lint rule where a module boundary carries the rule and a test where a value does, keep
@@ -936,7 +1065,7 @@ a 1.0 file, or not checked since the date it was last read (ADR-034, ADR-016); a
 when it was kept on its own before. The exported HTML viewer has had a detail panel since 1.0. Both now draw one view-model, in two modules of
 `features/schema`: `objectDetails.ts` holds the facts (`describeObjectDetails(snapshot, key,
 scope)`), the only place the details are built from the snapshot, which reads `Definition`
-through `definition.ts` (`definitionText`, `isUnknownDefinition`, the only readers of the raw
+through `definition.ts` (`definitionText`, `isUnknownDefinition`, the readers of table-expression
 statuses) and the carried facts through the scope, and `objectDetailsView.ts` the presentation
 (`presentObjectDetails(details, translator)`), every title, badge, value, empty line and
 footnote already translated. The React panel (`features/inspector`) and the vanilla viewer
@@ -982,6 +1111,21 @@ never drops to the document. The open state and the focus request live in `canva
 The viewer takes the embedded subset of the message catalogues through the shared translator
 (ADR-007), the access verdicts and the read dates of the kept facts of the objects on the
 diagram (ADR-025), and its own catalogue is gone.
+
+Since 1.2 the same Inspector also follows a selected procedure, function or trigger (ADR-044).
+Their facts and presentation are separate modules, `moduleDetails.ts` and
+`moduleDetailsView.ts`, with `module.*` messages excluded from the embedded viewer catalogue.
+Tables and views also share a Triggers section, after the CHECK constraints on tables; views
+end with Definition. Trigger events retain their First/Last order and disabled/replication
+marks, sorted by INSTEAD OF then AFTER, enabled state and name. "None" requires a successful
+trigger-metadata read for that parent; missing, failed and retained reads keep distinct states.
+`DetailsScope.definitions` says whether source may be shown. The shared Definition view-model
+contains metadata only: the app resolves its code viewer from the snapshot, while HTML says
+"Not included in this file". Both retain recorded WITH CHECK OPTION and indexed-view badges.
+Only the app offers Open trigger. No source text or module pages enter the HTML detail model.
+Escape and closing the Inspector use
+the selected object's home: an entity card, a trigger's parent card, or a routine's Objects row,
+with the Objects search field as the module fallback.
 
 Why: a second implementation of the details would drift from the first within a release, and
 the exported file is where other people read the schema, so it must say what the application
@@ -1144,6 +1288,565 @@ against the engine catches a normal form that changes before a sentence goes wro
 consumer outside the frontend can port the table rather than the reasoning. Row phrasing reads
 right for any table name in either language, and markers chosen by the functions that word the
 sentences cannot contradict them.
+
+Since 1.2 the golden forms and the engine facts are asserted against SQL Server 2019 as well as
+2022 (ADR-033). SQL Server 2019 stores all 72 forms exactly as 2022 does, with the same columns and
+enabled states, and behaves the same on every scratch table, so `check_forms.json` keeps one stored
+form per case. Should a version store a case differently, the file records that version's form for
+the case beside the other, and the test checks each against its own version; a case is never
+skipped on a version.
+
+Since 1.2 the snapshot records whether an index or a primary key is enabled and whether an index is
+filtered (ADR-042), which lifts the known limitation of 1.1.0 described above. A disabled index
+enforces nothing, and a filtered unique index limits only the rows its filter selects.
+`foreignKeyChildCardinality` judges the primary key, the unique constraints and the unique indexes
+that lie within the key's columns: the primary key and a unique constraint hold unless they are
+recorded as disabled, and a unique index holds only when it is recorded as enabled and without a
+filter. The key is at most one when any of them holds; unknown when none holds but a unique index
+is filtered or its state was not recorded, so a filtered unique index never gives `atMostOne`; and
+many otherwise, every one of them disabled included. A disabled clustered index is the exception:
+SQL Server then takes no row in the table, keeps every foreign key on it disabled and refuses to
+enable one until the index is rebuilt, which makes it unique again, so a disabled clustered primary
+key, unique constraint or unique index holds and is not named among the disabled ones; the
+nonclustered indexes disabled along with it stay disabled after that rebuild and count as disabled.
+A project saved before 1.2 did not record the state, so its primary keys and unique constraints keep
+the 1.1 reading and its unique indexes stay unknown until a refresh records it: opening an old file
+changes no diagram, and the first refresh may change markers, which the review announces in one line
+(ADR-016). The sentence names the reason, with the index names drawn as code: a key that can be
+referenced by any number of rows because of a disabled index says "…, or by none, because the index
+UQ_X is disabled", and one that is unknown because of a filter says "A row in … can be referenced by
+at most one of the rows in … that the filter of the unique index UX_X selects", which claims nothing
+about the other rows; a state not recorded leaves the sentence out, as in 1.1. `relationEnds` calls
+the same function, so the canvas and every export follow: an enabled unique index without a filter
+now draws zero or one at the referencing end, and a disabled nonclustered unique constraint a crow's
+foot. Key columns come from `key_ordinal` greater than 0 and included columns from
+`is_included_column`, in `index_column_id` order, so the partitioning column SQL Server adds on its
+own to an aligned index, listed with neither, is no longer the first key column; memory-optimized
+hash indexes (type 7) are not read in 1.2.
+
+Since 1.2 the snapshot also records whether SQL Server trusts each `CHECK` and foreign key
+(`is_not_trusted`). An enabled rule it does not trust, after `WITH NOCHECK`, an enable without
+`WITH CHECK`, or because it is `NOT FOR REPLICATION`, which SQL Server never trusts even when it
+checked every row, first says "Rows already in {table} may not follow this rule: SQL Server marks it
+as not trusted", with no cause claimed, since several statements leave the same flag. Its sentences
+then sit under "When a row is inserted or its {columns} is changed:", naming the columns a `CHECK`
+reads or a key's referencing columns, because SQL Server checks an UPDATE only when it writes one of
+them, so a row that breaks the rule stays as it is while its other columns change. A key's sentences
+about the referenced table hold for every row and follow the group (`stateRules` in `ruleText.ts`,
+RuleNode parts like every sentence). A `CHECK` the reader cannot put into words keeps that first
+sentence above its SQL, and one whose text the login cannot see keeps it above the words for the
+missing text, since `is_not_trusted` needs no VIEW DEFINITION. A disabled rule, never trusted, reads
+under "When enabled:" as before, and a rule whose trust was not recorded reads as in 1.1. The note
+under a section with rules in words keeps its last clause, that rows saved before a rule existed may
+not follow it, only while the file has not recorded whether SQL Server trusts one of the section's
+rules; once trust is recorded it ends at "when values are written", because SQL Server verified a
+trusted rule against every row and an untrusted one says so itself, without a cause. The view-model
+badges such a rule "not trusted", a disabled key, index or constraint "disabled" and a filtered
+index "filtered", all in the neutral tone every badge but the key and link ones has, and gives an
+index with included columns an `INCLUDE (…)` line, in the Inspector and the viewer alike (ADR-038).
+`foreignKeyDefinitionSql` scripts an enabled key that is not trusted as
+`ALTER TABLE … WITH NOCHECK ADD CONSTRAINT …` with no `NOCHECK CONSTRAINT` statement after it, which
+recreates it enabled and not trusted; 1.2 does not read `NOT FOR REPLICATION`, so the statement
+leaves it out. The engine facts gain, on both versions: a key added `WITH NOCHECK` is enabled and
+not trusted, refuses a new row without a parent row and a write of the referencing column of the old
+one, which stays and takes changes to its other columns, and `WITH CHECK CHECK CONSTRAINT` refuses
+to trust it while that row is there; a `CHECK` enabled again without `WITH CHECK` is not trusted,
+checks every row inserted and every row whose columns it reads are written, leaves a row that breaks
+it in place when other columns change, and becomes trusted with `WITH CHECK CHECK CONSTRAINT` once
+the row that breaks it is gone; a `CHECK` and a key `NOT FOR REPLICATION` stay not trusted after
+`WITH CHECK CHECK CONSTRAINT`; disabling a clustered primary key disables the key of its table and
+its other indexes, the table takes no row, and the key cannot be enabled until the index is rebuilt,
+which leaves the other indexes disabled; the scripted statement recreates an enabled key that is not
+trusted; an enabled unique index without a filter keeps a referenced row to one referencing row; the
+filtered and the disabled unique indexes are reported as such; and the partitioning column of an
+aligned index is neither a key column nor an included one.
+
+### ADR-040: A database that cannot be shared is measured by a probe its owner runs, and the probe returns numbers only
+
+Some decisions rest on databases the project cannot see: how much code a real schema holds, how
+large its texts are, how often its triggers are disabled or its indexes filtered, what a
+production login may read. `crates/schemacraft-core/probes/capability-probe.sql` lets the owner
+of such a database measure it and share numbers only. It is run with the login SchemaCraft
+connects with, not as `dbo`, since every count is what that login can see. It lives under
+`crates/`, so an edit to it counts as a core change and runs the SQL Server tests (ADR-033).
+
+The script is one T-SQL batch without `GO`, short enough to read before it runs. It starts with
+`DECLARE @scan_text bit = 1`, `SET NOCOUNT ON` and `SET LOCK_TIMEOUT 5000`, fills a table
+variable section by section, each but `probe` in its own `TRY … CATCH`, and ends with one `SELECT`
+of that variable. Every row is `(section nvarchar, metric nvarchar, value bigint)`. The labels
+are literals of the script, type codes become labels through fixed `VALUES` lists, and a value is
+a count, a sum or maximum of `DATALENGTH`, a server property as a number, milliseconds, or a
+capability as 1, 0 or -1 when the server does not answer. No name of an object, schema, column,
+parameter, principal, login, database, collation, server or file is returned, nor any definition
+or expression text: names and texts are read only on the server, inside `COUNT`, `DATALENGTH`,
+`LIKE`, `CHARINDEX`, a comparison with a fixed word or a permission check, and become numbers
+there. A failed section returns only `ERROR_NUMBER()`, never the message. It reads catalog views
+and system functions only: no table data, no procedure, no dynamic management function and no
+write beyond the table variable. The text scan runs `LIKE` on the server and returns how many
+modules match each pattern; whoever runs it can turn it off at the top. The sections are
+`probe`, `server`, `access`, `objects`, `modules`, `text`, `triggers`, `views`, `routines`,
+`indexes`, `constraints`, `columns`, `properties` and `timings`.
+
+The engine sets rules for keeping it runnable on every version and for every login, learned
+against SQL Server 2022 and checked on 2019:
+
+- A catalog column that a version lacks fails the whole batch at compile time, where no `CATCH`
+  can report it, so the script uses only columns that exist since SQL Server 2012 and reads newer
+  flags through `OBJECTPROPERTY`, which answers NULL instead.
+- A subquery inside an aggregate is Msg 130, a compile error too, so flags that need one are
+  worked out per object in a derived table and summed outside it.
+- `ISNULL` returns the type of its first argument, so a `tinyint` is cast before -1 can stand in
+  for its NULL, and no aggregate is given a NULL, whose warning would land in the sqlcmd output.
+- `sys.sql_expression_dependencies` raises Msg 229 for `VIEW DEFINITION` without `SELECT`, so only
+  the permission to read it is probed.
+- The `sys.objects` row of a table type is marked `is_ms_shipped`, so table types are counted in
+  `sys.table_types`.
+- Another session's uncommitted schema change holds locks that the catalog queries wait for, so a
+  blocked section reports error 1222 after 5 seconds, and the owner runs the probe again once
+  that change has ended.
+- An error that no `CATCH` can handle, such as a compile error, reaches the client with a header
+  that names the server, so the README runs sqlcmd with `-r1`, which keeps every message on the
+  screen and only the result set in the file.
+
+Tests keep the contract. `tests/common` holds `PROBE_METRICS`, every `(section, metric)` pair the
+script may return, and `run_probe`, which sends the script as one `simple_query`, as SSMS sends
+it, and asserts one result set with the columns `section`, `metric` and `value` of types
+`nvarchar`, `nvarchar` and `bigint`, no NULL, every pair in the list and none twice, and every
+listed metric unless its section failed. A change that would return anything else, a name above
+all, fails until the list grows in the same pull request, where a review sees it. A static test
+reads the script without its comments and literals and fails on `GO`, on a statement that runs
+code, writes or changes the session, on a `SET` other than `SET NOCOUNT ON`,
+`SET LOCK_TIMEOUT 5000` or one of a variable, on an `INSERT` into anything but the table
+variable, on a dynamic management view or a `sys.fn_` function, and on the functions that hand
+back a name, an error message or a definition, such as `OBJECT_NAME`, `ERROR_MESSAGE` and
+`OBJECT_DEFINITION`; the only name functions it calls, `QUOTENAME` and `USER_NAME`, feed a
+permission check. It also checks that every `CATCH` returns only `ERROR_NUMBER()` as
+`error_number` and that every label is a literal or a column of a fixed `VALUES` list, so how many
+rows come back never depends on the database and the allowlist sees every row any database can
+produce. `sqlserver_integration.rs` runs the probe as `sa` on `SchemaCraftFixture`,
+`SchemaCraftCheckForms` and `SchemaCraftCode`, a database of its own built from
+`fixtures/sqlserver/code.sql` (views `WITH CHECK OPTION`, indexed and encrypted; triggers on a
+table and on a view, marked First and Last, disabled, `NOT FOR REPLICATION` and encrypted;
+procedures and functions of every T-SQL kind, one created through `sp_executesql` with CRLF and
+trailing spaces; a schema with code only; a database DDL trigger; no CLR module, which needs an
+assembly, so the CLR counts are pinned at 0), and compares the counts with what each fixture
+defines. One more run holds a schema lock in a database of its own while the probe runs, so that
+every `CATCH` that can wait on it runs, and checks that they return only error 1222.
+`sqlserver_permissions.rs` runs it as `sa` and as the `db_owner`, reader, `VIEW DEFINITION`,
+sales-texts and connect-only logins and pins what each sees: a `db_datareader` member, for one,
+sees no procedure, no scalar function and no text, and no `VIEW DEFINITION` on the database. On
+SQL Server 2022 it also runs as the login denied `VIEW SECURITY DEFINITION` (ADR-034), which
+reports 1 for `view_definition` and 0 for `view_security_definition`; on 2019, which does not know
+that permission, `view_security_definition` is -1 for every login, `sa` included.
+`permissions.sql` gained the code those runs count and no table, view, `CHECK` or `DEFAULT`, so
+every access verdict of ADR-034 holds.
+
+The results belong to the database's owner: the README asks to keep them outside the repository
+and to share only the grid of numbers, `.gitignore` ignores a result written next to the script,
+and none is committed.
+
+Why: a probe built on the inspector would reuse the connection code, whose errors carry server,
+login and object names, and would have to be compiled and trusted. A T-SQL script has no
+connection code and no error text to clean, runs in the tools a DBA already has, and can be read
+line by line before it runs; the allowlist and the static test turn "numbers only" into a
+property CI checks rather than a promise.
+
+### ADR-041: A local diagnostic log holds typed counts, timings and kinds, never names, paths or code
+
+Release builds have no console, so a user who met a bug had nothing to attach. Since 1.2 SchemaCraft
+keeps a log on the user's machine, in `%LOCALAPPDATA%\com.jmanuelsoberano.schemacraft\logs`, the
+folder Tauri's `app_log_dir` names, and sends it nowhere.
+
+What the log may say is fixed by type, not by a filter. `crates/schemacraft-core/src/diagnostics.rs`
+is the only place that emits events on the target `schemacraft-diagnostics`, a name with a hyphen,
+which no module path has, so an event that names no target never matches it. It has one function
+per event, and their parameters are integers, booleans, durations, `&'static str` and closed
+classifications, which implement the marker trait `ClosedKind` next to their own enum, so the module
+depends on `model` alone. The events are `app_started` (the app's version and the WebView2
+runtime's, as numbers), `startup_failed` (WebView2 missing, or Tauri could not start),
+`catalog_query` (the fixed name of the query, rows, ms), `inspection_completed` (tables, views,
+foreign keys, keys to invisible tables, the access level and the ms of connecting, reading,
+assembling and the whole), `project_opened` (format version, read-only, KB, ms), `project_saved`
+(format version, KB, ms), `export_written` (format, KB, ms) and `command_failed` (the command's
+fixed name, its `CommandErrorKind`, and the SQL Server error number and catalog query when there
+are ones). No event takes a server, a host, a login, a database, a schema or object name, a path,
+SQL text, a definition or an error message. Errors cross with `log_summary()`, which every core
+error enum has: the kind, the SQL Server error number (`InspectorError` keeps it for a rejected
+login, an unavailable database, a refused session and a failed query) and the query name, never the
+message, which names servers, logins, databases, objects and files. `CommandError` carries the
+number and the query to its `log` method without sending them over the IPC, and every command that
+can fail records its failure through `commands::logged`, or through `log` itself in the synchronous
+`cancel_*`.
+
+`src-tauri/src/logging.rs` keeps the console layer as it was, under `SCHEMACRAFT_LOG`, and adds a
+file layer that accepts exactly that target, from that module, at info and above, whatever
+`SCHEMACRAFT_LOG` says. It checks the module (`diagnostics::MODULE`) as well as the target, so an
+event in another file that names the target, by mistake or through a copy of the constant, stays
+out too. Its formatter writes the UTC time, the level and the event's own fields, and no span, no
+target and no thread, so neither a stray `tracing::info!` elsewhere nor a future `#[instrument]`,
+which records every argument of a function in its span, can reach the file; a source scan test
+fails when any other file names the target or imports its constant under another name. A line
+reads `2026-10-18T21:04:05.120Z INFO catalog query query="columns" rows=418 elapsed_ms=31`.
+
+The files come from tracing-appender's `RollingFileAppender`: one per UTC day,
+`schemacraft.2026-10-18.log`, at most seven files kept, written in blocking mode, so the last line
+is on disk before `panic = "abort"` ends the process. They are named by date and never renamed: a
+writer capped by size renames `schemacraft.log` to `schemacraft.1.log`, which fails on Windows while
+a second SchemaCraft holds the file open, whereas files that are only created and appended to, one
+write per line, let two instances share a day's file. Each time the appender is built, at every
+start, and again at each UTC midnight while SchemaCraft runs, it first deletes the oldest files, by
+creation time, until six are left, and then opens today's file, so the folder holds at most seven
+files and a second start on the same day leaves six. It counts every file whose name starts with
+`schemacraft` and ends with `log`, so the panic file below is one of them, deleted like a daily file
+once it is the oldest. The folder is resolved before Tauri starts: `main.rs` calls
+`tauri::generate_context!()` first, and the pure function `log_directory` joins `LOCALAPPDATA`, the
+identifier and `logs`, so the WebView2 check and a failed start are logged too. When the folder
+cannot be created, the application goes on with the console only and the about dialog says that
+this session writes no log.
+
+A panic hook appends `time panic version=… at=file:line` to `schemacraft-panic.log` in the same
+folder through `std::fs`, without the logger, whose lock the panicking thread may hold, and then
+calls the previous hook. It writes the location, never the message, which can quote anything the
+code had at hand, and a dependency's path keeps only the part from its crate's folder on, without
+the folders of the machine that built the executable.
+
+`AppInfo.logDirectory` gives the about dialog the folder, which it shows with an "Open log folder"
+button and the sentence that the log holds counts and timings for bug reports, never names, code,
+paths or passwords, and is never sent anywhere. `open_log_folder` opens the folder the state holds,
+never a path from the frontend, with the opener plugin's Rust API on `run_blocking`, so no
+capability of the window grows; `help.openLogFolder` puts it in the palette, without a shortcut
+(ADR-008). Errors of the frontend are not logged: a window error or a rejected promise carries a
+message and a stack whose text can hold anything the page had at hand, and the WebView's console
+stays out of the file.
+
+Tests keep the contract. Unit tests check that each event records only its declared fields, that the
+`log_summary()` of every `InspectorError` variant built with a sentinel server, database, login and
+path holds none of them, the source scan, that the formatter writes no span context, the file
+filter, `log_directory` and the console filter as pure functions (the environment cannot be changed
+in a test, since `env::set_var` is unsafe in edition 2024 and the workspace forbids unsafe code) and
+the panic line. `tests/diagnostics_privacy.rs`, run against both CI servers, captures every event on
+the target at every level, without span context, which the formatter's unit test keeps out of the
+file, while it reads `SchemaCraftPermissions` as `sa` and as the `db_datareader` login, logs in with
+a wrong password, opens a database the login has no user in, and reads as a login that may not read
+`sys.check_constraints` (`fixtures/sqlserver/diagnostics_logins.sql`), and fails on any schema,
+object, column, key or constraint name of the fixture, any readable expression, the server's name, a
+login, the host, a password, a database or a fragment of the server's messages.
+
+Why: a log is useful in a bug report only when it can be shared without reading it twice. A typed
+allowlist keeps names, paths and code out by construction, which a filter over free-form events
+could not do, because errors carry server, login and object names; counts and timings are what a
+slow or failing inspection needs. Date-named files make rotation safe for two processes without a
+lock between them, and resolving the folder before Tauri starts covers the failures users meet
+first.
+
+### ADR-042: Project format 3 keeps code under `snapshot.programmability` and state facts in optional fields, so 1.1 reads it forward
+
+SchemaCraft 1.2 records what 1.1 could not: the code of views, procedures, functions and DML
+triggers, the state of indexes, keys and constraints, and what a login sees of code. It writes
+them as format 3 with `minReaderVersion` 2 (`project/document.rs`), so SchemaCraft 1.1 still opens
+a 1.2 project, read-only.
+
+All code lives under one key at the snapshot root, `programmability` (`model/programmability.rs`),
+never inside a table or a view. It holds what the capture read of the objects and of their texts
+(`capture`, each `read`, `notRead` with the reason `optionOff`, `queryFailed` or `timedOut`, or
+`unknown`); the view modules (`view`, `definition`, `hasCheckOption`, `isIndexed`); the routines
+(name, kind, `body`, the parameters in declaration order, the return type of a scalar function and
+the columns of a table function); the DML triggers, whose identity is their parent and their name,
+since a DML trigger lives in its parent's schema (timing, events with the firing order set for each
+statement, enabled, `NOT FOR REPLICATION`, `body`); and `carriedOver`, the code kept from an
+earlier read, with the part kept (`whole` or `definition`) and when it was last read. A parameter
+has no default, because `sys.parameters` keeps a T-SQL parameter's default only in the module
+text. A `body` is `sql { definition }`, `clr` or `unknown`, and a `CodeObjectRef` names a view, a
+routine or a trigger. `Definition` gains `encrypted`: a module created `WITH ENCRYPTION` has a
+`NULL` text for every login, the database owner included, so the state is known, has no text and
+never differs from anything. It occurs only under `programmability`. Every new enum reads a value
+written by a newer version as `unknown`, with `#[serde(other)]` in an attribute of its own
+(ADR-035).
+
+The placement is a privacy rule as much as a model. The HTML export rebuilds the snapshot root from
+the keys it knows (ADR-025), so code cannot reach an export by accident, and `accessSummary`
+rebuilds the coverage from the objects and the `CHECK` and `DEFAULT` texts, so an export never
+speaks of code it does not contain. As objects of their own, like foreign keys, code objects can be
+compared and kept on a weaker refresh apart from the tables, and the canvas, its geometry and every
+node stay as they are. `programmability` keeps keys a newer version wrote, the fifth level that does
+so after the document root, the snapshot root, the canvas and each node, so database triggers,
+synonyms or table types can arrive later without raising `minReaderVersion`. The frontend passes the
+snapshot through as it is, so those keys survive a save from the application too.
+
+The other facts are new fields of structs that are not flattened, which an older serde ignores.
+Some are optional and written only when recorded (`skip_serializing_if = "Option::is_none"`, and
+`#[ts(optional)]` in the contracts): `includedColumns`, `isFiltered` and `isEnabled` on `Index`;
+`isEnabled` on `PrimaryKey`; `isTrusted` on `CheckConstraint`, `ForeignKey` and
+`ForeignKeyToInvisibleTable`; `executeDenials` on `AccessProbe`; and `programmability` and
+`moduleDefinitions` on `AccessCoverage`. For these, absent means not recorded, never `false` and
+never none: a 1.1 file has no `programmability` because its code was never read, and its indexes
+have no state because none was read. The rest are plain flags and counts, written only when true
+or not zero, so an absent key reads as `false` or 0 (`serde(default)`):
+`hasVisibleProgrammability` and `isExecuteDenied` on `SchemaAccess` (not seen, or not asked, as
+before 1.2); `includeProgrammability` and `includeModuleDefinitions` on `CaptureScope` (the
+capture did not ask); and `moduleDefinitions`, `moduleDefinitionsNotVisible` and
+`moduleDefinitionsEncrypted` on `AccessCounts` (none counted). Whether code was judged at all is
+read from `AccessCoverage.programmability` and `moduleDefinitions`, never from these flags or
+counts. `isEnabled`, not `isDisabled`, follows `CheckConstraint.isEnabled` and
+`ForeignKey.isEnabled`. The inspection options gain `includeProgrammability` (read procedures,
+functions and triggers) and `includeModuleDefinitions` (save their code), on by default through
+serde, so a 1.1 project refreshed in 1.2 reads and saves code unless the user turns them off; the
+connection draft carries both and restores them from a saved project. A capture's `CaptureScope` says that it asked for code only when the inspector read
+code, whatever the options say.
+
+For 1.1 to read a 1.2 file without misreading it, no key it parses may change meaning and no closed
+enum it knows may gain a value. The audit:
+
+- `SnapshotFact`, `Completeness`, `AccessLevel`, `IndexKind` and every enum of the canvas are
+  untouched; kept code has its own list under `programmability`.
+- `AccessLevel`, and with it the 1.1 chip, bar, notice and export note, is still judged over the
+  tables and views and the `CHECK` and `DEFAULT` texts only (`AccessCoverage::is_full`). The
+  coverage of code is reported apart and never changes the level.
+- `AccessCounts.definitions` still counts `CHECK` and `DEFAULT` texts only; module texts have
+  counts of their own.
+- `Definition.encrypted` never appears where 1.1 parses a `Definition`.
+
+So `minReaderVersion` stays 2. SchemaCraft 1.1.0 opens a 1.2 file read-only: it shows and exports
+it without code and cannot save or refresh it. That block must stay, because a 1.1 refresh would
+drop the snapshot's unknown keys, and the code with them. SchemaCraft 1.0 refuses the file, as it
+refuses format 2.
+
+`migrations::format_2_to_3` rewrites the header only, since a format 2 document is already valid
+format 3 content. `fixtures/format-2.scraft` was written by the SchemaCraft 1.1.0 core, never by a
+later version: a throwaway test in a worktree of the tag `v1.1.0` read the integration fixture
+database as `sa` and refreshed it as the 1.1.0 "two tables" login, with a `CHECK` disabled for the
+run, so the file holds an access profile, kept facts, a disabled `CHECK`, a key to an invisible
+table and a key written by a newer version at each of the four levels 1.1 keeps
+(`project/test_fixtures.rs` says how). Tests open it, find every fact, save it as format 3 and find
+the same document with only the header and the two options new; the format 1 tests run through the
+chain 1 to 2 to 3. `project/forward_read.rs` holds the guarantee itself: it removes exactly the keys
+format 3 added from a fully populated 1.2 project and finds the document a capture without them
+writes, the verdicts on access included, which it judges again without code, from a project read
+by a login that sees everything as well as from the reader's; it checks every value of a closed
+enum 1.1 parses (the provider, the authentication mode, the encryption, the type length, the
+access level and coverage, the index kind, the referential actions, the kind of a kept fact and
+the canvas enums) and that `encrypted` appears only under `programmability`. The same check was
+made once with 1.1.0's own code, in that worktree: it opens such a file read-only, keeps
+`programmability` among the snapshot's unknown keys and reads every other key exactly as in the
+1.1 file it came from. A sentinel test
+exports a snapshot whose code carries a sentinel in every text and name and finds it nowhere in the
+page, and `projection.test.ts` pins every key path an export carries of a table, view, column,
+index, key and constraint over fixtures typed `DeepRequired`, with one fixture for each variant of
+a union (`EveryVariant`), so a field Rust adds, to a type or to any variant, or a new variant fails
+to compile there and then fails the inventory until someone decides whether it may leave the
+application.
+
+A field or a family recorded on one side only is never a change. Indexes and primary keys compare
+their name, key columns, kind and clustering always, and the new state fields only when both sides
+recorded them, `CHECK` constraints and foreign keys compare their trust the same way, and
+`access_changed` compares a code coverage only when both captures judged it, so refreshing a 1.1
+project reports no access as changed and no index as changed except one aligned with a partitioned
+table: 1.1 read its key columns with the partitioning column first, and that first refresh reports
+it once as changed, with the corrected key columns (ADR-039). It also reports one line saying that
+the state is recorded now (ADR-016). Where a state was not recorded, the diagram reads as it did in
+1.1 (ADR-039).
+
+Module texts travel inside the snapshot, over the IPC every command already uses. A refresh followed
+by a save moves the snapshot about seven times, which stays well under a second below 20 MB of
+readable module text, about ten million characters. If a real database holds more, the fresh
+snapshot is to stay on the Rust side, and the diff and the refresh are to take its id instead of a
+second copy; the probe of ADR-040 measures that size.
+
+Why: code is business logic, and the one place an export cannot reach by accident is a key it does
+not know. Optional fields and a fifth kept level add facts without changing any 1.1 reading, so the
+door format 2 opened stays open both ways: 1.1 can show a 1.2 project and cannot damage it.
+Recording an absent state as "not recorded" keeps the first 1.2 refresh of an old project from reading as
+hundreds of changes and keeps a gap from reading as a fact.
+
+### ADR-043: Code is read independently, kept when it cannot be checked and compared without formatting noise
+
+The code persisted by ADR-042 is now read, refreshed and reviewed. Procedures and functions are
+independent objects; DML triggers follow the table or view they belong to; view modules add code
+facts to the views already on the diagram. None becomes a canvas node. Reading code is optional,
+and a failed optional read must neither fail a successful table inspection nor erase an earlier
+capture.
+
+`inspectors/sqlserver/programmability.rs` reads five metadata queries before one module-text
+query: objects (`V`, `P`, `PC`, `FN`, `FS`, `IF`, `TF`, `FT`, `AF`), table and view DML triggers
+(`TR`, `TA`, `parent_class = 1`), trigger events, parameters and table-function result columns.
+`code_assembly.rs` maps those rows purely and sorts them deterministically. Parameters retain
+their declaration order, type, `OUTPUT` and `READONLY`; table-valued parameters retain their table
+type. Parameter 0 is a scalar or aggregate function's return type, never a normal parameter or a
+table function's return type. Returned columns describe structure only: defaults on a
+multi-statement function's internal return-table variable remain in its SQL body and are neither
+queried nor persisted separately. The existing `Column` contract is retained with no default
+expression for these result columns. Trigger timing, enabled and `NOT FOR REPLICATION` flags are
+independent; firing order is recorded per INSERT, UPDATE and DELETE event. A view records
+`WITH CHECK OPTION` and whether it has a unique clustered index. CLR bodies are `clr`, with no
+SQL text; SQL bodies retain `readable`, `encrypted`, `notVisible` and `notRecorded` separately.
+
+Every code query binds the schema filter on the server. A selection longer than 2,000 schemas
+runs in bounded chunks and deduplicates the returned identities; it never falls back to all
+schemas. Turning views off excludes their modules and their triggers in SQL. Text rows stream
+from `sys.sql_modules` and are consumed one at a time; the driver rows are not collected alongside
+a second copy of every body. Stored texts are unchanged, including an empty readable string.
+An absent text row after a successful read is `notVisible`; `OBJECTPROPERTY(IsEncrypted)`
+distinguishes encryption, including for a login that cannot read the text. A deliberate text
+opt-out is `notRecorded` even for an encrypted module.
+
+The table catalog and probe still use their existing `try_join!`; a surrounding `join!` waits for
+that result and the code stage independently, on the same four-session pool. The code stage returns
+its capture outcome instead of propagating a query error. A metadata error leaves both families
+`notRead`; a text error keeps the metadata and leaves only definitions `notRead`. Driver timeouts
+and SQL Server error 1222 retain `timedOut`; other failures are `queryFailed`. A failed code lease
+is marked broken through the pool manager before it returns, so a partly consumed response cannot
+poison a waiting table query. Progress reports `ReadingProgrammability` with the routine and
+trigger count, then `ReadingModuleDefinitions` with the readable-text count; a failed stage has
+no count. Diagnostics retain the static query name, error kind and number, outcome, counts and
+timings, never driver messages, names or SQL text (ADR-041).
+
+The access probe records code visibility and `EXECUTE` denials separately. Table access still
+depends only on tables, views and `CHECK`/`DEFAULT` texts. The shared code-object coverage is complete
+only when `VIEW DEFINITION` covers the selected schemas and no relevant denial is known or
+unknown; `SELECT` or `db_datareader` alone cannot vouch for a complete procedure/function list.
+The permission fixture pins the following on SQL Server 2019 and 2022: a reader sees table
+functions and the triggers of visible parents but no procedures or scalar functions; schema
+`SELECT` does not reveal procedures; schema `EXECUTE` reveals only its permitted routines;
+`VIEW DEFINITION` still reveals a procedure denied `EXECUTE`. That last measured combination
+does not reduce code coverage. An encrypted module is not a permission gap, and a CLR module is
+not counted as a SQL text. A failed or omitted family has no coverage verdict. The schema picker
+can add code-only schemas while objects are requested, but a login with no visible table or view
+still cannot start an inspection. The current-user fallback of ADR-034 does not claim that the
+denials became visible.
+
+`model/code_carry_over.rs` extends the existing pure refresh merge. A missing routine is kept
+when its schema may hide routines, and missing view modules and triggers follow their retained
+parents. A query failure or timeout keeps in-scope code; readable text that becomes not visible
+is kept, but fresh encryption is never replaced by an old readable body. If the text query fails
+and the fresh state is unrecorded or unknown, a previously known definition state is kept too,
+including not-visible and encrypted states; a freshly known encrypted state or CLR implementation
+always wins. This failure rule preserves historical evidence and is separate from carrying a
+readable text after a successful but weaker read. Each kept whole object
+or definition carries the date it was last read; repeated weaker reads keep that date, and code
+whose parent was retained inherits the parent's older date. Turning objects off, turning texts
+off, excluding a schema or excluding views is an explicit scope choice and does not preserve the
+facts left out. These decisions happen before comparison and again when applying the refresh.
+
+`diff/code.rs` pairs routines by qualified name, triggers by parent and name, and view modules by
+view. It compares all recorded properties: kind, implementation, parameters, scalar return type,
+returned columns, trigger timing/events/firing order/enabled/replication, view check/indexed
+flags, definition and encryption. A readable-to-encrypted transition is an encryption change,
+not newly available text. SQL comparison makes line endings LF, removes spaces and tabs at each
+line end and removes empty edge lines; it does not rewrite the stored text. It does not parse SQL
+or infer semantic equivalence. A first capture has one aggregate line for objects and one for
+texts; explicitly leaving a previously recorded family out has an aggregate exclusion line.
+Known encrypted or not-visible states retained through a failure still count as previous capture
+evidence. Code kept and code newly readable have their own lists, separate from 1.1's
+`SnapshotFact`. `CodeDiff.readFailures` also reports an unsuccessful observation when no code was
+saved before it: it prevents `isUpToDate` without claiming an object changed. The Rust verdicts
+remain the only authority for the review's action and empty state (ADR-016). One bounded
+limitation follows from storing only the last capture outcome: a successful empty family followed
+by a saved failed read has no retained object or known text to prove its earlier success. When it
+recovers, the review records that family again with a zero count and no object change. The same
+applies to an all-CLR catalog's empty SQL-text family. Retaining that recovery line lets the user
+save the successful outcome; format 3 adds no separate history marker for empty captures.
+
+The connection dialog offers two switches, both on by default: read procedures/functions/triggers,
+and save their code. The latter includes view text and explains that it saves business logic in
+the project. Retesting the same database preserves the selected schemas, and applying a refresh
+keeps that attempt's options and connection, without its password. Disabled code stages are
+omitted from progress. A review with partial code coverage limits its no-change verdict to what
+the login could read even when table access is full. The access report and
+review explain code coverage, encrypted/omitted/unreadable states and failed reads; the review
+groups object changes and lists changed properties without a line diff. ADR-044 adds object
+browsing and a code viewer. Exports continue to omit code entirely (ADR-042).
+
+Evidence: Microsoft's [metadata visibility rules](https://learn.microsoft.com/en-us/sql/relational-databases/security/metadata-visibility-configuration?view=sql-server-ver16),
+[module catalog](https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-sql-modules-transact-sql?view=sql-server-ver16),
+[parameter catalog](https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-parameters-transact-sql?view=sql-server-ver16)
+and [trigger event catalog](https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-trigger-events-transact-sql?view=sql-server-ver16)
+define the queried columns and permissions; `sqlserver_permissions` and `sqlserver_code` pin the
+permission combinations on both tested engine versions instead of inferring them from a general
+permission hierarchy. Unit tests cover CLR shapes, timeouts, bound scope limits, normalization,
+every compared property, first captures, exclusions and repeated weaker/failing refreshes.
+
+Why: a partial catalog is useful only if it cannot be mistaken for a complete one. Independent
+outcomes preserve the table inspection, retained facts preserve the user's saved knowledge and
+the review separates database changes from what this attempt could establish. This adds no
+connection pool, canvas entity, stored credential, export payload or file-format version.
+
+### ADR-044: Programmable objects are inspected outside the diagram, with a local code viewer
+
+SchemaCraft 1.2 makes the captured procedures, functions and DML triggers browsable without
+adding canvas entities or changing saved layouts. `features/schema/modules.ts` owns their
+identity and lookup: a routine has its qualified name; a trigger has its parent and its name.
+An unknown stored routine kind remains unknown instead of being called a procedure. Views keep
+their existing entity identity and selection.
+
+`canvasUiStore.selectedModule` is exclusive with a nonempty entity selection. Selecting a
+module clears the entity keys and rule highlight, requests node deselection, opens the Inspector
+and optionally requests heading focus. The empty React Flow selection callback preserves that
+module, because it can be the acknowledgement of the requested deselection. An explicit pane
+click clears both. Loading a new document or removing the selected module clears the selection.
+The Inspector derives one target with entity, multiple-entity, module and empty precedence; it
+holds no parallel selection. `focusInspectedHome` returns to an entity card, a trigger's parent
+card or a routine's Objects row, falling back to the Objects search field when that module home
+is not rendered. Closing the Inspector returns focus before it becomes inert.
+
+The Objects panel keeps tables and views and adds Procedures and Functions under each schema.
+Routine sections start collapsed and always retain their kind header when present, including
+schemas containing only routines of one kind. Section state lasts for the session. Search
+temporarily opens matching groups and limits the rendered results; Show more reveals the next
+batch. Routine rows show kind, parameter count and CLR/encrypted marks and offer Show details,
+without canvas visibility controls. Triggers are found through the palette; each result names its
+parent. The palette searches names and kinds of all object types, including off-diagram routines,
+without scanning SQL bodies. Incomplete, unrecorded, omitted or failed code reads have a separate
+footer so a short list cannot claim that other routines do not exist.
+
+The desktop Inspector uses a separate fact reader (`moduleDetails.ts`) and presentation
+(`moduleDetailsView.ts`) for module pages. Trigger event presentation is shared with the
+entity sections, whose renderers remain exhaustive.
+Procedures show Parameters then Definition; functions insert Returns; triggers show Runs then
+Definition. Parameters remain in declaration order and show OUTPUT/READONLY marks. T-SQL
+defaults are read only in the module's stored source. Scalar functions show their return type;
+table functions reuse the columns renderer for the structural result, without separate internal
+DEFAULT expressions (ADR-043). A trigger's parent is a link only when the parent can be shown.
+Runs keeps First/Last attached to each event, explains AFTER and INSTEAD OF, and marks disabled
+and NOT FOR REPLICATION states. The TRUNCATE note applies only to DELETE triggers on tables;
+the bulk-import note applies only to INSERT triggers. View Definition is a shared metadata
+section with recorded WITH CHECK OPTION and indexed-view facts; only the desktop renderer
+resolves and displays its source.
+
+Every definition has real state text and an icon: readable SQL, not visible to the login with
+Why to the Access report, encrypted through WITH ENCRYPTION, CLR assembly, not recorded in an
+older project, or not read with its actual option/failure/timeout reason. Unknown definitions are
+handled conservatively as not visible. Kept objects and kept definitions carry their last checked
+dates; an encrypted or unreadable state retained after a failed read also keeps its date. Missing
+text never renders an empty code editor. SQL Server returns an encrypted module's source to no
+login through the catalog, including the owner; this statement is about catalog access.
+
+`CodeViewer` is a focused, read-only `pre/code` surface with line numbers, optional wrapping,
+Copy, and literal search with next/previous matches. It introduces no editor dependency or
+syntax parser. `codeWrap` is a persisted interface setting, false by default. The source remains
+literal React text, including hostile markup, and copying uses the exact original string rather
+than line-number markup or normalized SQL. A shared CopyButton gives the same success
+and failure feedback to the source, rule SQL and access-report script.
+
+The `[data-keyboard-owner="code"]` region owns Ctrl+F, F3 and Shift+F3. Ctrl+A selects only the
+source when it is focused; the find field keeps ordinary text selection. Escape closes find
+first, then returns to the inspected object's home. Tab is unbound, the source retains its native
+context menu, and the global shortcut/browser guard consults the same ownership helper before
+handling a key. Outside the viewer Ctrl+F still searches Objects. Copy, wrapping and search never
+change the project or the stored source. No export gains SQL text or module pages.
+
+Evidence: Microsoft's [CREATE TRIGGER](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-trigger-transact-sql?view=sql-server-ver16)
+defines AFTER, INSTEAD OF, replication and TRUNCATE behavior; [sp_settriggerorder](https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sp-settriggerorder-transact-sql?view=sql-server-ver16)
+defines order per statement; [BULK INSERT](https://learn.microsoft.com/en-us/sql/t-sql/statements/bulk-insert-transact-sql?view=sql-server-ver16)
+and [bcp](https://learn.microsoft.com/en-us/sql/tools/bcp/bcp-utility?view=sql-server-ver16) define the
+FIRE_TRIGGERS requirement. Focused tests cover target precedence, parameter/return mapping,
+conditional trigger notes, definition states and retained dates using the real English and
+Spanish catalogues, plus desktop rendering and source escaping. Acceptance of the complete
+change also requires the real-app keyboard, focus, theme and language checks in the release
+checklist; unit tests alone do not establish them.
+
+Why: code is useful beside the diagram without being a diagram element. Separate module pages
+and a plain source surface keep selection, keyboard ownership and export privacy explicit while
+reusing the existing column renderer, language system and focus behavior.
 
 ## Milestones
 

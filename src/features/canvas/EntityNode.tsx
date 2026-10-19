@@ -1,9 +1,19 @@
 import { Handle, Position } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
-import { ChevronDown, ChevronRight, Glasses, KeyRound, Link2, Table2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Glasses,
+  KeyRound,
+  Link2,
+  Table2,
+  Zap,
+  ZapOff,
+} from "lucide-react";
 import { memo } from "react";
 
 import { formatDataType } from "@/features/schema/dataType";
+import { displayIdentifier, qualifiedNameLabel } from "@/features/schema/entities";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { classNames } from "@/shared/ui/classNames";
 
@@ -11,6 +21,7 @@ import styles from "./EntityNode.module.css";
 import { useCanvasUiStore } from "./canvasUiStore";
 import type { ColumnRole } from "./geometry";
 import type { EntityNode as EntityNodeType } from "./graph";
+import { triggerBadgeLabel } from "./triggerBadgeText";
 
 function RoleIcon({ role }: { role: ColumnRole }) {
   if (role === "plain") {
@@ -33,12 +44,16 @@ function RoleIcon({ role }: { role: ColumnRole }) {
  * the highlight is read, so pointing at a rule redraws the cards it involves and no others.
  */
 function EntityNodeComponent({ id, data, selected }: NodeProps<EntityNodeType>) {
-  const { t, tCount } = useI18n();
+  const translator = useI18n();
+  const { t, tCount } = translator;
   const ruleColumns = useCanvasUiStore((state) => state.ruleHighlight?.columns.get(id));
   const { entity, rows, detailLevel, isCollapsed, isCollapsible, isHighlighted } = data;
   const isView = entity.kind === "view";
   const isRuleTarget = ruleColumns !== undefined && ruleColumns.size > 0;
   const CollapseIcon = isCollapsed ? ChevronRight : ChevronDown;
+  const TriggerIcon = entity.triggers?.allDisabled ? ZapOff : Zap;
+  const triggerLabel =
+    entity.triggers === null ? null : triggerBadgeLabel(entity.triggers, translator);
 
   return (
     <div
@@ -49,7 +64,7 @@ function EntityNodeComponent({ id, data, selected }: NodeProps<EntityNodeType>) 
         isHighlighted && styles.highlighted,
         isRuleTarget && styles.ruleTarget,
       )}
-      title={entity.key}
+      title={qualifiedNameLabel(entity.name)}
     >
       <Handle
         type="target"
@@ -71,10 +86,24 @@ function EntityNodeComponent({ id, data, selected }: NodeProps<EntityNodeType>) 
           <Table2 className={styles.kindIcon} aria-label={t("entity.table")} />
         )}
         <span className={styles.title}>
-          <span className={styles.schema}>{entity.name.schema}.</span>
-          <span className={styles.name}>{entity.name.name}</span>
+          <span className={styles.schema}>{displayIdentifier(entity.name.schema)}.</span>
+          <span className={styles.name}>{displayIdentifier(entity.name.name)}</span>
         </span>
         {isView ? <span className={styles.kindLabel}>{t("entity.view.label")}</span> : null}
+        {entity.triggers === null ? null : (
+          <span
+            role="img"
+            className={classNames(
+              styles.triggers,
+              entity.triggers.allDisabled && styles.triggersDisabled,
+            )}
+            aria-label={triggerLabel ?? undefined}
+            title={triggerLabel ?? undefined}
+          >
+            <TriggerIcon className={styles.triggerIcon} aria-hidden="true" />
+            <span aria-hidden="true">{entity.triggers.count}</span>
+          </span>
+        )}
         <span className={styles.count} aria-label={tCount("entity.columns", entity.columns.length)}>
           {entity.columns.length}
         </span>

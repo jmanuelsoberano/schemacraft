@@ -15,6 +15,7 @@ import type {
   DatabaseDescription,
   ForeignKey,
   ForeignKeyToInvisibleTable,
+  Index,
   InspectionOptions,
   InspectionStage,
   SchemaAccess,
@@ -28,8 +29,15 @@ import type {
 import type { ConnectionBackend } from "./connectionBackend";
 import { OperationError } from "./operationError";
 import { nameKey, observedAccess, predictedAccess } from "./previewAccess";
+import { moduleDefinitions, previewProgrammability, withCodeCoverage } from "./previewCode";
+import type { PreviewCodeFailure } from "./previewCode";
 
-const EVERYTHING: InspectionOptions = { schemas: [], includeViews: true };
+const EVERYTHING: InspectionOptions = {
+  schemas: [],
+  includeViews: true,
+  includeProgrammability: true,
+  includeModuleDefinitions: true,
+};
 
 const STAGES: readonly InspectionStage[] = [
   "connecting",
@@ -39,6 +47,8 @@ const STAGES: readonly InspectionStage[] = [
   "readingIndexes",
   "readingForeignKeys",
   "readingConstraints",
+  "readingProgrammability",
+  "readingModuleDefinitions",
   "assembling",
   "completed",
 ];
@@ -138,19 +148,22 @@ function seesSchema(login: PreviewLogin, schema: string): boolean {
 
 /** Permission facts the access probe reports for `login`. Every login sees its own denials. */
 function probeOf(login: PreviewLogin): AccessProbe {
-  const schemas = (login.holdsFixture ? ["dbo", "hr", "sales"] : ["dbo"]).map(
+  const schemas = (login.holdsFixture ? ["code_only", "dbo", "hr", "sales"] : ["dbo"]).map(
     (name): SchemaAccess => ({
       name,
       canReadDefinitions: grantIn(login, name).definitions,
       canReadData: grantIn(login, name).data,
       isDenied: false,
-      hasVisibleObjects: login.holdsFixture && seesSchema(login, name),
+      hasVisibleObjects: name !== "code_only" && login.holdsFixture && seesSchema(login, name),
+      hasVisibleProgrammability: login.holdsFixture && grantIn(login, name).definitions,
+      isExecuteDenied: false,
     }),
   );
   return {
     canReadDefinitions: login.database.definitions,
     canReadData: login.database.data,
     explicitDenials: 0,
+    executeDenials: 0,
     seesObjects: schemas.some((schema) => schema.hasVisibleObjects),
     schemas,
     databaseUser: login.databaseUser,
@@ -207,9 +220,36 @@ function column(name: string, declaration: string, traits: ColumnTraits = {}): C
   };
 }
 
-/** A `CHECK` constraint with its expression in the normal form SQL Server stores. */
-function check(name: string, text: string, isEnabled = true): CheckConstraint {
-  return { name, expression: { status: "readable", text }, isEnabled };
+/**
+ * A `CHECK` constraint with its expression in the normal form SQL Server stores. A disabled one
+ * is never trusted; an enabled one is unless it was enabled again without checking the rows.
+ */
+function check(
+  name: string,
+  text: string,
+  isEnabled = true,
+  isTrusted = isEnabled,
+): CheckConstraint {
+  return { name, expression: { status: "readable", text }, isEnabled, isTrusted };
+}
+
+/** An index as a 1.2 capture records it: enabled, without a filter or included columns. */
+function tableIndex(
+  name: string,
+  kind: Index["kind"],
+  columns: string[],
+  state: Partial<Pick<Index, "includedColumns" | "isFiltered" | "isEnabled">> = {},
+): Index {
+  return {
+    name,
+    columns,
+    kind,
+    isClustered: false,
+    includedColumns: [],
+    isFiltered: false,
+    isEnabled: true,
+    ...state,
+  };
 }
 
 function table(schema: string, name: string, definition: Omit<Table, "name">): Table {
@@ -230,7 +270,10 @@ interface PreviewDatabase {
  * The fixture database every preview server holds, in the order inspectors list it. It has a
  * unique and a non-unique index, `DEFAULT` and `CHECK` texts in stored form (a reversed `IN`
  * chain, a `LIKE`, a function call and a disabled constraint), a computed column, a disabled
- * and a `SET NULL` foreign key, and keys across schemas, so the schema filter drops some.
+ * and a `SET NULL` foreign key, and keys across schemas, so the schema filter drops some. Every
+ * state is recorded as a 1.2 capture records it: an index with an included column, a filtered
+ * unique index and a disabled unique constraint on the columns of keys, a `CHECK` and a key SQL
+ * Server marks as not trusted, and the rest enabled and trusted.
  */
 function fixtureDatabase(): PreviewDatabase {
   return {
@@ -243,18 +286,17 @@ function fixtureDatabase(): PreviewDatabase {
           column("Notes", "NVARCHAR(MAX)", { isNullable: true }),
           column("CreatedAt", "DATETIME2(7)", { defaultText: "(sysutcdatetime())" }),
         ],
-        primaryKey: { name: "PK_Customers", columns: ["CustomerId"], isClustered: true },
-        indexes: [
-          {
-            name: "UX_Customers_Email",
-            columns: ["Email"],
-            kind: "uniqueIndex",
-            isClustered: false,
-          },
-        ],
+        primaryKey: {
+          name: "PK_Customers",
+          columns: ["CustomerId"],
+          isClustered: true,
+          isEnabled: true,
+        },
+        indexes: [tableIndex("UX_Customers_Email", "uniqueIndex", ["Email"])],
         checkConstraints: [
           check("CK_Customers_Email", "([Email] like '%_@_%')"),
-          check("CK_Customers_Name", "([dbo].[fn_valid_name]([Name])=(1))"),
+          // Enabled again without checking the rows already there.
+          check("CK_Customers_Name", "([dbo].[fn_valid_name]([Name])=(1))", true, false),
         ],
       }),
       table("hr", "Employees", {
@@ -264,7 +306,12 @@ function fixtureDatabase(): PreviewDatabase {
           column("ManagerId", "INT", { isNullable: true }),
           column("HiredOn", "DATE", { defaultText: "(CONVERT([date],getdate()))" }),
         ],
-        primaryKey: { name: "PK_Employees", columns: ["EmployeeId"], isClustered: true },
+        primaryKey: {
+          name: "PK_Employees",
+          columns: ["EmployeeId"],
+          isClustered: true,
+          isEnabled: true,
+        },
         indexes: [],
         checkConstraints: [check("CK_Employees_Manager", "([ManagerId]<>[EmployeeId])", false)],
       }),
@@ -281,6 +328,7 @@ function fixtureDatabase(): PreviewDatabase {
           name: "PK_OrderLines",
           columns: ["OrderId", "LineNumber"],
           isClustered: true,
+          isEnabled: true,
         },
         indexes: [],
         checkConstraints: [check("CK_OrderLines_Quantity", "([Quantity]>(0))")],
@@ -293,14 +341,17 @@ function fixtureDatabase(): PreviewDatabase {
           column("PlacedAt", "DATETIME2(7)", { defaultText: "(sysutcdatetime())" }),
           column("Status", "CHAR(1)", { defaultText: "('N')" }),
         ],
-        primaryKey: { name: "PK_Orders", columns: ["OrderId"], isClustered: true },
+        primaryKey: { name: "PK_Orders", columns: ["OrderId"], isClustered: true, isEnabled: true },
         indexes: [
-          {
-            name: "IX_Orders_CustomerId",
-            columns: ["CustomerId"],
-            kind: "nonUnique",
-            isClustered: false,
-          },
+          tableIndex("IX_Orders_CustomerId", "nonUnique", ["CustomerId"], {
+            includedColumns: ["PlacedAt"],
+          }),
+          // One open order per customer: a unique index over the rows of a filter only.
+          tableIndex("UX_Orders_OpenCustomer", "uniqueIndex", ["CustomerId"], { isFiltered: true }),
+          // A unique constraint whose index is disabled limits nothing.
+          tableIndex("UQ_Orders_SalesRep", "uniqueConstraint", ["SalesRepId"], {
+            isEnabled: false,
+          }),
         ],
         checkConstraints: [
           check(
@@ -327,8 +378,10 @@ function fixtureDatabase(): PreviewDatabase {
         onDelete: "noAction",
         onUpdate: "noAction",
         isEnabled: false,
+        isTrusted: false,
       },
       {
+        // Added WITH NOCHECK: enabled, not trusted.
         name: "FK_OrderLines_Orders",
         referencingTable: { schema: "sales", name: "OrderLines" },
         referencedTable: { schema: "sales", name: "Orders" },
@@ -336,6 +389,7 @@ function fixtureDatabase(): PreviewDatabase {
         onDelete: "cascade",
         onUpdate: "noAction",
         isEnabled: true,
+        isTrusted: false,
       },
       {
         name: "FK_Orders_Customers",
@@ -345,6 +399,7 @@ function fixtureDatabase(): PreviewDatabase {
         onDelete: "noAction",
         onUpdate: "cascade",
         isEnabled: true,
+        isTrusted: true,
       },
       {
         name: "FK_Orders_SalesRep",
@@ -354,6 +409,7 @@ function fixtureDatabase(): PreviewDatabase {
         onDelete: "setNull",
         onUpdate: "noAction",
         isEnabled: true,
+        isTrusted: true,
       },
     ],
   };
@@ -386,6 +442,7 @@ export function previewSnapshot(
   database: string,
   access: PreviewAccess = "full",
   options: InspectionOptions = EVERYTHING,
+  codeFailure?: PreviewCodeFailure,
 ): SchemaSnapshot {
   const login = LOGINS[access];
   const fixture: PreviewDatabase = login.holdsFixture
@@ -420,6 +477,7 @@ export function previewSnapshot(
         onDelete: key.onDelete,
         onUpdate: key.onUpdate,
         isEnabled: key.isEnabled,
+        ...(key.isTrusted === undefined ? {} : { isTrusted: key.isTrusted }),
       });
     }
   }
@@ -427,12 +485,24 @@ export function previewSnapshot(
   // Empty lists are left out, as the Rust side leaves them out of the JSON.
   const invisible =
     toInvisibleTables.length > 0 ? { foreignKeysToInvisibleTables: toInvisibleTables } : {};
-  const scope = { schemas: options.schemas, includeViews: options.includeViews };
+  const scope = { ...options };
+  const programmability = previewProgrammability(
+    { tables, views },
+    options,
+    (schema) => grantIn(login, schema).definitions,
+    login.holdsFixture,
+    codeFailure,
+    database === "SchemaCraftCodeExplorer",
+  );
   return {
     databaseName: database,
     serverVersion: "Microsoft SQL Server 2022 (preview)",
     extractedAt: new Date().toISOString(),
-    access: observedAccess(probeOf(login), scope, { tables, views, ...invisible }),
+    access: withCodeCoverage(
+      observedAccess(probeOf(login), scope, { tables, views, ...invisible }),
+      programmability,
+    ),
+    programmability,
     tables,
     views,
     foreignKeys,
@@ -460,6 +530,16 @@ function stageCount(stage: InspectionStage, snapshot: SchemaSnapshot): number | 
       return snapshot.foreignKeys.length + (snapshot.foreignKeysToInvisibleTables?.length ?? 0);
     case "readingConstraints":
       return sum(snapshot.tables.map((item) => item.checkConstraints.length));
+    case "readingProgrammability":
+      return snapshot.programmability === undefined
+        ? 0
+        : snapshot.programmability.routines.length + snapshot.programmability.triggers.length;
+    case "readingModuleDefinitions":
+      return snapshot.programmability === undefined
+        ? 0
+        : moduleDefinitions(snapshot.programmability).filter(
+            (definition) => definition.status === "readable",
+          ).length;
     case "completed":
       return snapshot.tables.length;
   }
@@ -483,7 +563,13 @@ export const previewConnectionBackend: ConnectionBackend = {
 
   async listDatabases(): Promise<string[]> {
     await wait(300);
-    return ["AdventureWorks2022", "Northwind", "SchemaCraftFixture"];
+    return [
+      "AdventureWorks2022",
+      "Northwind",
+      "SchemaCraftCode",
+      "SchemaCraftCodeExplorer",
+      "SchemaCraftFixture",
+    ];
   },
 
   async describeDatabase(settings): Promise<DatabaseDescription> {
@@ -493,7 +579,19 @@ export const previewConnectionBackend: ConnectionBackend = {
       schemas: probe.schemas
         .filter((schema) => schema.hasVisibleObjects)
         .map((schema) => schema.name),
-      access: predictedAccess(probe),
+      programmabilityOnlySchemas: probe.seesObjects
+        ? probe.schemas
+            .filter((schema) => schema.hasVisibleProgrammability && !schema.hasVisibleObjects)
+            .map((schema) => schema.name)
+        : [],
+      access: {
+        ...predictedAccess(probe),
+        coverage: {
+          ...predictedAccess(probe).coverage,
+          programmability: probe.canReadDefinitions ? "complete" : "partial",
+          moduleDefinitions: probe.canReadDefinitions ? "complete" : "partial",
+        },
+      },
     };
   },
 
@@ -512,8 +610,21 @@ export const previewConnectionBackend: ConnectionBackend = {
       settings.database ?? "Northwind",
       previewAccessFor(settings),
       options,
+      settings.host.includes("code-timeout")
+        ? "timeout"
+        : settings.host.includes("code-fail")
+          ? "objects"
+          : settings.host.includes("deny-modules")
+            ? "definitions"
+            : undefined,
     );
     for (const stage of STAGES) {
+      if (stage === "readingProgrammability" && !options.includeProgrammability) continue;
+      if (
+        stage === "readingModuleDefinitions" &&
+        (!options.includeProgrammability || !options.includeModuleDefinitions)
+      )
+        continue;
       await wait(settings.host.includes("slow") ? 900 : 350);
       if (cancelledJobs.has(jobId)) {
         cancelledJobs.delete(jobId);

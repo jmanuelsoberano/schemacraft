@@ -31,6 +31,7 @@ function scopeOf(snapshot: SchemaSnapshot, overrides: Partial<DetailsScope> = {}
     carriedOver: snapshot.carriedOver ?? [],
     isSchemaFiltered: false,
     isDiagramOnly: false,
+    definitions: "included",
     ...overrides,
   };
 }
@@ -75,8 +76,9 @@ function asFormatOne(snapshot: SchemaSnapshot): SchemaSnapshot {
         ? { ...column, defaultExpression: { status: "notRecorded" } }
         : column,
     ),
+    // 1.0 recorded neither the state nor the trust of a constraint.
     checkConstraints: table.checkConstraints.map((constraint): CheckConstraint => ({
-      ...constraint,
+      name: constraint.name,
       expression: { status: "notRecorded" },
       isEnabled: null,
     })),
@@ -86,7 +88,7 @@ function asFormatOne(snapshot: SchemaSnapshot): SchemaSnapshot {
 }
 
 describe("describeObjectDetails", () => {
-  it("gives a table six sections in a fixed order and a view its columns only", () => {
+  it("gives tables and views their shared sections in a fixed order", () => {
     const orders = detailsOf(full, "sales.Orders");
     expect(orders.sections.map((section) => section.kind)).toEqual(TABLE_SECTIONS);
     expect(orders).toMatchObject({
@@ -98,7 +100,11 @@ describe("describeObjectDetails", () => {
     });
 
     const recentOrders = detailsOf(full, "sales.RecentOrders");
-    expect(recentOrders.sections.map((section) => section.kind)).toEqual(["columns"]);
+    expect(recentOrders.sections.map((section) => section.kind)).toEqual([
+      "columns",
+      "triggers",
+      "viewDefinition",
+    ]);
     expect(recentOrders).toMatchObject({ kind: "view", columnCount: 2 });
     expect(sectionOf(recentOrders, "columns").items.map((column) => column.name)).toEqual([
       "OrderId",
@@ -165,35 +171,79 @@ describe("describeObjectDetails", () => {
     const customers = detailsOf(full, "dbo.Customers");
     expect(sectionOf(customers, "primaryKey")).toEqual({
       kind: "primaryKey",
-      items: [{ name: "PK_Customers", columns: ["CustomerId"], isClustered: true }],
+      items: [
+        { name: "PK_Customers", columns: ["CustomerId"], isClustered: true, isEnabled: true },
+      ],
       completeness: { status: "complete" },
     });
     expect(sectionOf(customers, "indexes")).toEqual({
       kind: "indexes",
       items: [
-        { name: "UX_Customers_Email", columns: ["Email"], kind: "uniqueIndex", isClustered: false },
+        {
+          name: "UX_Customers_Email",
+          columns: ["Email"],
+          kind: "uniqueIndex",
+          isClustered: false,
+          includedColumns: [],
+          isFiltered: false,
+          isEnabled: true,
+        },
       ],
       completeness: { status: "complete" },
     });
     const checks = sectionOf(customers, "checks").items;
     expect(
-      checks.map(({ name, expression, isEnabled }) => ({ name, expression, isEnabled })),
+      checks.map(({ name, expression, isEnabled, isTrusted }) => ({
+        name,
+        expression,
+        isEnabled,
+        isTrusted,
+      })),
     ).toEqual([
       {
         name: "CK_Customers_Email",
         expression: { status: "readable", text: "([Email] like '%_@_%')" },
         isEnabled: true,
+        isTrusted: true,
       },
       {
         name: "CK_Customers_Name",
         expression: { status: "readable", text: "([dbo].[fn_valid_name]([Name])=(1))" },
         isEnabled: true,
+        isTrusted: false,
       },
     ]);
-    // Each is read against the columns of its own table: in words, or as SQL the reader cannot word.
+    // Each is read against the columns of its own table: in words, or as SQL the reader cannot
+    // word, which still says that the rows already there may not follow it.
     expect(checks.map((check) => check.reading)).toMatchObject([
       { status: "read", columns: ["Email"], sql: "([Email] like '%_@_%')" },
-      { status: "unread", columns: ["Name"], sql: "([dbo].[fn_valid_name]([Name])=(1))" },
+      {
+        status: "unread",
+        rules: [{ kind: "sentence", text: { key: "rule.trust.notVerified" } }],
+        columns: ["Name"],
+        sql: "([dbo].[fn_valid_name]([Name])=(1))",
+      },
+    ]);
+
+    const orders = detailsOf(full, "sales.Orders");
+    expect(
+      sectionOf(orders, "indexes").items.map(
+        ({ name, includedColumns, isFiltered, isEnabled }) => ({
+          name,
+          includedColumns,
+          isFiltered,
+          isEnabled,
+        }),
+      ),
+    ).toEqual([
+      {
+        name: "IX_Orders_CustomerId",
+        includedColumns: ["PlacedAt"],
+        isFiltered: false,
+        isEnabled: true,
+      },
+      { name: "UX_Orders_OpenCustomer", includedColumns: [], isFiltered: true, isEnabled: true },
+      { name: "UQ_Orders_SalesRep", includedColumns: [], isFiltered: false, isEnabled: false },
     ]);
 
     const employees = detailsOf(full, "hr.Employees");
@@ -311,7 +361,7 @@ describe("describeObjectDetails", () => {
   });
 
   it("lists keys to tables the login cannot see and doubts the incoming ones under partial access", () => {
-    expect(partial.access?.coverage).toEqual({ objects: "partial", definitions: "partial" });
+    expect(partial.access?.coverage).toMatchObject({ objects: "partial", definitions: "partial" });
     const orders = detailsOf(partial, "sales.Orders");
 
     const references = sectionOf(orders, "references");
@@ -392,7 +442,8 @@ describe("describeObjectDetails", () => {
         name: "CK_Orders_Status",
         expression: { status: "notRecorded" },
         isEnabled: null,
-        reading: { status: "notRecorded" },
+        isTrusted: null,
+        reading: { status: "notRecorded", rules: [] },
       },
     ]);
     expect(sectionOf(orders, "references").completeness).toEqual({ status: "notRecorded" });
@@ -447,6 +498,7 @@ describe("describeObjectDetails", () => {
     const orders = detailsOf(partial, "sales.Orders", { carriedOver });
     expect(orders.notCheckedSince).toBe(READ_AT);
     for (const section of orders.sections) {
+      if (section.kind === "viewDefinition") continue;
       expect(section.completeness, section.kind).toEqual({ status: "notChecked", readAt: READ_AT });
     }
     const view = detailsOf(partial, "sales.RecentOrders", { carriedOver });

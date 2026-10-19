@@ -3,6 +3,9 @@ import type { LucideIcon } from "lucide-react";
 import { useId } from "react";
 
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
+import { useProjectStore } from "@/features/project/projectStore";
+import { describeViewDefinition } from "@/features/schema/moduleDetails";
+import { presentModuleDefinition } from "@/features/schema/moduleDetailsView";
 import type {
   BadgeView,
   ColumnsSectionView,
@@ -12,6 +15,7 @@ import type {
   SectionView,
   ValueState,
   ValueView,
+  TriggersSectionView,
 } from "@/features/schema/objectDetailsView";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { Tooltip } from "@/shared/ui/Tooltip";
@@ -20,6 +24,7 @@ import { classNames } from "@/shared/ui/classNames";
 import styles from "./InspectorSections.module.css";
 import { RuleItem } from "./RuleItem";
 import type { TableLink } from "./RuleItem";
+import { DefinitionSection } from "./DefinitionSection";
 
 /*
  * The sections of the Inspector draw the DetailsView the viewer's detail panel draws, one
@@ -57,6 +62,8 @@ interface SectionProps {
  */
 export function InspectorSection({ section, entityKey, onShowAccessReport }: SectionProps) {
   const headingId = useId();
+  if (section.kind === "viewDefinition" && section.included)
+    return <ViewDefinition entityKey={entityKey} onShowAccessReport={onShowAccessReport} />;
   const explains = section.completeness === "notVisible";
   return (
     <section className={styles.section} aria-labelledby={headingId}>
@@ -108,7 +115,83 @@ function SectionBody({ section, entityKey, onShowAccessReport }: SectionProps) {
     case "references":
     case "referencedBy":
       return <RelationList section={section} onShowAccessReport={onShowAccessReport} />;
+    case "triggers":
+      return <TriggerList section={section} />;
+    case "viewDefinition":
+      return (
+        <>
+          {section.badges.map((badge) => (
+            <span key={badge.label} className={styles.badge} title={badge.hint}>
+              {badge.label}
+            </span>
+          ))}
+          <p className={styles.note}>{section.stateLabel}</p>
+          {section.explanation === null ? null : (
+            <p className={styles.note}>{section.explanation}</p>
+          )}
+        </>
+      );
   }
+}
+
+/** Only this desktop adapter resolves source text; shared entity details contain metadata. */
+function ViewDefinition({
+  entityKey,
+  onShowAccessReport,
+}: Pick<SectionProps, "entityKey" | "onShowAccessReport">) {
+  const snapshot = useProjectStore((state) => state.project?.content.snapshot ?? null);
+  const translator = useI18n();
+  const facts = snapshot === null ? null : describeViewDefinition(snapshot, entityKey);
+  return facts === null ? null : (
+    <DefinitionSection
+      section={presentModuleDefinition(facts, translator)}
+      onShowAccessReport={onShowAccessReport}
+    />
+  );
+}
+
+function TriggerList({ section }: { section: TriggersSectionView }) {
+  const selectModule = useCanvasUiStore((state) => state.selectModule);
+  return (
+    <ul className={styles.list}>
+      {section.items.map((trigger) => (
+        <li key={trigger.name} className={styles.item}>
+          <div className={styles.itemHead}>
+            <span className={styles.mono}>{trigger.name}</span>
+            {trigger.badges.map((badge) => (
+              <span key={badge} className={styles.badge}>
+                {badge}
+              </span>
+            ))}
+          </div>
+          {trigger.events.map((event, index) => (
+            <p key={index} className={styles.note}>
+              {event.parts.map((part, partIndex) =>
+                part.kind === "text" ? (
+                  part.text
+                ) : (
+                  <code key={partIndex} className={styles.mono}>
+                    {part.value}
+                  </code>
+                ),
+              )}
+              {event.order === null ? null : <span className={styles.badge}>{event.order}</span>}
+            </p>
+          ))}
+          {trigger.hint === null ? null : <p className={styles.hint}>{trigger.hint}</p>}
+          <button
+            type="button"
+            className={styles.why}
+            onClick={() => {
+              selectModule(trigger.ref, { focus: true });
+            }}
+          >
+            {trigger.openLabel}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 interface ColumnsTableProps {
@@ -121,7 +204,7 @@ interface ColumnsTableProps {
  * Column, type and nullability per row; the badges follow the name and the default the type.
  * The columns of a rule pointed at are tinted, as they are on the canvas card.
  */
-function ColumnsTable({ section, entityKey, onShowAccessReport }: ColumnsTableProps) {
+export function ColumnsTable({ section, entityKey, onShowAccessReport }: ColumnsTableProps) {
   const ruleColumns = useCanvasUiStore((state) => state.ruleHighlight?.columns.get(entityKey));
   return (
     <table className={styles.table}>
@@ -166,8 +249,9 @@ interface ConstraintListProps {
 }
 
 /**
- * Primary key, indexes and `CHECK`s: the name with its columns and badges, then for a `CHECK`
- * its rule in words, or the marked words for a text the capture could not read.
+ * Primary key, indexes and `CHECK`s: the name with its columns and badges, an index's `INCLUDE`
+ * line, then for a `CHECK` its rule in words, or the marked words for a text the capture could
+ * not read, under what is still known about it in words.
  */
 function ConstraintList({ section, onShowAccessReport }: ConstraintListProps) {
   return (
@@ -187,21 +271,31 @@ function ConstraintList({ section, onShowAccessReport }: ConstraintListProps) {
           </>
         );
         if (item.rule !== null) {
-          // A text kept from an earlier read is worded too; its date says how far it holds.
-          const hint = item.expression?.state === "notChecked" ? item.expression.hint : null;
+          // A text kept from an earlier read is worded too; its date says how far it holds. A
+          // text the capture could not read keeps its marked words under what is still known.
+          const { expression } = item;
+          const hint = expression?.state === "notChecked" ? expression.hint : null;
+          const footer =
+            hint !== null ? (
+              <div className={styles.hint}>{hint}</div>
+            ) : expression !== null &&
+              (expression.state === "notAvailable" || expression.state === "notRecorded") ? (
+              <div className={styles.subLine}>
+                <Value value={expression} onShowAccessReport={onShowAccessReport} />
+              </div>
+            ) : null;
           return (
-            <RuleItem
-              key={item.name}
-              rule={item.rule}
-              head={head}
-              link={null}
-              footer={hint === null ? null : <div className={styles.hint}>{hint}</div>}
-            />
+            <RuleItem key={item.name} rule={item.rule} head={head} link={null} footer={footer} />
           );
         }
         return (
           <li key={item.name} className={styles.item}>
             <div className={styles.itemHead}>{head}</div>
+            {item.include === null ? null : (
+              <div className={classNames(styles.subLine, styles.mono, styles.secondary)}>
+                {item.include}
+              </div>
+            )}
             {item.expression === null ? null : (
               <div className={styles.subLine}>
                 <Value value={item.expression} onShowAccessReport={onShowAccessReport} />

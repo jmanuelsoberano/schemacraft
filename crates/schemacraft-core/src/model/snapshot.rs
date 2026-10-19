@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use super::{
-    AccessProfile, CarriedFact, ForeignKey, ForeignKeyToInvisibleTable, QualifiedName, Table,
-    UnknownFields, View,
+    AccessProfile, CarriedFact, ForeignKey, ForeignKeyToInvisibleTable, Programmability,
+    QualifiedName, Table, UnknownFields, View,
 };
 
 /// Point-in-time picture of a database schema as extracted by an inspector.
@@ -42,6 +42,13 @@ pub struct SchemaSnapshot {
     /// the moment each was last read. See [`SchemaSnapshot::with_unchecked_facts_from`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub carried_over: Vec<CarriedFact>,
+    /// Procedures, functions, DML triggers and the code of views; `None` when the extraction
+    /// did not record them, as in every file written before 1.2, which says nothing about
+    /// whether the database has any. Code lives here and never inside a table or view, so an
+    /// export, which rebuilds the snapshot from the keys it knows, cannot carry it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub programmability: Option<Programmability>,
     /// Keys written by a newer version, kept as they are.
     #[serde(flatten)]
     #[ts(skip)]

@@ -9,9 +9,38 @@ export type EntityKind = "table" | "view";
 /** The kinds in the order lists show them: tables before views. */
 export const ENTITY_KINDS: readonly EntityKind[] = ["table", "view"];
 
-/** `schema.name`, the identity of a table or view: node id, list key and export attribute. */
+/** Escape separators and brackets reserved by module keys, preserving ordinary keys. */
+function identityPart(value: string): string {
+  return value
+    .replaceAll("%", "%25")
+    .replaceAll(".", "%2E")
+    .replaceAll("[", "%5B")
+    .replaceAll("]", "%5D");
+}
+
+/** Opaque identity of a table or view: node id, list key and export attribute, never a label. */
 export function entityKey(name: QualifiedName): string {
-  return `${name.schema}.${name.name}`;
+  return `${identityPart(name.schema)}.${identityPart(name.name)}`;
+}
+
+/** Delimit names that could obscure the boundary in a qualified display name. */
+export function displayIdentifier(name: string): string {
+  return name.includes(".") || name.includes("[") || name.includes("]")
+    ? `[${name.replaceAll("]", "]]")}]`
+    : name;
+}
+
+/** Human-readable qualified name, independent of the opaque identity used for lookups. */
+export function qualifiedNameLabel(name: QualifiedName): string {
+  return `${displayIdentifier(name.schema)}.${displayIdentifier(name.name)}`;
+}
+
+/** Search both the original spelling and the unambiguous label a user can copy. */
+export function matchesQualifiedName(name: QualifiedName, needle: string): boolean {
+  return (
+    `${name.schema}.${name.name}`.toLowerCase().includes(needle) ||
+    qualifiedNameLabel(name).toLowerCase().includes(needle)
+  );
 }
 
 /**
@@ -20,7 +49,7 @@ export function entityKey(name: QualifiedName): string {
  * `data-relation` in an export, so the details of a key can point at the line drawn for it.
  */
 export function foreignKeyId(key: Pick<ForeignKey, "referencingTable" | "name">): string {
-  return `${entityKey(key.referencingTable)}.${key.name}`;
+  return `${entityKey(key.referencingTable)}.${identityPart(key.name)}`;
 }
 
 /** A table or view as the lists show it. */
@@ -113,7 +142,7 @@ export function filterEntityGroups(
       sections: group.sections
         .map((section) => ({
           kind: section.kind,
-          entities: section.entities.filter((entity) => entity.key.toLowerCase().includes(needle)),
+          entities: section.entities.filter((entity) => matchesQualifiedName(entity, needle)),
         }))
         .filter((section) => section.entities.length > 0),
     }))

@@ -13,6 +13,9 @@ pub(super) fn upgrade(document: &mut Value, from: u32) {
     if from < 2 {
         format_1_to_2(document);
     }
+    if from < 3 {
+        format_2_to_3(document);
+    }
 }
 
 /// Format 2 tells an unreadable `CHECK` or `DEFAULT` text apart from a missing one.
@@ -53,6 +56,20 @@ fn format_1_to_2(document: &mut Value) {
     }
     if let Some(root) = document.as_object_mut() {
         root.insert("formatVersion".to_string(), json!(2));
+        root.insert("minReaderVersion".to_string(), json!(2));
+    }
+}
+
+/// Format 3 adds facts and changes none, so the content of a format 2 document is already a
+/// valid format 3 one: only the header moves.
+///
+/// What format 2 could not hold stays absent, and absent means not recorded: the snapshot has
+/// no `programmability`, because its code was never read, and its indexes, keys and constraints
+/// no enabled, filtered, included-column or trust state. None of them reads as "none" or
+/// "false".
+fn format_2_to_3(document: &mut Value) {
+    if let Some(root) = document.as_object_mut() {
+        root.insert("formatVersion".to_string(), json!(3));
         root.insert("minReaderVersion".to_string(), json!(2));
     }
 }
@@ -131,7 +148,7 @@ mod tests {
     use super::upgrade;
     use crate::model::Definition;
     use crate::project::document::Project;
-    use crate::project::test_fixtures::FORMAT_1_PROJECT;
+    use crate::project::test_fixtures::{FORMAT_1_PROJECT, FORMAT_2_PROJECT};
 
     fn table(schema: &str, defaults: &[Value], checks: &[&str]) -> Value {
         let columns: Vec<Value> = defaults
@@ -207,11 +224,25 @@ mod tests {
     }
 
     #[test]
-    fn the_header_moves_to_format_two_without_an_access_profile() {
+    fn a_format_one_document_moves_to_format_three_without_an_access_profile() {
         let document = upgraded(&[]);
-        assert_eq!(document["formatVersion"], 2);
+        assert_eq!(document["formatVersion"], 3);
         assert_eq!(document["minReaderVersion"], 2);
         assert!(document["snapshot"].get("access").is_none());
+        assert!(document["snapshot"].get("programmability").is_none());
+    }
+
+    #[test]
+    fn a_format_two_document_only_changes_its_header() {
+        let original: Value = serde_json::from_str(FORMAT_2_PROJECT).unwrap();
+        let mut document = original.clone();
+        upgrade(&mut document, 2);
+
+        assert_eq!(document["formatVersion"], 3);
+        assert_eq!(document["minReaderVersion"], 2);
+        let mut header_restored = document;
+        header_restored["formatVersion"] = json!(2);
+        assert_eq!(header_restored, original);
     }
 
     #[test]
@@ -227,11 +258,11 @@ mod tests {
 
     #[test]
     fn current_documents_are_not_touched() {
-        let mut document = json!({ "formatVersion": 2, "snapshot": { "tables": [
+        let mut document = json!({ "formatVersion": 3, "minReaderVersion": 2, "snapshot": { "tables": [
             { "name": { "schema": "dbo", "name": "T" }, "checkConstraints": [ { "name": "CK", "expression": "" } ] }
         ] } });
         let original = document.clone();
-        upgrade(&mut document, 2);
+        upgrade(&mut document, 3);
         assert_eq!(document, original);
     }
 
@@ -241,8 +272,12 @@ mod tests {
         upgrade(&mut document, 1);
         let project: Project = serde_json::from_value(document).unwrap();
 
+        assert_eq!(project.format_version, 3);
+        assert_eq!(project.min_reader_version, 2);
         let snapshot = &project.content.snapshot;
         assert_eq!(snapshot.access, None);
+        // 1.0 never read code or index state: neither is presented as captured.
+        assert_eq!(snapshot.programmability, None);
         let orders = snapshot
             .tables
             .iter()
@@ -253,6 +288,19 @@ mod tests {
             Definition::NotRecorded
         );
         assert_eq!(orders.check_constraints[0].is_enabled, None);
+        assert_eq!(orders.check_constraints[0].is_trusted, None);
+        for table in &snapshot.tables {
+            assert_eq!(
+                table.primary_key.as_ref().and_then(|key| key.is_enabled),
+                None
+            );
+            for index in &table.indexes {
+                assert_eq!(
+                    (&index.included_columns, index.is_filtered, index.is_enabled),
+                    (&None, None, None)
+                );
+            }
+        }
         assert_eq!(
             orders.column("PlacedAt").unwrap().default_expression,
             Some(Definition::NotRecorded)

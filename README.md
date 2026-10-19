@@ -11,7 +11,8 @@ the same diagram, and renders fast, interactive diagrams with high-fidelity sing
 
 - **Reverse engineering of SQL Server.** Tables, views, columns and types, primary and foreign
   keys, indexes and check constraints, with SQL Server or Windows Authentication over encrypted
-  connections.
+  connections. SQL Server 2019 and 2022 are tested; 2016 and 2017 are supported on a best-effort
+  basis, without tests.
 - **Honest with limited logins.** A login that sees only part of a database gets everything it
   can read, with what it cannot read marked as not available, never as missing, and an access
   report that names the cause and the one grant that would complete the schema.
@@ -154,8 +155,9 @@ open a Chrome DevTools Protocol port on localhost, so a script can drive the rea
 
 ## Integration tests against SQL Server
 
-The core crate has integration tests that run against a real SQL Server 2022. They are skipped
-unless the `SCHEMACRAFT_TEST_MSSQL_*` variables are set. With Docker Desktop running:
+The core crate has integration tests that run against real SQL Server 2019 and 2022 instances.
+They are skipped unless the `SCHEMACRAFT_TEST_MSSQL_*` variables are set; with
+`SCHEMACRAFT_TEST_REQUIRE_SERVER=1`, as CI sets it, they fail instead. With Docker Desktop running:
 
 ```powershell
 .\scripts\dev-sqlserver.ps1 start
@@ -166,22 +168,42 @@ unless the `SCHEMACRAFT_TEST_MSSQL_*` variables are set. With Docker Desktop run
 ```
 
 ```powershell
-cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions -- --nocapture
+cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions --test sqlserver_code --test diagnostics_privacy -- --nocapture
 ```
 
-`sqlserver_integration` seeds four databases on the container: `SchemaCraftFixture`, covering
+The script starts SQL Server 2022 as `schemacraft-mssql` on port 14333. With `-Version 2019` it
+starts SQL Server 2019 as `schemacraft-mssql2019` on port 14334, so both can run side by side;
+pass it to `env` as well (`.\scripts\dev-sqlserver.ps1 env -Version 2019`). `env` also prints
+`SCHEMACRAFT_TEST_MSSQL_MAJOR`, the major version the server must report (16 for 2022, 15 for
+2019), which a test in each binary checks, so a run cannot test the wrong server. CI runs the
+four binaries against both versions, in one job.
+
+`sqlserver_integration` seeds six databases on the container: `SchemaCraftFixture`, covering
 keys, indexes, constraints, alias types and views; `SchemaCraftFixtureChanged`, the same fixture
 with the changes of `changes.sql`, which the refresh test reads; `SchemaCraftStress`, 200 tables
-used to check the extraction time budget; and `SchemaCraftCheckForms`, built from the golden
-check constraints in `check_forms.json` and the scratch tables of `rule_facts.sql`, which pins the
-forms SQL Server stores and the engine behaviour the readable rules rely on.
+used to check the extraction time budget; `SchemaCraftCheckForms`, built from the golden check
+constraints in `check_forms.json` and the scratch tables of `rule_facts.sql`, which pins the
+forms SQL Server stores and the engine behaviour the readable rules rely on; `SchemaCraftCode`,
+the views, triggers, procedures and functions of `code.sql`, against which the capability probe's
+counts are checked; and `SchemaCraftProbeLocked`, one table that a test locks so that the probe's
+sections that wait on it fail and report only their error number.
 `sqlserver_permissions` seeds a database of its own, an empty one and one with denials made to
 `public`, and reads them as low-privilege logins: `db_owner`, `db_datareader`, `VIEW DEFINITION`
 only, a reader with the `VIEW DEFINITION` of one schema, `SELECT` on two tables, `CONNECT` only,
-two variants of a schema `DENY` and a column `DENY`. It creates these server logins itself, with
-the `schemacraft_` prefix and a password made up for each run, so run it only against a
-disposable server such as this container. Windows Authentication cannot run in the Linux
-container; it is validated manually against a Windows instance.
+two variants of a schema `DENY` and a column `DENY`, plus, on SQL Server 2022, `VIEW DEFINITION`
+with `VIEW SECURITY DEFINITION` denied, a permission 2019 does not have, and runs the capability
+probe as several of them. It also pins procedure and function visibility with schema `SELECT`,
+schema `EXECUTE` and `VIEW DEFINITION` with an `EXECUTE` denial. It creates these server logins itself, with the `schemacraft_` prefix
+and a password made up for each run, so run it only against a disposable server such as these
+containers. `sqlserver_code` reads the `SchemaCraftCode` fixture as the owner and as a reader,
+checks parameters, table functions, view options, trigger events and firing order, encrypted and
+invisible texts, both options and bound schema filters, and verifies that a denied
+`sys.sql_modules` read keeps the tables and the saved code on refresh. `diagnostics_privacy` reads the same database as `sa`, as the `db_datareader` login and
+as a login of its own that may not read `sys.check_constraints`, logs in with a wrong password
+and opens a database the login cannot open, and checks that the diagnostic log's events hold
+counts, timings, kinds and error numbers only, with no name of the fixture, login, host, password
+or database. Windows Authentication cannot run in the Linux container; it is validated manually
+against a Windows instance.
 
 ## Browser preview
 
@@ -200,7 +222,10 @@ less than before, what appeared, what disappeared and what could not be checked.
 
 A `.scraft` file is pretty-printed JSON: a header with the format version, the oldest format a
 reader needs (`minReaderVersion`) and the save time, the connection without its password, the
-inspection options, the full snapshot and the diagram state. The snapshot also records what the
+inspection options, the full snapshot and the diagram state. Since 1.2 the snapshot can also hold
+the code of views, procedures, functions and triggers. That code is business logic and may contain
+anything its authors wrote into it, credentials included, so treat a `.scraft` file like the source
+code of the database; no export carries it. The snapshot also records what the
 login that read it could see: its permissions in that database, including the name of its
 database user, and the list of facts kept from an earlier read that it could not check. No export
 carries the permissions or the database user. An HTML export carries the access verdicts (the
@@ -211,11 +236,38 @@ object on the diagram. A project reopens
 without a database; refresh reconnects through the connection dialog and shows the differences
 before applying them, keeping the positions of surviving tables.
 
-SchemaCraft 1.1 saves projects in format 2. It opens 1.0 projects and converts them when they
-are saved, after which SchemaCraft 1.0 can no longer open them. A project saved by a newer
-version opens read-only when that version allows it: it can be rearranged and exported, but not
-saved or refreshed. Data this version does not understand is kept as it is when a project is
-saved.
+SVG, PDF and PNG carry trigger counts, with a solid badge for enabled triggers and a dashed
+badge when all are disabled. Static files explain the badge and state when triggers were not
+read. HTML also carries the names, events and states of freshly read triggers belonging to
+visible tables and views, plus recorded WITH CHECK OPTION and indexed-view settings. View
+Definition says "Not included in this file". No export carries module code or exports procedures
+and functions as objects; their names may still occur in exported CHECK and DEFAULT expressions.
+Trigger metadata kept without a fresh read is excluded from HTML and never counted as current.
+
+The connection dialog enables "Read procedures, functions and triggers" and "Save their code in
+the project" by default. The second option includes view code and can be turned off while keeping
+the object metadata; turning off the first leaves out both. Both respect the schema filter, and
+leaving out views also leaves out their code and triggers. Schemas containing only visible
+procedures or functions are offered while the first option is on. Testing the same connection
+and database again keeps the selection.
+
+Table-function columns record the returned structure. Defaults on a function's internal
+return-table variable remain in its SQL body; they are not read or saved as separate column
+defaults.
+
+A refresh keeps code it cannot check because of reduced permissions, a failed read or a timeout,
+with the date it was last read. Its review distinguishes this from a database change and reports
+a failed code read even when there was no saved code. Turning an option off or excluding a schema
+is an explicit choice to omit that code: applying the refresh removes the previously saved facts
+in that scope. Code comparison ignores line endings, spaces and tabs at line ends and blank edge
+lines, while the project keeps SQL Server's original text. The first capture lists objects and
+texts in aggregate instead of reporting each as added.
+
+SchemaCraft 1.2 saves projects in format 3. It opens 1.0 and 1.1 projects and converts them when
+they are saved. SchemaCraft 1.1 opens a project saved by 1.2 read-only, without its code, and 1.0
+cannot open it at all. A project saved by a newer version opens read-only when that version allows
+it: it can be rearranged and exported, but not saved or refreshed. Data this version does not
+understand is kept as it is when a project is saved.
 
 Recent connections (never passwords) and recent projects are stored in `preferences.json`
 inside the per-user configuration directory, `%APPDATA%\com.jmanuelsoberano.schemacraft` on
@@ -227,7 +279,8 @@ The interface also keeps two conveniences in the WebView2 local storage, under
 - `schemacraft.settings`: the theme, the language, the entities panel's state and width, the
   Inspector's width, and the partial-access notices you closed.
 - `schemacraft.connection`: the last connection form. The password is always blank; the server,
-  login, database, schemas, encryption and certificate choice are kept.
+  login, database, schemas, the view and code options, encryption and certificate choice are
+  kept.
 
 Deleting `preferences.json` clears neither. Deleting the WebView2 data in that folder, with
 SchemaCraft closed, resets both: the default theme and language return, closed notices show
@@ -238,6 +291,17 @@ remembered passwords stay.
 `sqlserver://<server>/<login>` under the `SchemaCraft` service) and never in any SchemaCraft file.
 The history and a reopened project use it without asking; untick the box and connect again to
 forget it, or remove the entry from the Credential Manager.
+
+Since 1.2 SchemaCraft keeps a diagnostic log for bug reports in
+`%LOCALAPPDATA%\com.jmanuelsoberano.schemacraft\logs`: one file per day,
+`schemacraft.<date>.log` with the date in UTC, and `schemacraft-panic.log`, which records where a
+crash happened. The folder keeps at most seven of these files: each start deletes the oldest
+until six are left, then opens today's. The log holds versions, counts, timings, sizes, formats
+and error kinds and numbers, such as how many tables an inspection read and how long each stage
+took, and never a server, login, password, database, object name, path, SQL text or error
+message. It is never sent anywhere. About (F1, or the version in the status bar) shows the folder
+and opens it; read a file before you attach it to a bug report, and delete the folder, with
+SchemaCraft closed, to clear the log.
 
 ## Logins with limited permissions
 
@@ -263,7 +327,51 @@ available to this login, or a table not visible to it, to the report with "Why?"
 says "None" only when it is complete. A login that sees no table or
 view at all is told so and cannot start a read. Refreshing a project with a
 login that sees less never removes what it cannot see: those items are kept and listed as not
-checked.
+checked. Code coverage is reported separately: `db_datareader` can see table functions and
+triggers yet miss procedures and scalar functions. `VIEW DEFINITION` completes the code catalog
+in its granted scope when no relevant denial prevents it. An encrypted module is identified as
+encrypted, even for the owner, and CLR code has no SQL text to save. None of these code states
+changes the table-access verdict or permits reading when no table or view is visible.
+
+## Measuring a database without sharing it
+
+Some databases cannot leave their owner's hands, yet how SchemaCraft fares on them still matters.
+[`crates/schemacraft-core/probes/capability-probe.sql`](crates/schemacraft-core/probes/capability-probe.sql)
+measures what SchemaCraft would read from a SQL Server database and prints numbers only, so you
+can share the numbers and nothing else.
+
+It is one read-only batch: SELECT statements on catalog views and system functions, under a lock
+timeout of 5 seconds, that fill a table variable and return it. It reads no table data, calls no
+procedure and changes nothing. Each row is a section, a metric and a number: objects per type,
+the module texts of views, procedures, functions and triggers with their sizes in bytes, trigger,
+parameter, index and constraint counts, the server version as numbers, whether the login holds
+the permissions SchemaCraft checks, and timings in milliseconds. No name of any object, schema,
+column, login, database or server and no definition text is ever returned: names and texts are
+read on the server only to turn them into numbers, such as sizes, permission checks, pattern
+matches and counts. A section that fails shows only its error number. Error 1222 means another
+session held a lock for more than 5 seconds, usually an open transaction that changed the
+schema; run the script again once it has ended. A text scan, on by default, counts on the server
+how many modules contain credential-like words such as `password` or dynamic SQL such as
+`sp_executesql`, and returns no text; set `@scan_text` to 0 at the top of the script to skip it.
+
+Open the script in SSMS or in Visual Studio Code with the MSSQL extension, connected with the
+login SchemaCraft uses and with the database to measure as the current database, read it and run
+it. With sqlcmd, from the root of the clone:
+
+```powershell
+sqlcmd -S <server> -d <database> -U <login> -i crates\schemacraft-core\probes\capability-probe.sql -s "," -W -r1 > <folder outside the repository>\probe.csv
+```
+
+`-r1` keeps sqlcmd's messages on the screen and out of the file. With `-o` instead, sqlcmd would
+write any error into the file, and an error can name the server, the database or the login. If
+sqlcmd prints anything, the run failed, so share nothing. Share the file only when every line
+after the two header lines reads section,metric,number.
+
+Keep the result outside the repository and share only the grid of numbers. A commented query at
+the end of the file times the transfer of the module texts in SSMS; it returns those texts, so
+follow its instructions and share only the two client statistics they name. CI runs the probe
+against the test databases as the administrator and as logins with limited permissions, and
+fails if it returns any label outside a pinned list ([ADR-040](docs/architecture.md)).
 
 ## Project structure
 

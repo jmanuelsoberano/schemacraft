@@ -10,12 +10,14 @@ use super::catalog::{
     CatalogRows, CheckConstraintRow, ColumnRow, ForeignKeyColumnRow, ForeignKeyRow, IndexColumnRow,
     IndexRow, ObjectKind, ObjectRow,
 };
+use super::code_assembly::assemble_programmability;
 use super::data_types::{CatalogTypeInformation, data_type_from_catalog};
+use super::programmability::CodeRead;
 use crate::inspectors::InspectionOptions;
 use crate::model::{
-    AccessCounts, AccessProbe, AccessProfile, CaptureScope, CheckConstraint, Column, Definition,
-    ForeignKey, ForeignKeyColumnPair, ForeignKeyToInvisibleTable, Index, IndexKind, PrimaryKey,
-    QualifiedName, ReferentialAction, SchemaSnapshot, Table, UnknownFields, View,
+    AccessCounts, AccessProbe, AccessProfile, CaptureScope, CaptureState, CheckConstraint, Column,
+    Definition, ForeignKey, ForeignKeyColumnPair, ForeignKeyToInvisibleTable, Index, IndexKind,
+    PrimaryKey, QualifiedName, ReferentialAction, SchemaSnapshot, Table, UnknownFields, View,
 };
 
 const CLUSTERED_INDEX_TYPE: u8 = 1;
@@ -38,11 +40,16 @@ pub(super) struct SnapshotIdentity {
 /// relationship edge needs both tables in the diagram. One whose referenced table the login
 /// cannot see is kept in [`SchemaSnapshot::foreign_keys_to_invisible_tables`], because dropping
 /// it would say the relationship does not exist.
+///
+/// The `code` the code stage read becomes [`SchemaSnapshot::programmability`], which always
+/// says what was read: a family the options left out or that could not be read is recorded as
+/// such, never as empty. The access profile judges the coverage of code only for what was read.
 pub(super) fn assemble_snapshot(
     rows: &CatalogRows,
     probe: AccessProbe,
     options: &InspectionOptions,
     identity: SnapshotIdentity,
+    code: CodeRead,
 ) -> SchemaSnapshot {
     let included = included_objects(&rows.objects, options);
     let mut columns = group_columns(&rows.columns, &included);
@@ -54,22 +61,32 @@ pub(super) fn assemble_snapshot(
         if !included.contains_key(&index_row.object_id) {
             continue;
         }
-        let key_columns = key_columns_of(&index_columns, index_row);
+        let IndexColumns {
+            key,
+            included: included_columns,
+        } = index_columns
+            .get(&(index_row.object_id, index_row.index_id))
+            .map(|rows| IndexColumns::of(rows))
+            .unwrap_or_default();
         if index_row.is_primary_key {
             primary_keys.insert(
                 index_row.object_id,
                 PrimaryKey {
                     name: index_row.index_name.clone(),
-                    columns: key_columns,
+                    columns: key,
                     is_clustered: index_row.index_type == CLUSTERED_INDEX_TYPE,
+                    is_enabled: Some(!index_row.is_disabled),
                 },
             );
         } else {
             indexes.entry(index_row.object_id).or_default().push(Index {
                 name: index_row.index_name.clone(),
-                columns: key_columns,
+                columns: key,
                 kind: index_kind(index_row),
                 is_clustered: index_row.index_type == CLUSTERED_INDEX_TYPE,
+                included_columns: Some(included_columns),
+                is_filtered: Some(index_row.has_filter),
+                is_enabled: Some(!index_row.is_disabled),
             });
         }
     }
@@ -108,6 +125,9 @@ pub(super) fn assemble_snapshot(
         (&left.referencing_table, &left.name).cmp(&(&right.referencing_table, &right.name))
     });
 
+    let programmability = assemble_programmability(code, rows, &included, options);
+    let read_objects = programmability.capture.objects == CaptureState::Read;
+    let read_texts = read_objects && programmability.capture.definitions == CaptureState::Read;
     let mut snapshot = SchemaSnapshot {
         database_name: identity.database_name,
         server_version: identity.server_version,
@@ -118,23 +138,26 @@ pub(super) fn assemble_snapshot(
         foreign_keys,
         foreign_keys_to_invisible_tables: to_invisible_tables,
         carried_over: Vec::new(),
+        programmability: Some(programmability),
         unknown: UnknownFields::new(),
     };
     let counts = AccessCounts::of(&snapshot);
-    snapshot.access = Some(AccessProfile::observed(
-        probe,
-        CaptureScope::from(options),
-        counts,
-    ));
+    let scope = CaptureScope {
+        include_programmability: read_objects,
+        include_module_definitions: read_texts,
+        ..CaptureScope::from(options)
+    };
+    snapshot.access = Some(AccessProfile::observed(probe, scope, counts));
     snapshot
 }
 
-struct IncludedObject {
-    name: QualifiedName,
-    kind: ObjectKind,
+/// A table or view of the catalog that the options keep.
+pub(super) struct IncludedObject {
+    pub(super) name: QualifiedName,
+    pub(super) kind: ObjectKind,
 }
 
-fn included_objects(
+pub(super) fn included_objects(
     objects: &[ObjectRow],
     options: &InspectionOptions,
 ) -> BTreeMap<i32, IncludedObject> {
@@ -158,11 +181,16 @@ fn group_columns(
     rows: &[ColumnRow],
     included: &BTreeMap<i32, IncludedObject>,
 ) -> BTreeMap<i32, Vec<Column>> {
+    columns_by_object(rows, |object_id| included.contains_key(&object_id))
+}
+
+/// The columns of the objects `keep` picks, in ordinal order and numbered from 1, by object.
+pub(super) fn columns_by_object(
+    rows: &[ColumnRow],
+    keep: impl Fn(i32) -> bool,
+) -> BTreeMap<i32, Vec<Column>> {
     let mut grouped: BTreeMap<i32, Vec<(i32, Column)>> = BTreeMap::new();
-    for row in rows
-        .iter()
-        .filter(|row| included.contains_key(&row.object_id))
-    {
+    for row in rows.iter().filter(|row| keep(row.object_id)) {
         grouped
             .entry(row.object_id)
             .or_default()
@@ -220,26 +248,49 @@ fn default_of(row: &ColumnRow) -> Option<Definition> {
 
 fn group_index_columns(rows: &[IndexColumnRow]) -> BTreeMap<(i32, i32), Vec<&IndexColumnRow>> {
     let mut grouped: BTreeMap<(i32, i32), Vec<&IndexColumnRow>> = BTreeMap::new();
-    for row in rows.iter().filter(|row| !row.is_included_column) {
+    for row in rows {
         grouped
             .entry((row.object_id, row.index_id))
             .or_default()
             .push(row);
     }
-    for columns in grouped.values_mut() {
-        columns.sort_by_key(|row| row.key_ordinal);
-    }
     grouped
 }
 
-fn key_columns_of(
-    index_columns: &BTreeMap<(i32, i32), Vec<&IndexColumnRow>>,
-    index: &IndexRow,
-) -> Vec<String> {
-    index_columns
-        .get(&(index.object_id, index.index_id))
-        .map(|rows| rows.iter().map(|row| row.column_name.clone()).collect())
-        .unwrap_or_default()
+/// The columns of one index, split as `CREATE INDEX` lists them.
+#[derive(Default)]
+struct IndexColumns {
+    /// Key columns in key order: those with a `key_ordinal` from 1. The partitioning column SQL
+    /// Server adds on its own to an aligned index has `key_ordinal` 0 and is not one of them.
+    key: Vec<String>,
+    /// `INCLUDE` columns in the order of the index.
+    included: Vec<String>,
+}
+
+impl IndexColumns {
+    fn of(rows: &[&IndexColumnRow]) -> Self {
+        let mut key: Vec<&IndexColumnRow> = rows
+            .iter()
+            .copied()
+            .filter(|row| row.key_ordinal > 0)
+            .collect();
+        key.sort_by_key(|row| row.key_ordinal);
+        let mut included: Vec<&IndexColumnRow> = rows
+            .iter()
+            .copied()
+            .filter(|row| row.is_included_column)
+            .collect();
+        included.sort_by_key(|row| row.index_column_id);
+        let names = |rows: Vec<&IndexColumnRow>| -> Vec<String> {
+            rows.into_iter()
+                .map(|row| row.column_name.clone())
+                .collect()
+        };
+        Self {
+            key: names(key),
+            included: names(included),
+        }
+    }
 }
 
 fn index_kind(index: &IndexRow) -> IndexKind {
@@ -271,6 +322,7 @@ fn group_check_constraints(
                     .clone()
                     .map_or(Definition::NotVisible, Definition::readable),
                 is_enabled: Some(!row.is_disabled),
+                is_trusted: Some(!row.is_not_trusted),
             });
     }
     grouped
@@ -316,6 +368,7 @@ fn assemble_foreign_keys(
                     on_delete: referential_action(row.delete_referential_action),
                     on_update: referential_action(row.update_referential_action),
                     is_enabled: !row.is_disabled,
+                    is_trusted: Some(!row.is_not_trusted),
                 }),
                 // A referenced column the login cannot see leaves the edge without an end, so
                 // the key is kept the way keys to invisible tables are.
@@ -364,6 +417,7 @@ fn to_invisible_table(
         on_delete: referential_action(row.delete_referential_action),
         on_update: referential_action(row.update_referential_action),
         is_enabled: !row.is_disabled,
+        is_trusted: Some(!row.is_not_trusted),
     }
 }
 
@@ -394,9 +448,11 @@ mod tests {
         CatalogRows, CheckConstraintRow, ColumnRow, ForeignKeyColumnRow, ForeignKeyRow,
         IndexColumnRow, IndexRow, ObjectKind, ObjectRow,
     };
+    use crate::inspectors::sqlserver::programmability::CodeRead;
     use crate::model::{
-        AccessCounts, AccessLevel, AccessProbe, CaptureScope, Completeness, Definition, IndexKind,
-        QualifiedName, ReferentialAction, SchemaAccess, SchemaSnapshot,
+        AccessCounts, AccessLevel, AccessProbe, CaptureScope, CaptureState, Completeness,
+        Definition, IndexKind, NotReadReason, QualifiedName, ReferentialAction, SchemaAccess,
+        SchemaSnapshot,
     };
 
     const CUSTOMERS: i32 = 100;
@@ -413,11 +469,14 @@ mod tests {
             can_read_data: true,
             is_denied: false,
             has_visible_objects: true,
+            has_visible_programmability: false,
+            is_execute_denied: false,
         };
         AccessProbe {
             can_read_definitions,
             can_read_data: true,
             explicit_denials: Some(0),
+            execute_denials: None,
             sees_objects: true,
             schemas: vec![schema("dbo"), schema("hr"), schema("sales")],
             database_user: Some("reporting".to_string()),
@@ -467,19 +526,31 @@ mod tests {
             is_unique,
             is_primary_key,
             is_unique_constraint: false,
+            is_disabled: false,
+            has_filter: false,
         }
     }
 
-    fn index_column(object_id: i32, index_id: i32, name: &str, key_ordinal: u8) -> IndexColumnRow {
+    /// A key column at `key_ordinal`, or an included column when it is 0.
+    fn index_column(
+        object_id: i32,
+        index_id: i32,
+        index_column_id: i32,
+        name: &str,
+        key_ordinal: u8,
+    ) -> IndexColumnRow {
         IndexColumnRow {
             object_id,
             index_id,
+            index_column_id,
             column_name: name.to_string(),
             key_ordinal,
             is_included_column: key_ordinal == 0,
         }
     }
 
+    // One row per catalog row the tests read, listed in full so each test can change one.
+    #[allow(clippy::too_many_lines)]
     fn sample_rows() -> CatalogRows {
         CatalogRows {
             objects: vec![
@@ -516,14 +587,14 @@ mod tests {
                 index(EMPLOYEES, 1, "PK_Employees", true, true),
             ],
             index_columns: vec![
-                index_column(CUSTOMERS, 1, "CustomerId", 1),
-                index_column(CUSTOMERS, 2, "Name", 1),
-                // Composite key listed out of order, plus an included column that must be ignored.
-                index_column(ORDERS, 1, "LineNumber", 2),
-                index_column(ORDERS, 1, "OrderId", 1),
-                index_column(ORDERS, 3, "CustomerId", 1),
-                index_column(ORDERS, 3, "LineNumber", 0),
-                index_column(EMPLOYEES, 1, "EmployeeId", 1),
+                index_column(CUSTOMERS, 1, 1, "CustomerId", 1),
+                index_column(CUSTOMERS, 2, 1, "Name", 1),
+                // Composite key listed out of order, plus an included column that is no key.
+                index_column(ORDERS, 1, 2, "LineNumber", 2),
+                index_column(ORDERS, 1, 1, "OrderId", 1),
+                index_column(ORDERS, 3, 1, "CustomerId", 1),
+                index_column(ORDERS, 3, 2, "LineNumber", 0),
+                index_column(EMPLOYEES, 1, 1, "EmployeeId", 1),
             ],
             foreign_keys: vec![
                 ForeignKeyRow {
@@ -534,6 +605,7 @@ mod tests {
                     delete_referential_action: 1,
                     update_referential_action: 0,
                     is_disabled: false,
+                    is_not_trusted: false,
                 },
                 ForeignKeyRow {
                     object_id: 1001,
@@ -543,6 +615,7 @@ mod tests {
                     delete_referential_action: 2,
                     update_referential_action: 3,
                     is_disabled: true,
+                    is_not_trusted: true,
                 },
                 ForeignKeyRow {
                     object_id: 1002,
@@ -552,6 +625,7 @@ mod tests {
                     delete_referential_action: 0,
                     update_referential_action: 1,
                     is_disabled: false,
+                    is_not_trusted: false,
                 },
             ],
             foreign_key_columns: vec![
@@ -580,6 +654,7 @@ mod tests {
                 constraint_name: "CK_Orders_LineNumber".to_string(),
                 definition: Some("([LineNumber]>(0))".to_string()),
                 is_disabled: false,
+                is_not_trusted: false,
             }],
         }
     }
@@ -605,6 +680,8 @@ mod tests {
                     .single()
                     .unwrap_or_default(),
             },
+            // The code is assembled and tested in `code_assembly`.
+            CodeRead::option_off(),
         )
     }
 
@@ -707,6 +784,7 @@ mod tests {
         let options = InspectionOptions {
             schemas: vec!["sales".to_string()],
             include_views: false,
+            ..InspectionOptions::default()
         };
         let snapshot = assemble(&options);
 
@@ -829,6 +907,117 @@ mod tests {
     }
 
     #[test]
+    fn records_the_state_of_indexes_keys_and_constraints() {
+        let mut rows = sample_rows();
+        rows.indexes[1].is_disabled = true;
+        rows.indexes[3].has_filter = true;
+        rows.foreign_keys[0].is_not_trusted = true;
+        rows.foreign_keys[2].is_not_trusted = true;
+        rows.check_constraints[0].is_not_trusted = true;
+
+        let snapshot = assemble_with(&rows, probe(true), &InspectionOptions::default());
+        let customers = snapshot
+            .table(&QualifiedName::new("dbo", "Customers"))
+            .unwrap();
+        let orders = snapshot
+            .table(&QualifiedName::new("sales", "Orders"))
+            .unwrap();
+
+        assert_eq!(
+            customers.primary_key.as_ref().unwrap().is_enabled,
+            Some(true)
+        );
+        let unique = &customers.indexes[0];
+        assert_eq!(
+            (
+                &unique.included_columns,
+                unique.is_filtered,
+                unique.is_enabled
+            ),
+            (&Some(vec![]), Some(false), Some(false))
+        );
+        let by_customer = &orders.indexes[0];
+        assert_eq!(
+            (
+                &by_customer.included_columns,
+                by_customer.is_filtered,
+                by_customer.is_enabled
+            ),
+            (
+                &Some(vec!["LineNumber".to_string()]),
+                Some(true),
+                Some(true)
+            )
+        );
+        assert_eq!(orders.check_constraints[0].is_enabled, Some(true));
+        assert_eq!(orders.check_constraints[0].is_trusted, Some(false));
+        let trust: Vec<(&str, Option<bool>)> = snapshot
+            .foreign_keys
+            .iter()
+            .map(|key| (key.name.as_str(), key.is_trusted))
+            .collect();
+        assert_eq!(
+            trust,
+            [
+                ("FK_Employees_Manager", Some(false)),
+                ("FK_Orders_Customers", Some(false))
+            ]
+        );
+        assert_eq!(
+            snapshot.foreign_keys_to_invisible_tables[0].is_trusted,
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn keeps_included_columns_in_index_order_and_drops_an_implicit_partition_column() {
+        let mut rows = sample_rows();
+        // An index aligned with a partitioned table: SQL Server lists the partitioning column it
+        // added first, with key_ordinal 0 and not as an included column.
+        rows.index_columns
+            .retain(|row| !(row.object_id == ORDERS && row.index_id == 3));
+        rows.index_columns.extend([
+            IndexColumnRow {
+                is_included_column: false,
+                ..index_column(ORDERS, 3, 1, "RegionId", 0)
+            },
+            index_column(ORDERS, 3, 4, "OrderId", 0),
+            index_column(ORDERS, 3, 2, "CustomerId", 1),
+            index_column(ORDERS, 3, 3, "LineNumber", 0),
+        ]);
+
+        let snapshot = assemble_with(&rows, probe(true), &InspectionOptions::default());
+        let index = &snapshot
+            .table(&QualifiedName::new("sales", "Orders"))
+            .unwrap()
+            .indexes[0];
+
+        assert_eq!(index.columns, ["CustomerId"]);
+        assert_eq!(
+            index.included_columns,
+            Some(vec!["LineNumber".to_string(), "OrderId".to_string()])
+        );
+    }
+
+    #[test]
+    fn records_that_it_did_not_read_code_and_judges_none() {
+        let snapshot = assemble(&InspectionOptions::default());
+
+        let code = snapshot.programmability.as_ref().unwrap();
+        let off = CaptureState::NotRead {
+            reason: NotReadReason::OptionOff,
+        };
+        assert_eq!(code.capture.objects, off);
+        assert_eq!(code.capture.definitions, off);
+        assert!(code.routines.is_empty() && code.triggers.is_empty() && code.views.is_empty());
+        let access = snapshot.access.as_ref().unwrap();
+        assert_eq!(access.probe.execute_denials, None);
+        assert_eq!(access.coverage.programmability, None);
+        assert_eq!(access.coverage.module_definitions, None);
+        assert!(!access.scope.include_programmability);
+    }
+
+    #[test]
     fn records_what_the_login_could_see() {
         let mut rows = sample_rows();
         rows.check_constraints[0].definition = None;
@@ -836,6 +1025,7 @@ mod tests {
         let options = InspectionOptions {
             schemas: vec!["dbo".to_string(), "sales".to_string()],
             include_views: true,
+            ..InspectionOptions::default()
         };
 
         let snapshot = assemble_with(&rows, probe(false), &options);
@@ -847,6 +1037,7 @@ mod tests {
                 definitions: 2,
                 definitions_not_visible: 2,
                 foreign_keys_to_invisible_tables: 1,
+                ..AccessCounts::default()
             }
         );
         assert_eq!(access.scope, CaptureScope::from(&options));

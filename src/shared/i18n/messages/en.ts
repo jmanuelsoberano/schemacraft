@@ -30,10 +30,10 @@ export const englishMessages = {
   "action.redo": "Redo",
   "action.commandPalette": "Command palette",
   "action.export": "Export diagram",
-  "action.toggleSidebar": "Toggle entities panel",
+  "action.toggleSidebar": "Toggle objects panel",
   "action.about": "About SchemaCraft",
   "action.exportPdf": "Export diagram as PDF",
-  "action.searchEntities": "Search entities",
+  "action.searchEntities": "Search objects",
   "action.accessReport": "Show access report",
   "action.toggleInspector": "Toggle Inspector",
   "action.detailCompact": "Detail level: Compact",
@@ -44,6 +44,7 @@ export const englishMessages = {
   "action.themeDark": "Theme: Dark",
   "action.languageEn": "Language: English",
   "action.languageEs": "Language: Español",
+  "action.openLogFolder": "Open diagnostic log folder",
 
   "credits.developedBy": "Developed by {name}",
   "about.title": "About SchemaCraft",
@@ -51,6 +52,13 @@ export const englishMessages = {
   "about.developer": "Developed by",
   "about.source": "Source code",
   "about.builtWith": "Built with Tauri, Rust, React, React Flow, Radix UI and Lucide.",
+  "about.log": "Diagnostic log",
+  "about.log.open": "Open log folder",
+  "about.log.privacy":
+    "Counts and timings for bug reports; never names, code, paths or passwords; never sent anywhere.",
+  "about.log.none":
+    "This session writes no log, because its folder could not be created. Restart SchemaCraft to try again.",
+  "about.log.unavailable": "The desktop application writes the log; this preview has none.",
 
   "export.dialog.title": "Export diagram",
   "export.dialog.description":
@@ -110,6 +118,7 @@ export const englishMessages = {
   "action.unavailable.nothingToUndo": "Nothing to undo",
   "action.unavailable.nothingToRedo": "Nothing to redo",
   "action.unavailable.readOnly": "A newer SchemaCraft saved this project, so it is read-only",
+  "action.unavailable.noLogFolder": "This session writes no diagnostic log",
 
   "menu.theme": "Theme",
   "theme.system": "System",
@@ -128,29 +137,56 @@ export const englishMessages = {
   "viewMode.full": "Full",
   "viewMode.full.hint": "All columns and types",
 
-  "sidebar.title": "Entities",
-  "sidebar.search": "Search tables and views",
-  "sidebar.resize": "Resize the entities panel",
+  "sidebar.title": "Objects",
+  "sidebar.search": "Search objects",
+  "sidebar.resize": "Resize the objects panel",
   "sidebar.section.tables": "Tables",
   "sidebar.section.views": "Views",
-  "sidebar.search.noMatches": 'No entities match "{query}"',
-  "sidebar.empty.title": "No entities yet",
+  "sidebar.search.noMatches": 'No objects match "{query}"',
+  "sidebar.empty.title": "No objects yet",
   "sidebar.empty.description":
-    "Connect to a database or open a .scraft project to list its tables and views here.",
-  "sidebar.empty.database.title": "No tables or views",
-  "sidebar.empty.database.description": "{database} has no tables or views yet.",
+    "Connect to a database or open a .scraft project to list its objects here.",
+  "sidebar.empty.database.title": "No objects recorded",
+  "sidebar.empty.database.description":
+    "No tables, views, procedures or functions are recorded for {database}.",
   "sidebar.empty.selection.description":
-    "The schemas and options chosen for {database} include no tables or views.",
+    "The chosen schemas and options recorded no objects from {database}.",
   "sidebar.empty.notVisible.title": "No tables or views visible to this login",
   "sidebar.empty.notVisible.description": "Others may exist in {database}.",
   "sidebar.footer.notVisible": "Other tables or views may exist that aren't visible to this login.",
+
+  "objects.section.procedures": "Procedures",
+  "objects.section.functions": "Functions",
+  "objects.section.unknown": "Other routines",
+  "objects.procedure": "Procedure",
+  "objects.function": "Function",
+  "objects.trigger": "Trigger",
+  "objects.unknown": "Routine",
+  "objects.parameters.one": "{count} parameter",
+  "objects.parameters.other": "{count} parameters",
+  "objects.encrypted": "Encrypted",
+  "objects.clr": "CLR",
+  "objects.details": "Show details of {name}",
+  "objects.showMore": "Show {count} more · {remaining} remaining",
+  "objects.search.limited":
+    "Showing the first {count} of {total} matches. Refine your search to find more.",
+  "objects.footer.partial": "Other procedures and functions may exist that this login can't see.",
+  "objects.footer.notRecorded": "Procedures and functions were not recorded in this project.",
+  "objects.footer.optionOff":
+    "Procedures and functions were not read: the connection options left them out.",
+  "objects.footer.queryFailed":
+    "Procedures and functions could not be checked because the read failed. Any saved objects are kept.",
+  "objects.footer.timedOut":
+    "Procedures and functions could not be checked before the read timed out. Any saved objects are kept.",
+  "objects.footer.unknown":
+    "The project does not record whether all procedures and functions could be checked.",
 
   "inspector.title": "Inspector",
   "inspector.resize": "Resize the Inspector panel",
   "inspector.close": "Close the Inspector",
   "inspector.empty.title": "Nothing selected",
   "inspector.empty.description":
-    "Select a table or view on the canvas to see its details here, or double-click a card or press Enter on it. {shortcut} closes this panel.",
+    "Select a table or view on the canvas, or choose an object from the Objects panel or the command palette. {shortcut} closes this panel.",
   "inspector.multiple.title.one": "{count} entity selected",
   "inspector.multiple.title.other": "{count} entities selected",
   "inspector.multiple.description": "Select only one to see its details.",
@@ -166,6 +202,18 @@ export const englishMessages = {
 
   "entity.columns.one": "{count} column",
   "entity.columns.other": "{count} columns",
+  "entity.triggers.enabled.one": "{count} trigger is enabled.",
+  "entity.triggers.enabled.other": "{count} triggers are enabled.",
+  "entity.triggers.disabled.one": "{count} trigger is disabled.",
+  "entity.triggers.disabled.other": "{count} triggers are disabled.",
+  "entity.triggers.insteadOf.one": "{count} of the enabled triggers uses INSTEAD OF.",
+  "entity.triggers.insteadOf.other": "{count} of the enabled triggers use INSTEAD OF.",
+  "entity.triggers.disabledInsteadOf.one": "{count} of the disabled triggers uses INSTEAD OF.",
+  "entity.triggers.disabledInsteadOf.other": "{count} of the disabled triggers use INSTEAD OF.",
+  "export.triggerLegend":
+    "Trigger badge: enabled count, or total count when all are disabled (dashed outline).",
+  "export.triggersNotRead": "Triggers were not read for this diagram.",
+  "export.triggersNotChecked": "Some trigger metadata could not be checked for this diagram.",
 
   "welcome.title": "Welcome to SchemaCraft",
   "welcome.description":
@@ -184,9 +232,10 @@ export const englishMessages = {
   "canvas.layout.running": "Laying out the diagram…",
 
   "palette.title": "Command palette",
-  "palette.placeholder": "Type a command, a table or a view…",
+  "palette.placeholder": "Type a command or an object name…",
   "palette.noResults": 'Nothing matches "{query}"',
-  "palette.centerOn": "Center on screen",
+  "palette.showDetails": "Show details",
+  "palette.onParent": "on {name}",
 
   "statusBar.notConnected": "Not connected",
   "statusBar.connected": "{target} · {database}",
@@ -338,13 +387,21 @@ export const englishMessages = {
   "review.noChanges.notChecked":
     "Update the project to record this read; what could not be checked keeps its saved value.",
   "review.noChanges.accessChanged": "Update the project to record what this login can see.",
+  "review.noChanges.captureRecorded":
+    "This read records details the project didn't have yet. Update the project to keep them.",
+  "review.noChanges.captureRemoved":
+    "Updating the project will remove the saved code excluded by these inspection options.",
+  "review.noChanges.captureChanged":
+    "These inspection options change what the project records. Review the details below before updating it.",
   "review.notChecked.title": "Not everything could be checked",
-  "review.notChecked.body.one":
-    "{count} item isn't visible to this login, so it was not checked and keeps its saved value.",
-  "review.notChecked.body.other":
-    "{count} items aren't visible to this login, so they were not checked and keep their saved values.",
+  "review.notChecked.body.one": "{count} item could not be checked and keeps its saved value.",
+  "review.notChecked.body.other": "{count} items could not be checked and keep their saved values.",
   "review.section.notChecked": "Not checked",
   "review.section.nowAvailable": "Now available",
+  "review.section.captureRecorded": "Recorded for the first time",
+  "review.capture.indexAndConstraintState": "Index and constraint state",
+  "review.capture.objects.one": "{count} index, key or constraint",
+  "review.capture.objects.other": "{count} indexes, keys and constraints",
   "review.accessChanged": "This refresh also records what this login can see.",
   "review.foreignKey.invisibleTable": "{table} ({columns}) → a table not visible to this login",
   "review.summary.added.one": "{count} added",
@@ -365,6 +422,7 @@ export const englishMessages = {
   "review.index": "Index",
   "review.checkConstraint": "Check",
   "review.checkConstraint.disabled": "{name} {expression} (disabled)",
+  "review.checkConstraint.untrusted": "{name} {expression} (not trusted)",
   "review.property.dataType": "Type",
   "review.property.nullability": "Nullable",
   "review.property.defaultExpression": "Default",
@@ -375,6 +433,7 @@ export const englishMessages = {
   "review.property.onDelete": "On delete",
   "review.property.onUpdate": "On update",
   "review.property.enabled": "Enabled",
+  "review.property.trust": "Trusted",
   "review.value.yes": "yes",
   "review.value.no": "no",
   "review.value.none": "none",
@@ -426,6 +485,10 @@ export const englishMessages = {
   "details.badge.identity": "identity",
   "details.badge.computed": "computed",
   "details.badge.disabled": "disabled",
+  "details.badge.indexDisabled": "disabled",
+  "details.badge.filtered": "filtered",
+  "details.badge.untrusted": "not trusted",
+  "details.include": "INCLUDE ({columns})",
   "details.default": "DEFAULT {expression}",
   "details.hint.notAvailable": "The text isn't visible to this login.",
   "details.hint.notRecorded":
@@ -554,7 +617,8 @@ export const englishMessages = {
   "access.report.description.notRecorded": "Schema read on {date}.",
   "access.report.notRecorded":
     "This project was saved before SchemaCraft recorded access. Refresh from the database to check it.",
-  "access.report.full": "This login read the whole schema.",
+  "access.report.full":
+    "This login read all tables, views and their CHECK and DEFAULT expressions.",
   "access.report.empty":
     "This login could see every object, and the database had no tables or views.",
   "access.report.partial": "This login couldn't read the whole schema.",
@@ -581,6 +645,185 @@ export const englishMessages = {
     "To read everything, your DBA can run this script. SchemaCraft only copies it and never runs it.",
   "access.report.dbaOnly":
     "A GRANT may not help here. Your DBA can review the permissions of this login.",
+
+  "connection.schemas.codeOnly": "Procedures and functions only",
+  "connection.field.includeProgrammability": "Read procedures, functions and triggers",
+  "connection.field.includeModuleDefinitions": "Save their code in the project",
+  "connection.field.includeModuleDefinitions.description":
+    "Includes view code. Saved code can contain business logic and credentials.",
+  "connection.stage.readingProgrammability": "Reading procedures, functions and triggers",
+  "connection.stage.readingModuleDefinitions": "Reading module code",
+  "access.notice.code":
+    "Some module code may not be visible to this login; it will be marked as not available.",
+  "access.report.programmability": "Procedures, functions and triggers",
+  "access.report.moduleDefinitions": "Code of views, procedures, functions and triggers",
+  "access.code.notRecorded": "Not recorded in this project. Refresh from the database to read it.",
+  "access.code.optionOff": "Left out by the inspection options.",
+  "access.code.queryFailed": "The code query failed. Saved code is kept as not checked.",
+  "review.code.failed.title": "Some code could not be checked",
+  "access.code.timedOut": "The code query timed out. Saved code is kept as not checked.",
+  "access.code.unknown": "The code capture did not record its outcome.",
+  "access.code.objectsPartial":
+    "Other procedures or functions may exist that this login cannot see. VIEW DEFINITION is needed to confirm the list.",
+  "access.code.textsPartial":
+    "Some module code is not visible to this login. Encrypted modules and CLR objects are not permission gaps.",
+  "access.code.executeDenied":
+    "An EXECUTE denial may limit the procedure and function list. Ask your DBA to review it.",
+  "access.code.executeUnknown":
+    "This login cannot confirm whether EXECUTE denials hide procedures or functions.",
+  "access.code.textCounts": "{readable} of {total} readable · {encrypted} encrypted",
+  "access.code.carried.one": "{count} code fact kept from an earlier read",
+  "access.code.carried.other": "{count} code facts kept from an earlier read",
+  "code.kind.procedure": "Procedure",
+  "code.kind.function": "Function",
+  "code.kind.trigger": "Trigger",
+  "code.kind.view": "View code",
+  "code.kind.unknown": "Code object",
+  "code.part.whole": "Object",
+  "code.part.definition": "Code",
+  "code.part.unknown": "Unrecognised fact",
+  "code.count.procedure.one": "{count} procedure",
+  "code.count.procedure.other": "{count} procedures",
+  "code.count.function.one": "{count} function",
+  "code.count.function.other": "{count} functions",
+  "code.count.trigger.one": "{count} trigger",
+  "code.count.trigger.other": "{count} triggers",
+  "code.count.view.one": "{count} view",
+  "code.count.view.other": "{count} views",
+  "code.count.unknown.one": "{count} code object",
+  "code.count.unknown.other": "{count} code objects",
+  "review.section.routines": "Procedures and functions",
+  "review.section.triggers": "Triggers",
+  "review.section.code": "Code objects",
+  "review.section.capture": "Changes to what the project records",
+  "review.capture.programmabilityRecorded": "The project will now record these code objects.",
+  "review.capture.programmabilityNoLongerRecorded":
+    "These code objects and their saved code will be removed from the project.",
+  "review.capture.moduleDefinitionsRecorded.one":
+    "The code of {count} module will be saved in this project file.",
+  "review.capture.moduleDefinitionsRecorded.other":
+    "The code of {count} modules will be saved in this project file.",
+  "review.capture.moduleDefinitionsNoLongerRecorded.one":
+    "The saved code of {count} module will be removed from this project.",
+  "review.capture.moduleDefinitionsNoLongerRecorded.other":
+    "The saved code of {count} modules will be removed from this project.",
+  "review.code.property.definition": "Code changed",
+  "review.code.property.encryption": "Encryption changed",
+  "review.code.property.implementation": "Implementation changed (SQL or CLR)",
+  "review.code.property.parameters": "Parameters changed",
+  "review.code.property.returnType": "Return type changed",
+  "review.code.property.columns": "Result columns changed",
+  "review.code.property.timing": "Trigger timing changed",
+  "review.code.property.events": "Trigger events changed",
+  "review.code.property.firingOrder": "Firing order changed",
+  "review.code.property.enabled": "Enabled state changed",
+  "review.code.property.notForReplication": "NOT FOR REPLICATION changed",
+  "review.code.property.checkOption": "WITH CHECK OPTION changed",
+  "review.code.property.indexed": "Indexed view state changed",
+  "review.code.property.kind": "Object kind changed",
+  "review.code.failed":
+    "Some code could not be read. Tables were refreshed; previously saved code is kept as not checked.",
+
+  // Module pages stay in the desktop; trigger metadata words also serve exported entity details.
+  "module.kind.procedure": "Procedure",
+  "module.kind.function": "Function",
+  "module.kind.trigger": "Trigger",
+  "module.kind.unknown": "Programmable object",
+  "module.section.parameters": "Parameters",
+  "module.section.returns": "Returns",
+  "module.section.runs": "Runs",
+  "module.section.definition": "Definition",
+  "module.column.name": "Name",
+  "module.column.type": "Type",
+  "module.column.nullable": "Nullable",
+  "module.value.yes": "Yes",
+  "module.value.no": "No",
+  "module.parameters.empty": "No parameters",
+  "module.parameters.defaults":
+    "SQL Server keeps T-SQL parameter defaults only in the module code.",
+  "module.returns.notRecorded": "The return structure was not recorded in this project.",
+  "module.parent.go": "Go to {name}",
+  "module.parent.hidden": "Hidden on the canvas",
+  "module.parent.unknown": "Not in this project",
+  "trigger.badge.disabled": "Disabled",
+  "trigger.event.after": "Configured to run after {event}.",
+  "trigger.event.insteadOf": "Configured to run instead of {event}.",
+  "trigger.event.unknown": "Configured for {event}; timing was not recorded.",
+  "trigger.event.unknownName": "an unrecorded statement",
+  "trigger.events.empty": "The statements that fire this trigger were not recorded.",
+  "trigger.order.first": "First on {event}",
+  "trigger.order.last": "Last on {event}",
+  "trigger.order.unknown": "Firing order not recorded",
+  "trigger.state.disabled": "This trigger is disabled and does not run.",
+  "trigger.note.after":
+    "An AFTER trigger runs after the statement, its cascading actions and its constraint checks succeed.",
+  "trigger.note.insteadOf": "An INSTEAD OF trigger runs in place of the statement's usual action.",
+  "trigger.note.order":
+    "First and Last apply to each statement separately. Other AFTER triggers run in no defined order.",
+  "trigger.note.replication": "Replication agents do not fire this trigger.",
+  "trigger.note.truncate": "TRUNCATE TABLE does not fire a DELETE trigger.",
+  "trigger.note.bulk":
+    "BULK INSERT and bcp fire INSERT triggers only when FIRE_TRIGGERS is specified.",
+  "module.notice.notChecked":
+    "Kept from the read of {date}; this capture could not check this object.",
+  "module.definition.readable.title": "Saved SQL code",
+  "module.definition.notChecked.title": "Saved SQL code, not checked",
+  "module.definition.notChecked": "Not checked since {date}.",
+  "module.definition.notVisible.title": "Not visible to this login",
+  "module.definition.notVisible.body":
+    "This capture could not read the code with this login's permissions.",
+  "module.definition.keptNotVisible.title": "Previously not visible",
+  "module.definition.keptNotVisible.body":
+    "The code was not visible to the login used for the last checked read. This capture did not verify that state.",
+  "module.definition.encrypted.title": "Encrypted on the server",
+  "module.definition.encrypted.body":
+    "WITH ENCRYPTION: SQL Server returns this code to no login through the catalog, including the database owner.",
+  "module.definition.clr.title": "Written in .NET",
+  "module.definition.clr.body":
+    "SQL Server keeps this code in an assembly. SchemaCraft does not read assembly code.",
+  "module.definition.notRecorded.title": "Not recorded in this project",
+  "module.definition.notRecorded.body": "Refresh from the database to read the code.",
+  "module.definition.notRead.title": "Code not read",
+  "module.definition.optionOff": "The connection options left module code out of this capture.",
+  "module.definition.timedOut":
+    "The code read ran out of time. Refresh from the database to try again.",
+  "module.definition.readFailed":
+    "The code could not be read. Refresh from the database to try again.",
+  "module.view.checkOption": "Rows changed through this view must remain visible through it.",
+  "module.view.indexed": "Indexed view",
+  "module.view.indexedHint": "A unique clustered index stores this view's rows.",
+
+  // Read-only source viewer and shared clipboard feedback.
+  "codeViewer.lines.one": "{count} line",
+  "codeViewer.lines.other": "{count} lines",
+  "codeViewer.source": "SQL code, read-only",
+  "codeViewer.find": "Find in code",
+  "codeViewer.wrap": "Wrap lines",
+  "codeViewer.copy": "Copy code",
+  "codeViewer.previous": "Previous match",
+  "codeViewer.next": "Next match",
+  "codeViewer.closeFind": "Close find",
+  "codeViewer.matches": "{current} of {total}",
+  "copy.copied": "Copied",
+  "copy.failed": "Could not copy",
+
+  "details.section.triggers": "Triggers",
+  "details.empty.triggers": "None",
+  "details.section.viewDefinition": "Definition",
+  "details.viewDefinition.notIncluded": "Not included in this file",
+  "details.viewDefinition.checkOption":
+    "Rows changed through this view must remain visible through it.",
+  "details.viewDefinition.indexed": "Indexed view",
+  "details.viewDefinition.indexedHint": "A unique clustered index stores this view's rows.",
+  "trigger.open": "Open trigger {name}",
+  "trigger.notChecked": "Trigger metadata was not checked by the last inspection.",
+  "trigger.listUnconfirmed": "This capture does not record whether this trigger list is complete.",
+  "trigger.notRead.optionOff": "Triggers were not read: the connection options left them out.",
+  "trigger.notRead.queryFailed":
+    "The trigger read failed. Refresh from the database to check them.",
+  "trigger.notRead.timedOut":
+    "The trigger read ran out of time. Refresh from the database to check them.",
+  "trigger.notRead.unknown": "Triggers were not read. Refresh from the database to check them.",
 
   ...englishRuleMessages,
 } as const;

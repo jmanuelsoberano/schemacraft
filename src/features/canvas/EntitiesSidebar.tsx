@@ -5,24 +5,42 @@ import {
   Eye,
   EyeOff,
   Glasses,
+  Lock,
+  ScrollText,
   Search,
   SearchX,
+  SquareFunction,
   Table2,
 } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { memo, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { useProjectStore } from "@/features/project/projectStore";
-import { emptySchemaReason, listsEveryObject } from "@/features/schema/coverage";
 import {
-  countEntities,
-  entityKey,
-  entityListShape,
-  filterEntityGroups,
-  groupEntities,
-  listEntities,
-} from "@/features/schema/entities";
-import type { EntityGroup, EntityKind, EntityListItem } from "@/features/schema/entities";
+  emptySchemaReason,
+  listsEveryObject,
+  routinesListNotice,
+} from "@/features/schema/coverage";
+import { entityKey, qualifiedNameLabel } from "@/features/schema/entities";
+import type { EntityListItem } from "@/features/schema/entities";
+import { moduleKey } from "@/features/schema/modules";
+import {
+  OBJECT_PAGE_SIZE,
+  OBJECT_SEARCH_LIMIT,
+  countObjects,
+  groupObjects,
+  isEntityItem,
+  listObjects,
+  objectListShape,
+  objectPage,
+  searchObjectGroups,
+} from "@/features/schema/objects";
+import type {
+  ObjectGroup,
+  ObjectKind,
+  ObjectListItem,
+  RoutineListItem,
+} from "@/features/schema/objects";
 import type { Locale } from "@/shared/i18n/locales";
 import type { MessageKey } from "@/shared/i18n/messages/en";
 import { useI18n } from "@/shared/i18n/useI18n";
@@ -42,9 +60,12 @@ interface EntitiesSidebarProps {
   notice?: ReactNode;
 }
 
-const SECTION_LABELS: Record<EntityKind, MessageKey> = {
+const SECTION_LABELS: Record<ObjectKind, MessageKey> = {
   table: "sidebar.section.tables",
   view: "sidebar.section.views",
+  procedure: "objects.section.procedures",
+  function: "objects.section.functions",
+  unknown: "objects.section.unknown",
 };
 
 /** Keys of the collapse state; a schema group and a kind section never share one. */
@@ -52,22 +73,22 @@ function schemaCollapseKey(schema: string): string {
   return `schema:${schema}`;
 }
 
-function sectionCollapseKey(schema: string, kind: EntityKind): string {
+function sectionCollapseKey(schema: string, kind: ObjectKind): string {
   return `${kind}:${schema}`;
 }
 
-function entitiesOf(group: EntityGroup): EntityListItem[] {
-  return group.sections.flatMap((section) => section.entities);
+function objectsOf(group: ObjectGroup): ObjectListItem[] {
+  return group.sections.flatMap((section) => section.objects);
 }
 
 /** "shown / total" once something is hidden, otherwise the total alone. */
 function countLabel(
-  entities: readonly EntityListItem[],
+  objects: readonly ObjectListItem[],
   hiddenKeys: ReadonlySet<string>,
   locale: Locale,
 ): string {
-  const total = entities.length;
-  const hidden = entities.filter((entity) => hiddenKeys.has(entity.key)).length;
+  const total = objects.length;
+  const hidden = objects.filter((item) => isEntityItem(item) && hiddenKeys.has(item.key)).length;
   return hidden > 0
     ? `${(total - hidden).toLocaleString(locale)} / ${total.toLocaleString(locale)}`
     : total.toLocaleString(locale);
@@ -77,15 +98,16 @@ function countLabel(
 interface ListState {
   hiddenKeys: ReadonlySet<string>;
   selectedKeys: ReadonlySet<string>;
+  selectedModuleKey: string | null;
   locale: Locale;
   /** While a search runs every group and section is open and the toggles rest. */
   isSearching: boolean;
-  isExpanded: (collapseKey: string) => boolean;
-  onToggle: (collapseKey: string) => void;
+  isExpanded: (collapseKey: string, initiallyCollapsed?: boolean) => boolean;
+  onToggle: (collapseKey: string, initiallyCollapsed?: boolean) => void;
 }
 
 /**
- * Lists the tables and views of the open project, searchable, grouped by schema and then by
+ * Lists the objects of the open project, searchable, grouped by schema and then by
  * kind. A level is shown only when it tells entities apart: one schema means no schema headers,
  * one kind no Tables and Views headers, decided on the whole list so the shape stays put while
  * typing. Groups and sections collapse for the session and all open while a search runs.
@@ -98,14 +120,19 @@ export function EntitiesSidebar({ notice }: EntitiesSidebarProps) {
   const inspection = useProjectStore((state) => state.project?.content.inspection ?? null);
   const nodeStates = useProjectStore((state) => state.project?.content.canvas.nodes ?? null);
   const selectedKeys = useCanvasUiStore((state) => state.selectedKeys);
+  const selectedModule = useCanvasUiStore((state) => state.selectedModule);
   const [query, setQuery] = useState("");
-  const [collapsedKeys, setCollapsedKeys] = useState<ReadonlySet<string>>(() => new Set());
+  const deferredQuery = useDeferredValue(query);
+  const [expandedGroups, setExpandedGroups] = useState<ReadonlyMap<string, boolean>>(
+    () => new Map(),
+  );
   const baseId = useId();
   const titleId = `${baseId}-title`;
 
-  const groups = useMemo(() => (snapshot ? groupEntities(listEntities(snapshot)) : []), [snapshot]);
-  const shape = useMemo(() => entityListShape(groups), [groups]);
-  const visibleGroups = useMemo(() => filterEntityGroups(groups, query), [groups, query]);
+  const groups = useMemo(() => (snapshot ? groupObjects(listObjects(snapshot)) : []), [snapshot]);
+  const shape = useMemo(() => objectListShape(groups), [groups]);
+  const search = useMemo(() => searchObjectGroups(groups, deferredQuery), [groups, deferredQuery]);
+  const visibleGroups = search.groups;
   const hiddenKeys = useMemo(
     () =>
       new Set(
@@ -114,29 +141,33 @@ export function EntitiesSidebar({ notice }: EntitiesSidebarProps) {
     [nodeStates],
   );
   const selected = useMemo(() => new Set(selectedKeys), [selectedKeys]);
-  const totalCount = countEntities(groups);
+  const totalCount = countObjects(groups);
   const emptyReason =
     snapshot === null || inspection === null ? null : emptySchemaReason(snapshot, inspection);
   const showsNotVisibleFooter = snapshot !== null && !listsEveryObject(snapshot);
+  const routinesNotice = snapshot === null ? null : routinesListNotice(snapshot);
   // Collapsing is a way to focus; a search already does that, so everything opens meanwhile.
-  const isSearching = query.trim() !== "";
+  const isSearching = deferredQuery.trim() !== "";
 
-  const list: ListState = {
-    hiddenKeys,
-    selectedKeys: selected,
-    locale,
-    isSearching,
-    isExpanded: (collapseKey) => isSearching || !collapsedKeys.has(collapseKey),
-    onToggle: (collapseKey) => {
-      setCollapsedKeys((previous) => {
-        const next = new Set(previous);
-        if (!next.delete(collapseKey)) {
-          next.add(collapseKey);
-        }
-        return next;
-      });
-    },
-  };
+  const list = useMemo<ListState>(
+    () => ({
+      hiddenKeys,
+      selectedKeys: selected,
+      selectedModuleKey: selectedModule === null ? null : moduleKey(selectedModule),
+      locale,
+      isSearching,
+      isExpanded: (collapseKey, initiallyCollapsed = false) =>
+        isSearching || (expandedGroups.get(collapseKey) ?? !initiallyCollapsed),
+      onToggle: (collapseKey, initiallyCollapsed = false) => {
+        setExpandedGroups((previous) => {
+          const next = new Map(previous);
+          next.set(collapseKey, !(previous.get(collapseKey) ?? !initiallyCollapsed));
+          return next;
+        });
+      },
+    }),
+    [hiddenKeys, selected, selectedModule, locale, isSearching, expandedGroups],
+  );
 
   return (
     <div className={styles.sidebar}>
@@ -155,6 +186,7 @@ export function EntitiesSidebar({ notice }: EntitiesSidebarProps) {
         <Search className={styles.searchIcon} aria-hidden="true" />
         <input
           id={ENTITIES_SEARCH_INPUT_ID}
+          data-object-search="true"
           type="search"
           className={styles.searchInput}
           placeholder={t("sidebar.search")}
@@ -166,7 +198,7 @@ export function EntitiesSidebar({ notice }: EntitiesSidebarProps) {
           disabled={snapshot === null}
         />
       </label>
-      <div className={styles.body}>
+      <div className={styles.body} aria-busy={query !== deferredQuery}>
         {snapshot === null ? (
           <EmptyState
             icon={Database}
@@ -186,47 +218,84 @@ export function EntitiesSidebar({ notice }: EntitiesSidebarProps) {
             })}
           />
         ) : visibleGroups.length === 0 ? (
-          <EmptyState icon={SearchX} title={t("sidebar.search.noMatches", { query })} />
-        ) : shape.showsSchemas ? (
-          <SchemaGroups
-            groups={visibleGroups}
-            showsKinds={shape.showsKinds}
-            idPrefix={baseId}
-            list={list}
+          <EmptyState
+            icon={SearchX}
+            title={t("sidebar.search.noMatches", { query: deferredQuery })}
           />
         ) : (
-          // One schema: its sections, or its rows alone when only one kind exists.
-          visibleGroups.map((group) =>
-            shape.showsKinds ? (
-              <KindSections
-                key={group.schema}
-                id={`${baseId}-sections`}
-                labelledBy={titleId}
-                group={group}
-                nested={false}
-                list={list}
-              />
-            ) : (
-              <EntityList
-                key={group.schema}
-                id={`${baseId}-list`}
-                labelledBy={titleId}
-                entities={entitiesOf(group)}
-                list={list}
-              />
-            ),
-          )
+          <GroupedObjects
+            groups={visibleGroups}
+            shape={shape}
+            idPrefix={baseId}
+            titleId={titleId}
+            list={list}
+          />
         )}
+        {search.isLimited ? (
+          <p className={styles.footer}>
+            {t("objects.search.limited", {
+              count: OBJECT_SEARCH_LIMIT,
+              total: search.totalMatches,
+            })}
+          </p>
+        ) : null}
         {showsNotVisibleFooter && emptyReason === null ? (
           <p className={styles.footer}>{t("sidebar.footer.notVisible")}</p>
+        ) : null}
+        {routinesNotice !== null ? (
+          <p className={styles.footer}>{t(`objects.footer.${routinesNotice}`)}</p>
         ) : null}
       </div>
     </div>
   );
 }
 
+interface GroupedObjectsProps {
+  groups: readonly ObjectGroup[];
+  shape: ReturnType<typeof objectListShape>;
+  idPrefix: string;
+  titleId: string;
+  list: ListState;
+}
+
+/** Urgent input updates leave the old rows alone until the deferred search is ready. */
+const GroupedObjects = memo(function GroupedObjects({
+  groups,
+  shape,
+  idPrefix,
+  titleId,
+  list,
+}: GroupedObjectsProps) {
+  if (shape.showsSchemas) {
+    return (
+      <SchemaGroups groups={groups} showsKinds={shape.showsKinds} idPrefix={idPrefix} list={list} />
+    );
+  }
+  // One schema: its sections, or its rows alone when only one kind exists.
+  return groups.map((group) =>
+    shape.showsKinds ? (
+      <KindSections
+        key={group.schema}
+        id={`${idPrefix}-sections`}
+        labelledBy={titleId}
+        group={group}
+        nested={false}
+        list={list}
+      />
+    ) : (
+      <ObjectList
+        key={group.schema}
+        id={`${idPrefix}-list`}
+        labelledBy={titleId}
+        objects={objectsOf(group)}
+        list={list}
+      />
+    ),
+  );
+});
+
 interface SchemaGroupsProps {
-  groups: readonly EntityGroup[];
+  groups: readonly ObjectGroup[];
   showsKinds: boolean;
   idPrefix: string;
   list: ListState;
@@ -241,7 +310,7 @@ function SchemaGroups({ groups, showsKinds, idPrefix, list }: SchemaGroupsProps)
         const isExpanded = list.isExpanded(collapseKey);
         const nameId = `${idPrefix}-schema${index}`;
         const contentId = `${nameId}-content`;
-        const entities = entitiesOf(group);
+        const objects = objectsOf(group);
         return (
           <li key={group.schema} className={styles.group}>
             <SectionHeader
@@ -249,7 +318,7 @@ function SchemaGroups({ groups, showsKinds, idPrefix, list }: SchemaGroupsProps)
               nameId={nameId}
               controlsId={isExpanded ? contentId : undefined}
               name={group.schema}
-              count={countLabel(entities, list.hiddenKeys, list.locale)}
+              count={countLabel(objects, list.hiddenKeys, list.locale)}
               isExpanded={isExpanded}
               isLocked={list.isSearching}
               onToggle={() => {
@@ -259,7 +328,7 @@ function SchemaGroups({ groups, showsKinds, idPrefix, list }: SchemaGroupsProps)
             {!isExpanded ? null : showsKinds ? (
               <KindSections id={contentId} labelledBy={nameId} group={group} nested list={list} />
             ) : (
-              <EntityList id={contentId} labelledBy={nameId} entities={entities} list={list} />
+              <ObjectList id={contentId} labelledBy={nameId} objects={objects} list={list} />
             )}
           </li>
         );
@@ -271,20 +340,21 @@ function SchemaGroups({ groups, showsKinds, idPrefix, list }: SchemaGroupsProps)
 interface KindSectionsProps {
   id: string;
   labelledBy: string;
-  group: EntityGroup;
+  group: ObjectGroup;
   /** Inside a schema group the kind headers stick below the schema header. */
   nested: boolean;
   list: ListState;
 }
 
-/** The Tables and Views sections of one schema, each collapsible. */
+/** Tables and views start open; routine sections start collapsed for the session. */
 function KindSections({ id, labelledBy, group, nested, list }: KindSectionsProps) {
   const { t } = useI18n();
   return (
     <ul id={id} className={styles.sections} aria-labelledby={labelledBy}>
       {group.sections.map((section) => {
         const collapseKey = sectionCollapseKey(group.schema, section.kind);
-        const isExpanded = list.isExpanded(collapseKey);
+        const initiallyCollapsed = section.kind !== "table" && section.kind !== "view";
+        const isExpanded = list.isExpanded(collapseKey, initiallyCollapsed);
         const nameId = `${id}-${section.kind}`;
         const listId = `${nameId}-list`;
         return (
@@ -294,15 +364,15 @@ function KindSections({ id, labelledBy, group, nested, list }: KindSectionsProps
               nameId={nameId}
               controlsId={isExpanded ? listId : undefined}
               name={t(SECTION_LABELS[section.kind])}
-              count={countLabel(section.entities, list.hiddenKeys, list.locale)}
+              count={countLabel(section.objects, list.hiddenKeys, list.locale)}
               isExpanded={isExpanded}
               isLocked={list.isSearching}
               onToggle={() => {
-                list.onToggle(collapseKey);
+                list.onToggle(collapseKey, initiallyCollapsed);
               }}
             />
             {isExpanded ? (
-              <EntityList id={listId} labelledBy={nameId} entities={section.entities} list={list} />
+              <ObjectList id={listId} labelledBy={nameId} objects={section.objects} list={list} />
             ) : null}
           </li>
         );
@@ -360,24 +430,63 @@ function SectionHeader({
   );
 }
 
-interface EntityListProps {
+interface ObjectListProps {
   id: string;
   labelledBy: string;
-  entities: readonly EntityListItem[];
+  objects: readonly ObjectListItem[];
   list: ListState;
 }
 
-function EntityList({ id, labelledBy, entities, list }: EntityListProps) {
+function ObjectList({ id, labelledBy, objects, list }: ObjectListProps) {
+  const { t } = useI18n();
+  const [pages, setPages] = useState(1);
+  const listRef = useRef<HTMLUListElement>(null);
+  const firstNewRow = useRef<number | null>(null);
+  const visible = list.isSearching ? objects : objectPage(objects, pages);
+  const remaining = objects.length - visible.length;
+
+  useEffect(() => {
+    if (firstNewRow.current === null) return;
+    listRef.current
+      ?.querySelector<HTMLButtonElement>(`[data-object-index="${firstNewRow.current}"] > button`)
+      ?.focus();
+    firstNewRow.current = null;
+  }, [pages]);
+
   return (
-    <ul id={id} className={styles.entities} aria-labelledby={labelledBy}>
-      {entities.map((entity) => (
-        <EntityRow
-          key={entity.key}
-          entity={entity}
-          isHidden={list.hiddenKeys.has(entity.key)}
-          isSelected={list.selectedKeys.has(entity.key)}
-        />
-      ))}
+    <ul id={id} className={styles.entities} aria-labelledby={labelledBy} ref={listRef}>
+      {visible.map((item, index) =>
+        isEntityItem(item) ? (
+          <EntityRow
+            key={item.key}
+            entity={item}
+            index={index}
+            isHidden={list.hiddenKeys.has(item.key)}
+            isSelected={list.selectedKeys.has(item.key)}
+          />
+        ) : (
+          <RoutineRow
+            key={item.key}
+            routine={item}
+            index={index}
+            isSelected={list.selectedModuleKey === item.key}
+          />
+        ),
+      )}
+      {remaining > 0 ? (
+        <li>
+          <button
+            type="button"
+            className={styles.showMore}
+            onClick={() => {
+              firstNewRow.current = visible.length;
+              setPages((previous) => previous + 1);
+            }}
+          >
+            {t("objects.showMore", { count: Math.min(OBJECT_PAGE_SIZE, remaining), remaining })}
+          </button>
+        </li>
+      ) : null}
     </ul>
   );
 }
@@ -386,13 +495,14 @@ interface EntityRowProps {
   entity: EntityListItem;
   isHidden: boolean;
   isSelected: boolean;
+  index: number;
 }
 
 /**
  * One table or view: centre on click, the Inspector on double-click, the context menu on right
  * click, the eye to hide.
  */
-function EntityRow({ entity, isHidden, isSelected }: EntityRowProps) {
+function EntityRow({ entity, isHidden, isSelected, index }: EntityRowProps) {
   const { t, tCount } = useI18n();
   const focusEntity = useCanvasUiStore((state) => state.focusEntity);
   const openInspector = useCanvasUiStore((state) => state.openInspector);
@@ -402,6 +512,7 @@ function EntityRow({ entity, isHidden, isSelected }: EntityRowProps) {
 
   return (
     <li
+      data-object-index={index}
       className={classNames(
         styles.entity,
         isHidden && styles.entityHidden,
@@ -415,8 +526,8 @@ function EntityRow({ entity, isHidden, isSelected }: EntityRowProps) {
       <button
         type="button"
         className={styles.entityButton}
-        title={entity.key}
-        aria-label={t("sidebar.center", { name: entity.key })}
+        title={qualifiedNameLabel(entity)}
+        aria-label={t("sidebar.center", { name: qualifiedNameLabel(entity) })}
         onClick={() => {
           focusEntity(entity.key);
         }}
@@ -444,8 +555,8 @@ function EntityRow({ entity, isHidden, isSelected }: EntityRowProps) {
         className={styles.visibility}
         aria-label={
           isHidden
-            ? t("sidebar.show", { name: entity.key })
-            : t("sidebar.hide", { name: entity.key })
+            ? t("sidebar.show", { name: qualifiedNameLabel(entity) })
+            : t("sidebar.hide", { name: qualifiedNameLabel(entity) })
         }
         aria-pressed={!isHidden}
         onClick={() => {
@@ -453,6 +564,51 @@ function EntityRow({ entity, isHidden, isSelected }: EntityRowProps) {
         }}
       >
         {isHidden ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+      </button>
+    </li>
+  );
+}
+
+interface RoutineRowProps {
+  routine: RoutineListItem;
+  isSelected: boolean;
+  index: number;
+}
+
+/** A routine is inspected, never hidden on the diagram or offered an entity context menu. */
+export function RoutineRow({ routine, isSelected, index }: RoutineRowProps) {
+  const { t, tCount } = useI18n();
+  const selectModule = useCanvasUiStore((state) => state.selectModule);
+  const Icon = routine.kind === "function" ? SquareFunction : ScrollText;
+  const name = qualifiedNameLabel(routine.ref.name);
+  const parameters = tCount("objects.parameters", routine.parameterCount);
+  return (
+    <li
+      data-object-index={index}
+      className={classNames(styles.entity, isSelected && styles.entitySelected)}
+    >
+      <button
+        type="button"
+        className={styles.entityButton}
+        data-module-key={moduleKey(routine.ref)}
+        title={name}
+        aria-label={t("objects.details", { name })}
+        onClick={(event) => {
+          selectModule(routine.ref, { focus: event.detail === 0 });
+        }}
+      >
+        <Icon className={styles.entityIcon} aria-hidden="true" />
+        <span className={styles.entityName}>{routine.name}</span>
+        <span className={styles.entityColumns} title={parameters} aria-label={parameters}>
+          {routine.parameterCount}
+        </span>
+        {routine.isEncrypted ? (
+          <Lock className={styles.entityIcon} aria-label={t("objects.encrypted")}>
+            <title>{t("objects.encrypted")}</title>
+          </Lock>
+        ) : routine.implementation === "clr" ? (
+          <span className={styles.moduleMark}>{t("objects.clr")}</span>
+        ) : null}
       </button>
     </li>
   );

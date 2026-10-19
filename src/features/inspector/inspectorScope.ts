@@ -1,5 +1,6 @@
 import { accessSummary } from "@/features/schema/coverage";
 import { entityKey } from "@/features/schema/entities";
+import type { ModuleRef } from "@/features/schema/modules";
 import type { DetailsScope } from "@/features/schema/objectDetails";
 import type { InspectionOptions, NodeState, SchemaSnapshot } from "@/shared/contracts";
 
@@ -21,13 +22,23 @@ export function inspectorScope(
     carriedOver: snapshot.carriedOver ?? [],
     isSchemaFiltered: inspection.schemas.length > 0,
     isDiagramOnly: false,
+    definitions: "included",
   };
 }
 
-/**
- * The entity the Inspector shows: the selection when it holds exactly one key. Nothing or
- * several selected is an empty state, so the panel never shows what the canvas does not mark.
- */
-export function inspectedKey(selectedKeys: readonly string[]): string | null {
-  return selectedKeys.length === 1 ? (selectedKeys[0] ?? null) : null;
+export type InspectedTarget =
+  | { kind: "entity"; key: string }
+  | { kind: "multiple"; count: number }
+  | { kind: "module"; ref: ModuleRef }
+  | { kind: "none" };
+
+/** Entity selection takes precedence even if a caller supplies an inconsistent transient state. */
+export function inspectedTarget(
+  selectedKeys: readonly string[],
+  selectedModule: ModuleRef | null,
+): InspectedTarget {
+  const key = selectedKeys[0];
+  if (selectedKeys.length === 1 && key !== undefined) return { kind: "entity", key };
+  if (selectedKeys.length > 1) return { kind: "multiple", count: selectedKeys.length };
+  return selectedModule === null ? { kind: "none" } : { kind: "module", ref: selectedModule };
 }

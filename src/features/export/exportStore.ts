@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import { spreadForDetailLevel, withPositions } from "@/features/canvas/canvasState";
+import { triggerBadgeLabel } from "@/features/canvas/triggerBadgeText";
 import { useProjectStore } from "@/features/project/projectStore";
 import { accessSummary } from "@/features/schema/coverage";
 import type {
@@ -12,6 +13,8 @@ import type {
   SchemaSnapshot,
 } from "@/shared/contracts";
 import { translate } from "@/shared/i18n/useI18n";
+import { createCatalogTranslator } from "@/shared/i18n/translator";
+import { messageCatalogs } from "@/shared/i18n/messages/catalogs";
 import { getExportBackend } from "@/shared/ipc/exportBackend";
 import { toOperationError } from "@/shared/ipc/operationError";
 import type { OperationError } from "@/shared/ipc/operationError";
@@ -103,10 +106,20 @@ function accessFootnote(snapshot: SchemaSnapshot): string | undefined {
     : undefined;
 }
 
+function triggerNotes() {
+  const { locale } = useSettingsStore.getState();
+  return {
+    legend: translate(locale, "export.triggerLegend"),
+    notRead: translate(locale, "export.triggersNotRead"),
+    notChecked: translate(locale, "export.triggersNotChecked"),
+  };
+}
+
 /** The size of the drawn document, the footnote included, for the summary and the limits. */
 function measure(diagram: DiagramInput, detailLevel: DetailLevel): DiagramExtent {
   return measureDiagram(diagramForLevel(diagram, detailLevel), detailLevel, {
     footnote: accessFootnote(diagram.snapshot),
+    triggerNotes: triggerNotes(),
   });
 }
 
@@ -165,14 +178,22 @@ async function buildDocument(
   }
   // The view label is drawn into the file, so it follows the application's language like the
   // footnote does.
+  const translator = createCatalogTranslator(
+    messageCatalogs[useSettingsStore.getState().locale],
+    useSettingsStore.getState().locale,
+  );
   return renderDiagramSvg(diagramForLevel(diagram, detailLevel), {
     detailLevel,
     theme,
-    labels: { view: translate(useSettingsStore.getState().locale, "entity.view.label") },
+    labels: {
+      view: translator.t("entity.view.label"),
+      triggers: (badge) => triggerBadgeLabel(badge, translator),
+    },
     fontFaces,
     measureText,
     description: `Exported ${exportedAt} with ${labels.generator}`,
     footnote: accessFootnote(diagram.snapshot),
+    triggerNotes: triggerNotes(),
   }).svg;
 }
 

@@ -9,6 +9,7 @@ import "./viewer.css";
 import { spreadForDetailLevel, withPositions } from "@/features/canvas/canvasState";
 import { describeEntities } from "@/features/canvas/geometry";
 import type { EntityDescriptor } from "@/features/canvas/geometry";
+import { triggerBadgeLabel } from "@/features/canvas/triggerBadgeText";
 import {
   VIEWER_DATA_ELEMENT_ID,
   VIEWER_ROOT_ELEMENT_ID,
@@ -19,9 +20,15 @@ import type { ViewerMessageKey } from "@/features/export/html/viewerMessages";
 import { renderDiagramSvg } from "@/features/export/svg/renderDiagram";
 import type { ExportTheme } from "@/features/export/svg/palette";
 import { createCanvasMeasurer } from "@/features/export/svg/text";
-import { entityKey } from "@/features/schema/entities";
+import {
+  displayIdentifier,
+  entityKey,
+  matchesQualifiedName,
+  qualifiedNameLabel,
+} from "@/features/schema/entities";
 import { describeObjectDetails } from "@/features/schema/objectDetails";
 import type { DetailsScope } from "@/features/schema/objectDetails";
+import { triggerCapture } from "@/features/schema/triggerDetails";
 import { hasRuleTargets, presentObjectDetails } from "@/features/schema/objectDetailsView";
 import type {
   BadgeView,
@@ -39,6 +46,7 @@ import { createCatalogTranslator } from "@/shared/i18n/translator";
 import type { CatalogTranslator } from "@/shared/i18n/translator";
 
 import { h } from "./dom";
+import { triggerList, viewDefinition } from "./programmability";
 import { clearRuleHighlight, paintRuleHighlight, ruleBody, ruleSql } from "./rules";
 import type { TableLink } from "./rules";
 
@@ -126,6 +134,7 @@ class Viewer {
       carriedOver: data.carriedOver,
       isSchemaFiltered: false,
       isDiagramOnly: true,
+      definitions: "excluded",
     };
     this.entities = describeEntities(data.snapshot);
     this.detailLevel = data.detailLevel;
@@ -228,9 +237,26 @@ class Viewer {
     );
     // The file travels without the application, so it says itself when the login that read
     // the schema could not see all of it.
-    const note = carriesAccessNote(data.access)
-      ? h("p", { class: "sc-note", role: "note" }, this.t("export.note.partial"))
-      : null;
+    const notes: string[] = [];
+    if (carriesAccessNote(data.access)) {
+      notes.push(this.t("export.note.partial"));
+    }
+    if ([...this.entities.values()].some((entity) => entity.triggers !== null)) {
+      notes.push(this.t("export.triggerLegend"));
+    }
+    if (snapshot.programmability?.capture.objects.status !== "read") {
+      notes.push(this.t("export.triggersNotRead"));
+    } else if (
+      [...this.entities.values()].some(
+        (entity) => triggerCapture(snapshot, entity.name, data.carriedOver).status !== "complete",
+      )
+    ) {
+      notes.push(this.t("export.triggersNotChecked"));
+    }
+    const note =
+      notes.length === 0
+        ? null
+        : h("div", { class: "sc-note", role: "note" }, ...notes.map((text) => h("p", {}, text)));
     root.replaceChildren(
       h(
         "div",
@@ -267,7 +293,10 @@ class Viewer {
       {
         detailLevel: this.detailLevel,
         theme: this.theme,
-        labels: { view: this.t("entity.view.label") },
+        labels: {
+          view: this.t("entity.view.label"),
+          triggers: (badge) => triggerBadgeLabel(badge, this.translator),
+        },
         background: false,
         measureText: this.measure,
       },
@@ -578,8 +607,8 @@ class Viewer {
         h(
           "h2",
           { class: "sc-panel-title", tabindex: "-1" },
-          h("span", { class: "sc-schema" }, `${view.schema}.`),
-          view.name,
+          h("span", { class: "sc-schema" }, `${displayIdentifier(view.schema)}.`),
+          displayIdentifier(view.name),
         ),
         h("div", { class: "sc-panel-summary" }, view.summary),
         view.notice === null ? null : h("p", { class: "sc-panel-notice" }, view.notice),
@@ -620,6 +649,10 @@ class Viewer {
       case "references":
       case "referencedBy":
         return this.relationList(section);
+      case "triggers":
+        return triggerList(section);
+      case "viewDefinition":
+        return viewDefinition(section);
     }
   }
 
@@ -657,8 +690,9 @@ class Viewer {
   }
 
   /**
-   * Primary key, indexes and `CHECK`s: the name with its columns and badges, then for a `CHECK`
-   * its rule in words with the SQL behind a disclosure, or the marked words for a missing text.
+   * Primary key, indexes and `CHECK`s: the name with its columns and badges, an index's `INCLUDE`
+   * line, then for a `CHECK` its rule in words with the SQL behind a disclosure, or the marked
+   * words for a missing text, under what is still known about it in words.
    */
   private constraintList(section: ConstraintSectionView): HTMLElement {
     return h(
@@ -675,16 +709,29 @@ class Viewer {
           ...item.badges.map(badgeElement),
         );
         if (item.rule === null) {
-          return h("li", {}, head, item.expression === null ? null : valueElement(item.expression));
+          return h(
+            "li",
+            {},
+            head,
+            item.include === null ? null : h("div", { class: "sc-value sc-mono" }, item.include),
+            item.expression === null ? null : valueElement(item.expression),
+          );
         }
-        // A text kept from an earlier read is worded too; its date says how far it holds.
-        const hint = item.expression?.state === "notChecked" ? item.expression.hint : null;
+        // A text kept from an earlier read is worded too; its date says how far it holds. A text
+        // the capture could not read keeps its marked words under what is still known.
+        const { expression } = item;
+        const hint = expression?.state === "notChecked" ? expression.hint : null;
+        const missing =
+          expression !== null &&
+          (expression.state === "notAvailable" || expression.state === "notRecorded")
+            ? valueElement(expression)
+            : null;
         const element = h(
           "li",
           { class: "sc-rule" },
           head,
           ruleBody(item.rule, null),
-          hint === null ? null : h("div", { class: "sc-hint" }, hint),
+          hint === null ? missing : h("div", { class: "sc-hint" }, hint),
           ruleSql(item.rule, this.t),
         );
         this.bindRule(element, item.rule.targets);
@@ -798,10 +845,15 @@ class Viewer {
       this.results.hidden = true;
       return;
     }
-    this.resultKeys = [...this.entities.keys()]
-      .filter((key) => key.toLowerCase().includes(query))
-      .sort((left, right) => left.length - right.length || left.localeCompare(right))
-      .slice(0, 50);
+    this.resultKeys = [...this.entities.values()]
+      .map((entity) => ({ entity, label: `${entity.name.schema}.${entity.name.name}` }))
+      .filter(({ entity }) => matchesQualifiedName(entity.name, query))
+      .sort(
+        (left, right) =>
+          left.label.length - right.label.length || left.label.localeCompare(right.label),
+      )
+      .slice(0, 50)
+      .map(({ entity }) => entity.key);
     this.activeResult = 0;
     this.paintResults();
     this.results.hidden = false;
@@ -815,9 +867,11 @@ class Viewer {
       return;
     }
     this.results.replaceChildren(
-      ...this.resultKeys.map((key, index) => {
+      ...this.resultKeys.flatMap((key, index) => {
         // Each result says whether it is a table or a view, as the application's palette does.
-        const isView = this.entities.get(key)?.kind === "view";
+        const entity = this.entities.get(key);
+        if (entity === undefined) return [];
+        const isView = entity.kind === "view";
         const item = h(
           "li",
           {
@@ -825,7 +879,7 @@ class Viewer {
             role: "option",
             "aria-selected": String(index === this.activeResult),
           },
-          h("span", { class: "sc-result-name" }, key),
+          h("span", { class: "sc-result-name" }, qualifiedNameLabel(entity.name)),
           h(
             "span",
             { class: isView ? "sc-result-kind sc-result-kind-view" : "sc-result-kind" },

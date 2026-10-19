@@ -20,6 +20,15 @@ canReadData: boolean,
  */
 explicitDenials: number | null, 
 /**
+ * Explicit denials of `EXECUTE` for the login and its roles, at the database, schema and
+ * object level. They hide a procedure or function from a login that sees it only through
+ * `EXECUTE`, never from one that holds `VIEW DEFINITION`, which is the only kind of login
+ * that can list every procedure and function (`tests/sqlserver_permissions.rs` pins both on
+ * SQL Server 2019 and 2022). `None` when the probe did not count them, as before 1.2, or the
+ * login cannot see its own denials; either way some may exist.
+ */
+executeDenials?: number, 
+/**
  * Whether the login sees at least one user table or view.
  */
 seesObjects: boolean, 
@@ -29,6 +38,6 @@ seesObjects: boolean,
 schemas: Array<SchemaAccess>, 
 /**
  * Database user the login maps to, used to name it in a `GRANT` script; `None` when the
- * login reaches the database without a user of its own.
+ * login reaches the database without a user of its own, or cannot tell.
  */
 databaseUser: string | null, };

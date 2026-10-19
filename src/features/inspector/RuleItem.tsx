@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { FocusEvent, ReactNode } from "react";
 
@@ -8,7 +8,7 @@ import { hasRuleTargets } from "@/features/schema/objectDetailsView";
 import type { RuleNodeView, RuleTargets, RuleView } from "@/features/schema/objectDetailsView";
 import type { RulePart } from "@/features/schema/rules/ruleText";
 import { useI18n } from "@/shared/i18n/useI18n";
-import { IconButton } from "@/shared/ui/IconButton";
+import { CopyButton } from "@/shared/ui/CopyButton";
 import { classNames } from "@/shared/ui/classNames";
 
 import styles from "./RuleItem.module.css";
@@ -28,11 +28,6 @@ export interface TableLink {
   label: string;
   onFollow: (key: string) => void;
 }
-
-type CopyOutcome = "idle" | "copied" | "failed";
-
-/** How long the copy confirmation stays next to the button. */
-const FEEDBACK_MILLISECONDS = 2500;
 
 function highlightOf(owner: string, targets: RuleTargets): RuleHighlight {
   return {
@@ -54,10 +49,11 @@ interface RuleItemProps {
 }
 
 /**
- * One rule: the head with the SQL toggle at its end, the sentences or the line that says they
- * cannot be given, the item's own lines, and the SQL, shown from the start when there are no
- * sentences. Focusing any control of the item highlights the rule as the pointer does, so the
- * highlight adds no stop for the keyboard of its own.
+ * One rule: the head with the SQL toggle at its end, the item's own lines, the sentences, the
+ * line that says the rule cannot be put into words (after what is still known in words, such as
+ * that the rows already there may not follow it), and the SQL, shown from the start when the rule
+ * cannot be put into words. Focusing any control of the item highlights the rule as the pointer
+ * does, so the highlight adds no stop for the keyboard of its own.
  */
 export function RuleItem({ rule, head, children, footer, link }: RuleItemProps) {
   const { t } = useI18n();
@@ -133,11 +129,8 @@ export function RuleItem({ rule, head, children, footer, link }: RuleItemProps) 
         )}
       </div>
       {children}
-      {rule.unread === null ? (
-        <RuleSentences nodes={rule.sentences} link={link} />
-      ) : (
-        <p className={styles.unread}>{rule.unread}</p>
-      )}
+      {rule.sentences.length === 0 ? null : <RuleSentences nodes={rule.sentences} link={link} />}
+      {rule.unread === null ? null : <p className={styles.unread}>{rule.unread}</p>}
       {footer}
       {rule.sql === null ? null : (
         <div id={sqlId} className={styles.sql} hidden={!isSqlOpen}>
@@ -146,7 +139,13 @@ export function RuleItem({ rule, head, children, footer, link }: RuleItemProps) 
           </pre>
           <div className={styles.sqlBar}>
             {rule.sqlNote === null ? null : <span className={styles.sqlNote}>{rule.sqlNote}</span>}
-            <CopySqlButton sql={rule.sql} />
+            <CopyButton
+              text={rule.sql}
+              label={t("rule.sql.copy")}
+              copiedLabel={t("copy.copied")}
+              failedLabel={t("copy.failed")}
+              iconOnly
+            />
           </div>
         </div>
       )}
@@ -233,53 +232,5 @@ function RuleParts({ parts, link }: RulePartsProps) {
         }
       })}
     </>
-  );
-}
-
-/** Copies the rule's SQL; the outcome is shown next to the button and announced politely. */
-function CopySqlButton({ sql }: { sql: string }) {
-  const { t } = useI18n();
-  const [outcome, setOutcome] = useState<CopyOutcome>("idle");
-
-  useEffect(() => {
-    if (outcome === "idle") {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      setOutcome("idle");
-    }, FEEDBACK_MILLISECONDS);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [outcome]);
-
-  const copy = () => {
-    navigator.clipboard.writeText(sql).then(
-      () => {
-        setOutcome("copied");
-      },
-      (error: unknown) => {
-        console.warn("Could not copy the rule's SQL", error);
-        setOutcome("failed");
-      },
-    );
-  };
-
-  return (
-    <span className={styles.copy}>
-      <span className={styles.feedback} role="status">
-        {outcome === "copied"
-          ? t("rule.sql.copied")
-          : outcome === "failed"
-            ? t("rule.sql.copyFailed")
-            : null}
-      </span>
-      <IconButton
-        label={t("rule.sql.copy")}
-        icon={outcome === "copied" ? Check : Copy}
-        className={styles.copyButton}
-        onClick={copy}
-      />
-    </span>
   );
 }

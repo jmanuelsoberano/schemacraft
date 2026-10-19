@@ -155,9 +155,12 @@ beforeEach(() => {
 
 describe("with a project open", () => {
   beforeEach(() => {
-    useProjectStore
-      .getState()
-      .loadFromInspection(snapshot, settings, { schemas: [], includeViews: true });
+    useProjectStore.getState().loadFromInspection(snapshot, settings, {
+      schemas: [],
+      includeViews: true,
+      includeProgrammability: true,
+      includeModuleDefinitions: true,
+    });
   });
 
   it("hides and shows only the given entities, one undo step per change", () => {

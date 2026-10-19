@@ -16,8 +16,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use schemacraft_core::diff::{
-    ChangeCounts, ColumnChange, ColumnProperty, ForeignKeyChange, ForeignKeyProperty, IndexChange,
-    SchemaDiff, TableChange,
+    ChangeCounts, CheckConstraintChange, ColumnChange, ColumnProperty, ForeignKeyChange,
+    ForeignKeyProperty, IndexChange, SchemaDiff, TableChange,
 };
 use schemacraft_core::inspectors::sqlserver::SqlServerConnectionSettings;
 use schemacraft_core::inspectors::{
@@ -26,14 +26,15 @@ use schemacraft_core::inspectors::{
 };
 use schemacraft_core::model::{
     AccessLevel, Completeness, Definition, IndexKind, QualifiedName, ReferentialAction,
-    SchemaSnapshot, UnknownFields,
+    RoutineKind, SchemaSnapshot, UnknownFields,
 };
 use schemacraft_core::project::{CanvasState, NodeState, Point};
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
 use self::common::{
-    TestClient, TestServer, connect, ensure_seeded, inspector, settings, test_server,
+    PROBE_METRICS, PROBE_SCRIPT, TestClient, TestServer, check_expected_major_version, connect,
+    ensure_seeded, inspector, run_probe, run_probe_script, server_version, settings, test_server,
 };
 
 const FIXTURE_DATABASE: &str = "SchemaCraftFixture";
@@ -46,6 +47,9 @@ const CHANGES_SCRIPT: &str = include_str!("fixtures/sqlserver/changes.sql");
 const CHECK_FORMS_DATABASE: &str = "SchemaCraftCheckForms";
 const CHECK_FORMS: &str = include_str!("fixtures/sqlserver/check_forms.json");
 const RULE_FACTS_SCRIPT: &str = include_str!("fixtures/sqlserver/rule_facts.sql");
+/// Views, triggers, procedures and functions for the capability probe, in a database of their own.
+const CODE_DATABASE: &str = "SchemaCraftCode";
+const CODE_SCRIPT: &str = include_str!("fixtures/sqlserver/code.sql");
 
 /// Error 547: a statement conflicted with a `CHECK`, `FOREIGN KEY` or `REFERENCE` constraint.
 const CONSTRAINT_CONFLICT: u32 = 547;
@@ -53,8 +57,15 @@ const CONSTRAINT_CONFLICT: u32 = 547;
 const IDENTITY_UPDATE: u32 = 8102;
 /// Error 2601: a duplicate key in a unique index.
 const DUPLICATE_KEY: u32 = 2601;
+/// Error 2627: a duplicate key in a primary key or unique constraint.
+const DUPLICATE_CONSTRAINT_KEY: u32 = 2627;
+/// Error 8655: no plan can read or write a table whose clustered index is disabled.
+const INDEX_DISABLED: u32 = 8655;
+/// Error 1974: the operation needs the clustered index of the table, which is disabled.
+const CLUSTERED_INDEX_DISABLED: u32 = 1974;
 
-/// Budget for inspecting 200 tables; the product target is 3 seconds on a local network.
+/// Budget for inspecting 200 tables and roughly two million characters of code; the product
+/// target is 3 seconds on a local network.
 const STRESS_BUDGET: Duration = Duration::from_secs(5);
 
 #[derive(Default)]
@@ -100,6 +111,19 @@ async fn test_connection_reports_server_identity() {
     assert_ne!(information.product_version, "");
     assert_ne!(information.edition, "");
     assert_eq!(information.database_name, "master");
+}
+
+#[tokio::test]
+async fn connects_to_the_expected_major_version() {
+    let Some(server) = test_server() else { return };
+    let version = check_expected_major_version(&server).await;
+
+    // The inspector reports the server the test checked.
+    let information = inspector(settings(&server, None))
+        .test_connection()
+        .await
+        .expect("connection succeeds");
+    assert_eq!(information.product_version, version.product_version);
 }
 
 #[tokio::test]
@@ -405,6 +429,32 @@ async fn inspects_keys_indexes_and_constraints() {
         ]
     );
 
+    // The state of every index and key is recorded: included columns in index order, the
+    // filter flag and whether it is enabled.
+    let mut index_states: Vec<String> = orders
+        .indexes
+        .iter()
+        .chain(&customers.indexes)
+        .map(|index| {
+            format!(
+                "{} include {:?} filtered {:?} enabled {:?}",
+                index.name, index.included_columns, index.is_filtered, index.is_enabled
+            )
+        })
+        .collect();
+    index_states.sort();
+    assert_eq!(
+        index_states,
+        [
+            "IX_Orders_CustomerId include Some([\"PlacedAt\"]) filtered Some(false) enabled Some(true)",
+            "IX_Orders_Open include Some([]) filtered Some(true) enabled Some(true)",
+            "UQ_Customers_Email include Some([]) filtered Some(false) enabled Some(true)",
+            "UX_Orders_Customer_PlacedAt include Some([]) filtered Some(false) enabled Some(true)",
+        ]
+    );
+    assert_eq!(primary_key.is_enabled, Some(true));
+    assert_eq!(customers.check_constraints[0].is_trusted, Some(true));
+
     let lines = snapshot
         .table(&QualifiedName::new("sales", "OrderLines"))
         .expect("order lines");
@@ -417,6 +467,7 @@ async fn inspects_keys_indexes_and_constraints() {
         Definition::readable("([Quantity]>(0))")
     );
     assert_eq!(lines.check_constraints[0].is_enabled, Some(true));
+    assert_eq!(lines.check_constraints[0].is_trusted, Some(true));
 }
 
 #[tokio::test]
@@ -457,6 +508,21 @@ async fn inspects_foreign_keys_with_actions_and_state() {
         ]
     );
 
+    // A disabled key is never trusted; every other key of the fixture was checked when added.
+    let untrusted: Vec<&str> = snapshot
+        .foreign_keys
+        .iter()
+        .filter(|key| key.is_trusted != Some(true))
+        .map(|key| key.name.as_str())
+        .collect();
+    assert_eq!(untrusted, ["FK_Shipments_Orders_Disabled"]);
+    assert!(
+        snapshot
+            .foreign_keys
+            .iter()
+            .all(|key| key.is_trusted.is_some())
+    );
+
     let composite = snapshot
         .foreign_keys
         .iter()
@@ -482,6 +548,7 @@ async fn inspects_views_and_honours_filters() {
         InspectionOptions {
             schemas: vec!["sales".to_string()],
             include_views: false,
+            ..InspectionOptions::default()
         },
     )
     .await;
@@ -566,6 +633,7 @@ async fn cancellation_stops_the_inspection() {
 async fn inspects_two_hundred_tables_within_budget() {
     let Some(server) = test_server() else { return };
     ensure_seeded(&server, STRESS_DATABASE, STRESS_SCRIPT).await;
+    let version = server_version(&server).await;
 
     let started = Instant::now();
     let snapshot = inspector(settings(&server, Some(STRESS_DATABASE)))
@@ -577,11 +645,42 @@ async fn inspects_two_hundred_tables_within_budget() {
         .await
         .expect("inspection succeeds");
     let elapsed = started.elapsed();
+    let code = snapshot.programmability.as_ref().expect("code was read");
+    let snapshot_bytes = serde_json::to_vec(&snapshot).unwrap().len();
+    let module_characters: usize = code
+        .module_definitions()
+        .filter_map(Definition::text)
+        .map(|text| text.chars().count())
+        .sum();
 
-    eprintln!("inspected {} tables in {elapsed:?}", snapshot.tables.len());
+    eprintln!(
+        "inspected {} tables, {} routines and {} triggers in {elapsed:?} on SQL Server {}; \
+         snapshot_bytes={snapshot_bytes}, module_characters={module_characters}",
+        snapshot.tables.len(),
+        code.routines.len(),
+        code.triggers.len(),
+        version.product_version,
+    );
     assert_eq!(snapshot.tables.len(), 200);
     assert_eq!(snapshot.foreign_keys.len(), 199);
     assert!(snapshot.tables.iter().all(|table| table.indexes.len() == 2));
+    assert_eq!(snapshot.views.len(), 20);
+    assert_eq!(code.views.len(), 20);
+    assert_eq!(code.triggers.len(), 200);
+    for (kind, expected) in [
+        (RoutineKind::Procedure, 600),
+        (RoutineKind::ScalarFunction, 100),
+        (RoutineKind::InlineTableFunction, 50),
+    ] {
+        assert_eq!(
+            code.routines
+                .iter()
+                .filter(|routine| routine.kind == kind)
+                .count(),
+            expected
+        );
+    }
+    assert!((1_900_000..2_500_000).contains(&module_characters));
     assert!(elapsed < STRESS_BUDGET, "inspection took {elapsed:?}");
 }
 
@@ -620,10 +719,14 @@ async fn refresh_reports_the_differences_and_keeps_surviving_positions() {
 
     let diff = SchemaDiff::between(&previous, &current);
 
-    // Both captures see everything, so nothing is kept unchecked or newly readable.
+    // Both captures see everything and record every state, so nothing is kept unchecked, newly
+    // readable or newly recorded.
     assert_eq!(diff.not_checked, []);
     assert_eq!(diff.now_available, []);
     assert!(!diff.access_changed);
+    assert_eq!(diff.capture_changes, []);
+    assert!(diff.has_object_changes());
+    assert!(!diff.is_up_to_date());
     assert_eq!(
         diff.summary.tables,
         ChangeCounts {
@@ -682,7 +785,10 @@ async fn refresh_reports_the_differences_and_keeps_surviving_positions() {
     ));
 
     let TableChange::Changed {
-        columns, indexes, ..
+        columns,
+        indexes,
+        check_constraints,
+        ..
     } = &diff.tables[2]
     else {
         panic!(
@@ -695,6 +801,24 @@ async fn refresh_reports_the_differences_and_keeps_surviving_positions() {
         &indexes[0],
         IndexChange::Removed { index } if index.name == "IX_Orders_CustomerId"
     ));
+    // A disabled index is a change of the index, with its key columns as they were.
+    assert!(matches!(
+        &indexes[1],
+        IndexChange::Changed { before, after }
+            if after.name == "UX_Orders_Customer_PlacedAt"
+                && before.is_enabled == Some(true)
+                && after.is_enabled == Some(false)
+                && after.columns == before.columns
+    ));
+    assert_eq!(indexes.len(), 2);
+    // So is a CHECK enabled again without checking the rows already there.
+    assert!(matches!(
+        check_constraints.as_slice(),
+        [CheckConstraintChange::Changed { before, after }]
+            if after.name == "CK_Orders_Status"
+                && (before.is_enabled, before.is_trusted) == (Some(true), Some(true))
+                && (after.is_enabled, after.is_trusted) == (Some(true), Some(false))
+    ));
 
     assert!(matches!(
         &diff.foreign_keys[0],
@@ -705,7 +829,14 @@ async fn refresh_reports_the_differences_and_keeps_surviving_positions() {
         ForeignKeyChange::Changed { after, properties, .. }
             if after.name == "FK_Orders_Customers"
                 && after.on_delete == ReferentialAction::Cascade
-                && properties == &[ForeignKeyProperty::OnDelete, ForeignKeyProperty::OnUpdate]
+                && after.is_enabled
+                && after.is_trusted == Some(false)
+                && properties
+                    == &[
+                        ForeignKeyProperty::OnDelete,
+                        ForeignKeyProperty::OnUpdate,
+                        ForeignKeyProperty::Trust,
+                    ]
     ));
 
     let canvas = CanvasState {
@@ -1116,6 +1247,117 @@ async fn check_engine_facts_behind_the_sentences() {
         Ok(1)
     );
 
+    // A CHECK enabled again without WITH CHECK is not trusted: it still checks every row
+    // inserted and every row whose columns it reads are written, while a row it never checked
+    // stays, even when its other columns change, and WITH CHECK refuses to trust it until the row
+    // is gone.
+    let trust = |constraint: &str| {
+        format!(
+            "SELECT CONCAT(is_disabled, ' ', is_not_trusted) FROM sys.check_constraints \
+             WHERE name = '{constraint}'"
+        )
+    };
+    assert_eq!(
+        text_rows(&mut client, &trust("CK_RecheckedValues_Amount")).await,
+        ["0 1"]
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "INSERT INTO facts.RecheckedValues VALUES (2, -2, 1)"
+        )
+        .await,
+        Err(CONSTRAINT_CONFLICT)
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "UPDATE facts.RecheckedValues SET Quantity = Quantity WHERE ValueId = 1"
+        )
+        .await,
+        Ok(1)
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "UPDATE facts.RecheckedValues SET Amount = Amount WHERE ValueId = 1"
+        )
+        .await,
+        Err(CONSTRAINT_CONFLICT)
+    );
+    assert_eq!(
+        text_rows(
+            &mut client,
+            "SELECT CONCAT(ValueId, ' ', Amount) FROM facts.RecheckedValues"
+        )
+        .await,
+        ["1 -1"]
+    );
+    // A CHECK NOT FOR REPLICATION is never trusted, even after WITH CHECK over rows that follow
+    // it.
+    let replicated = |constraint: &str| {
+        format!(
+            "SELECT CONCAT(is_disabled, ' ', is_not_trusted, ' ', is_not_for_replication) \
+             FROM sys.check_constraints WHERE name = '{constraint}'"
+        )
+    };
+    assert_eq!(
+        text_rows(&mut client, &replicated("CK_ReplicatedChildren_Amount")).await,
+        ["0 1 1"]
+    );
+    execute(
+        &mut client,
+        "ALTER TABLE facts.ReplicatedChildren WITH CHECK CHECK CONSTRAINT CK_ReplicatedChildren_Amount",
+    )
+    .await
+    .expect("checked again");
+    assert_eq!(
+        text_rows(&mut client, &replicated("CK_ReplicatedChildren_Amount")).await,
+        ["0 1 1"]
+    );
+    // CK_RecheckedValues_Limit goes through the same states: disabled, a row let in, enabled
+    // again untrusted, refused WITH CHECK while the row is there, and trusted once it is gone.
+    let limit = |statement: &str| {
+        format!("ALTER TABLE facts.RecheckedValues {statement} CONSTRAINT CK_RecheckedValues_Limit")
+    };
+    execute(&mut client, &limit("NOCHECK"))
+        .await
+        .expect("disabled");
+    assert_eq!(
+        text_rows(&mut client, &trust("CK_RecheckedValues_Limit")).await,
+        ["1 1"]
+    );
+    execute(
+        &mut client,
+        "INSERT INTO facts.RecheckedValues VALUES (3, 1, 99)",
+    )
+    .await
+    .expect("a row the disabled CHECK lets in");
+    execute(&mut client, &limit("CHECK"))
+        .await
+        .expect("enabled again");
+    assert_eq!(
+        text_rows(&mut client, &trust("CK_RecheckedValues_Limit")).await,
+        ["0 1"]
+    );
+    assert_eq!(
+        execute(&mut client, &limit("WITH CHECK CHECK")).await,
+        Err(CONSTRAINT_CONFLICT)
+    );
+    execute(
+        &mut client,
+        "DELETE FROM facts.RecheckedValues WHERE ValueId = 3",
+    )
+    .await
+    .expect("the row goes");
+    execute(&mut client, &limit("WITH CHECK CHECK"))
+        .await
+        .expect("trusted again");
+    assert_eq!(
+        text_rows(&mut client, &trust("CK_RecheckedValues_Limit")).await,
+        ["0 0"]
+    );
+
     // On a datetime column, '2000-02-01' is read with the DATEFORMAT of the session that writes
     // the row, so the same CHECK refuses 15 January under mdy and accepts it under ydm.
     let mid_january = insert(13, "LoggedAt", "'20000115'");
@@ -1166,29 +1408,94 @@ async fn foreign_key_engine_facts_behind_the_sentences() {
             "FK_OwnedChildren_Owners Cascade/NoAction enabled",
             "FK_OwnedChildren_Parents NoAction/NoAction enabled",
             "FK_PairChildren_Pairs NoAction/NoAction enabled",
+            "FK_ReplicatedChildren_Parents NoAction/NoAction enabled",
             "FK_SetDefaultChildren_Parents SetDefault/NoAction enabled",
             "FK_SetNullChildren_Parents SetNull/SetNull enabled",
+            "FK_UniqueIndexChildren_Parents NoAction/NoAction enabled",
+            "FK_UntrustedChildren_Parents NoAction/NoAction enabled",
         ]
     );
-    // The snapshot records neither index filters nor disabled indexes, so a filtered unique
-    // index looks like any other unique index, and a unique constraint whose index is disabled
-    // like one that holds (see the last facts below).
-    let index_kind = |table: &str, name: &str| {
+    // A disabled key is never trusted, a key added WITH NOCHECK is enabled yet not trusted, and
+    // so is a key NOT FOR REPLICATION, whatever rows it checked.
+    let untrusted: Vec<&str> = snapshot
+        .foreign_keys
+        .iter()
+        .filter(|key| key.referencing_table.schema == "facts" && key.is_trusted != Some(true))
+        .map(|key| key.name.as_str())
+        .collect();
+    assert_eq!(
+        untrusted,
+        [
+            "FK_DisabledChildren_Parents",
+            "FK_ReplicatedChildren_Parents",
+            "FK_UntrustedChildren_Parents"
+        ]
+    );
+    // The snapshot records whether an index is filtered and whether it is enabled, which decide
+    // whether a unique one keeps a parent row to one child row (see the last facts below).
+    let index_state = |table: &str, name: &str| {
         snapshot
             .table(&QualifiedName::new("facts", table))
             .and_then(|table| table.indexes.iter().find(|index| index.name == name))
-            .map(|index| index.kind)
+            .map(|index| (index.kind, index.is_filtered, index.is_enabled))
     };
     assert_eq!(
-        index_kind("FilteredChildren", "UX_FilteredChildren_Current"),
-        Some(IndexKind::UniqueIndex)
+        index_state("FilteredChildren", "UX_FilteredChildren_Current"),
+        Some((IndexKind::UniqueIndex, Some(true), Some(true)))
     );
     assert_eq!(
-        index_kind(
+        index_state(
             "DisabledUniqueChildren",
             "UQ_DisabledUniqueChildren_ParentCode"
         ),
-        Some(IndexKind::UniqueConstraint)
+        Some((IndexKind::UniqueConstraint, Some(false), Some(false)))
+    );
+    assert_eq!(
+        index_state("UniqueIndexChildren", "UX_UniqueIndexChildren_ParentCode"),
+        Some((IndexKind::UniqueIndex, Some(false), Some(true)))
+    );
+    // A CHECK enabled again without WITH CHECK is enabled and not trusted.
+    let rechecked = snapshot
+        .table(&QualifiedName::new("facts", "RecheckedValues"))
+        .and_then(|table| {
+            table
+                .check_constraints
+                .iter()
+                .find(|constraint| constraint.name == "CK_RecheckedValues_Amount")
+        })
+        .expect("the rechecked CHECK");
+    assert_eq!(
+        (rechecked.is_enabled, rechecked.is_trusted),
+        (Some(true), Some(false))
+    );
+    // So is a CHECK NOT FOR REPLICATION.
+    let replicated = snapshot
+        .table(&QualifiedName::new("facts", "ReplicatedChildren"))
+        .and_then(|table| {
+            table
+                .check_constraints
+                .iter()
+                .find(|constraint| constraint.name == "CK_ReplicatedChildren_Amount")
+        })
+        .expect("the CHECK NOT FOR REPLICATION");
+    assert_eq!(
+        (replicated.is_enabled, replicated.is_trusted),
+        (Some(true), Some(false))
+    );
+    // The partitioning column SQL Server adds to an aligned index is neither a key column nor an
+    // included one, while one the key names stays in it.
+    let events = snapshot
+        .table(&QualifiedName::new("facts", "PartitionedEvents"))
+        .expect("the partitioned table");
+    assert_eq!(
+        events.primary_key.as_ref().expect("its key").columns,
+        ["EventId", "EventYear"]
+    );
+    assert_eq!(events.indexes[0].name, "IX_PartitionedEvents_Label");
+    assert_eq!(events.indexes[0].columns, ["Label"]);
+    assert_eq!(
+        events.indexes[0].included_columns,
+        Some(vec!["Note".to_string()])
     );
 
     let mut client = connect(&server, Some(CHECK_FORMS_DATABASE)).await;
@@ -1439,6 +1746,111 @@ async fn foreign_key_engine_facts_behind_the_sentences() {
         scripted(" WITH NOCHECK")
     );
     assert!(execute(&mut client, &disabled).await.is_ok());
+    let key_state = |name: &str| {
+        format!(
+            "SELECT CONCAT(is_disabled, ' ', is_not_trusted) FROM sys.foreign_keys \
+             WHERE name = '{name}'"
+        )
+    };
+    assert_eq!(
+        text_rows(&mut client, &key_state("FK_UncheckedChildren_Parents")).await,
+        ["1 1"]
+    );
+    // An enabled key that is not trusted is scripted WITH NOCHECK alone, which adds it enabled
+    // and not trusted over the same rows.
+    execute(
+        &mut client,
+        "ALTER TABLE facts.UncheckedChildren DROP CONSTRAINT FK_UncheckedChildren_Parents",
+    )
+    .await
+    .expect("the key goes");
+    assert!(
+        execute(&mut client, &scripted(" WITH NOCHECK"))
+            .await
+            .is_ok()
+    );
+    assert_eq!(
+        text_rows(&mut client, &key_state("FK_UncheckedChildren_Parents")).await,
+        ["0 1"]
+    );
+
+    // A key added WITH NOCHECK is not trusted, yet it checks every row inserted after and every
+    // row whose referencing columns are written: a new row without a parent row is refused while
+    // the one already there stays, even when its other columns change, and WITH CHECK refuses to
+    // trust the key while that row is there.
+    assert_eq!(
+        text_rows(&mut client, &key_state("FK_UntrustedChildren_Parents")).await,
+        ["0 1"]
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "INSERT INTO facts.UntrustedChildren (ChildId, ParentCode) VALUES (2, 'YY')"
+        )
+        .await,
+        Err(CONSTRAINT_CONFLICT)
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "INSERT INTO facts.UntrustedChildren (ChildId, ParentCode) VALUES (3, 'P0')"
+        )
+        .await,
+        Ok(1)
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "UPDATE facts.UntrustedChildren SET Note = N'x' WHERE ChildId = 1"
+        )
+        .await,
+        Ok(1)
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "UPDATE facts.UntrustedChildren SET ParentCode = ParentCode WHERE ChildId = 1"
+        )
+        .await,
+        Err(CONSTRAINT_CONFLICT)
+    );
+    assert_eq!(
+        text_rows(
+            &mut client,
+            "SELECT CONCAT(ChildId, ' ', ParentCode) FROM facts.UntrustedChildren ORDER BY ChildId"
+        )
+        .await,
+        ["1 ZZ", "3 P0"]
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "ALTER TABLE facts.UntrustedChildren WITH CHECK CHECK CONSTRAINT FK_UntrustedChildren_Parents"
+        )
+        .await,
+        Err(CONSTRAINT_CONFLICT)
+    );
+    // A key NOT FOR REPLICATION is never trusted, even after WITH CHECK over rows that follow it.
+    let replicated = |name: &str| {
+        format!(
+            "SELECT CONCAT(is_disabled, ' ', is_not_trusted, ' ', is_not_for_replication) \
+             FROM sys.foreign_keys WHERE name = '{name}'"
+        )
+    };
+    assert_eq!(
+        text_rows(&mut client, &replicated("FK_ReplicatedChildren_Parents")).await,
+        ["0 1 1"]
+    );
+    execute(
+        &mut client,
+        "ALTER TABLE facts.ReplicatedChildren WITH CHECK CHECK CONSTRAINT FK_ReplicatedChildren_Parents",
+    )
+    .await
+    .expect("checked again");
+    assert_eq!(
+        text_rows(&mut client, &replicated("FK_ReplicatedChildren_Parents")).await,
+        ["0 1 1"]
+    );
 
     // A self-reference, checked once the statement has run: a row may point to itself, a row
     // that other rows still point to afterwards cannot be deleted or re-keyed, and one statement
@@ -1526,7 +1938,7 @@ async fn foreign_key_engine_facts_behind_the_sentences() {
         .await,
         Err(DUPLICATE_KEY)
     );
-    // Nor does a unique constraint whose index is disabled, which the snapshot still reports.
+    // Nor does a unique constraint whose index is disabled, which the snapshot records as such.
     assert_eq!(
         execute(
             &mut client,
@@ -1534,5 +1946,765 @@ async fn foreign_key_engine_facts_behind_the_sentences() {
         )
         .await,
         Ok(2)
+    );
+    // A unique index that is enabled and has no filter does.
+    assert_eq!(
+        execute(
+            &mut client,
+            "INSERT INTO facts.UniqueIndexChildren VALUES (1, 'P0')"
+        )
+        .await,
+        Ok(1)
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "INSERT INTO facts.UniqueIndexChildren VALUES (2, 'P0')"
+        )
+        .await,
+        Err(DUPLICATE_KEY)
+    );
+}
+
+/// Words of T-SQL that run code, write, change the session, read table text or leave the
+/// catalog, or return a name, a message or a text, none of which the capability probe may use
+/// outside its comments and string literals.
+const PROBE_FORBIDDEN_WORDS: &[&str] = &[
+    "@@SERVERNAME",
+    "@@SERVICENAME",
+    "ALTER",
+    "APP_NAME",
+    "BACKUP",
+    "BULK",
+    "CHECKPOINT",
+    "COL_NAME",
+    "CONVERSATION",
+    "CREATE",
+    "CURRENT_USER",
+    "DBCC",
+    "DB_NAME",
+    "DELETE",
+    "DENY",
+    "DIALOG",
+    "DISABLE",
+    "DROP",
+    "ENABLE",
+    "ERROR_LINE",
+    "ERROR_MESSAGE",
+    "ERROR_PROCEDURE",
+    "ERROR_SEVERITY",
+    "ERROR_STATE",
+    "EXEC",
+    "EXECUTE",
+    "FILEGROUP_NAME",
+    "FILE_NAME",
+    "FORMATMESSAGE",
+    "GO",
+    "GRANT",
+    "HOST_NAME",
+    "INDEX_COL",
+    "KILL",
+    "MERGE",
+    "NEXT",
+    "OBJECT_DEFINITION",
+    "OBJECT_NAME",
+    "OBJECT_SCHEMA_NAME",
+    "OPENDATASOURCE",
+    "OPENQUERY",
+    "OPENROWSET",
+    "OPENXML",
+    "ORIGINAL_DB_NAME",
+    "ORIGINAL_LOGIN",
+    "PRINT",
+    "RAISERROR",
+    "READTEXT",
+    "RECEIVE",
+    "RECONFIGURE",
+    "RESTORE",
+    "REVERT",
+    "REVOKE",
+    "SCHEMA_NAME",
+    "SEND",
+    "SESSION_USER",
+    "SETUSER",
+    "SHUTDOWN",
+    "SIGNATURE",
+    "SUSER_NAME",
+    "SUSER_SNAME",
+    "SYSTEM_USER",
+    "THROW",
+    "TRUNCATE",
+    "TYPE_NAME",
+    "UPDATE",
+    "UPDATETEXT",
+    "USE",
+    "WAITFOR",
+    "WRITETEXT",
+];
+
+/// The words of a T-SQL script in capitals, without its comments and string literals.
+fn code_words(script: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut word = String::new();
+    let mut characters = script.chars().peekable();
+    while let Some(character) = characters.next() {
+        if character.is_alphanumeric() || "_@#$".contains(character) {
+            word.extend(character.to_uppercase());
+            continue;
+        }
+        if !word.is_empty() {
+            words.push(std::mem::take(&mut word));
+        }
+        match (character, characters.peek()) {
+            ('-', Some('-')) => {
+                for skipped in characters.by_ref() {
+                    if skipped == '\n' {
+                        break;
+                    }
+                }
+            }
+            ('/', Some('*')) => {
+                characters.next();
+                let mut depth = 1;
+                while depth > 0 {
+                    match (characters.next(), characters.peek()) {
+                        (Some('*'), Some('/')) => {
+                            characters.next();
+                            depth -= 1;
+                        }
+                        (Some('/'), Some('*')) => {
+                            characters.next();
+                            depth += 1;
+                        }
+                        (None, _) => break,
+                        _ => {}
+                    }
+                }
+            }
+            ('\'', _) => {
+                while let Some(skipped) = characters.next() {
+                    if skipped == '\'' {
+                        if characters.peek() == Some(&'\'') {
+                            characters.next();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    if !word.is_empty() {
+        words.push(word);
+    }
+    words
+}
+
+#[test]
+fn the_capability_probe_is_one_read_only_batch() {
+    // It is opened and run as it is in SSMS or sqlcmd, so it holds no GO separator.
+    assert!(
+        PROBE_SCRIPT
+            .lines()
+            .all(|line| !line.trim().eq_ignore_ascii_case("GO"))
+    );
+    let words = code_words(PROBE_SCRIPT);
+
+    // The text scan is on unless its owner turns it off in the first statement.
+    assert!(PROBE_SCRIPT.contains("\nDECLARE @scan_text bit = 1;\n"));
+    assert_eq!(
+        words[..10],
+        [
+            "DECLARE",
+            "@SCAN_TEXT",
+            "BIT",
+            "1",
+            "SET",
+            "NOCOUNT",
+            "ON",
+            "SET",
+            "LOCK_TIMEOUT",
+            "5000"
+        ]
+    );
+    // Each setting is made once. code_words drops the minus sign of a negative timeout, so the
+    // lines themselves are pinned as well.
+    for line in ["\nSET NOCOUNT ON;\n", "\nSET LOCK_TIMEOUT 5000;\n"] {
+        assert!(PROBE_SCRIPT.contains(line), "{line}");
+    }
+    for option in ["NOCOUNT", "LOCK_TIMEOUT"] {
+        assert_eq!(
+            words.iter().filter(|word| word.as_str() == option).count(),
+            1,
+            "{option}"
+        );
+    }
+
+    // SELECT statements fill the table variable and one SELECT returns it: nothing runs code,
+    // writes, changes a setting beyond SET NOCOUNT ON and SET LOCK_TIMEOUT 5000, reads a dynamic
+    // management view or a sys.fn_ function, or returns a name, a message or a text.
+    for word in &words {
+        assert!(
+            !PROBE_FORBIDDEN_WORDS.contains(&word.as_str())
+                && !["SP_", "XP_", "DM_", "FN_", "#"]
+                    .iter()
+                    .any(|prefix| word.starts_with(prefix)),
+            "the probe uses {word}"
+        );
+    }
+    for (index, word) in words.iter().enumerate() {
+        match word.as_str() {
+            "INSERT" => assert_eq!(words[index + 1..index + 3], ["INTO", "@RESULT"]),
+            "INTO" => assert_eq!(words[index - 1], "INSERT"),
+            "SET" => assert!(
+                words[index + 1..index + 3] == ["NOCOUNT", "ON"]
+                    || words[index + 1..index + 3] == ["LOCK_TIMEOUT", "5000"]
+                    || words[index + 1].starts_with('@'),
+                "SET {} {}",
+                words[index + 1],
+                words[index + 2]
+            ),
+            _ => {}
+        }
+    }
+    assert_eq!(
+        words[words.len() - 9..],
+        [
+            "SELECT", "SECTION", "METRIC", "VALUE", "FROM", "@RESULT", "ORDER", "BY", "ROW_ID"
+        ]
+    );
+
+    // A failed section returns the number of its error and nothing else.
+    let catches = words
+        .windows(2)
+        .filter(|pair| *pair == ["BEGIN", "CATCH"])
+        .count();
+    let bodies: Vec<&str> = PROBE_SCRIPT
+        .split("BEGIN CATCH")
+        .skip(1)
+        .map(|rest| {
+            rest.split_once("END CATCH;")
+                .map_or(rest, |(body, _)| body)
+                .trim()
+        })
+        .collect();
+    assert_eq!(bodies.len(), catches);
+    assert_eq!(
+        words
+            .iter()
+            .filter(|word| word.as_str() == "ERROR_NUMBER")
+            .count(),
+        catches
+    );
+    for body in bodies {
+        let section = body
+            .strip_prefix("INSERT INTO @result (section, metric, value) VALUES (N'")
+            .and_then(|rest| rest.strip_suffix("', N'error_number', ERROR_NUMBER());"))
+            .unwrap_or_else(|| panic!("a CATCH returns more than its error number: {body}"));
+        assert!(
+            PROBE_METRICS.contains(&(section, "error_number")),
+            "{section}"
+        );
+    }
+
+    // Every label is a literal or a column of a fixed VALUES list, so how many rows come back
+    // does not depend on what the database holds, and the allowlist sees every row any
+    // database can produce.
+    let inserts: Vec<&str> = PROBE_SCRIPT
+        .split("INSERT INTO @result (section, metric, value)")
+        .skip(1)
+        .map(str::trim_start)
+        .collect();
+    assert_eq!(
+        inserts.len(),
+        words
+            .iter()
+            .filter(|word| word.as_str() == "INSERT")
+            .count()
+    );
+    for insert in inserts {
+        let label = insert
+            .strip_prefix("SELECT N'")
+            .and_then(|rest| rest.split_once("', "))
+            .and_then(|(_, rest)| rest.split_once(", "))
+            .map(|(label, _)| label);
+        assert!(
+            insert.starts_with("VALUES (N'")
+                || matches!(
+                    label,
+                    Some(
+                        "facts.metric"
+                            | "measures.measure"
+                            | "listed.metric"
+                            | "kinds.code + N'.' + measures.measure"
+                    )
+                ),
+            "a label that is not a literal: {}",
+            insert.lines().next().unwrap_or_default()
+        );
+    }
+    // Those columns come from fixed lists: each row of a (VALUES ...) list starts with numbers,
+    // its position and the type code it maps when it has one, and then names its label with a
+    // literal and nothing else.
+    let lists: Vec<&str> = PROBE_SCRIPT.split("(VALUES").skip(1).collect();
+    assert_eq!(
+        lists.len() + PROBE_SCRIPT.matches("VALUES (N'").count(),
+        words
+            .iter()
+            .filter(|word| word.as_str() == "VALUES")
+            .count()
+    );
+    for list in lists {
+        let mut depth = 0_usize;
+        for (offset, character) in list.char_indices() {
+            match character {
+                '(' if depth == 0 => {
+                    let row = &list[offset + 1..];
+                    let label = row
+                        .split(", ")
+                        .find(|part| !part.chars().all(|c| c.is_ascii_digit()))
+                        .unwrap_or_default();
+                    assert!(
+                        label
+                            .strip_prefix("N'")
+                            .and_then(|rest| rest.split_once('\''))
+                            .is_some_and(|(text, after)| {
+                                !text.is_empty()
+                                    && text.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                                    && (after.is_empty()
+                                        || after.starts_with(',')
+                                        || after.starts_with(')'))
+                            }),
+                        "a fixed list row without a literal label: {}",
+                        row.lines().next().unwrap_or_default()
+                    );
+                    depth = 1;
+                }
+                '(' => depth += 1,
+                ')' if depth == 0 => break,
+                ')' => depth -= 1,
+                _ => {}
+            }
+        }
+    }
+    let unions: Vec<&str> = PROBE_SCRIPT
+        .split("UNION ALL")
+        .skip(1)
+        .map(str::trim_start)
+        .collect();
+    assert_eq!(
+        unions.len(),
+        words.iter().filter(|word| word.as_str() == "UNION").count()
+    );
+    for branch in unions {
+        let rest = branch.strip_prefix("SELECT ").unwrap_or_default();
+        assert!(
+            rest.starts_with("states.position, states.metric,")
+                || rest.split_once(", N'").is_some_and(|(position, _)| {
+                    !position.is_empty() && position.chars().all(|c| c.is_ascii_digit())
+                }),
+            "a UNION ALL branch without a literal label: {}",
+            branch.lines().next().unwrap_or_default()
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_capability_probe_returns_only_allowed_counts() {
+    let Some(server) = test_server() else { return };
+    ensure_seeded(&server, FIXTURE_DATABASE, FIXTURE_SCRIPT).await;
+    ensure_seeded(&server, CODE_DATABASE, CODE_SCRIPT).await;
+    seed_check_forms(&server).await;
+
+    for database in [FIXTURE_DATABASE, CODE_DATABASE, CHECK_FORMS_DATABASE] {
+        let probe = run_probe(&server, database).await;
+        assert_eq!(probe.errors(), [], "{database}");
+        assert_eq!(probe.value("probe", "scan_text"), 1, "{database}");
+        // The administrator enters every database as dbo, for which SQL Server checks nothing.
+        for metric in [
+            "view_definition",
+            "select",
+            "db_owner",
+            "expression_dependencies_select",
+        ] {
+            assert_eq!(probe.value("access", metric), 1, "{database}: {metric}");
+        }
+        // VIEW SECURITY DEFINITION is new in SQL Server 2022; before it HAS_PERMS_BY_NAME answers
+        // NULL for the unknown permission, even for a sysadmin, and the probe reports -1:
+        // https://learn.microsoft.com/en-us/sql/relational-databases/security/permissions-database-engine
+        let view_security_definition = if probe.value("server", "product_major_version") >= 16 {
+            1
+        } else {
+            -1
+        };
+        assert_eq!(
+            probe.value("access", "view_security_definition"),
+            view_security_definition,
+            "{database}"
+        );
+        assert_eq!(probe.value("access", "denials"), 0, "{database}");
+        for (section, metric, value) in &probe.rows {
+            if metric.ends_with("_ms") {
+                assert!(*value >= 0, "{database}: {section}.{metric} = {value}");
+            }
+        }
+
+        // The server facts are what the database answers to a query of the test's own.
+        let mut client = connect(&server, Some(database)).await;
+        let facts = text_rows(
+            &mut client,
+            "SELECT CONCAT(CAST(SERVERPROPERTY('ProductMajorVersion') AS nvarchar(16)), ' ',
+                           d.compatibility_level, ' ',
+                           CASE WHEN N'a' = N'A' THEN 1 ELSE 0 END, ' ',
+                           CASE WHEN N'e' = NCHAR(233) THEN 1 ELSE 0 END)
+             FROM sys.databases AS d
+             WHERE d.database_id = DB_ID()",
+        )
+        .await;
+        let probed = format!(
+            "{} {} {} {}",
+            probe.value("server", "product_major_version"),
+            probe.value("server", "compatibility_level"),
+            probe.value("server", "case_insensitive"),
+            probe.value("server", "accent_insensitive")
+        );
+        assert_eq!(facts, [probed], "{database}");
+    }
+
+    // Indexes, constraints and computed columns as fixture.sql defines them.
+    let fixture = run_probe(&server, FIXTURE_DATABASE).await;
+    for (section, metric, expected) in [
+        ("objects", "U", 7),
+        ("objects", "V", 1),
+        ("access", "schemas", 4),
+        ("indexes", "clustered", 7),
+        ("indexes", "nonclustered", 4),
+        ("indexes", "filtered", 1),
+        ("indexes", "filtered_unique", 0),
+        ("indexes", "with_included_columns", 1),
+        ("constraints", "checks", 3),
+        ("constraints", "foreign_keys", 8),
+        ("constraints", "foreign_keys_disabled", 1),
+        ("columns", "computed", 1),
+        ("columns", "computed_persisted", 1),
+    ] {
+        assert_eq!(
+            fixture.value(section, metric),
+            expected,
+            "{section}.{metric}"
+        );
+    }
+
+    // The unique index and the unique constraint of rule_facts.sql that limit nothing, one
+    // filtered and one whose index is disabled, both on the column of a foreign key, and its one
+    // index that SQL Server aligned with a partitioned table.
+    let rule_facts = run_probe(&server, CHECK_FORMS_DATABASE).await;
+    for (metric, expected) in [
+        ("disabled_unique_constraints", 1),
+        ("disabled_unique_indexes", 0),
+        ("filtered_unique", 1),
+        ("unique_on_foreign_key_disabled_or_filtered", 2),
+        ("with_implicit_partition_column", 1),
+    ] {
+        assert_eq!(rule_facts.value("indexes", metric), expected, "{metric}");
+    }
+    assert_eq!(rule_facts.value("objects", "partitioned_tables"), 1);
+}
+
+#[tokio::test]
+async fn the_capability_probe_counts_what_the_code_fixture_defines() {
+    let Some(server) = test_server() else { return };
+    ensure_seeded(&server, CODE_DATABASE, CODE_SCRIPT).await;
+    let probe = run_probe(&server, CODE_DATABASE).await;
+    assert_eq!(probe.errors(), []);
+
+    let expected: &[(&str, &str, i64)] = &[
+        ("access", "schemas", 3),
+        ("access", "code_only_schemas", 1),
+        ("objects", "U", 4),
+        ("objects", "V", 4),
+        ("objects", "P", 10),
+        // code.sql has no CLR module, which needs an assembly.
+        ("objects", "PC", 0),
+        ("objects", "FS", 0),
+        ("objects", "FT", 0),
+        ("objects", "AF", 0),
+        ("objects", "TA", 0),
+        ("objects", "FN", 1),
+        ("objects", "IF", 1),
+        ("objects", "TF", 1),
+        ("objects", "TR", 5),
+        ("objects", "TT", 1),
+        ("objects", "other", 0),
+        ("objects", "ddl_triggers", 1),
+        ("modules", "V.modules", 4),
+        ("modules", "V.readable", 3),
+        ("modules", "V.encrypted", 1),
+        ("modules", "P.modules", 10),
+        ("modules", "P.readable", 9),
+        ("modules", "P.encrypted", 1),
+        ("modules", "FN.encrypted", 0),
+        ("modules", "IF.encrypted", 0),
+        ("modules", "TF.encrypted", 0),
+        ("modules", "TR.modules", 5),
+        ("modules", "TR.readable", 4),
+        ("modules", "TR.encrypted", 1),
+        // Only the procedure created through sp_executesql has CRLF and trailing spaces.
+        ("modules", "P.with_cr", 1),
+        ("modules", "P.with_trailing_space", 1),
+        ("modules", "V.with_cr", 0),
+        ("modules", "TR.with_trailing_space", 0),
+        ("text", "modules_scanned", 19),
+        ("text", "password_words", 1),
+        ("text", "password_assignments", 1),
+        ("text", "openrowset_or_opendatasource", 0),
+        ("text", "sp_addlinkedsrvlogin", 0),
+        ("text", "sp_executesql", 1),
+        ("text", "exec_string", 1),
+        ("triggers", "dml_on_tables", 4),
+        ("triggers", "dml_on_views", 1),
+        ("triggers", "instead_of", 1),
+        ("triggers", "disabled", 1),
+        ("triggers", "not_for_replication", 1),
+        ("triggers", "clr", 0),
+        ("triggers", "objects_with_first", 1),
+        ("triggers", "objects_with_last", 1),
+        ("triggers", "objects_with_triggers", 3),
+        ("triggers", "max_per_object", 3),
+        ("triggers", "objects_mixing_states", 1),
+        ("triggers", "tables_with_several_after_per_event", 1),
+        ("views", "with_check_option", 1),
+        ("views", "indexed", 1),
+        ("routines", "parameters", 11),
+        ("routines", "max_parameters_per_routine", 3),
+        ("routines", "output_parameters", 1),
+        ("routines", "readonly_parameters", 1),
+        ("routines", "user_type_parameters", 1),
+        ("routines", "scalar_returns", 1),
+        ("routines", "table_function_columns", 5),
+        ("routines", "max_routines_per_schema", 12),
+        ("indexes", "clustered", 5),
+        ("indexes", "nonclustered", 0),
+        ("constraints", "foreign_keys", 2),
+    ];
+    let disagreements: Vec<String> = expected
+        .iter()
+        .filter_map(|&(section, metric, expected)| {
+            let probed = probe.value(section, metric);
+            (probed != expected).then(|| format!("{section}.{metric}: {probed}, not {expected}"))
+        })
+        .collect();
+    assert!(
+        disagreements.is_empty(),
+        "the probe disagrees with code.sql:\n{}",
+        disagreements.join("\n")
+    );
+    assert_eq!(
+        probe.modules_total("readable"),
+        probe.value("text", "modules_scanned")
+    );
+
+    // The sizes are the bytes of the module texts, as the test sums them itself.
+    let mut client = connect(&server, Some(CODE_DATABASE)).await;
+    let sums = text_rows(
+        &mut client,
+        "SELECT CONCAT(RTRIM(o.type), ' ', COUNT_BIG(*), ' ',
+                       SUM(CAST(ISNULL(DATALENGTH(m.definition), 0) AS bigint)), ' ',
+                       MAX(CAST(ISNULL(DATALENGTH(m.definition), 0) AS bigint)))
+         FROM sys.objects AS o
+         JOIN sys.sql_modules AS m ON m.object_id = o.object_id
+         WHERE o.is_ms_shipped = 0 AND o.type IN ('V', 'P', 'FN', 'IF', 'TF', 'TR')
+         GROUP BY o.type
+         ORDER BY o.type",
+    )
+    .await;
+    let probed: Vec<String> = ["FN", "IF", "P", "TF", "TR", "V"]
+        .iter()
+        .map(|kind| {
+            format!(
+                "{kind} {} {} {}",
+                probe.value("modules", &format!("{kind}.modules")),
+                probe.value("modules", &format!("{kind}.bytes_total")),
+                probe.value("modules", &format!("{kind}.bytes_max"))
+            )
+        })
+        .collect();
+    assert_eq!(sums, probed);
+}
+
+#[tokio::test]
+async fn the_capability_probe_skips_the_text_scan_when_its_owner_turns_it_off() {
+    let Some(server) = test_server() else { return };
+    ensure_seeded(&server, CODE_DATABASE, CODE_SCRIPT).await;
+    let script = PROBE_SCRIPT.replace(
+        "
+DECLARE @scan_text bit = 1;
+",
+        "
+DECLARE @scan_text bit = 0;
+",
+    );
+    assert_ne!(script, PROBE_SCRIPT);
+
+    let probe = run_probe_script(&server, CODE_DATABASE, &script).await;
+    assert_eq!(probe.errors(), []);
+    assert_eq!(probe.value("probe", "scan_text"), 0);
+    assert!(
+        probe.rows.iter().all(|(section, _, _)| section != "text"),
+        "{:?}",
+        probe.rows
+    );
+    // The line-end counts of the modules do not depend on the scan.
+    assert_eq!(probe.value("modules", "P.with_cr"), 1);
+}
+
+/// A database of its own whose clustered primary key the test disables, which no other test may
+/// read meanwhile.
+const CLUSTERED_DATABASE: &str = "SchemaCraftClusteredFacts";
+
+#[tokio::test]
+async fn a_disabled_clustered_index_keeps_the_keys_of_its_table_disabled_until_it_is_rebuilt() {
+    let Some(server) = test_server() else { return };
+    let seed = format!(
+        "IF DB_ID('{CLUSTERED_DATABASE}') IS NOT NULL
+BEGIN
+    ALTER DATABASE {CLUSTERED_DATABASE} SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+    DROP DATABASE {CLUSTERED_DATABASE};
+END
+GO
+CREATE DATABASE {CLUSTERED_DATABASE};
+GO
+USE {CLUSTERED_DATABASE};
+GO
+CREATE TABLE dbo.Parents (Code char(2) NOT NULL CONSTRAINT PK_Parents PRIMARY KEY);
+CREATE TABLE dbo.ClusteredChildren (
+    ParentCode char(2) NOT NULL CONSTRAINT PK_ClusteredChildren PRIMARY KEY CLUSTERED
+        CONSTRAINT FK_ClusteredChildren_Parents FOREIGN KEY REFERENCES dbo.Parents (Code),
+    Label varchar(10) NULL
+);
+CREATE UNIQUE INDEX UX_ClusteredChildren_Label ON dbo.ClusteredChildren (Label);
+INSERT INTO dbo.Parents VALUES ('P0'), ('P1');
+INSERT INTO dbo.ClusteredChildren VALUES ('P0', 'a');"
+    );
+    ensure_seeded(&server, CLUSTERED_DATABASE, &seed).await;
+    let mut client = connect(&server, Some(CLUSTERED_DATABASE)).await;
+    let key_state = "SELECT CONCAT(is_disabled, ' ', is_not_trusted) FROM sys.foreign_keys \
+                     WHERE name = 'FK_ClusteredChildren_Parents'";
+    let index_states = "SELECT CONCAT(name, ' ', is_disabled) FROM sys.indexes \
+                        WHERE object_id = OBJECT_ID('dbo.ClusteredChildren') ORDER BY name";
+    let enable_key = "ALTER TABLE dbo.ClusteredChildren WITH CHECK CHECK CONSTRAINT FK_ClusteredChildren_Parents";
+
+    // Disabling the clustered primary key disables the key of its table and every other index,
+    // and the table then takes no row.
+    execute(
+        &mut client,
+        "ALTER INDEX PK_ClusteredChildren ON dbo.ClusteredChildren DISABLE",
+    )
+    .await
+    .expect("the clustered key is disabled");
+    assert_eq!(text_rows(&mut client, key_state).await, ["1 1"]);
+    assert_eq!(
+        text_rows(&mut client, index_states).await,
+        ["PK_ClusteredChildren 1", "UX_ClusteredChildren_Label 1"]
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "INSERT INTO dbo.ClusteredChildren VALUES ('P1', 'b')"
+        )
+        .await,
+        Err(INDEX_DISABLED)
+    );
+    // The key cannot be enabled, checked or not, until the index is rebuilt, which makes it
+    // unique again; the rebuild leaves the key and the other indexes disabled.
+    assert_eq!(
+        execute(&mut client, enable_key).await,
+        Err(CLUSTERED_INDEX_DISABLED)
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "ALTER TABLE dbo.ClusteredChildren CHECK CONSTRAINT FK_ClusteredChildren_Parents"
+        )
+        .await,
+        Err(CLUSTERED_INDEX_DISABLED)
+    );
+    execute(
+        &mut client,
+        "ALTER INDEX PK_ClusteredChildren ON dbo.ClusteredChildren REBUILD",
+    )
+    .await
+    .expect("the clustered key is rebuilt");
+    assert_eq!(text_rows(&mut client, key_state).await, ["1 1"]);
+    assert_eq!(
+        text_rows(&mut client, index_states).await,
+        ["PK_ClusteredChildren 0", "UX_ClusteredChildren_Label 1"]
+    );
+    execute(&mut client, enable_key)
+        .await
+        .expect("the key is enabled");
+    assert_eq!(text_rows(&mut client, key_state).await, ["0 0"]);
+    assert_eq!(
+        execute(
+            &mut client,
+            "INSERT INTO dbo.ClusteredChildren VALUES ('P0', 'c')"
+        )
+        .await,
+        Err(DUPLICATE_CONSTRAINT_KEY)
+    );
+}
+
+/// A database of its own whose one table another connection locks while the probe runs.
+const LOCKED_DATABASE: &str = "SchemaCraftProbeLocked";
+
+#[tokio::test]
+async fn the_capability_probe_returns_only_error_numbers_when_its_sections_fail() {
+    let Some(server) = test_server() else { return };
+    let seed = format!(
+        "IF DB_ID('{LOCKED_DATABASE}') IS NOT NULL
+BEGIN
+    ALTER DATABASE {LOCKED_DATABASE} SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+    DROP DATABASE {LOCKED_DATABASE};
+END
+GO
+CREATE DATABASE {LOCKED_DATABASE};
+GO
+USE {LOCKED_DATABASE};
+GO
+CREATE TABLE dbo.Held (Id int NOT NULL PRIMARY KEY);"
+    );
+    ensure_seeded(&server, LOCKED_DATABASE, &seed).await;
+
+    // An uncommitted ALTER TABLE holds a schema modification lock that catalog reads wait for.
+    let mut holder = connect(&server, Some(LOCKED_DATABASE)).await;
+    holder
+        .simple_query("BEGIN TRANSACTION; ALTER TABLE dbo.Held ADD Pending int NULL;")
+        .await
+        .expect("the lock is taken")
+        .into_results()
+        .await
+        .expect("the lock is taken");
+    // A shorter wait fails the same sections with the same error 1222, sooner.
+    let script = PROBE_SCRIPT.replace("\nSET LOCK_TIMEOUT 5000;\n", "\nSET LOCK_TIMEOUT 100;\n");
+    assert_ne!(script, PROBE_SCRIPT);
+    let probe = run_probe_script(&server, LOCKED_DATABASE, &script).await;
+    holder
+        .simple_query("ROLLBACK TRANSACTION;")
+        .await
+        .expect("the lock is released")
+        .into_results()
+        .await
+        .expect("the lock is released");
+
+    // run_probe_script has already checked that every row is in PROBE_METRICS.
+    let errors = probe.errors();
+    assert!(
+        errors.iter().any(|(section, _)| section == "objects"),
+        "{errors:?}"
+    );
+    assert!(
+        errors.iter().all(|(_, number)| *number == 1222),
+        "{errors:?}"
     );
 }

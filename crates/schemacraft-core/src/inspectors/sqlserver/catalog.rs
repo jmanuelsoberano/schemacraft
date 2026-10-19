@@ -9,6 +9,7 @@ use tiberius::{FromSql, Row};
 
 use super::errors::query_error;
 use super::pool::{ConnectionPool, SqlServerConnection, checkout_error};
+use crate::diagnostics;
 use crate::inspectors::{
     InspectionProgress, InspectionStage, InspectorError, ProgressReporter, ServerInformation,
 };
@@ -73,31 +74,45 @@ LEFT JOIN sys.default_constraints AS dc ON dc.object_id = c.default_object_id
 ORDER BY c.object_id, c.column_id;",
 };
 
+/// Clustered and nonclustered indexes, with whether each is disabled and whether it has a filter.
+/// Both flags are visible to every login that sees the table; only the text of a filter needs
+/// `VIEW DEFINITION`, and it is not read:
+/// https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-indexes-transact-sql
 const INDEXES: CatalogQuery = CatalogQuery {
     name: "indexes",
     sql: "SELECT i.object_id, i.index_id, i.name AS index_name, i.type AS index_type,
-       i.is_unique, i.is_primary_key, i.is_unique_constraint
+       i.is_unique, i.is_primary_key, i.is_unique_constraint, i.is_disabled, i.has_filter
 FROM sys.indexes AS i
 JOIN sys.objects AS o ON o.object_id = i.object_id AND o.type IN ('U', 'V') AND o.is_ms_shipped = 0
 WHERE i.index_id > 0 AND i.is_hypothetical = 0 AND i.type IN (1, 2)
 ORDER BY i.object_id, i.index_id;",
 };
 
+/// Columns of those indexes. A key column has a `key_ordinal` from 1 and an included column has
+/// `is_included_column`; the partitioning column SQL Server adds on its own to an index aligned
+/// with its table has neither, so it is neither a key column nor an included one:
+/// https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-index-columns-transact-sql
 const INDEX_COLUMNS: CatalogQuery = CatalogQuery {
     name: "index columns",
-    sql: "SELECT ic.object_id, ic.index_id, c.name AS column_name, ic.key_ordinal, ic.is_included_column
+    sql: "SELECT ic.object_id, ic.index_id, ic.index_column_id, c.name AS column_name, ic.key_ordinal,
+       ic.is_included_column
 FROM sys.index_columns AS ic
 JOIN sys.indexes AS i ON i.object_id = ic.object_id AND i.index_id = ic.index_id
      AND i.index_id > 0 AND i.is_hypothetical = 0 AND i.type IN (1, 2)
 JOIN sys.columns AS c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
 JOIN sys.objects AS o ON o.object_id = ic.object_id AND o.type IN ('U', 'V') AND o.is_ms_shipped = 0
-ORDER BY ic.object_id, ic.index_id, ic.key_ordinal;",
+ORDER BY ic.object_id, ic.index_id, ic.key_ordinal, ic.index_column_id;",
 };
 
+/// Foreign keys, with whether each is disabled and whether SQL Server trusts it to hold for the
+/// rows already in the referencing table: `is_not_trusted` is set by `WITH NOCHECK`, by enabling a
+/// key again without `WITH CHECK`, on every disabled key, and on every NOT FOR REPLICATION key,
+/// even after `WITH CHECK CHECK CONSTRAINT`:
+/// https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-foreign-keys-transact-sql
 const FOREIGN_KEYS: CatalogQuery = CatalogQuery {
     name: "foreign keys",
     sql: "SELECT fk.object_id, fk.name AS constraint_name, fk.parent_object_id, fk.referenced_object_id,
-       fk.delete_referential_action, fk.update_referential_action, fk.is_disabled
+       fk.delete_referential_action, fk.update_referential_action, fk.is_disabled, fk.is_not_trusted
 FROM sys.foreign_keys AS fk
 WHERE fk.is_ms_shipped = 0
 ORDER BY fk.parent_object_id, fk.name;",
@@ -117,10 +132,13 @@ LEFT JOIN sys.columns AS referenced_column
 ORDER BY fkc.constraint_object_id, fkc.constraint_column_id;",
 };
 
-/// `CHECK` constraints. `definition` is `NULL` for a login without `VIEW DEFINITION`.
+/// `CHECK` constraints. `definition` is `NULL` for a login without `VIEW DEFINITION`, while the
+/// state flags, `is_not_trusted` among them, are visible to every login that sees the table:
+/// https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-check-constraints-transact-sql
 const CHECK_CONSTRAINTS: CatalogQuery = CatalogQuery {
     name: "check constraints",
-    sql: "SELECT cc.parent_object_id, cc.name AS constraint_name, cc.definition, cc.is_disabled
+    sql: "SELECT cc.parent_object_id, cc.name AS constraint_name, cc.definition, cc.is_disabled,
+       cc.is_not_trusted
 FROM sys.check_constraints AS cc
 WHERE cc.is_ms_shipped = 0
 ORDER BY cc.parent_object_id, cc.name;",
@@ -169,6 +187,8 @@ pub(super) struct ColumnRow {
 }
 
 /// One row of `sys.indexes` for clustered and nonclustered indexes.
+// The flags mirror independent catalog columns; none of them implies another.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct IndexRow {
     pub object_id: i32,
@@ -179,6 +199,10 @@ pub(super) struct IndexRow {
     pub is_unique: bool,
     pub is_primary_key: bool,
     pub is_unique_constraint: bool,
+    /// A disabled index enforces nothing, nor does the key or constraint it backs.
+    pub is_disabled: bool,
+    /// The index covers only the rows its `WHERE` filter selects.
+    pub has_filter: bool,
 }
 
 /// One row of `sys.index_columns`.
@@ -186,8 +210,10 @@ pub(super) struct IndexRow {
 pub(super) struct IndexColumnRow {
     pub object_id: i32,
     pub index_id: i32,
+    /// Position among all the columns of the index, included ones too.
+    pub index_column_id: i32,
     pub column_name: String,
-    /// Position in the key; `0` for included columns.
+    /// Position in the key; `0` for a column that is not part of it.
     pub key_ordinal: u8,
     pub is_included_column: bool,
 }
@@ -202,6 +228,8 @@ pub(super) struct ForeignKeyRow {
     pub delete_referential_action: u8,
     pub update_referential_action: u8,
     pub is_disabled: bool,
+    /// SQL Server does not trust the key to hold for the rows already in the referencing table.
+    pub is_not_trusted: bool,
 }
 
 /// One row of `sys.foreign_key_columns`.
@@ -222,6 +250,8 @@ pub(super) struct CheckConstraintRow {
     /// `None` when the login cannot read the text.
     pub definition: Option<String>,
     pub is_disabled: bool,
+    /// SQL Server does not trust the rule to hold for the rows already in the table.
+    pub is_not_trusted: bool,
 }
 
 /// Everything the catalog queries return for one database.
@@ -401,12 +431,7 @@ async fn fetch_stage<T>(
         .map_err(|error| checkout_error(error, session.target, session.connect_timeout))?;
 
     let rows = run_query(&mut connection, query, map_row).await?;
-    tracing::debug!(
-        query = query.name,
-        rows = rows.len(),
-        elapsed_ms = started.elapsed().as_millis(),
-        "catalog query completed"
-    );
+    diagnostics::catalog_query(query.name, rows.len(), started.elapsed());
 
     if reports_count {
         progress.report(InspectionProgress::counted(stage, rows.len()));
@@ -448,7 +473,12 @@ fn map_object_row(row: &Row) -> Result<ObjectRow, InspectorError> {
 }
 
 fn map_column_row(row: &Row) -> Result<ColumnRow, InspectorError> {
-    let query = COLUMNS.name;
+    column_row(row, COLUMNS.name)
+}
+
+/// Maps a row with the select list of [`COLUMNS`], which the code stage reads for the columns of
+/// table functions too.
+pub(super) fn column_row(row: &Row, query: &'static str) -> Result<ColumnRow, InspectorError> {
     Ok(ColumnRow {
         object_id: required(row, "object_id", query)?,
         column_id: required(row, "column_id", query)?,
@@ -477,6 +507,8 @@ fn map_index_row(row: &Row) -> Result<IndexRow, InspectorError> {
         is_unique: required(row, "is_unique", query)?,
         is_primary_key: required(row, "is_primary_key", query)?,
         is_unique_constraint: required(row, "is_unique_constraint", query)?,
+        is_disabled: required(row, "is_disabled", query)?,
+        has_filter: required(row, "has_filter", query)?,
     })
 }
 
@@ -485,6 +517,7 @@ fn map_index_column_row(row: &Row) -> Result<IndexColumnRow, InspectorError> {
     Ok(IndexColumnRow {
         object_id: required(row, "object_id", query)?,
         index_id: required(row, "index_id", query)?,
+        index_column_id: required(row, "index_column_id", query)?,
         column_name: required_text(row, "column_name", query)?,
         key_ordinal: required(row, "key_ordinal", query)?,
         is_included_column: required(row, "is_included_column", query)?,
@@ -501,6 +534,7 @@ fn map_foreign_key_row(row: &Row) -> Result<ForeignKeyRow, InspectorError> {
         delete_referential_action: required(row, "delete_referential_action", query)?,
         update_referential_action: required(row, "update_referential_action", query)?,
         is_disabled: required(row, "is_disabled", query)?,
+        is_not_trusted: required(row, "is_not_trusted", query)?,
     })
 }
 
@@ -521,6 +555,7 @@ fn map_check_constraint_row(row: &Row) -> Result<CheckConstraintRow, InspectorEr
         constraint_name: required_text(row, "constraint_name", query)?,
         definition: optional_text(row, "definition", query)?,
         is_disabled: required(row, "is_disabled", query)?,
+        is_not_trusted: required(row, "is_not_trusted", query)?,
     })
 }
 

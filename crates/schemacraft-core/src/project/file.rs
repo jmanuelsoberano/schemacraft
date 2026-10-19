@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::Instant;
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -6,6 +7,7 @@ use serde_json::Value;
 use super::document::{FORMAT_VERSION, OpenedProject, Project};
 use super::error::ProjectError;
 use super::migrations;
+use crate::diagnostics;
 use crate::fs::{FileError, read_bytes, write_json_atomically};
 
 /// The two header fields that decide how a file is read, taken before the rest is parsed.
@@ -21,7 +23,10 @@ struct VersionHeader {
 /// Older formats are upgraded in memory. A newer format opens read-only when its
 /// `minReaderVersion` says this version may show it, and is refused otherwise; so is one whose
 /// content this version cannot parse, because a value it does not know is not damage.
+///
+/// A file that opens is recorded in the diagnostic log by its format, size and reading time.
 pub fn read_project(path: &Path) -> Result<OpenedProject, ProjectError> {
+    let started = Instant::now();
     let bytes = read_bytes(path).map_err(|error| match error {
         FileError::NotFound => ProjectError::NotFound {
             path: display(path),
@@ -68,18 +73,23 @@ pub fn read_project(path: &Path) -> Result<OpenedProject, ProjectError> {
             not_a_project(error.to_string())
         }
     })?;
+    diagnostics::project_opened(found, is_read_only, bytes.len(), started.elapsed());
     Ok(OpenedProject {
         project,
         is_read_only,
     })
 }
 
-/// Writes a project file atomically: the previous file survives any failure.
+/// Writes a project file atomically: the previous file survives any failure. A written file is
+/// recorded in the diagnostic log by its format, size and writing time.
 pub fn write_project(path: &Path, project: &Project) -> Result<(), ProjectError> {
-    write_json_atomically(path, project).map_err(|error| ProjectError::Write {
+    let started = Instant::now();
+    let bytes = write_json_atomically(path, project).map_err(|error| ProjectError::Write {
         path: display(path),
         details: error.to_string(),
-    })
+    })?;
+    diagnostics::project_saved(project.format_version, bytes, started.elapsed());
+    Ok(())
 }
 
 fn display(path: &Path) -> String {
@@ -101,10 +111,14 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{read_project, write_project};
-    use crate::model::Definition;
+    use crate::diff::{SchemaDiff, TableChange};
+    use crate::model::test_fixtures::sample_programmability;
+    use crate::model::{AccessLevel, Completeness, Definition, QualifiedName, SnapshotFact};
     use crate::project::document::{FORMAT_VERSION, MIN_READER_VERSION, Project};
     use crate::project::error::ProjectError;
-    use crate::project::test_fixtures::{FORMAT_1_PROJECT, sample_project_content};
+    use crate::project::test_fixtures::{
+        FORMAT_1_PROJECT, FORMAT_2_PROJECT, sample_project_content,
+    };
 
     fn sample_project() -> Project {
         Project::from_content(sample_project_content(), "SchemaCraft 0.1.0")
@@ -140,8 +154,66 @@ mod tests {
         assert!(!opened.is_read_only);
         assert!(!directory.path().join("northwind.scraft.tmp").exists());
         let text = fs::read_to_string(&path).unwrap();
-        assert!(text.starts_with("{\n  \"formatVersion\": 2,\n  \"minReaderVersion\": 2,"));
+        assert!(text.starts_with("{\n  \"formatVersion\": 3,\n  \"minReaderVersion\": 2,"));
         assert!(text.ends_with("}\n"));
+    }
+
+    #[test]
+    fn dotted_names_remain_distinct_through_save_load_and_refresh() {
+        let dotted_schema = QualifiedName::new("a.b", "c");
+        let dotted_object = QualifiedName::new("a", "b.c");
+        let mut content = sample_project_content();
+        content.snapshot.access = None;
+        content.snapshot.tables[0].name = dotted_schema.clone();
+        content.snapshot.tables[1].name = dotted_object.clone();
+        content.snapshot.views.clear();
+        content.snapshot.foreign_keys[0].referencing_table = dotted_object.clone();
+        content.snapshot.foreign_keys[0].referenced_table = dotted_schema.clone();
+        content.canvas.nodes[0].name = dotted_object.clone();
+        content.canvas.nodes[0].is_hidden = true;
+        content.canvas.nodes[1].name = dotted_schema.clone();
+        let expected_survivor = content.canvas.nodes[0].clone();
+        let mut updated_position = content.canvas.nodes[1].clone();
+        updated_position.position.x = 740.0;
+        content.canvas.nodes.push(updated_position.clone());
+
+        // Saving deduplicates only the repeated structured name, never its dotted spelling.
+        let project = Project::from_content(content, "SchemaCraft 1.2.0");
+        assert_eq!(project.content.canvas.nodes.len(), 2);
+        assert_eq!(
+            project.content.canvas.node(&dotted_schema),
+            Some(&updated_position)
+        );
+        assert_eq!(
+            project.content.canvas.node(&dotted_object),
+            Some(&expected_survivor)
+        );
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("dotted-names.scraft");
+        write_project(&path, &project).unwrap();
+        let opened = read_project(&path).unwrap();
+        assert_eq!(opened.project, project);
+
+        // One object changes while the other disappears, although both display as a.b.c.
+        let mut fresh = opened.project.content.snapshot.clone();
+        fresh.tables.retain(|table| table.name == dotted_object);
+        fresh.tables[0].columns[0].is_nullable = true;
+        fresh.foreign_keys.clear();
+        let diff = SchemaDiff::between(&opened.project.content.snapshot, &fresh);
+        assert_eq!(diff.tables.len(), 2);
+        assert!(diff.tables.iter().any(|change| matches!(
+            change,
+            TableChange::Removed { name, .. } if name == &dotted_schema
+        )));
+        assert!(diff.tables.iter().any(|change| matches!(
+            change,
+            TableChange::Changed { name, .. } if name == &dotted_object
+        )));
+
+        let refreshed = opened.project.content.with_refreshed_snapshot(fresh);
+        assert_eq!(refreshed.canvas.nodes, vec![expected_survivor]);
+        assert_eq!(refreshed.snapshot.tables[0].name, dotted_object);
+        assert!(refreshed.snapshot.tables[0].columns[0].is_nullable);
     }
 
     #[test]
@@ -249,7 +321,28 @@ mod tests {
     }
 
     #[test]
-    fn upgrades_a_format_one_file_and_saves_it_as_format_two() {
+    fn a_format_four_file_with_a_minimum_reader_of_two_opens_read_only() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("from-1.3.scraft");
+        let mut document = newer_document(4, Some(2));
+        document["snapshot"]["programmability"] =
+            serde_json::to_value(sample_programmability()).unwrap();
+        document["snapshot"]["programmability"]["synonyms"] = json!([{ "name": "dbo.Clients" }]);
+        document["snapshot"]["programmability"]["capture"]["dependencies"] =
+            json!({ "status": "read" });
+        write_json(&path, &document);
+
+        let opened = read_project(&path).unwrap();
+
+        assert!(opened.is_read_only);
+        assert_eq!(opened.project.format_version, 4);
+        let programmability = opened.project.content.snapshot.programmability.unwrap();
+        assert_eq!(programmability.routines, sample_programmability().routines);
+        assert!(programmability.unknown.contains_key("synonyms"));
+    }
+
+    #[test]
+    fn upgrades_a_format_one_file_and_saves_it_as_format_three() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("legacy.scraft");
         fs::write(&path, FORMAT_1_PROJECT).unwrap();
@@ -275,12 +368,138 @@ mod tests {
             Some(Definition::readable("(sysutcdatetime())"))
         );
 
-        let resaved = Project::from_content(opened.project.content, "SchemaCraft 1.1.0");
+        let resaved = Project::from_content(opened.project.content, "SchemaCraft 1.2.0");
         write_project(&path, &resaved).unwrap();
         let text = fs::read_to_string(&path).unwrap();
-        assert!(text.starts_with("{\n  \"formatVersion\": 2,\n  \"minReaderVersion\": 2,"));
+        assert!(text.starts_with("{\n  \"formatVersion\": 3,\n  \"minReaderVersion\": 2,"));
         let reopened = read_project(&path).unwrap();
         assert_eq!(reopened.project, resaved);
+    }
+
+    #[test]
+    fn the_format_two_fixture_upgrades_and_keeps_every_fact() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("saved-by-1.1.scraft");
+        fs::write(&path, FORMAT_2_PROJECT).unwrap();
+
+        let opened = read_project(&path).unwrap();
+
+        assert!(!opened.is_read_only);
+        assert_eq!(opened.project.format_version, 3);
+        assert_eq!(opened.project.saved_with, "SchemaCraft 1.1.0");
+        let content = &opened.project.content;
+        // The options 1.1 saved, and the code options it did not know, on as decided for 1.2.
+        assert_eq!(content.inspection.schemas, ["dbo", "sales"]);
+        assert!(content.inspection.include_views);
+        assert!(content.inspection.include_programmability);
+        assert!(content.inspection.include_module_definitions);
+
+        let snapshot = &content.snapshot;
+        let access = snapshot.access.as_ref().unwrap();
+        assert_eq!(access.level, AccessLevel::Partial);
+        assert_eq!(access.coverage.objects, Completeness::Partial);
+        assert_eq!(access.coverage.definitions, Completeness::NotAvailable);
+        assert_eq!(
+            access.probe.database_user.as_deref(),
+            Some("schemacraft_two_tables")
+        );
+        assert_eq!(access.counts.foreign_keys_to_invisible_tables, 2);
+        assert_eq!(snapshot.tables.len(), 6);
+        assert_eq!(snapshot.views.len(), 1);
+        assert_eq!(snapshot.foreign_keys.len(), 6);
+        assert_eq!(snapshot.carried_over.len(), 14);
+        let order_lines = QualifiedName::new("sales", "OrderLines");
+        assert!(snapshot.carried_over.iter().any(|carried| {
+            carried.object == order_lines
+                && carried.fact
+                    == SnapshotFact::CheckConstraint {
+                        name: "CK_OrderLines_Quantity".to_string(),
+                    }
+        }));
+        let quantity = &snapshot.table(&order_lines).unwrap().check_constraints[0];
+        assert_eq!(quantity.name, "CK_OrderLines_Quantity");
+        assert_eq!(quantity.is_enabled, Some(false));
+        assert_eq!(quantity.expression.text(), Some("([Quantity]>(0))"));
+        assert_eq!(
+            snapshot
+                .foreign_keys_to_invisible_tables
+                .iter()
+                .map(|key| key.name.as_str())
+                .collect::<Vec<_>>(),
+            ["FK_Orders_Employees"]
+        );
+        // Nothing 1.1 could not hold is presented as captured: no code, no index or trust state.
+        assert_eq!(snapshot.programmability, None);
+        assert_eq!(access.coverage.programmability, None);
+        assert_eq!(access.coverage.module_definitions, None);
+        assert_eq!(access.probe.execute_denials, None);
+        assert!(!access.scope.include_programmability);
+        for table in &snapshot.tables {
+            assert_eq!(
+                table.primary_key.as_ref().and_then(|key| key.is_enabled),
+                None
+            );
+            for index in &table.indexes {
+                assert_eq!(
+                    (&index.included_columns, index.is_filtered, index.is_enabled),
+                    (&None, None, None),
+                    "{}",
+                    index.name
+                );
+            }
+            for constraint in &table.check_constraints {
+                assert_eq!(constraint.is_trusted, None, "{}", constraint.name);
+            }
+        }
+        assert!(
+            snapshot
+                .foreign_keys
+                .iter()
+                .all(|key| key.is_trusted.is_none())
+        );
+        // The keys 1.1.0 kept at its four levels are kept too.
+        assert!(content.unknown.contains_key("reviewNotes"));
+        assert!(snapshot.unknown.contains_key("lineage"));
+        assert!(content.canvas.unknown.contains_key("gridSize"));
+        assert_eq!(content.canvas.nodes.len(), 7);
+        assert!(
+            content
+                .canvas
+                .nodes
+                .iter()
+                .any(|node| node.unknown.contains_key("colour"))
+        );
+    }
+
+    #[test]
+    fn the_format_two_fixture_saves_as_format_three_with_only_the_header_and_the_options_new() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("saved-by-1.1.scraft");
+        fs::write(&path, FORMAT_2_PROJECT).unwrap();
+
+        let opened = read_project(&path).unwrap();
+        let resaved = Project::from_content(opened.project.content, "SchemaCraft 1.2.0");
+        write_project(&path, &resaved).unwrap();
+
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with("{\n  \"formatVersion\": 3,\n  \"minReaderVersion\": 2,"));
+        let reopened = read_project(&path).unwrap();
+        assert!(!reopened.is_read_only);
+        assert_eq!(reopened.project, resaved);
+
+        // Every fact of the 1.1 file is written back as it was. The only new keys are the two
+        // inspection options, always written; the header says who saved it.
+        let original: Value = serde_json::from_str(FORMAT_2_PROJECT).unwrap();
+        let mut written: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(written["inspection"]["includeProgrammability"], true);
+        assert_eq!(written["inspection"]["includeModuleDefinitions"], true);
+        let inspection = written["inspection"].as_object_mut().unwrap();
+        inspection.remove("includeProgrammability");
+        inspection.remove("includeModuleDefinitions");
+        for header in ["formatVersion", "savedAt", "savedWith"] {
+            written[header] = original[header].clone();
+        }
+        assert_eq!(written, original);
     }
 
     #[test]
@@ -296,11 +515,19 @@ mod tests {
             ),
             ("/canvas/gridSize", json!(16)),
             ("/canvas/nodes/1/colour", json!("teal")),
+            (
+                "/snapshot/programmability/synonyms",
+                json!([{ "name": { "schema": "dbo", "name": "Clients" } }]),
+            ),
         ];
         document["reviewNotes"] = extras[0].1.clone();
         document["snapshot"]["lineage"] = extras[1].1.clone();
         document["canvas"]["gridSize"] = extras[2].1.clone();
         document["canvas"]["nodes"][1]["colour"] = extras[3].1.clone();
+        // Programmability is the fifth level that keeps keys a newer version wrote.
+        document["snapshot"]["programmability"] =
+            serde_json::to_value(sample_programmability()).unwrap();
+        document["snapshot"]["programmability"]["synonyms"] = extras[4].1.clone();
         write_json(&path, &document);
 
         let opened = read_project(&path).unwrap();

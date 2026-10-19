@@ -35,8 +35,8 @@ typography, keyboard first, and the diagram occupying almost the whole window.
     use tabular figures, empty states explain the next step, and undo/redo covers every canvas
     change.
 11. **A desktop application, not a web page.** The browser never shows through: no browser
-    context menu outside text fields, no reload, print, find or zoom accelerators (F5 refreshes
-    from the database, Ctrl+P exports a PDF, Ctrl+F searches the entities), no middle-click
+    context menu outside text fields and the read-only code surface, no reload, print, find or zoom accelerators (F5 refreshes
+    from the database, Ctrl+P exports a PDF, Ctrl+F searches Objects or the focused code), no middle-click
     autoscroll. Panels resize by dragging their edge and remember their width.
 
 ## Definition of done (UX)
@@ -71,13 +71,20 @@ reopened project reconnects without typing it; the field says when a remembered 
 used. Passwords are never stored in project files or in the history. Errors are specific and
 actionable. Choosing a database also checks what the login can see there: full access adds
 nothing, partial access adds one polite line under the database section, and a login that sees
-no table or view gets a clear notice with reading disabled.
+no table or view gets a clear notice with reading disabled. Testing the same connection and
+database again preserves the schema filter. Two switches, on by default, read procedures,
+functions and triggers and save their code in the project; the second is disabled when the first
+is off, and explains that saved code is business logic. The schema picker includes schemas with
+only visible procedures or functions while objects are requested. Leaving out views leaves out
+their code and their triggers too.
 
 ### Introspection
 
-A progress indicator names the current stage (permissions, tables, columns, keys, indexes) and
+A progress indicator names the current stage (permissions, tables, columns, keys, indexes,
+procedures/functions/triggers, module code) and
 the counts so far. The user can cancel at any moment, even while connecting. On completion the
-diagram appears already laid out.
+diagram appears already laid out. Progress omits stages whose read option is off. A failed code read does not prevent the table diagram from
+opening; the access report says which optional read failed or timed out.
 
 ### Reading with partial access
 
@@ -91,7 +98,10 @@ in the status bar and one dismissible bar above the entities lead to the Access 
 the DBA. Closing the bar moves focus to the entities search, and the bar stays closed for the
 same server, database and verdict. The canvas carries no warnings. An empty database gets a
 neutral empty state. The words are "not visible to this login" and "no visible para este inicio
-de sesión"; "hidden" and "oculto" stay reserved for tables hidden on the canvas.
+de sesión"; "hidden" and "oculto" stay reserved for tables hidden on the canvas. Code has separate
+coverage lines in the access report: a complete table list does not imply a complete procedure
+list, and encrypted code, code not visible to the login, code left out and a failed read are
+different states. Code coverage never changes the table-access chip or the export note.
 
 ### Opening and saving a project
 
@@ -111,7 +121,7 @@ the reason.
 
 ### Working on the canvas
 
-The entities panel lists tables and views by schema and, inside each schema, in Tables and Views
+The Objects panel lists tables and views by schema and, inside each schema, in Tables and Views
 sections with their counts; a level that distinguishes nothing is left out (one schema, one
 kind), and schemas and sections collapse with a chevron for the session, all expanded while a
 search is active. Each entity has instant search, a column counter, a visibility toggle and
@@ -132,8 +142,20 @@ referenced row does. Every change is undoable (Ctrl+Z, Ctrl+Y), and the command 
 reaches every action by name and names the kind of every entity it lists.
 
 The Inspector, a panel on the right of the canvas, shows the selected table or view: its columns
-with type, nullability, identity, computed and default, its primary key, indexes and `CHECK`
-constraints, and the relationships out of it and into it. It starts closed and opens with a
+with type, nullability, identity, computed and default, its primary key, indexes and CHECK
+constraints, its triggers, and the relationships out of it and into it. Trigger lists use
+INSTEAD OF before AFTER, enabled before disabled, then name. Each event retains its First/Last
+order; Disabled and Not for replication are explicit badges. Open trigger enters its source
+page only in the app. A complete empty read says None; an unread, older or retained list never
+makes that claim. Views also end with Definition and their recorded settings.
+
+Each card with freshly read triggers has a neutral outlined pill in its existing header,
+between the VIEW label and column count. It counts enabled triggers; if all are disabled, a
+dashed outline and ZapOff icon accompany the total. Full accessible sentences describe enabled,
+disabled and INSTEAD OF counts. The pill remains at every detail level and below 40% zoom,
+without changing saved card heights.
+
+The Inspector starts closed and opens with a
 double-click on a card or on an entities row, with Enter on a focused card, with Ctrl+I or with
 "Show details" in the context menu; from an entities row the keyboard route is the context-menu
 key and "Show details", or selecting the row and pressing Ctrl+I. Once open it follows the
@@ -148,6 +170,39 @@ a value not available to this login or a table not visible to it carries a "Why?
 Access report, and a relationship to a table on the canvas is a link that moves the panel to it.
 The panel resizes from its edge and remembers its width; in a window too narrow for both side
 panels at their width they narrow, so the canvas and the top bar keep their room.
+
+### Reading programmable objects
+
+Procedures and Functions have their own sections under each schema in Objects. Their headers
+remain present even when a schema contains only one routine kind, and the sections start
+collapsed. Search opens matching sections temporarily and offers Show more for large result
+sets. Each routine row names its kind, parameter count and any CLR or encrypted state and opens
+its details; it has no canvas eye or center command. A separate footer explains when the code
+list may be incomplete, was not recorded, was excluded or could not be read. The command palette
+finds routines and triggers as well as tables and views; trigger results name their parent.
+
+Opening a module clears the selected cards and makes the Inspector follow that module. Choosing
+a card clears the module selection; clicking the canvas background clears both. The diagram
+continues to contain only tables and views. Procedures show Parameters and Definition; functions
+also show the returned scalar type or table columns; triggers show their parent, the statements
+that fire them, per-statement First/Last order, timing, disabled/replication state and Definition.
+Notes explain AFTER, INSTEAD OF and only the applicable TRUNCATE and bulk-import exceptions.
+Parameters show OUTPUT and READONLY without claiming that a missing default means none.
+
+View code follows its Triggers section in the desktop Inspector. All code surfaces distinguish
+readable, not visible, encrypted, CLR, not recorded and not read, with an icon and an explanation;
+not visible has a Why link to the Access report. A failed read says so instead of blaming the
+connection options. Kept text and kept states say when they were last checked. Unavailable text
+never appears as a blank editor. The source is read-only, with line numbers, Copy, and Wrap lines
+off by default and remembered as an interface setting. Copy preserves exactly the saved text.
+
+Ctrl+F searches inside the focused code, F3 and Shift+F3 move between literal matches, and Escape
+first closes that search. With search closed, Escape returns to the routine's Objects row or
+the trigger's parent card, falling back to Objects search if its home is not rendered. Closing
+the Inspector uses the same home. Ctrl+A selects only code when the source is focused; the find
+field keeps its usual selection behavior. Tab always leaves the source normally, its native
+selection/copy context menu remains available, and global shortcuts still work outside editable
+fields. These module pages and source text are not included in any export.
 
 ### Reading rules
 
@@ -167,6 +222,22 @@ leaves the selection ring alone. The SQL is one click away behind Show SQL, with
 SchemaCraft cannot read in full says so and shows its SQL, never half a sentence. The HTML viewer
 reads and highlights rules the same way.
 
+Since 1.2 the words follow the state SQL Server keeps for each key, index and constraint. A rule
+SQL Server marks as not trusted (added or enabled again `WITH NOCHECK`, or `NOT FOR REPLICATION`,
+which it never trusts) first says "Rows already in sales.OrderLines may not follow this rule: SQL
+Server marks it as not trusted", without guessing why, and its sentences then sit under "When a row
+is inserted or its OrderId is changed:", naming the columns whose change SQL Server checks; a
+relationship's sentences about the referenced table follow, since they hold for every row. Its
+badge, "not trusted", takes the neutral tone of every badge: it is a fact about the data, not a
+warning. A disabled key or index carries "disabled" and limits nothing, so a relationship it would
+have made one-to-one reads "any number of rows … because the index UQ_X is disabled" and draws a
+crow's foot, unless the index is the clustered one, which SQL Server rebuilds, unique again, before
+the relationship can be enabled; a filtered unique index carries "filtered" and limits only the rows
+its filter selects, so its relationship draws a crow's foot and reads "at most one of the rows in …
+that the filter of the unique index UX_X selects", never "at most one row"; and an index lists its
+included columns as an `INCLUDE (…)` line. A project saved before 1.2 did not record these states
+and reads as 1.1 read it until a refresh records them.
+
 ### Refreshing from the database
 
 The diff is presented before it is applied: new, changed and removed tables, views, columns,
@@ -177,9 +248,30 @@ A login that sees less never makes anything look removed: what it could not chec
 listed as not checked, with the date it was read, and what became readable is listed as now
 available. A refresh that changed no object but learned something offers "Update project"; one
 with nothing to report says the project is up to date, or, under partial access, that nothing
-changed in what this login can read.
+changed in what this login can read. The first refresh of a project saved before 1.2 records the
+state of its indexes, keys and constraints in one counted line under "Recorded for the first
+time", never as hundreds of changes, except an index aligned with a partitioned table, whose key
+columns 1.1 read with the partitioning column first and which that refresh shows once as changed,
+and an index or a constraint whose state changed shows the same marks as the Inspector on both sides
+of the change. Code objects have their own grouped changes: procedures, functions, triggers and
+view code, with the properties that changed and no inline SQL diff. A weaker or failed read keeps
+what it cannot check with the original date, and an object or text made readable is now available.
+The first code capture has one counted line for objects and one for texts. A code read failure
+appears even when there was no saved code, so the review cannot claim the project is up to date.
+Turning off code reading, turning off text saving or removing a schema deliberately excludes the
+corresponding saved code when the review is applied. Applying also keeps the chosen read options
+and connection without its password, so the next refresh repeats that scope. If code coverage is
+partial, a no-change review says only that nothing changed in what the login can read, even when
+the table-access verdict is full.
 
 ### Exporting
+
+Trigger badges match the canvas in SVG, PDF, PNG and HTML. Static exports add a legend only
+when a badge is drawn and a note when triggers were not read, including projects saved before
+1.2. Solid and dashed badges remain distinguishable in grayscale. HTML lists the visible
+parents' freshly read trigger names, events and states and view settings, but offers no Open
+trigger link. Its view Definition reads "Not included in this file". No export carries module
+source or routine objects; existing CHECK and DEFAULT expressions may still name routines.
 
 A single dialog chooses the format (SVG, standalone HTML, single-page PDF, PNG at 1x/2x/4x), the
 detail level and the theme, and shows the size in pixels or millimetres with an estimated weight

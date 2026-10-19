@@ -7,14 +7,18 @@ import type {
   SavedConnection,
 } from "@/shared/contracts";
 
-import { DEFAULT_CONNECT_TIMEOUT_SECONDS, emptyConnectionDraft } from "./connectionDraft";
+import {
+  DEFAULT_CONNECT_TIMEOUT_SECONDS,
+  draftToInspectionOptions,
+  emptyConnectionDraft,
+} from "./connectionDraft";
 import type { ConnectionDraft } from "./connectionDraft";
 import { formatServerAddress, formatTarget } from "./serverAddress";
 
 /** A dialog draft that reproduces a saved connection; the password is always empty. */
 export function savedConnectionToDraft(
   saved: SavedConnection,
-  inspection: InspectionOptions = { schemas: [], includeViews: true },
+  inspection: InspectionOptions = draftToInspectionOptions(emptyConnectionDraft),
 ): ConnectionDraft {
   return {
     ...emptyConnectionDraft,
@@ -25,6 +29,8 @@ export function savedConnectionToDraft(
     database: saved.database,
     schemas: inspection.schemas,
     includeViews: inspection.includeViews,
+    includeProgrammability: inspection.includeProgrammability,
+    includeModuleDefinitions: inspection.includeModuleDefinitions,
     encryption: saved.encryption,
     trustServerCertificate: saved.trustServerCertificate,
   };
