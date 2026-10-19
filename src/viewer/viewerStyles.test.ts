@@ -102,8 +102,15 @@ function activeRule(end: "marker-start" | "marker-end", id: string): string | un
 describe("viewer.css", () => {
   const { svg } = renderDiagramSvg(
     { snapshot, canvas },
-    { detailLevel: "keys", theme: "light", labels: { view: "VIEW" } },
+    { detailLevel: "keys", theme: "light", labels: { view: "VIEW", triggers: () => "" } },
   );
+
+  it("takes its colors from the shared palette, with raw colors only in shadows", () => {
+    const withoutShadows = viewerCss.replace(/(?:--sc-shadow|box-shadow):[^;]+;/gu, "");
+    expect(withoutShadows).not.toMatch(
+      /#[\da-f]{3,8}\b|\b(?:rgb|rgba|hsl|hsla|oklch|oklab|color)\(/iu,
+    );
+  });
 
   it("is checked against every end the renderer draws", () => {
     expect(idsAt(svg, "marker-start")).toEqual(["sc-many", "sc-zero-or-one"]);

@@ -5,8 +5,8 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { focusInspectedHome } from "@/features/canvas/canvasFocus";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { useProjectStore } from "@/features/project/projectStore";
-import { describeModuleDetails, describeViewDefinition } from "@/features/schema/moduleDetails";
-import { presentModuleDetails, presentModuleDefinition } from "@/features/schema/moduleDetailsView";
+import { describeModuleDetails } from "@/features/schema/moduleDetails";
+import { presentModuleDetails } from "@/features/schema/moduleDetailsView";
 import { describeObjectDetails } from "@/features/schema/objectDetails";
 import { presentObjectDetails } from "@/features/schema/objectDetailsView";
 import type { DetailsView } from "@/features/schema/objectDetailsView";
@@ -16,7 +16,6 @@ import { IconButton } from "@/shared/ui/IconButton";
 import { classNames } from "@/shared/ui/classNames";
 
 import styles from "./InspectorPanel.module.css";
-import { DefinitionSection } from "./DefinitionSection";
 import { InspectorSection } from "./InspectorSections";
 import { ModuleSection } from "./ModuleSections";
 import { inspectedTarget, inspectorScope } from "./inspectorScope";
@@ -85,11 +84,6 @@ export function InspectorPanel({
     const details = describeModuleDetails(snapshot, target.ref, scope);
     return details === null ? null : presentModuleDetails(details, translator);
   }, [snapshot, scope, target, translator]);
-  const viewDefinition = useMemo(() => {
-    if (snapshot === null || view?.kind !== "view") return null;
-    const facts = describeViewDefinition(snapshot, view.key);
-    return facts === null ? null : presentModuleDefinition(facts, translator);
-  }, [snapshot, view, translator]);
 
   // A focus request: focus lands on the entity's heading, or on the panel's own
   // title while nothing is shown. The landmark leaves its inert state in the same render, so
@@ -153,13 +147,6 @@ export function InspectorPanel({
                 onShowAccessReport={onShowAccessReport}
               />
             ))}
-            {viewDefinition === null ? null : (
-              <DefinitionSection
-                key={`${view.key}:definition`}
-                section={viewDefinition}
-                onShowAccessReport={onShowAccessReport}
-              />
-            )}
           </>
         ) : moduleView !== null ? (
           <>

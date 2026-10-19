@@ -9,6 +9,7 @@ import "./viewer.css";
 import { spreadForDetailLevel, withPositions } from "@/features/canvas/canvasState";
 import { describeEntities } from "@/features/canvas/geometry";
 import type { EntityDescriptor } from "@/features/canvas/geometry";
+import { triggerBadgeLabel } from "@/features/canvas/triggerBadgeText";
 import {
   VIEWER_DATA_ELEMENT_ID,
   VIEWER_ROOT_ELEMENT_ID,
@@ -22,6 +23,7 @@ import { createCanvasMeasurer } from "@/features/export/svg/text";
 import { entityKey } from "@/features/schema/entities";
 import { describeObjectDetails } from "@/features/schema/objectDetails";
 import type { DetailsScope } from "@/features/schema/objectDetails";
+import { triggerCapture } from "@/features/schema/triggerDetails";
 import { hasRuleTargets, presentObjectDetails } from "@/features/schema/objectDetailsView";
 import type {
   BadgeView,
@@ -39,6 +41,7 @@ import { createCatalogTranslator } from "@/shared/i18n/translator";
 import type { CatalogTranslator } from "@/shared/i18n/translator";
 
 import { h } from "./dom";
+import { triggerList, viewDefinition } from "./programmability";
 import { clearRuleHighlight, paintRuleHighlight, ruleBody, ruleSql } from "./rules";
 import type { TableLink } from "./rules";
 
@@ -126,6 +129,7 @@ class Viewer {
       carriedOver: data.carriedOver,
       isSchemaFiltered: false,
       isDiagramOnly: true,
+      definitions: "excluded",
     };
     this.entities = describeEntities(data.snapshot);
     this.detailLevel = data.detailLevel;
@@ -228,9 +232,26 @@ class Viewer {
     );
     // The file travels without the application, so it says itself when the login that read
     // the schema could not see all of it.
-    const note = carriesAccessNote(data.access)
-      ? h("p", { class: "sc-note", role: "note" }, this.t("export.note.partial"))
-      : null;
+    const notes: string[] = [];
+    if (carriesAccessNote(data.access)) {
+      notes.push(this.t("export.note.partial"));
+    }
+    if ([...this.entities.values()].some((entity) => entity.triggers !== null)) {
+      notes.push(this.t("export.triggerLegend"));
+    }
+    if (snapshot.programmability?.capture.objects.status !== "read") {
+      notes.push(this.t("export.triggersNotRead"));
+    } else if (
+      [...this.entities.values()].some(
+        (entity) => triggerCapture(snapshot, entity.name, data.carriedOver).status !== "complete",
+      )
+    ) {
+      notes.push(this.t("export.triggersNotChecked"));
+    }
+    const note =
+      notes.length === 0
+        ? null
+        : h("div", { class: "sc-note", role: "note" }, ...notes.map((text) => h("p", {}, text)));
     root.replaceChildren(
       h(
         "div",
@@ -267,7 +288,10 @@ class Viewer {
       {
         detailLevel: this.detailLevel,
         theme: this.theme,
-        labels: { view: this.t("entity.view.label") },
+        labels: {
+          view: this.t("entity.view.label"),
+          triggers: (badge) => triggerBadgeLabel(badge, this.translator),
+        },
         background: false,
         measureText: this.measure,
       },
@@ -620,6 +644,10 @@ class Viewer {
       case "references":
       case "referencedBy":
         return this.relationList(section);
+      case "triggers":
+        return triggerList(section);
+      case "viewDefinition":
+        return viewDefinition(section);
     }
   }
 

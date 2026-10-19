@@ -2,8 +2,17 @@ import { describeEntities } from "@/features/canvas/geometry";
 import { visibleEntityKeys } from "@/features/canvas/graph";
 import { accessSummary } from "@/features/schema/coverage";
 import type { AccessSummary } from "@/features/schema/coverage";
+import { withoutText } from "@/features/schema/definition";
 import { entityKey } from "@/features/schema/entities";
-import type { CanvasState, CarriedFact, DetailLevel, SchemaSnapshot } from "@/shared/contracts";
+import type {
+  CanvasState,
+  CaptureState,
+  CarriedFact,
+  DetailLevel,
+  ModuleBody,
+  Programmability,
+  SchemaSnapshot,
+} from "@/shared/contracts";
 import type { Locale } from "@/shared/i18n/locales";
 
 import type { ExportTheme } from "../svg/palette";
@@ -51,6 +60,96 @@ function exportedKeyId(referencingKey: string, name: string): string {
   return JSON.stringify([referencingKey, name]);
 }
 
+/** Capture states are rebuilt too: a newer file's extra fields may contain code. */
+function captureWithoutExtensions(capture: CaptureState): CaptureState {
+  switch (capture.status) {
+    case "read":
+      return { status: "read" };
+    case "notRead":
+      return { status: "notRead", reason: capture.reason };
+    case "unknown":
+    default:
+      return { status: "unknown" };
+  }
+}
+
+/** A module's implementation and missing-text state, never its body or unknown extensions. */
+function bodyWithoutText(body: ModuleBody): ModuleBody {
+  switch (body.language) {
+    case "sql":
+      return { language: "sql", definition: withoutText(body.definition) };
+    case "clr":
+      return { language: "clr" };
+    case "unknown":
+    default:
+      return { language: "unknown" };
+  }
+}
+
+/** Only the metadata needed for the visible entities; routines and the code ledger stay behind. */
+function visibleProgrammability(
+  snapshot: SchemaSnapshot,
+  programmability: Programmability,
+  visible: ReadonlySet<string>,
+): Programmability {
+  const keptParents = new Set(
+    (snapshot.carriedOver ?? [])
+      .filter((item) => item.fact.kind === "table" || item.fact.kind === "view")
+      .map((item) => entityKey(item.object)),
+  );
+  // Normally a whole kept trigger or view belongs to a whole kept parent. If a file has no
+  // parent date for it, the export cannot carry the code ledger to explain that stale list.
+  // Downgrading the capture avoids presenting the remaining list as complete.
+  const hasUndatedWholeModule = (programmability.carriedOver ?? []).some((item) => {
+    if (item.part !== "whole") {
+      return false;
+    }
+    const parent =
+      item.object.kind === "trigger"
+        ? item.object.parent
+        : item.object.kind === "view"
+          ? item.object.name
+          : null;
+    return parent !== null && visible.has(entityKey(parent)) && !keptParents.has(entityKey(parent));
+  });
+  const objects: CaptureState =
+    programmability.capture.objects.status === "read" && hasUndatedWholeModule
+      ? { status: "unknown" }
+      : captureWithoutExtensions(programmability.capture.objects);
+  const metadataIsCurrent = (key: string) =>
+    objects.status === "read" && visible.has(key) && !keptParents.has(key);
+  const visibleViews = new Set(snapshot.views.map((view) => entityKey(view.name)));
+  return {
+    capture: {
+      objects,
+      definitions: captureWithoutExtensions(programmability.capture.definitions),
+    },
+    views: programmability.views
+      .filter(
+        (module) =>
+          visibleViews.has(entityKey(module.view)) && metadataIsCurrent(entityKey(module.view)),
+      )
+      .map((module) => ({
+        view: { schema: module.view.schema, name: module.view.name },
+        definition: withoutText(module.definition),
+        hasCheckOption: module.hasCheckOption,
+        isIndexed: module.isIndexed,
+      })),
+    routines: [],
+    triggers: programmability.triggers
+      .filter((trigger) => metadataIsCurrent(entityKey(trigger.parent)))
+      .map((trigger) => ({
+        parent: { schema: trigger.parent.schema, name: trigger.parent.name },
+        name: trigger.name,
+        timing: trigger.timing,
+        events: trigger.events.map((event) => ({ event: event.event, order: event.order })),
+        isEnabled: trigger.isEnabled,
+        isNotForReplication: trigger.isNotForReplication,
+        body: bodyWithoutText(trigger.body),
+      })),
+  };
+}
+
 /**
  * What of a project may leave the application in an export. The schema and the canvas are
  * restricted to what is visible, so hidden tables never leave it, and both are rebuilt from the
@@ -60,7 +159,8 @@ function exportedKeyId(referencingKey: string, name: string): string {
  * a hidden table. The server version and the viewport are dropped as well: the file carries the database
  * name, the objects on the diagram, their positions, the access verdicts and those dates. Tables,
  * views and keys need no allowlist of their own, because the project reader keeps unknown keys
- * only at the levels rebuilt here.
+ * only at the levels rebuilt here. Programmability is rebuilt field by field: only visible
+ * parents' trigger metadata and visible views' settings travel, with every module text removed.
  */
 export function visibleProjection(
   snapshot: SchemaSnapshot,
@@ -90,6 +190,9 @@ export function visibleProjection(
       tables: snapshot.tables.filter((table) => visible.has(entityKey(table.name))),
       views: snapshot.views.filter((view) => visible.has(entityKey(view.name))),
       foreignKeys,
+      ...(snapshot.programmability === undefined
+        ? {}
+        : { programmability: visibleProgrammability(snapshot, snapshot.programmability, visible) }),
       ...(keysToInvisibleTables.length > 0
         ? { foreignKeysToInvisibleTables: keysToInvisibleTables }
         : {}),

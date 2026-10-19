@@ -227,6 +227,7 @@ describe.each(SUPPORTED_LOCALES)("presentObjectDetails in %s", (locale) => {
       complete: catalog["details.empty.indexes"],
       notVisible: catalog["details.empty.notVisible"],
       notRecorded: catalog["details.empty.notRecorded"],
+      notRead: catalog["trigger.notRead.queryFailed"],
       notChecked: catalog["details.empty.notChecked"].replace(
         "{date}",
         formatDate(READ_AT, locale),
@@ -736,6 +737,7 @@ describe("a table of the preview fixture, read with partial access", () => {
     carriedOver: [],
     isSchemaFiltered: false,
     isDiagramOnly: false,
+    definitions: "included",
   };
   const orders = describeObjectDetails(partial, "sales.Orders", scope);
   const recentOrders = describeObjectDetails(partial, "sales.RecentOrders", scope);
@@ -759,6 +761,7 @@ describe("a table of the preview fixture, read with partial access", () => {
       ["Primary key", 1],
       ["Indexes", 3],
       ["Check constraints", 1],
+      ["Triggers", 3],
       ["References", 2],
       ["Referenced by", 1],
     ]);
@@ -843,7 +846,7 @@ describe("a table of the preview fixture, read with partial access", () => {
       kindLabel: "View",
       summary: "2 columns",
     });
-    expect(presentObjectDetails(recentOrders, english).sections).toHaveLength(1);
+    expect(presentObjectDetails(recentOrders, english).sections).toHaveLength(3);
   });
 
   it("reads in Spanish", () => {
@@ -854,6 +857,7 @@ describe("a table of the preview fixture, read with partial access", () => {
       "Clave primaria",
       "Índices",
       "Restricciones CHECK",
+      "Desencadenadores",
       "Referencia a",
       "Referenciada por",
     ]);
@@ -928,7 +932,7 @@ describe("a table of the preview fixture, read with partial access", () => {
         { ...kept, sections: kept.sections.map((section) => ({ ...section, items: [] })) },
         english,
       ).sections.map((section) => section.emptyText),
-    ).toEqual(Array.from({ length: 6 }, () => `Not checked since ${date}`));
+    ).toEqual(Array.from({ length: 7 }, () => `Not checked since ${date}`));
   });
 });
 
@@ -939,6 +943,7 @@ describe("the CHECKs of the preview fixture, read by its owner", () => {
     carriedOver: [],
     isSchemaFiltered: false,
     isDiagramOnly: false,
+    definitions: "included",
   };
   const checksOf = (
     key: string,

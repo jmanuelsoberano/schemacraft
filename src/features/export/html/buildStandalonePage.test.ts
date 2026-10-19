@@ -161,7 +161,6 @@ const NEVER_EXPORTED = [
   '"audit"',
   '"payroll"',
   '"internal"',
-  '"routines"',
   '"gridSize"',
   '"color"',
   "FK_B_Regions",
@@ -350,17 +349,30 @@ describe("buildStandalonePage", () => {
     }
   });
 
-  it("leaves out every code object and every code text", () => {
-    // SENTINEL stands for business logic: it sits in every text and in every name of the code.
+  it("exports visible trigger metadata and view settings without any module text or routine", () => {
     const sentinelText = { status: "readable", text: "SELECT SENTINEL FROM dbo.A" } as const;
+    const extension = { futureText: "EXTENSION_SENTINEL" };
+    const hostileName = '</script><img src=x onerror="alert(1)">';
     const programmability: Programmability = {
-      capture: { objects: { status: "read" }, definitions: { status: "read" } },
+      ...extension,
+      capture: {
+        ...extension,
+        objects: { status: "read", ...extension },
+        definitions: { status: "read", ...extension },
+      },
       views: [
         {
-          view: { schema: "dbo", name: "V" },
-          definition: sentinelText,
+          ...extension,
+          view: { schema: "dbo", name: "V", ...extension },
+          definition: { ...sentinelText, ...extension },
           hasCheckOption: true,
           isIndexed: false,
+        },
+        {
+          view: { schema: "dbo", name: "HiddenView_SENTINEL" },
+          definition: sentinelText,
+          hasCheckOption: false,
+          isIndexed: true,
         },
       ],
       routines: [
@@ -397,10 +409,29 @@ describe("buildStandalonePage", () => {
       ],
       triggers: [
         {
-          parent: { schema: "dbo", name: "A" },
-          name: "TR_SENTINEL",
+          ...extension,
+          parent: { schema: "dbo", name: "A", ...extension },
+          name: "TR_A_Log",
           timing: "after",
-          events: [{ event: "insert", order: "first" }],
+          events: [{ event: "insert", order: "first", ...extension }],
+          isEnabled: true,
+          isNotForReplication: false,
+          body: { language: "sql", definition: { ...sentinelText, ...extension }, ...extension },
+        },
+        {
+          parent: { schema: "dbo", name: "V" },
+          name: hostileName,
+          timing: "insteadOf",
+          events: [{ event: "update", order: "last" }],
+          isEnabled: false,
+          isNotForReplication: true,
+          body: { language: "clr", ...extension },
+        },
+        {
+          parent: { schema: "dbo", name: "B" },
+          name: "TR_Hidden_SENTINEL",
+          timing: "after",
+          events: [],
           isEnabled: true,
           isNotForReplication: false,
           body: { language: "sql", definition: sentinelText },
@@ -416,6 +447,10 @@ describe("buildStandalonePage", () => {
     };
     const withCode: SchemaSnapshot = {
       ...partialSnapshot,
+      views: [
+        ...partialSnapshot.views,
+        { name: { schema: "dbo", name: "HiddenView_SENTINEL" }, columns: [] },
+      ],
       access: {
         ...partialAccess,
         coverage: {
@@ -427,7 +462,18 @@ describe("buildStandalonePage", () => {
       programmability,
     };
 
-    const projected = visibleProjection(withCode, decoratedCanvas);
+    const projected = visibleProjection(withCode, {
+      ...decoratedCanvas,
+      nodes: [
+        ...decoratedCanvas.nodes,
+        {
+          name: { schema: "dbo", name: "HiddenView_SENTINEL" },
+          position: { x: 0, y: 0 },
+          isCollapsed: false,
+          isHidden: true,
+        },
+      ],
+    });
     const page = buildStandalonePage({
       data: {
         generator: "SchemaCraft 1.2.0",
@@ -443,20 +489,59 @@ describe("buildStandalonePage", () => {
       fontFaces: "",
     });
 
-    expect(projected.snapshot).not.toHaveProperty("programmability");
+    expect(projected.snapshot.programmability).toEqual({
+      capture: { objects: { status: "read" }, definitions: { status: "read" } },
+      views: [
+        {
+          view: { schema: "dbo", name: "V" },
+          definition: { status: "unknown" },
+          hasCheckOption: true,
+          isIndexed: false,
+        },
+      ],
+      routines: [],
+      triggers: [
+        {
+          parent: { schema: "dbo", name: "A" },
+          name: "TR_A_Log",
+          timing: "after",
+          events: [{ event: "insert", order: "first" }],
+          isEnabled: true,
+          isNotForReplication: false,
+          body: { language: "sql", definition: { status: "unknown" } },
+        },
+        {
+          parent: { schema: "dbo", name: "V" },
+          name: hostileName,
+          timing: "insteadOf",
+          events: [{ event: "update", order: "last" }],
+          isEnabled: false,
+          isNotForReplication: true,
+          body: { language: "clr" },
+        },
+      ],
+    });
     expect(projected.access).toEqual({
       level: "partial",
       coverage: { objects: "partial", definitions: "notAvailable" },
     });
     for (const secret of [
       "SENTINEL",
-      '"programmability"',
       '"moduleDefinitions"',
       '"encrypted"',
+      '"futureText"',
       ...NEVER_EXPORTED,
     ]) {
       expect(page, secret).not.toContain(secret);
     }
+    expect(page).toContain('"name":"TR_A_Log"');
+    expect(page).not.toContain(hostileName);
+    expect(page).not.toContain("<img");
+    const embedded =
+      /<script id="schemacraft-data" type="application\/json">(.*?)<\/script>/su.exec(page)?.[1];
+    expect(embedded).toBeDefined();
+    const decoded = JSON.parse(embedded ?? "null") as { snapshot: SchemaSnapshot };
+    expect(decoded.snapshot.programmability?.triggers[1]?.name).toBe(hostileName);
   });
 
   it("escapes what would close the data script", () => {

@@ -22,6 +22,7 @@ export function inspectorScope(
     carriedOver: snapshot.carriedOver ?? [],
     isSchemaFiltered: inspection.schemas.length > 0,
     isDiagramOnly: false,
+    definitions: "included",
   };
 }
 

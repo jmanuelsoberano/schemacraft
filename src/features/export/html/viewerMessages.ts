@@ -16,6 +16,7 @@ export const VIEWER_MESSAGE_PREFIXES = [
   "viewMode.",
   "indexKind.",
   "definition.",
+  "trigger.",
   "rule.",
 ] as const;
 
@@ -23,6 +24,9 @@ export const VIEWER_MESSAGE_PREFIXES = [
 export const VIEWER_SHARED_MESSAGE_KEYS = [
   "sidebar.search",
   "export.note.partial",
+  "export.triggerLegend",
+  "export.triggersNotRead",
+  "export.triggersNotChecked",
 ] as const satisfies readonly MessageKey[];
 
 type PrefixedViewerMessageKey = Extract<

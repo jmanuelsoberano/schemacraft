@@ -2,17 +2,22 @@ import { describe, expect, it } from "vitest";
 
 import type {
   CanvasState,
+  CaptureState,
   CheckConstraint,
   Column,
   Definition,
   ForeignKey,
   ForeignKeyToInvisibleTable,
   Index,
+  ModuleBody,
   PrimaryKey,
+  Programmability,
   SchemaSnapshot,
   Table,
+  Trigger,
   TypeLength,
   View,
+  ViewModule,
 } from "@/shared/contracts";
 
 import { visibleProjection } from "./viewerData";
@@ -168,6 +173,48 @@ const canvas: CanvasState = {
   })),
 };
 
+const captures: EveryVariant<CaptureState, "status"> = {
+  read: { status: "read" },
+  notRead: { status: "notRead", reason: "queryFailed" },
+  unknown: { status: "unknown" },
+};
+
+const bodies: EveryVariant<ModuleBody, "language"> = {
+  sql: { language: "sql", definition: definitions.readable },
+  clr: { language: "clr" },
+  unknown: { language: "unknown" },
+};
+
+const trigger: DeepRequired<Trigger> = {
+  parent: table.name,
+  name: "TR_Orders_Log",
+  timing: "after",
+  events: [{ event: "insert", order: "first" }],
+  isEnabled: true,
+  isNotForReplication: true,
+  body: bodies.sql,
+};
+
+const viewModule: DeepRequired<ViewModule> = {
+  view: view.name,
+  definition: definitions.readable,
+  hasCheckOption: true,
+  isIndexed: true,
+};
+
+const programmability: DeepRequired<Programmability> = {
+  capture: { objects: captures.read, definitions: captures.read },
+  views: Object.values(definitions).map((definition) => ({ ...viewModule, definition })),
+  triggers: [
+    ...Object.values(bodies),
+    ...Object.values(definitions).map((definition) => ({ language: "sql", definition }) as const),
+  ].map((body, index) => ({ ...trigger, name: `${trigger.name}${index}`, body })),
+  routines: [],
+  carriedOver: [],
+};
+
+const snapshotWithCode: SchemaSnapshot = { ...snapshot, programmability };
+
 /** Every key path under `value`, with `[]` for the items of a list. */
 function keyPaths(value: unknown, prefix = ""): string[] {
   if (Array.isArray(value)) {
@@ -304,5 +351,204 @@ describe("the fields an HTML export carries", () => {
       "tables",
       "views",
     ]);
+  });
+});
+
+describe("the module metadata an HTML export carries", () => {
+  it("pins the explicit metadata subset, excluding texts, routines and the code ledger", () => {
+    const projected = visibleProjection(snapshotWithCode, canvas).snapshot.programmability;
+    expect(inventory(projected)).toEqual(
+      [
+        "capture",
+        "capture.objects",
+        "capture.objects.status",
+        "capture.definitions",
+        "capture.definitions.status",
+        "routines",
+        "triggers",
+        "triggers[].parent",
+        "triggers[].parent.schema",
+        "triggers[].parent.name",
+        "triggers[].name",
+        "triggers[].timing",
+        "triggers[].events",
+        "triggers[].events[].event",
+        "triggers[].events[].order",
+        "triggers[].isEnabled",
+        "triggers[].isNotForReplication",
+        "triggers[].body",
+        "triggers[].body.language",
+        "triggers[].body.definition",
+        "triggers[].body.definition.status",
+        "views",
+        "views[].view",
+        "views[].view.schema",
+        "views[].view.name",
+        "views[].definition",
+        "views[].definition.status",
+        "views[].hasCheckOption",
+        "views[].isIndexed",
+      ].sort(),
+    );
+    expect(projected?.routines).toEqual([]);
+    expect(projected).not.toHaveProperty("carriedOver");
+    expect(projected?.views.map((module) => module.definition.status)).toEqual([
+      "unknown",
+      "notVisible",
+      "encrypted",
+      "notRecorded",
+      "unknown",
+    ]);
+    expect(JSON.stringify(projected)).not.toContain('"text"');
+  });
+
+  it.each([
+    { status: "notRead", reason: "optionOff" },
+    { status: "notRead", reason: "queryFailed" },
+    { status: "notRead", reason: "timedOut" },
+    captures.unknown,
+  ] as const)("exports no stale metadata when the object capture is %j", (objects) => {
+    const projected = visibleProjection(
+      {
+        ...snapshotWithCode,
+        programmability: { ...programmability, capture: { objects, definitions: captures.read } },
+      },
+      canvas,
+    ).snapshot.programmability;
+    expect(projected?.capture.objects).toEqual(objects);
+    expect(projected?.triggers).toEqual([]);
+    expect(projected?.views).toEqual([]);
+  });
+
+  it("keeps definition capture states without carrying their extensions", () => {
+    for (const definitions of Object.values(captures)) {
+      const projected = visibleProjection(
+        {
+          ...snapshotWithCode,
+          programmability: {
+            ...programmability,
+            capture: {
+              objects: captures.read,
+              definitions: { ...definitions, ...{ text: "PRIVATE_SOURCE" } },
+            },
+          },
+        },
+        canvas,
+      ).snapshot.programmability;
+      expect(projected?.capture.definitions).toEqual(definitions);
+      expect(projected?.triggers.length).toBe(programmability.triggers.length);
+    }
+  });
+
+  it("excludes metadata of whole kept parents but keeps their dates outside the snapshot", () => {
+    const carriedOver = [
+      { object: table.name, fact: { kind: "table" }, readAt: "2026-10-17T12:00:00Z" },
+      { object: view.name, fact: { kind: "view" }, readAt: "2026-10-17T12:00:00Z" },
+    ] as const;
+    const projected = visibleProjection(
+      {
+        ...snapshotWithCode,
+        carriedOver: [...carriedOver],
+        programmability: {
+          ...programmability,
+          carriedOver: [
+            {
+              object: { kind: "trigger", parent: table.name, name: trigger.name },
+              part: "whole",
+              readAt: "2026-10-17T12:00:00Z",
+            },
+            {
+              object: { kind: "view", name: view.name },
+              part: "whole",
+              readAt: "2026-10-17T12:00:00Z",
+            },
+          ],
+        },
+      },
+      canvas,
+    );
+    expect(projected.snapshot.programmability?.capture.objects).toEqual(captures.read);
+    expect(projected.snapshot.programmability?.triggers).toEqual([]);
+    expect(projected.snapshot.programmability?.views).toEqual([]);
+    expect(projected.carriedOver).toEqual(carriedOver);
+  });
+
+  it.each(["trigger", "view"] as const)(
+    "never claims a complete list for an undated whole kept %s",
+    (kind) => {
+      const object =
+        kind === "trigger"
+          ? ({ kind, parent: table.name, name: trigger.name } as const)
+          : ({ kind, name: view.name } as const);
+      const projected = visibleProjection(
+        {
+          ...snapshotWithCode,
+          programmability: {
+            ...programmability,
+            carriedOver: [{ object, part: "whole", readAt: "2026-10-17T12:00:00Z" }],
+          },
+        },
+        canvas,
+      ).snapshot.programmability;
+      expect(projected?.capture.objects).toEqual({ status: "unknown" });
+      expect(projected?.triggers).toEqual([]);
+      expect(projected?.views).toEqual([]);
+    },
+  );
+
+  it("keeps current metadata when only its definition was kept", () => {
+    const projected = visibleProjection(
+      {
+        ...snapshotWithCode,
+        programmability: {
+          ...programmability,
+          carriedOver: [
+            {
+              object: { kind: "trigger", parent: table.name, name: trigger.name },
+              part: "definition",
+              readAt: "2026-10-17T12:00:00Z",
+            },
+          ],
+        },
+      },
+      canvas,
+    ).snapshot.programmability;
+    expect(projected?.capture.objects).toEqual(captures.read);
+    expect(projected?.triggers.length).toBe(programmability.triggers.length);
+    expect(projected).not.toHaveProperty("carriedOver");
+    expect(JSON.stringify(projected)).not.toContain('"text"');
+  });
+
+  it("preserves an explicit failed-read reason even when an old whole module has no parent date", () => {
+    const projected = visibleProjection(
+      {
+        ...snapshotWithCode,
+        programmability: {
+          ...programmability,
+          capture: { objects: captures.notRead, definitions: captures.notRead },
+          carriedOver: [
+            {
+              object: { kind: "trigger", parent: table.name, name: trigger.name },
+              part: "whole",
+              readAt: "2026-10-17T12:00:00Z",
+            },
+          ],
+        },
+      },
+      canvas,
+    ).snapshot.programmability;
+    expect(projected?.capture.objects).toEqual(captures.notRead);
+    expect(projected?.triggers).toEqual([]);
+  });
+
+  it("does not export a view module attached to a table instead of a visible view", () => {
+    const projected = visibleProjection(
+      {
+        ...snapshotWithCode,
+        programmability: { ...programmability, views: [{ ...viewModule, view: table.name }] },
+      },
+      canvas,
+    ).snapshot.programmability;
+    expect(projected?.views).toEqual([]);
   });
 });

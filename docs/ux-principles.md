@@ -142,8 +142,20 @@ referenced row does. Every change is undoable (Ctrl+Z, Ctrl+Y), and the command 
 reaches every action by name and names the kind of every entity it lists.
 
 The Inspector, a panel on the right of the canvas, shows the selected table or view: its columns
-with type, nullability, identity, computed and default, its primary key, indexes and `CHECK`
-constraints, and the relationships out of it and into it. It starts closed and opens with a
+with type, nullability, identity, computed and default, its primary key, indexes and CHECK
+constraints, its triggers, and the relationships out of it and into it. Trigger lists use
+INSTEAD OF before AFTER, enabled before disabled, then name. Each event retains its First/Last
+order; Disabled and Not for replication are explicit badges. Open trigger enters its source
+page only in the app. A complete empty read says None; an unread, older or retained list never
+makes that claim. Views also end with Definition and their recorded settings.
+
+Each card with freshly read triggers has a neutral outlined pill in its existing header,
+between the VIEW label and column count. It counts enabled triggers; if all are disabled, a
+dashed outline and ZapOff icon accompany the total. Full accessible sentences describe enabled,
+disabled and INSTEAD OF counts. The pill remains at every detail level and below 40% zoom,
+without changing saved card heights.
+
+The Inspector starts closed and opens with a
 double-click on a card or on an entities row, with Enter on a focused card, with Ctrl+I or with
 "Show details" in the context menu; from an entities row the keyboard route is the context-menu
 key and "Show details", or selecting the row and pressing Ctrl+I. Once open it follows the
@@ -177,7 +189,7 @@ that fire them, per-statement First/Last order, timing, disabled/replication sta
 Notes explain AFTER, INSTEAD OF and only the applicable TRUNCATE and bulk-import exceptions.
 Parameters show OUTPUT and READONLY without claiming that a missing default means none.
 
-View code appears after its columns in the desktop Inspector. All code surfaces distinguish
+View code follows its Triggers section in the desktop Inspector. All code surfaces distinguish
 readable, not visible, encrypted, CLR, not recorded and not read, with an icon and an explanation;
 not visible has a Why link to the Access report. A failed read says so instead of blaming the
 connection options. Kept text and kept states say when they were last checked. Unavailable text
@@ -253,6 +265,13 @@ partial, a no-change review says only that nothing changed in what the login can
 the table-access verdict is full.
 
 ### Exporting
+
+Trigger badges match the canvas in SVG, PDF, PNG and HTML. Static exports add a legend only
+when a badge is drawn and a note when triggers were not read, including projects saved before
+1.2. Solid and dashed badges remain distinguishable in grayscale. HTML lists the visible
+parents' freshly read trigger names, events and states and view settings, but offers no Open
+trigger link. Its view Definition reads "Not included in this file". No export carries module
+source or routine objects; existing CHECK and DEFAULT expressions may still name routines.
 
 A single dialog chooses the format (SVG, standalone HTML, single-page PDF, PNG at 1x/2x/4x), the
 detail level and the theme, and shows the size in pixels or millimetres with an estimated weight

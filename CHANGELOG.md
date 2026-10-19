@@ -8,6 +8,12 @@ All notable changes to SchemaCraft are documented here. The format follows
 
 ### Added
 
+- Tables and views show their triggers in the Inspector and HTML viewer, with firing events,
+  per-event order and disabled/replication states. View settings remain visible in HTML while
+  Definition says "Not included in this file"; only the app opens a trigger's source page.
+- A neutral trigger count in every canvas detail level and export, with a dashed badge when
+  every trigger is disabled. Static exports include a legend and explain unread triggers.
+  HTML includes only visible-parent trigger metadata, without module code or routine objects.
 - The Objects panel lists procedures and functions in collapsed sections with pages of 200.
   Search and the command palette reach their details, including triggers and their parent
   tables or views. The Inspector shows parameters, return structures, firing conditions and

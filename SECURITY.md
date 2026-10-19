@@ -27,6 +27,11 @@ problem is confirmed.
   texts; applying a refresh with it off removes previously saved module texts. Exports carry
   neither module code, the connection nor the permissions, only the visible diagram and, for a
   partial read, a note saying so.
+- SVG, PDF and PNG include trigger counts and a legend; HTML also includes freshly read trigger
+  names, events and states for the visible parents and the recorded settings of visible views.
+  Module definitions and carried code are excluded. Procedures and functions are not exported
+  as objects, although their names can occur in exported CHECK and DEFAULT expressions. These
+  existing table expressions remain part of the schema details; they are not module source.
 - A code read that fails, times out or sees fewer objects or texts keeps previously saved code
   that it cannot check, with its last-read date. A permission change does not erase a local
   copy. Turning off the relevant read option or removing a schema from the selection is an

@@ -31,6 +31,7 @@ function scopeOf(snapshot: SchemaSnapshot, overrides: Partial<DetailsScope> = {}
     carriedOver: snapshot.carriedOver ?? [],
     isSchemaFiltered: false,
     isDiagramOnly: false,
+    definitions: "included",
     ...overrides,
   };
 }
@@ -87,7 +88,7 @@ function asFormatOne(snapshot: SchemaSnapshot): SchemaSnapshot {
 }
 
 describe("describeObjectDetails", () => {
-  it("gives a table six sections in a fixed order and a view its columns only", () => {
+  it("gives tables and views their shared sections in a fixed order", () => {
     const orders = detailsOf(full, "sales.Orders");
     expect(orders.sections.map((section) => section.kind)).toEqual(TABLE_SECTIONS);
     expect(orders).toMatchObject({
@@ -99,7 +100,11 @@ describe("describeObjectDetails", () => {
     });
 
     const recentOrders = detailsOf(full, "sales.RecentOrders");
-    expect(recentOrders.sections.map((section) => section.kind)).toEqual(["columns"]);
+    expect(recentOrders.sections.map((section) => section.kind)).toEqual([
+      "columns",
+      "triggers",
+      "viewDefinition",
+    ]);
     expect(recentOrders).toMatchObject({ kind: "view", columnCount: 2 });
     expect(sectionOf(recentOrders, "columns").items.map((column) => column.name)).toEqual([
       "OrderId",
@@ -493,6 +498,7 @@ describe("describeObjectDetails", () => {
     const orders = detailsOf(partial, "sales.Orders", { carriedOver });
     expect(orders.notCheckedSince).toBe(READ_AT);
     for (const section of orders.sections) {
+      if (section.kind === "viewDefinition") continue;
       expect(section.completeness, section.kind).toEqual({ status: "notChecked", readAt: READ_AT });
     }
     const view = detailsOf(partial, "sales.RecentOrders", { carriedOver });

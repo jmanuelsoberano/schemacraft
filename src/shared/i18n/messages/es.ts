@@ -201,6 +201,21 @@ export const spanishMessages: MessageCatalog = {
 
   "entity.columns.one": "{count} columna",
   "entity.columns.other": "{count} columnas",
+  "entity.triggers.enabled.one": "{count} desencadenador está habilitado.",
+  "entity.triggers.enabled.other": "{count} desencadenadores están habilitados.",
+  "entity.triggers.disabled.one": "{count} desencadenador está deshabilitado.",
+  "entity.triggers.disabled.other": "{count} desencadenadores están deshabilitados.",
+  "entity.triggers.insteadOf.one": "{count} de los desencadenadores habilitados usa INSTEAD OF.",
+  "entity.triggers.insteadOf.other": "{count} de los desencadenadores habilitados usan INSTEAD OF.",
+  "entity.triggers.disabledInsteadOf.one":
+    "{count} de los desencadenadores deshabilitados usa INSTEAD OF.",
+  "entity.triggers.disabledInsteadOf.other":
+    "{count} de los desencadenadores deshabilitados usan INSTEAD OF.",
+  "export.triggerLegend":
+    "Indicador de desencadenadores: cantidad habilitada o total si todos están deshabilitados (borde discontinuo).",
+  "export.triggersNotRead": "No se leyeron los desencadenadores de este diagrama.",
+  "export.triggersNotChecked":
+    "No se pudo comprobar parte de los metadatos de desencadenadores de este diagrama.",
 
   "welcome.title": "Te damos la bienvenida a SchemaCraft",
   "welcome.description":
@@ -739,7 +754,7 @@ export const spanishMessages: MessageCatalog = {
   "review.code.failed":
     "No se pudo leer parte del código. Las tablas se leyeron; el código guardado se conserva como no comprobado.",
 
-  // Desktop module Inspector; never embedded in exported HTML.
+  // Module pages stay in the desktop; trigger metadata words also serve exported entity details.
   "module.kind.procedure": "Procedimiento",
   "module.kind.function": "Función",
   "module.kind.trigger": "Desencadenador",
@@ -760,25 +775,25 @@ export const spanishMessages: MessageCatalog = {
   "module.parent.go": "Ir a {name}",
   "module.parent.hidden": "Oculto en el lienzo",
   "module.parent.unknown": "No está en este proyecto",
-  "module.badge.disabled": "Deshabilitado",
-  "module.runs.after": "Configurado para ejecutarse después de {event}.",
-  "module.runs.insteadOf": "Configurado para ejecutarse en lugar de {event}.",
-  "module.runs.unknown": "Configurado para {event}; no se registró cuándo se ejecuta.",
-  "module.runs.unknownEvent": "una sentencia no registrada",
-  "module.runs.empty": "No se registraron las sentencias que disparan este desencadenador.",
-  "module.runs.order.first": "Primero en {event}",
-  "module.runs.order.last": "Último en {event}",
-  "module.runs.order.unknown": "Orden de ejecución no registrado",
-  "module.runs.disabled": "Este desencadenador está deshabilitado y no se ejecuta.",
-  "module.runs.note.after":
+  "trigger.badge.disabled": "Deshabilitado",
+  "trigger.event.after": "Configurado para ejecutarse después de {event}.",
+  "trigger.event.insteadOf": "Configurado para ejecutarse en lugar de {event}.",
+  "trigger.event.unknown": "Configurado para {event}; no se registró cuándo se ejecuta.",
+  "trigger.event.unknownName": "una sentencia no registrada",
+  "trigger.events.empty": "No se registraron las sentencias que disparan este desencadenador.",
+  "trigger.order.first": "Primero en {event}",
+  "trigger.order.last": "Último en {event}",
+  "trigger.order.unknown": "Orden de ejecución no registrado",
+  "trigger.state.disabled": "Este desencadenador está deshabilitado y no se ejecuta.",
+  "trigger.note.after":
     "Un desencadenador AFTER se ejecuta después de que la sentencia, sus acciones en cascada y sus comprobaciones de restricciones finalicen correctamente.",
-  "module.runs.note.insteadOf":
+  "trigger.note.insteadOf":
     "Un desencadenador INSTEAD OF se ejecuta en lugar de la acción habitual de la sentencia.",
-  "module.runs.note.order":
+  "trigger.note.order":
     "Primero y Último se aplican a cada sentencia por separado. Los demás desencadenadores AFTER se ejecutan sin un orden definido.",
-  "module.runs.note.replication": "Los agentes de replicación no disparan este desencadenador.",
-  "module.runs.note.truncate": "TRUNCATE TABLE no dispara un desencadenador DELETE.",
-  "module.runs.note.bulk":
+  "trigger.note.replication": "Los agentes de replicación no disparan este desencadenador.",
+  "trigger.note.truncate": "TRUNCATE TABLE no dispara un desencadenador DELETE.",
+  "trigger.note.bulk":
     "BULK INSERT y bcp disparan los desencadenadores INSERT solo cuando se especifica FIRE_TRIGGERS.",
   "module.notice.notChecked":
     "Conservado de la lectura del {date}; esta captura no pudo comprobar este objeto.",
@@ -824,6 +839,28 @@ export const spanishMessages: MessageCatalog = {
   "codeViewer.matches": "{current} de {total}",
   "copy.copied": "Copiado",
   "copy.failed": "No se pudo copiar",
+
+  "details.section.triggers": "Desencadenadores",
+  "details.empty.triggers": "Ninguno",
+  "details.section.viewDefinition": "Definición",
+  "details.viewDefinition.notIncluded": "No incluido en este archivo",
+  "details.viewDefinition.checkOption":
+    "Las filas modificadas a través de esta vista deben seguir siendo visibles a través de ella.",
+  "details.viewDefinition.indexed": "Vista indexada",
+  "details.viewDefinition.indexedHint":
+    "Un índice agrupado único almacena las filas de esta vista.",
+  "trigger.open": "Abrir desencadenador {name}",
+  "trigger.notChecked": "La última inspección no comprobó los metadatos de los desencadenadores.",
+  "trigger.listUnconfirmed":
+    "Esta captura no indica si esta lista de desencadenadores está completa.",
+  "trigger.notRead.optionOff":
+    "Los desencadenadores no se leyeron: las opciones de conexión los dejaron fuera.",
+  "trigger.notRead.queryFailed":
+    "Falló la lectura de desencadenadores. Actualiza desde la base de datos para comprobarlos.",
+  "trigger.notRead.timedOut":
+    "La lectura de desencadenadores agotó su tiempo. Actualiza desde la base de datos para comprobarlos.",
+  "trigger.notRead.unknown":
+    "Los desencadenadores no se leyeron. Actualiza desde la base de datos para comprobarlos.",
 
   ...spanishRuleMessages,
 };

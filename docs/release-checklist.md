@@ -45,7 +45,7 @@ testing the other container. Release publication still requires the manual check
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Measured capability and private diagnostics | The probe reports counts and bytes only; integration and diagnostics tests inspect successful, denied, failed and timed-out operations and reject private names, text and messages from the log.                                                                                                                        |
 | Index and constraint state                  | Core tests pin clustering, included columns, disabled/filtered indexes, trust and partitioned index keys; frontend and export tests pin the resulting rule text, badges and relationship markers.                                                                                                                       |
-| Format 3 and older readers                  | Round trips, migration chains and forward-read tests keep unknown fields and the table interpretation of 1.1; an export sentinel proves module names and texts do not leave the project.                                                                                                                                |
+| Format 3 and older readers                  | Round trips, migration chains and forward-read tests keep unknown fields and the table interpretation of 1.1; an export sentinel proves routine objects and module texts do not leave the project.                                                                                                                      |
 | Code metadata and texts                     | `sqlserver_code` reads procedures, every SQL function kind, parameters/TVPs, returned columns, view options and DML trigger events/order; assembly tests cover CLR kinds and unknown values. Tests distinguish verbatim readable, encrypted, not-visible and omitted texts.                                             |
 | Code access and scope                       | `sqlserver_permissions` pins reader, schema SELECT/EXECUTE, VIEW DEFINITION plus DENY EXECUTE and execute-only profiles on both engines. Bound schema filters, code-only schemas, views off and both code options are tested. A 2022-only persona checks USER_NAME with VIEW SECURITY DEFINITION denied.                |
 | Code failure and refresh                    | A real denial of `sys.sql_modules` leaves tables readable and saved code intact. Unit tests cover timeouts, normalization, all 14 code properties, first captures, explicit exclusions, whole-object/definition dates and repeated weaker/failing reads. A failed optional read cannot claim the project is up to date. |
@@ -53,6 +53,13 @@ testing the other container. Release publication still requires the manual check
 | Code extraction budget                      | The stress fixture includes 200 tables, 200 triggers, 600 procedures, 100 scalar functions, 50 inline table functions and 20 views. The integration test enforces the five-second inspection budget and reports the elapsed time and snapshot JSON bytes.                                                               |
 | Objects and module details                  | Frontend tests cover exclusive selection, document replacement and refresh removal, names with dots, grouping, 200-row pages, bounded search, palette kinds, parameters, function returns, trigger events/order and all definition states in both languages.                                                            |
 | Read-only code viewer                       | Tests cover exact source splitting, literal search and range offsets, wrap persistence, copy feedback and owned shortcuts. Real-app checks cover selection, CRLF copying, CSS highlights, Escape focus, context-menu guards, global shortcuts and large sources.                                                        |
+
+Trigger export tests also pin enabled, mixed and all-disabled counts, unchanged card height,
+translated accessible descriptions, title fitting, deterministic SVG and byte-identical output
+for a successful empty trigger capture. HTML projection sentinels allow visible trigger names
+while rejecting module SQL, routine objects, hidden-parent triggers, carried code and unknown
+properties. Hostile identifiers render as text. Shared details tests cover ordering, per-event
+First/Last, view settings and honest unread, unknown and retained states in both languages.
 
 ## Automated on every tag
 
@@ -128,6 +135,11 @@ testing the other container. Release publication still requires the manual check
       about the referenced table after it, and scripts `WITH NOCHECK` in Show SQL. The HTML export
       says the same, and the PDF and PNG draw the same markers.
 - [ ] Open the HTML export in a browser on a machine without SchemaCraft.
+- [ ] In the real app, check trigger badges at all three detail levels and 30% zoom. Export SVG,
+      PDF, PNG and HTML in both themes and languages; compare the canvas with SVG, open HTML in
+      Edge, and check solid/dashed badges in a grayscale PDF print preview. A 1.1 project must
+      say triggers were not read until refreshed. No exported module body or routine object may
+      be present; HTML may name only triggers whose parents are on the diagram.
 - [ ] Run the installer and uninstall it; no administrator prompt appears.
 - [ ] The release notes describe the program, link the code signing policy and carry the
       version's `CHANGELOG.md` entry.
@@ -228,3 +240,28 @@ Both final scenarios passed. Every run backed up preferences, confirmed process 
 and restored the original bytes. Logs contained no SQL, passwords or fixture identifiers. Rust
 and SQL gates were repeated against SQL Server 2022 and 2019; frontend tests, documentation checks
 and the two matching PRD copies also passed. The publication checklist remains open.
+
+### Trigger details and export verification, 2026-10-19
+
+The real debug application read the local SchemaCraftCode fixture and displayed four parent
+badges: enabled, mixed, INSTEAD OF and an isolated disabled test trigger. Counts remained present
+in compact, keys and full levels and at 30% zoom. Open trigger reached the source page and moved
+focus to its heading; Escape returned to the parent card. Views showed one Definition section,
+WITH CHECK OPTION and indexed-view settings as applicable.
+
+The application produced SVG, PDF, PNG and HTML for English and Spanish in both light and dark
+themes (16 files). SVG and raster output retained the canvas layout, neutral badges and distinct
+solid/dashed outlines. HTML opened independently in Microsoft Edge in English/light and
+Spanish/dark, with trigger events and Definition marked as excluded. The file scan found the
+visible test trigger name but neither its body sentinel nor the procedure name; hiding its
+parent removed that trigger name too. Embedded definitions carried no text and routines were
+empty. A format-2 project exported the unread-trigger note before refresh and badges afterward.
+
+Every application run confirmed process termination before restoring the original preferences
+byte for byte. Rust formatting, Clippy, two workspace test runs and unchanged generated contracts
+passed. All 63 SQL tests passed on each of SQL Server 2022 and 2019 with required servers. The
+frontend passed 807 tests, formatting, lint, type checking and the production build; documentation
+checks and matching PRD copies passed. Review corrections preserve the oldest relevant trigger
+read date and avoid saying none beside retained rows; HTML does not substitute a parent date for
+an omitted code history. Manual grayscale print-preview verification confirmed that the dashed
+badge on app.OrderLines remains distinct from the solid badges on app.Orders and app.OrderAudit.

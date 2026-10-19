@@ -162,8 +162,8 @@ for (const locale of SUPPORTED_LOCALES) {
     it("keeps First and Last attached to their own event and renders statement tokens", () => {
       const section = runs(translator);
       expect(section.events.map((event) => event.order)).toEqual([
-        t("module.runs.order.first", { event: "INSERT" }),
-        t("module.runs.order.last", { event: "UPDATE" }),
+        t("trigger.order.first", { event: "INSERT" }),
+        t("trigger.order.last", { event: "UPDATE" }),
         null,
       ]);
       expect(section.events[0]?.parts).toContainEqual({
@@ -176,10 +176,10 @@ for (const locale of SUPPORTED_LOCALES) {
         goLabel: t("module.parent.go", { name: "sales.Orders" }),
       });
       expect(section.notes).toEqual([
-        t("module.runs.note.after"),
-        t("module.runs.note.order"),
-        t("module.runs.note.truncate"),
-        t("module.runs.note.bulk"),
+        t("trigger.note.after"),
+        t("trigger.note.order"),
+        t("trigger.note.truncate"),
+        t("trigger.note.bulk"),
       ]);
     });
 
@@ -196,22 +196,24 @@ for (const locale of SUPPORTED_LOCALES) {
         "view",
       );
       expect(section.notes).toEqual([
-        t("module.runs.disabled"),
-        t("module.runs.note.insteadOf"),
-        t("module.runs.note.replication"),
+        t("trigger.state.disabled"),
+        t("trigger.note.insteadOf"),
+        t("trigger.note.replication"),
       ]);
-      expect(section.badges).toEqual([t("module.badge.disabled"), "NOT FOR REPLICATION"]);
+      expect(section.badges).toEqual([t("trigger.badge.disabled"), "NOT FOR REPLICATION"]);
       expect(
         runs(translator, { ...TRIGGER, events: [{ event: "update", order: "unspecified" }] }).notes,
-      ).not.toContain(t("module.runs.note.bulk"));
+      ).not.toContain(t("trigger.note.bulk"));
       const unknown = runs(translator, {
         ...TRIGGER,
         timing: "unknown",
         events: [{ event: "unknown", order: "unknown" }],
       });
       expect(unknown.notes).toEqual([]);
-      expect(unknown.events[0]?.order).toBe(t("module.runs.order.unknown"));
-      expect(runs(translator, { ...TRIGGER, events: [] }).emptyText).toBe(t("module.runs.empty"));
+      expect(unknown.events[0]?.order).toBe(t("trigger.order.unknown"));
+      expect(runs(translator, { ...TRIGGER, events: [] }).emptyText).toBe(
+        t("trigger.events.empty"),
+      );
     });
 
     it("explains every missing definition and offers Why only for permission uncertainty", () => {

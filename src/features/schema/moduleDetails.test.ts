@@ -35,6 +35,7 @@ const SCOPE: DetailsScope = {
   carriedOver: [],
   isSchemaFiltered: false,
   isDiagramOnly: false,
+  definitions: "included",
 };
 const READ_AT = "2026-10-12T08:00:00Z";
 

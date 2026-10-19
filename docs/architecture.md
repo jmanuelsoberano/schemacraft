@@ -541,10 +541,18 @@ the design tokens converted to sRGB hex (`palette.ts`), because renderers outsid
 understand neither `oklch()` nor `light-dark()`; a test recomputes the conversion, so the palette
 cannot drift from `tokens.css` (ADR-037). Styles are plain class rules without combinators, the
 subset every SVG consumer shares. The renderer holds no text of its own: the caller passes the
-labels it needs already translated (`RenderOptions.labels`, today the VIEW label), so the exports
+labels it needs already translated (`RenderOptions.labels.view` and `.triggers`), so the exports
 speak the interface language and the viewer its own. Text stays text, selectable in SVG and PDF;
 names that do not fit are shortened with an ellipsis, measured with a canvas in the webview and
 estimated in tests. The renderer is deterministic for a given input, which the unit tests check.
+
+Since 1.2 a neutral trigger pill sits between the VIEW label and the column count in the same
+38 px header. Its width is reserved before the entity name is shortened. `geometry.ts` supplies
+the count and enabled/disabled variant; the caller supplies the full translated accessible
+description, also used as the SVG title. Static exports add a trigger legend only when a badge
+is drawn and a separate note when triggers were not read. A mixed capture instead says that
+some trigger metadata could not be checked. These notes take measured document space. A
+successful capture with no triggers keeps the previous diagram output byte for byte.
 
 Why: the PRD asks for continuous vector output with selectable text that matches the screen.
 One renderer, shared with the standalone viewer, keeps the drawing rules in a single place.
@@ -599,6 +607,16 @@ out of the file, together with the FK mark it gives its columns, an empty relati
 note that a key may be missing. The panel no longer announces its whole content through
 `aria-live` on every click: choosing a search result or following a relation link moves focus
 to the panel's heading, so a keyboard or screen-reader user lands on the entity they chose.
+
+Since 1.2 the explicit snapshot projection also includes the code capture state, trigger
+metadata for visible parents and module settings for visible views. Definitions pass through
+`withoutText`; routines, saved module bodies, unknown properties and the carried-code ledger
+never enter the file. Whole objects retained without a fresh read are excluded from that subset;
+the parent's existing kept-fact date still qualifies its details. Trigger names travel like
+index and constraint names. Keys to hidden tables still lose their names and their metadata.
+View Definition says "Not included in this file"; WITH CHECK OPTION and indexed-view settings
+remain visible when read. Procedures and functions are not exported as objects, although an
+exported CHECK or DEFAULT expression may name one.
 
 Why: the user chose the full viewer over pre-rendered pictures; it keeps the file lighter for
 large schemas and lets the reader explore. Sharing the renderer avoids a second drawing
@@ -954,6 +972,12 @@ catalogue subset embedded in the file (ADR-038), and names the kind next to ever
 and in its detail panel. The command palette shows a kind icon and a Table or View label on
 every entity row.
 
+Since 1.2, a separate neutral trigger pill is present at all three detail levels and
+at semantic zoom. A solid outline and Zap icon count enabled triggers; when all are disabled,
+a dashed outline and ZapOff icon count the total instead. INSTEAD OF is expressed in the
+translated accessible description, tooltip and SVG title. No colour alone carries its state,
+and the header remains 38 px high in the canvas and every export.
+
 The word "view" therefore means a database view and nothing else in the interface, in both
 languages: the viewport commands read "Fit diagram to window" and "Center on screen" ("Ajustar el
 diagrama a la ventana", "Centrar en pantalla"), and compact, keys and full are detail levels.
@@ -1008,6 +1032,11 @@ themes (`viewerPaletteStyles`), so `viewer.css` holds no colour of its own beyon
 translucent shadows, which the test does not police. A new colour is a
 token first and then, when an export or the viewer needs it, a `DiagramPalette` entry with its
 `PALETTE_TOKENS` line; the test's failure message prints the expected hex.
+
+The trigger badge follows the same rule: `geometry.ts` owns `triggerBadge` and
+`EntityDescriptor.triggers`, and `triggerBadgeText.ts` owns the translated description. Both
+canvas and exports consume these values. Unread or unverified trigger metadata cannot produce
+a current count; a successful capture with no triggers draws no badge.
 
 Why: a copy that is "kept in step" by hand is a bug waiting for its second editor, and the
 viewer's key badge had already drifted from the application's warning colour. One module per
@@ -1076,8 +1105,15 @@ diagram (ADR-025), and its own catalogue is gone.
 Since 1.2 the same Inspector also follows a selected procedure, function or trigger (ADR-044).
 Their facts and presentation are separate modules, `moduleDetails.ts` and
 `moduleDetailsView.ts`, with `module.*` messages excluded from the embedded viewer catalogue.
-View code is appended by the desktop Inspector after the shared entity sections. Neither change
-adds source text or module pages to the HTML detail model. Escape and closing the Inspector use
+Tables and views also share a Triggers section, after the CHECK constraints on tables; views
+end with Definition. Trigger events retain their First/Last order and disabled/replication
+marks, sorted by INSTEAD OF then AFTER, enabled state and name. "None" requires a successful
+trigger-metadata read for that parent; missing, failed and retained reads keep distinct states.
+`DetailsScope.definitions` says whether source may be shown. The shared Definition view-model
+contains metadata only: the app resolves its code viewer from the snapshot, while HTML says
+"Not included in this file". Both retain recorded WITH CHECK OPTION and indexed-view badges.
+Only the app offers Open trigger. No source text or module pages enter the HTML detail model.
+Escape and closing the Inspector use
 the selected object's home: an entity card, a trigger's parent card, or a routine's Objects row,
 with the Objects search field as the module fallback.
 
@@ -1753,7 +1789,8 @@ without scanning SQL bodies. Incomplete, unrecorded, omitted or failed code read
 footer so a short list cannot claim that other routines do not exist.
 
 The desktop Inspector uses a separate fact reader (`moduleDetails.ts`) and presentation
-(`moduleDetailsView.ts`), leaving the entity/HTML model exhaustive over its existing sections.
+(`moduleDetailsView.ts`) for module pages. Trigger event presentation is shared with the
+entity sections, whose renderers remain exhaustive.
 Procedures show Parameters then Definition; functions insert Returns; triggers show Runs then
 Definition. Parameters remain in declaration order and show OUTPUT/READONLY marks. T-SQL
 defaults are read only in the module's stored source. Scalar functions show their return type;
@@ -1761,8 +1798,9 @@ table functions reuse the columns renderer for the structural result, without se
 DEFAULT expressions (ADR-043). A trigger's parent is a link only when the parent can be shown.
 Runs keeps First/Last attached to each event, explains AFTER and INSTEAD OF, and marks disabled
 and NOT FOR REPLICATION states. The TRUNCATE note applies only to DELETE triggers on tables;
-the bulk-import note applies only to INSERT triggers. View Definition is appended only by the
-desktop renderer, with recorded WITH CHECK OPTION and indexed-view facts.
+the bulk-import note applies only to INSERT triggers. View Definition is a shared metadata
+section with recorded WITH CHECK OPTION and indexed-view facts; only the desktop renderer
+resolves and displays its source.
 
 Every definition has real state text and an icon: readable SQL, not visible to the login with
 Why to the Access report, encrypted through WITH ENCRYPTION, CLR assembly, not recorded in an

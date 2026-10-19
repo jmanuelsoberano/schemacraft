@@ -48,7 +48,7 @@ body {
   grid-template-rows: 48px auto 1fr 28px;
 }
 
-/* One line under the bar when the schema was read with partial access. */
+/* Export scope and the trigger badge legend remain visible above the diagram. */
 .sc-note {
   margin: 0;
   padding: 6px 12px;
@@ -56,6 +56,14 @@ body {
   background: var(--sc-surface-sunken);
   color: var(--sc-text-secondary);
   font-size: 12px;
+}
+
+.sc-note p {
+  margin: 0;
+}
+
+.sc-note p + p {
+  margin-top: 2px;
 }
 
 .sc-bar {
@@ -521,6 +529,37 @@ body {
 
 .sc-list li {
   padding: 3px 0;
+}
+
+.sc-trigger-head,
+.sc-trigger-events {
+  overflow-wrap: anywhere;
+}
+
+.sc-trigger-events {
+  margin: 3px 0 0;
+  padding-left: 16px;
+  list-style: disc;
+}
+
+.sc-triggers .sc-trigger-events li {
+  padding: 1px 0;
+}
+
+.sc-definition-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.sc-definition-badges .sc-badge {
+  margin-left: 0;
+}
+
+.sc-view-definition p,
+.sc-triggers p {
+  margin-bottom: 0;
 }
 
 .sc-link {

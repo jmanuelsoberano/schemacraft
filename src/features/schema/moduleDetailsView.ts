@@ -1,6 +1,4 @@
 import { formatDate } from "@/shared/i18n/formatDate";
-import { formatMessageParts } from "@/shared/i18n/formatMessage";
-import type { MessagePart } from "@/shared/i18n/formatMessage";
 import type { MessageKey } from "@/shared/i18n/messages/en";
 import type { CatalogTranslator } from "@/shared/i18n/translator";
 
@@ -9,9 +7,13 @@ import { entityKey } from "./entities";
 import type { ModuleDefinitionFacts, ModuleDetails, ModuleSection } from "./moduleDetails";
 import type { ModuleKind } from "./modules";
 import type { BadgeView, ColumnsSectionView } from "./objectDetailsView";
+import { presentTriggerBadges, presentTriggerEvents, triggerRunNotes } from "./triggerDetailsView";
+import type { TriggerEventView } from "./triggerDetailsView";
 
-/** This catalogue is deliberately excluded from the standalone HTML viewer. */
-export type ModuleTranslator = CatalogTranslator<Extract<MessageKey, `module.${string}`>>;
+/** Module-only words stay in the desktop; trigger metadata words also serve entity details. */
+export type ModuleTranslator = CatalogTranslator<
+  Extract<MessageKey, `module.${string}` | `trigger.${string}`>
+>;
 
 export interface DefinitionSectionView {
   kind: "definition";
@@ -46,7 +48,7 @@ export interface RunsSectionView {
   kind: "runs";
   title: string;
   parent: { label: string; key: string | null; goLabel: string; stateLabel: string | null };
-  events: readonly { parts: readonly MessagePart<string>[]; order: string | null }[];
+  events: readonly TriggerEventView[];
   emptyText: string | null;
   badges: readonly string[];
   notes: readonly string[];
@@ -182,34 +184,10 @@ function runsView(
   section: Extract<ModuleSection, { kind: "runs" }>,
   translator: ModuleTranslator,
 ): RunsSectionView {
-  const { t, template } = translator;
+  const { t } = translator;
   const { trigger, parent } = section;
-  const notes: string[] = [];
-  if (!trigger.isEnabled) notes.push(t("module.runs.disabled"));
-  if (trigger.timing !== "unknown") notes.push(t(`module.runs.note.${trigger.timing}`));
-  if (trigger.timing === "after") notes.push(t("module.runs.note.order"));
-  if (trigger.isNotForReplication) notes.push(t("module.runs.note.replication"));
-  if (parent.kind === "table" && trigger.events.some((item) => item.event === "delete"))
-    notes.push(t("module.runs.note.truncate"));
-  if (trigger.events.some((item) => item.event === "insert"))
-    notes.push(t("module.runs.note.bulk"));
-  const order = { insert: 0, update: 1, delete: 2, unknown: 3 };
-  const events = [...trigger.events]
-    .sort((left, right) => order[left.event] - order[right.event])
-    .map((item) => ({
-      parts: formatMessageParts(template(`module.runs.${trigger.timing}`), {
-        event: item.event === "unknown" ? t("module.runs.unknownEvent") : item.event.toUpperCase(),
-      }),
-      order:
-        item.order === "first" || item.order === "last"
-          ? t(`module.runs.order.${item.order}`, {
-              event:
-                item.event === "unknown" ? t("module.runs.unknownEvent") : item.event.toUpperCase(),
-            })
-          : item.order === "unknown"
-            ? t("module.runs.order.unknown")
-            : null,
-    }));
+  const notes = triggerRunNotes(trigger, parent.kind, translator);
+  const events = presentTriggerEvents(trigger, translator);
   return {
     kind: "runs",
     title: t("module.section.runs"),
@@ -220,11 +198,8 @@ function runsView(
       stateLabel: parent.unavailable === null ? null : t(`module.parent.${parent.unavailable}`),
     },
     events,
-    emptyText: events.length === 0 ? t("module.runs.empty") : null,
-    badges: [
-      ...(!trigger.isEnabled ? [t("module.badge.disabled")] : []),
-      ...(trigger.isNotForReplication ? ["NOT FOR REPLICATION"] : []),
-    ],
+    emptyText: events.length === 0 ? t("trigger.events.empty") : null,
+    badges: presentTriggerBadges(trigger, translator),
     notes,
   };
 }

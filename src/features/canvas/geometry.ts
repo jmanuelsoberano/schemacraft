@@ -1,5 +1,6 @@
 import { entityKey } from "@/features/schema/entities";
 import type { EntityKind } from "@/features/schema/entities";
+import { triggerCapture } from "@/features/schema/triggerDetails";
 import type {
   Column,
   DetailLevel,
@@ -22,6 +23,38 @@ export const COMPACT_ZOOM_THRESHOLD = 0.4;
 
 export type ColumnRole = "primary" | "foreign" | "both" | "plain";
 
+/** Count and appearance of a verified trigger list; no names or SQL enter the drawing. */
+export interface TriggerBadge {
+  enabled: number;
+  disabled: number;
+  insteadOf: number;
+  disabledInsteadOf: number;
+  count: number;
+  allDisabled: boolean;
+}
+
+/** The same badge rule serves the canvas and every exported drawing. */
+export function triggerBadge(snapshot: SchemaSnapshot, parent: QualifiedName): TriggerBadge | null {
+  if (triggerCapture(snapshot, parent).status !== "complete") return null;
+  const triggers =
+    snapshot.programmability?.triggers.filter(
+      (trigger) => trigger.parent.schema === parent.schema && trigger.parent.name === parent.name,
+    ) ?? [];
+  if (triggers.length === 0) return null;
+  const enabled = triggers.filter((trigger) => trigger.isEnabled).length;
+  return {
+    enabled,
+    disabled: triggers.length - enabled,
+    insteadOf: triggers.filter((trigger) => trigger.isEnabled && trigger.timing === "insteadOf")
+      .length,
+    disabledInsteadOf: triggers.filter(
+      (trigger) => !trigger.isEnabled && trigger.timing === "insteadOf",
+    ).length,
+    count: enabled || triggers.length,
+    allDisabled: enabled === 0,
+  };
+}
+
 /** A table or view with the key facts the diagram needs, computed once per snapshot. */
 export interface EntityDescriptor {
   /** `schema.name`, the node id. */
@@ -31,6 +64,7 @@ export interface EntityDescriptor {
   columns: readonly Column[];
   primaryKeyColumns: ReadonlySet<string>;
   foreignKeyColumns: ReadonlySet<string>;
+  triggers: TriggerBadge | null;
 }
 
 /** A column as a node row. */
@@ -74,6 +108,7 @@ export function describeEntities(snapshot: SchemaSnapshot): Map<string, EntityDe
       columns: table.columns,
       primaryKeyColumns: new Set(table.primaryKey?.columns ?? []),
       foreignKeyColumns: foreignKeyColumns.get(key) ?? new Set(),
+      triggers: triggerBadge(snapshot, table.name),
     });
   }
   for (const view of snapshot.views) {
@@ -85,6 +120,7 @@ export function describeEntities(snapshot: SchemaSnapshot): Map<string, EntityDe
       columns: view.columns,
       primaryKeyColumns: new Set(),
       foreignKeyColumns: new Set(),
+      triggers: triggerBadge(snapshot, view.name),
     });
   }
   return entities;

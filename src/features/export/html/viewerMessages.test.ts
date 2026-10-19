@@ -30,9 +30,16 @@ describe.each(SUPPORTED_LOCALES)("%s viewer messages", (locale) => {
     expect(expected).toContain("details.section.columns");
     expect(expected).toContain("entity.view.label");
     expect(expected).toContain("viewMode.compact");
+    expect(expected).toContain("trigger.event.after");
+    expect(expected).toContain("details.viewDefinition.notIncluded");
+    expect(expected).toContain("entity.triggers.enabled.one");
+    expect(expected).toContain("export.triggerLegend");
+    expect(expected).toContain("export.triggersNotRead");
+    expect(expected).toContain("export.triggersNotChecked");
     expect(expected).toContain("sidebar.search");
     expect(expected).not.toContain("sidebar.title");
     expect(expected).not.toContain("action.connect");
+    expect(expected).not.toContain("module.section.definition");
   });
 
   it("says what the application says, with nothing left blank", () => {
@@ -47,6 +54,7 @@ describe("isViewerMessageKey", () => {
   it("accepts the prefixes and the shared keys only", () => {
     expect(isViewerMessageKey("viewer.action.fit")).toBe(true);
     expect(isViewerMessageKey("definition.notAvailable")).toBe(true);
+    expect(isViewerMessageKey("trigger.event.after")).toBe(true);
     expect(isViewerMessageKey("export.note.partial")).toBe(true);
     expect(isViewerMessageKey("export.dialog.title")).toBe(false);
     expect(isViewerMessageKey("access.chip")).toBe(false);

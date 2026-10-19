@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { CanvasState, Column, SchemaSnapshot } from "@/shared/contracts";
+import type { CanvasState, Column, SchemaSnapshot, Trigger } from "@/shared/contracts";
+import { triggerBadgeLabel } from "@/features/canvas/triggerBadgeText";
+import { createCatalogTranslator } from "@/shared/i18n/translator";
+import { messageCatalogs } from "@/shared/i18n/messages/catalogs";
 
 import { measureDiagram, renderDiagramSvg } from "./renderDiagram";
 import { ELLIPSIS, estimateTextWidth, fitText } from "./text";
@@ -145,7 +148,11 @@ const canvas: CanvasState = {
 };
 
 /** The words drawn into the diagram, as the English application passes them. */
-const labels = { view: "VIEW" };
+const labels = {
+  view: "VIEW",
+  triggers: (badge: Parameters<typeof triggerBadgeLabel>[0]) =>
+    triggerBadgeLabel(badge, createCatalogTranslator(messageCatalogs.en, "en")),
+};
 
 const count = (text: string, needle: string) => text.split(needle).length - 1;
 
@@ -305,7 +312,7 @@ describe("renderDiagramSvg", () => {
   it("draws the label in the language it is given and escapes it", () => {
     const spanish = renderDiagramSvg(
       { snapshot, canvas },
-      { detailLevel: "keys", theme: "light", labels: { view: "VISTA" } },
+      { detailLevel: "keys", theme: "light", labels: { ...labels, view: "VISTA" } },
     );
     expect(spanish.svg).toContain(">VISTA</text>");
     expect(spanish.svg).not.toContain(">VIEW<");
@@ -314,7 +321,7 @@ describe("renderDiagramSvg", () => {
 
     const odd = renderDiagramSvg(
       { snapshot, canvas },
-      { detailLevel: "keys", theme: "light", labels: { view: "<V>" } },
+      { detailLevel: "keys", theme: "light", labels: { ...labels, view: "<V>" } },
     );
     expect(odd.svg).toContain(">&lt;V&gt;</text>");
     expect(odd.svg).not.toContain("><V><");
@@ -481,6 +488,189 @@ describe("renderDiagramSvg", () => {
     );
     expect(empty.entityCount).toBe(0);
     expect(empty.width).toBe(96);
+  });
+});
+
+function trigger(overrides: Partial<Trigger> = {}): Trigger {
+  return {
+    parent: { schema: "dbo", name: "Customers" },
+    name: "trg_PrivateTriggerName",
+    timing: "after",
+    events: [{ event: "insert", order: "first" }],
+    isEnabled: true,
+    isNotForReplication: false,
+    body: {
+      language: "sql",
+      definition: { status: "readable", text: "PRIVATE_TRIGGER_BODY_SENTINEL" },
+    },
+    ...overrides,
+  };
+}
+
+function triggerSnapshot(triggers: Trigger[]): SchemaSnapshot {
+  return {
+    ...snapshot,
+    programmability: {
+      capture: { objects: { status: "read" }, definitions: { status: "read" } },
+      routines: [],
+      views: [],
+      triggers,
+    },
+  };
+}
+
+describe("trigger badges in exported drawings", () => {
+  const options = { detailLevel: "compact" as const, theme: "light" as const, labels };
+  const triggerNotes = {
+    legend: "Enabled count; dashed means all disabled.",
+    notRead: "Triggers were not read for this diagram.",
+    notChecked: "Some trigger metadata could not be checked for this diagram.",
+  };
+
+  it("draws neutral solid and dashed badges without exporting names or code", () => {
+    const input = {
+      snapshot: triggerSnapshot([
+        trigger(),
+        trigger({ name: "Second", timing: "insteadOf" }),
+        trigger({ name: "Disabled", isEnabled: false }),
+        trigger({
+          parent: { schema: "sales", name: "RecentOrders" },
+          isEnabled: false,
+          timing: "insteadOf",
+        }),
+      ]),
+      canvas,
+    };
+    const { svg } = renderDiagramSvg(input, options);
+    expect(svg).toContain('class="sc-trigger-badge"');
+    expect(svg).toContain('class="sc-trigger-badge sc-trigger-disabled"');
+    expect(svg).toContain('href="#sc-icon-trigger"');
+    expect(svg).toContain('href="#sc-icon-trigger-disabled"');
+    expect(svg).toContain(
+      "2 triggers are enabled. 1 of the enabled triggers uses INSTEAD OF. 1 trigger is disabled.",
+    );
+    expect(svg).toContain("1 trigger is disabled. 1 of the disabled triggers uses INSTEAD OF.");
+    expect(svg).toContain(".sc-trigger-badge{fill:none;stroke:#c8cad3;stroke-width:1}");
+    expect(svg).toContain(".sc-trigger-disabled{stroke-dasharray:3 2}");
+    expect(svg).not.toContain("trg_PrivateTriggerName");
+    expect(svg).not.toContain("PRIVATE_TRIGGER_BODY_SENTINEL");
+    expect(renderDiagramSvg(input, options).svg).toBe(svg);
+  });
+
+  it("escapes translated titles and makes room for a badge by shortening the name", () => {
+    const capture = triggerSnapshot([trigger()]);
+    const name = "CustomerOrdersWithAnUnusuallyLongTitle";
+    const first = capture.tables[0];
+    const code = capture.programmability;
+    if (first === undefined || code === undefined) throw new Error("fixture missing");
+    const renamed = {
+      ...capture,
+      tables: [{ ...first, name: { ...first.name, name } }],
+      views: [],
+      foreignKeys: [],
+      programmability: { ...code, triggers: [trigger({ parent: { ...first.name, name } })] },
+    };
+    const withBadge = renderDiagramSvg(
+      { snapshot: renamed, canvas: { ...canvas, nodes: [] } },
+      {
+        ...options,
+        labels: { ...labels, triggers: () => 'Enabled & <disabled> "label"' },
+      },
+    );
+    const withoutBadge = renderDiagramSvg(
+      {
+        snapshot: { ...renamed, programmability: { ...renamed.programmability, triggers: [] } },
+        canvas: { ...canvas, nodes: [] },
+      },
+      options,
+    );
+    expect(withBadge.svg).toContain(
+      "<title>Enabled &amp; &lt;disabled&gt; &quot;label&quot;</title>",
+    );
+    const shownName = (svg: string) =>
+      /<tspan class="sc-title-name">([^<]+)<\/tspan>/u.exec(svg)?.[1] ?? "";
+    expect(shownName(withBadge.svg).length).toBeLessThan(shownName(withoutBadge.svg).length);
+    expect(withBadge.height).toBe(withoutBadge.height);
+  });
+
+  it("adds only applicable notes, including older and unverified captures", () => {
+    const input = { snapshot: triggerSnapshot([trigger()]), canvas };
+    const drawn = renderDiagramSvg(input, {
+      ...options,
+      triggerNotes,
+      footnote: "Partial capture.",
+    });
+    expect(drawn.svg).toContain(triggerNotes.legend);
+    expect(drawn.svg).not.toContain(triggerNotes.notRead);
+    expect(drawn.svg).toContain("Partial capture.");
+    const measured = measureDiagram(input, "compact", {
+      triggerNotes,
+      footnote: "Partial capture.",
+    });
+    expect({ width: drawn.width, height: drawn.height }).toEqual({
+      width: measured.width,
+      height: measured.height,
+    });
+
+    const legacy = renderDiagramSvg({ snapshot, canvas }, { ...options, triggerNotes });
+    expect(legacy.svg).toContain(triggerNotes.notRead);
+    expect(legacy.svg).not.toContain(triggerNotes.legend);
+    const retained = {
+      ...input.snapshot,
+      carriedOver: [
+        {
+          object: { schema: "dbo", name: "Customers" },
+          fact: { kind: "table" as const },
+          readAt: "2026-10-12T00:00:00Z",
+        },
+      ],
+    };
+    const unchecked = renderDiagramSvg(
+      { snapshot: retained, canvas },
+      { ...options, triggerNotes },
+    );
+    expect(unchecked.svg).toContain(triggerNotes.notChecked);
+    expect(unchecked.svg).not.toContain(triggerNotes.notRead);
+    expect(unchecked.svg).not.toContain('class="sc-triggers"');
+  });
+
+  it("keeps verified badges and the legend when only another parent's trigger list is unverified", () => {
+    const capture = triggerSnapshot([
+      trigger(),
+      trigger({ parent: { schema: "sales", name: "RecentOrders" } }),
+    ]);
+    const mixed = {
+      ...capture,
+      carriedOver: [
+        {
+          object: { schema: "dbo", name: "Customers" },
+          fact: { kind: "table" as const },
+          readAt: "2026-10-12T00:00:00Z",
+        },
+      ],
+    };
+    const rendered = renderDiagramSvg({ snapshot: mixed, canvas }, { ...options, triggerNotes });
+    expect(count(rendered.svg, 'class="sc-triggers"')).toBe(1);
+    expect(rendered.svg).toContain(triggerNotes.legend);
+    expect(rendered.svg).toContain(triggerNotes.notChecked);
+    expect(rendered.svg).not.toContain(triggerNotes.notRead);
+  });
+
+  it("keeps a read empty capture byte-identical and ignores triggers of hidden objects", () => {
+    const baseline = renderDiagramSvg({ snapshot, canvas }, options);
+    const empty = renderDiagramSvg(
+      { snapshot: triggerSnapshot([]), canvas },
+      { ...options, triggerNotes },
+    );
+    expect(empty.svg).toBe(baseline.svg);
+    const hidden = renderDiagramSvg(
+      {
+        snapshot: triggerSnapshot([trigger({ parent: { schema: "dbo", name: "Hidden" } })]),
+        canvas,
+      },
+      { ...options, triggerNotes },
+    );
+    expect(hidden.svg).toBe(baseline.svg);
   });
 });
 

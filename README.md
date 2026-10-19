@@ -236,6 +236,14 @@ object on the diagram. A project reopens
 without a database; refresh reconnects through the connection dialog and shows the differences
 before applying them, keeping the positions of surviving tables.
 
+SVG, PDF and PNG carry trigger counts, with a solid badge for enabled triggers and a dashed
+badge when all are disabled. Static files explain the badge and state when triggers were not
+read. HTML also carries the names, events and states of freshly read triggers belonging to
+visible tables and views, plus recorded WITH CHECK OPTION and indexed-view settings. View
+Definition says "Not included in this file". No export carries module code or exports procedures
+and functions as objects; their names may still occur in exported CHECK and DEFAULT expressions.
+Trigger metadata kept without a fresh read is excluded from HTML and never counted as current.
+
 The connection dialog enables "Read procedures, functions and triggers" and "Save their code in
 the project" by default. The second option includes view code and can be turned off while keeping
 the object metadata; turning off the first leaves out both. Both respect the schema filter, and

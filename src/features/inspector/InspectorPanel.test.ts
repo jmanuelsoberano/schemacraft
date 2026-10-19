@@ -5,6 +5,7 @@ import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ModuleRef } from "@/features/schema/modules";
+import type { SectionView } from "@/features/schema/objectDetailsView";
 import type { SchemaSnapshot } from "@/shared/contracts";
 
 import { previewSnapshot } from "@/shared/ipc/previewConnectionBackend";
@@ -20,6 +21,7 @@ const canvasState = vi.hoisted(() => ({
   closeInspector: vi.fn(),
   focusEntity: vi.fn(),
   openInspector: vi.fn(),
+  selectModule: vi.fn(),
 }));
 vi.mock("@/features/project/projectStore", () => ({
   useProjectStore: (select: (state: typeof projectState) => unknown) => select(projectState),
@@ -44,7 +46,6 @@ const { focusInspectedHome } = await import("@/features/canvas/canvasFocus");
 const { InspectorPanel } = await import("./InspectorPanel");
 const { InspectorSection } = await import("./InspectorSections");
 const { ModuleSection } = await import("./ModuleSections");
-const { DefinitionSection } = await import("./DefinitionSection");
 
 type KeyDownHandler = (event: {
   key: string;
@@ -56,6 +57,8 @@ interface ElementProps {
   role?: string;
   children?: ReactNode;
   onKeyDown?: KeyDownHandler;
+  section?: SectionView;
+  onClick?: () => void;
 }
 
 function Probe({ report }: { report: (panel: ReactNode) => void }) {
@@ -250,7 +253,7 @@ describe("InspectorPanel", () => {
     expect(html).not.toContain("data-code-viewer");
   });
 
-  it("appends view code after entity sections only in the desktop Inspector", () => {
+  it("renders view code once through the shared final entity section", () => {
     const snapshot = previewSnapshot("Shop", "full");
     delete snapshot.programmability;
     const view = snapshot.views[0];
@@ -258,10 +261,83 @@ describe("InspectorPanel", () => {
     setProject(snapshot);
     canvasState.selectedKeys = [`${view.name.schema}.${view.name.name}`];
     const sections = elements(renderedPanel()).filter(
-      (element) => element.type === InspectorSection || element.type === DefinitionSection,
+      (element) => element.type === InspectorSection,
     );
-    expect(sections[0]?.type).toBe(InspectorSection);
-    expect(sections.at(-1)?.type).toBe(DefinitionSection);
+    expect(sections.map((section) => section.props.section?.kind)).toEqual([
+      "columns",
+      "triggers",
+      "viewDefinition",
+    ]);
     expect(markup()).toContain("Not recorded in this project");
+  });
+
+  it("opens the exact trigger from its parent without rendering its source inline", () => {
+    const snapshot = previewSnapshot("Shop", "full");
+    const ref: Extract<ModuleRef, { kind: "trigger" }> = {
+      kind: "trigger",
+      parent: { schema: "sales", name: "Orders" },
+      name: "Audit <&>",
+    };
+    snapshot.programmability = {
+      capture: { objects: { status: "read" }, definitions: { status: "read" } },
+      routines: [],
+      views: [],
+      triggers: [
+        {
+          parent: ref.parent,
+          name: ref.name,
+          timing: "after",
+          events: [{ event: "insert", order: "first" }],
+          isEnabled: true,
+          isNotForReplication: false,
+          body: {
+            language: "sql",
+            definition: { status: "readable", text: "PRIVATE_TRIGGER_BODY" },
+          },
+        },
+      ],
+    };
+    setProject(snapshot);
+    const triggerSection = elements(renderedPanel()).find(
+      (element) => element.type === InspectorSection && element.props.section?.kind === "triggers",
+    )?.props.section;
+    if (triggerSection?.kind !== "triggers") throw new Error("trigger section missing");
+    const buttons: ReactElement<ElementProps>[] = [];
+    function visit(node: ReactNode): void {
+      if (Array.isArray(node)) {
+        node.forEach((child: ReactNode) => {
+          visit(child);
+        });
+        return;
+      }
+      if (!isValidElement<ElementProps>(node)) return;
+      if (
+        typeof node.type === "function" &&
+        ["SectionBody", "TriggerList"].includes(node.type.name)
+      ) {
+        visit((node.type as (props: ElementProps) => ReactNode)(node.props));
+      } else {
+        if (node.type === "button") buttons.push(node);
+        visit(node.props.children);
+      }
+    }
+    function SectionProbe({ section }: { section: SectionView }) {
+      visit(
+        InspectorSection({
+          section,
+          entityKey: "sales.Orders",
+          onShowAccessReport: vi.fn(),
+        }),
+      );
+      return null;
+    }
+    renderToString(createElement(SectionProbe, { section: triggerSection }));
+    expect(buttons).toHaveLength(1);
+    buttons[0]?.props.onClick?.();
+    expect(canvasState.selectModule).toHaveBeenCalledWith(ref, { focus: true });
+    const html = markup();
+    expect(html).toContain("Open trigger Audit &lt;&amp;&gt;");
+    expect(html).not.toContain("PRIVATE_TRIGGER_BODY");
+    expect(html).not.toContain("data-code-viewer");
   });
 });

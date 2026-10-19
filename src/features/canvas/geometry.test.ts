@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Column, SchemaSnapshot } from "@/shared/contracts";
+import type { Column, SchemaSnapshot, Trigger } from "@/shared/contracts";
 
 import {
   HEADER_HEIGHT,
@@ -12,6 +12,7 @@ import {
   nodeHeight,
   relationOffsets,
   rowsFor,
+  triggerBadge,
 } from "./geometry";
 
 function column(name: string, isNullable = false): Column {
@@ -81,6 +82,154 @@ const snapshot: SchemaSnapshot = {
     },
   ],
 };
+
+function trigger(name: string, overrides: Partial<Trigger> = {}): Trigger {
+  return {
+    parent: { schema: "sales", name: "Orders" },
+    name,
+    timing: "after",
+    events: [{ event: "insert", order: "unspecified" }],
+    isEnabled: true,
+    isNotForReplication: false,
+    body: { language: "sql", definition: { status: "notVisible" } },
+    ...overrides,
+  };
+}
+
+function withTriggers(triggers: Trigger[]): SchemaSnapshot {
+  return {
+    ...snapshot,
+    programmability: {
+      capture: {
+        objects: { status: "read" },
+        definitions: { status: "notRead", reason: "optionOff" },
+      },
+      routines: [],
+      views: [],
+      triggers,
+    },
+  };
+}
+
+describe("triggerBadge", () => {
+  const parent = { schema: "sales", name: "Orders" };
+  it("counts enabled AFTER triggers without requiring their code", () => {
+    expect(triggerBadge(withTriggers([trigger("A"), trigger("B")]), parent)).toEqual({
+      enabled: 2,
+      disabled: 0,
+      insteadOf: 0,
+      disabledInsteadOf: 0,
+      count: 2,
+      allDisabled: false,
+    });
+  });
+  it("counts only enabled INSTEAD OF triggers in a mixed badge", () => {
+    const capture = withTriggers([
+      trigger("A"),
+      trigger("B", { timing: "insteadOf" }),
+      trigger("C", { isEnabled: false, timing: "insteadOf" }),
+      trigger("Other", { parent: { schema: "dbo", name: "Customers" } }),
+    ]);
+    expect(triggerBadge(capture, parent)).toEqual({
+      enabled: 2,
+      disabled: 1,
+      insteadOf: 1,
+      disabledInsteadOf: 1,
+      count: 2,
+      allDisabled: false,
+    });
+  });
+  it("uses the disabled total when every trigger is disabled", () => {
+    expect(
+      triggerBadge(
+        withTriggers([
+          trigger("A", { isEnabled: false }),
+          trigger("B", { isEnabled: false, timing: "insteadOf" }),
+        ]),
+        parent,
+      ),
+    ).toEqual({
+      enabled: 0,
+      disabled: 2,
+      insteadOf: 0,
+      disabledInsteadOf: 1,
+      count: 2,
+      allDisabled: true,
+    });
+  });
+  it("omits absent, unread and unverified lists without mistaking definition retention for metadata", () => {
+    expect(triggerBadge(snapshot, parent)).toBeNull();
+    expect(triggerBadge(withTriggers([]), parent)).toBeNull();
+    const capture = withTriggers([trigger("A")]);
+    const code = capture.programmability;
+    if (code === undefined) throw new Error("code fixture missing");
+    expect(
+      triggerBadge(
+        {
+          ...capture,
+          programmability: {
+            ...code,
+            capture: {
+              ...code.capture,
+              objects: { status: "notRead", reason: "queryFailed" },
+            },
+          },
+        },
+        parent,
+      ),
+    ).toBeNull();
+    expect(
+      triggerBadge(
+        {
+          ...capture,
+          carriedOver: [
+            { object: parent, fact: { kind: "table" }, readAt: "2026-10-12T00:00:00Z" },
+          ],
+        },
+        parent,
+      ),
+    ).toBeNull();
+    for (const part of ["whole", "definition"] as const) {
+      const badge = triggerBadge(
+        {
+          ...capture,
+          programmability: {
+            ...code,
+            carriedOver: [
+              {
+                object: { kind: "trigger", parent, name: "A" },
+                part,
+                readAt: "2026-10-12T00:00:00Z",
+              },
+            ],
+          },
+        },
+        parent,
+      );
+      if (part === "whole") expect(badge).toBeNull();
+      else expect(badge?.count).toBe(1);
+    }
+  });
+  it("adds the same descriptor to tables and views without changing any node height", () => {
+    const view = { schema: "sales", name: "RecentOrders" };
+    const before = describeEntities(snapshot);
+    const after = describeEntities(
+      withTriggers([trigger("A"), trigger("V", { parent: view, timing: "insteadOf" })]),
+    );
+    for (const key of ["sales.Orders", "sales.RecentOrders"]) {
+      const original = before.get(key);
+      const decorated = after.get(key);
+      if (original === undefined || decorated === undefined)
+        throw new Error("entity fixture missing");
+      expect(decorated.triggers?.count).toBe(1);
+      for (const detail of ["compact", "keys", "full"] as const) {
+        expect(nodeHeight(rowsFor(decorated, detail, false).length)).toBe(
+          nodeHeight(rowsFor(original, detail, false).length),
+        );
+      }
+    }
+  });
+});
 
 describe("describeEntities", () => {
   it("classifies key columns per entity", () => {

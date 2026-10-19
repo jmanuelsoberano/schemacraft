@@ -15,7 +15,11 @@ import type {
   ObjectDetails,
   RelationFacts,
   RelationTarget,
+  TriggerFacts,
 } from "./objectDetails";
+import type { ModuleRef } from "./modules";
+import { presentTriggerBadges, presentTriggerEvents, triggerListNotes } from "./triggerDetailsView";
+import type { TriggerEventView } from "./triggerDetailsView";
 import type { RuleNote } from "./rules/checkReader";
 import { formatRuleText } from "./rules/ruleText";
 import type { RuleGroup, RuleNode, RulePart } from "./rules/ruleText";
@@ -39,6 +43,7 @@ export type DetailsMessageKey = Extract<
   | `indexKind.${string}`
   | `definition.${string}`
   | `rule.${string}`
+  | `trigger.${string}`
 >;
 
 export type DetailsTranslator = CatalogTranslator<DetailsMessageKey>;
@@ -223,14 +228,37 @@ export interface RelationSectionView<
   items: readonly RelationItemView[];
 }
 
+export interface TriggerItemView {
+  name: string;
+  ref: Extract<ModuleRef, { kind: "trigger" }>;
+  events: readonly TriggerEventView[];
+  badges: readonly string[];
+  hint: string | null;
+  openLabel: string;
+}
+
+export interface TriggersSectionView extends SectionViewBase<"triggers"> {
+  items: readonly TriggerItemView[];
+}
+
+/** Shared section metadata only; the desktop renderer separately resolves its saved SQL. */
+export interface ViewDefinitionSectionView extends SectionViewBase<"viewDefinition"> {
+  included: boolean;
+  stateLabel: string | null;
+  explanation: string | null;
+  badges: readonly { label: string; hint: string }[];
+}
+
 /** One member per section kind, so a renderer can pick a section by its `kind` alone. */
 export type SectionView =
   | ColumnsSectionView
   | ConstraintSectionView<"primaryKey">
   | ConstraintSectionView<"indexes">
   | ConstraintSectionView<"checks">
+  | TriggersSectionView
   | RelationSectionView<"references">
-  | RelationSectionView<"referencedBy">;
+  | RelationSectionView<"referencedBy">
+  | ViewDefinitionSectionView;
 
 export interface DetailsView {
   key: string;
@@ -601,7 +629,7 @@ function relationItem(relation: RelationFacts, words: Words): RelationItemView {
  * names what the list may be missing, so an absence never reads as a fact it is not.
  */
 function emptyText(
-  kind: DetailSectionKind,
+  kind: Exclude<DetailSectionKind, "viewDefinition">,
   completeness: ListCompleteness,
   { t, date }: Words,
 ): string {
@@ -612,6 +640,8 @@ function emptyText(
       return t("details.empty.notVisible");
     case "notRecorded":
       return t("details.empty.notRecorded");
+    case "notRead":
+      return t(`trigger.notRead.${completeness.reason}`);
     case "notChecked":
       return t("details.empty.notChecked", { date: date(completeness.readAt) });
     case "diagram":
@@ -633,9 +663,49 @@ function footnote(section: DetailSection, { t }: Words): string | null {
     : null;
 }
 
+/** A parent date in an export cannot stand in for the omitted code history. */
+function triggerListNotice(
+  section: Extract<DetailSection, { kind: "triggers" }>,
+  words: Words,
+): string {
+  if (section.completeness.status === "notChecked" && !section.hasCodeHistory)
+    return words.t("trigger.notChecked");
+  if (section.completeness.status === "notRecorded" && section.items.length > 0)
+    return words.t("trigger.listUnconfirmed");
+  return emptyText("triggers", section.completeness, words);
+}
+
 /** A section of the entity `entity`, whose `CHECK`s highlight their columns on its card. */
 function sectionView(section: DetailSection, entity: string, words: Words): SectionView {
   const { t } = words;
+  if (section.kind === "viewDefinition") {
+    const { included, hasCheckOption, isIndexed } = section.definition;
+    return {
+      kind: "viewDefinition",
+      title: t("details.section.viewDefinition"),
+      count: 0,
+      completeness: "complete",
+      emptyText: null,
+      footnote: null,
+      notes: [],
+      included,
+      stateLabel: included ? null : t("details.viewDefinition.notIncluded"),
+      explanation: null,
+      badges: [
+        ...(hasCheckOption === true
+          ? [{ label: "WITH CHECK OPTION", hint: t("details.viewDefinition.checkOption") }]
+          : []),
+        ...(isIndexed === true
+          ? [
+              {
+                label: t("details.viewDefinition.indexed"),
+                hint: t("details.viewDefinition.indexedHint"),
+              },
+            ]
+          : []),
+      ],
+    };
+  }
   const base = {
     title: t(`details.section.${section.kind}`),
     count: section.items.length,
@@ -674,6 +744,30 @@ function sectionView(section: DetailSection, entity: string, words: Words): Sect
         ...base,
         kind: "checks",
         items: section.items.map((constraint) => checkItem(constraint, entity, words)),
+      };
+    case "triggers":
+      return {
+        ...base,
+        kind: "triggers",
+        emptyText: section.items.length === 0 ? triggerListNotice(section, words) : null,
+        items: section.items.map((trigger: TriggerFacts) => ({
+          name: trigger.name,
+          ref: trigger.ref,
+          events: presentTriggerEvents(trigger, words.translator),
+          badges: presentTriggerBadges(trigger, words.translator),
+          hint:
+            trigger.notCheckedSince === null
+              ? null
+              : section.hasCodeHistory
+                ? t("details.hint.notChecked", { date: words.date(trigger.notCheckedSince) })
+                : t("trigger.notChecked"),
+          openLabel: t("trigger.open", { name: trigger.name }),
+        })),
+        footnote:
+          section.items.length > 0 && section.completeness.status !== "complete"
+            ? triggerListNotice(section, words)
+            : null,
+        notes: triggerListNotes(section.items, section.parentKind, words.translator),
       };
     case "references":
       return {

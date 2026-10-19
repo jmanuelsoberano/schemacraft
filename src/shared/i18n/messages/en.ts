@@ -202,6 +202,18 @@ export const englishMessages = {
 
   "entity.columns.one": "{count} column",
   "entity.columns.other": "{count} columns",
+  "entity.triggers.enabled.one": "{count} trigger is enabled.",
+  "entity.triggers.enabled.other": "{count} triggers are enabled.",
+  "entity.triggers.disabled.one": "{count} trigger is disabled.",
+  "entity.triggers.disabled.other": "{count} triggers are disabled.",
+  "entity.triggers.insteadOf.one": "{count} of the enabled triggers uses INSTEAD OF.",
+  "entity.triggers.insteadOf.other": "{count} of the enabled triggers use INSTEAD OF.",
+  "entity.triggers.disabledInsteadOf.one": "{count} of the disabled triggers uses INSTEAD OF.",
+  "entity.triggers.disabledInsteadOf.other": "{count} of the disabled triggers use INSTEAD OF.",
+  "export.triggerLegend":
+    "Trigger badge: enabled count, or total count when all are disabled (dashed outline).",
+  "export.triggersNotRead": "Triggers were not read for this diagram.",
+  "export.triggersNotChecked": "Some trigger metadata could not be checked for this diagram.",
 
   "welcome.title": "Welcome to SchemaCraft",
   "welcome.description":
@@ -712,7 +724,7 @@ export const englishMessages = {
   "review.code.failed":
     "Some code could not be read. Tables were refreshed; previously saved code is kept as not checked.",
 
-  // Desktop module Inspector; never embedded in exported HTML.
+  // Module pages stay in the desktop; trigger metadata words also serve exported entity details.
   "module.kind.procedure": "Procedure",
   "module.kind.function": "Function",
   "module.kind.trigger": "Trigger",
@@ -733,25 +745,24 @@ export const englishMessages = {
   "module.parent.go": "Go to {name}",
   "module.parent.hidden": "Hidden on the canvas",
   "module.parent.unknown": "Not in this project",
-  "module.badge.disabled": "Disabled",
-  "module.runs.after": "Configured to run after {event}.",
-  "module.runs.insteadOf": "Configured to run instead of {event}.",
-  "module.runs.unknown": "Configured for {event}; timing was not recorded.",
-  "module.runs.unknownEvent": "an unrecorded statement",
-  "module.runs.empty": "The statements that fire this trigger were not recorded.",
-  "module.runs.order.first": "First on {event}",
-  "module.runs.order.last": "Last on {event}",
-  "module.runs.order.unknown": "Firing order not recorded",
-  "module.runs.disabled": "This trigger is disabled and does not run.",
-  "module.runs.note.after":
+  "trigger.badge.disabled": "Disabled",
+  "trigger.event.after": "Configured to run after {event}.",
+  "trigger.event.insteadOf": "Configured to run instead of {event}.",
+  "trigger.event.unknown": "Configured for {event}; timing was not recorded.",
+  "trigger.event.unknownName": "an unrecorded statement",
+  "trigger.events.empty": "The statements that fire this trigger were not recorded.",
+  "trigger.order.first": "First on {event}",
+  "trigger.order.last": "Last on {event}",
+  "trigger.order.unknown": "Firing order not recorded",
+  "trigger.state.disabled": "This trigger is disabled and does not run.",
+  "trigger.note.after":
     "An AFTER trigger runs after the statement, its cascading actions and its constraint checks succeed.",
-  "module.runs.note.insteadOf":
-    "An INSTEAD OF trigger runs in place of the statement's usual action.",
-  "module.runs.note.order":
+  "trigger.note.insteadOf": "An INSTEAD OF trigger runs in place of the statement's usual action.",
+  "trigger.note.order":
     "First and Last apply to each statement separately. Other AFTER triggers run in no defined order.",
-  "module.runs.note.replication": "Replication agents do not fire this trigger.",
-  "module.runs.note.truncate": "TRUNCATE TABLE does not fire a DELETE trigger.",
-  "module.runs.note.bulk":
+  "trigger.note.replication": "Replication agents do not fire this trigger.",
+  "trigger.note.truncate": "TRUNCATE TABLE does not fire a DELETE trigger.",
+  "trigger.note.bulk":
     "BULK INSERT and bcp fire INSERT triggers only when FIRE_TRIGGERS is specified.",
   "module.notice.notChecked":
     "Kept from the read of {date}; this capture could not check this object.",
@@ -795,6 +806,24 @@ export const englishMessages = {
   "codeViewer.matches": "{current} of {total}",
   "copy.copied": "Copied",
   "copy.failed": "Could not copy",
+
+  "details.section.triggers": "Triggers",
+  "details.empty.triggers": "None",
+  "details.section.viewDefinition": "Definition",
+  "details.viewDefinition.notIncluded": "Not included in this file",
+  "details.viewDefinition.checkOption":
+    "Rows changed through this view must remain visible through it.",
+  "details.viewDefinition.indexed": "Indexed view",
+  "details.viewDefinition.indexedHint": "A unique clustered index stores this view's rows.",
+  "trigger.open": "Open trigger {name}",
+  "trigger.notChecked": "Trigger metadata was not checked by the last inspection.",
+  "trigger.listUnconfirmed": "This capture does not record whether this trigger list is complete.",
+  "trigger.notRead.optionOff": "Triggers were not read: the connection options left them out.",
+  "trigger.notRead.queryFailed":
+    "The trigger read failed. Refresh from the database to check them.",
+  "trigger.notRead.timedOut":
+    "The trigger read ran out of time. Refresh from the database to check them.",
+  "trigger.notRead.unknown": "Triggers were not read. Refresh from the database to check them.",
 
   ...englishRuleMessages,
 } as const;
