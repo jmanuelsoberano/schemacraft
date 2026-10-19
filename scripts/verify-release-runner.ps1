@@ -26,6 +26,42 @@ $account = $null
 $registered = $false
 $created = $false
 $password = $null
+$taskLog = $null
+$taskLogChanged = $false
+$taskLogName = 'Microsoft-Windows-TaskScheduler/Operational'
+function Read-BatchLogonRights([string]$AccountSid) {
+    # Inspect only the two relevant rights for this account and known batch-logon groups.
+    # This is diagnostic evidence, not a claim to have obtained the account's logon token.
+    $subjects = [ordered]@{
+        CreatedAccount = $AccountSid
+        Users = 'S-1-5-32-545'
+        Everyone = 'S-1-1-0'
+        AuthenticatedUsers = 'S-1-5-11'
+        LocalAccount = 'S-1-5-113'
+        Local = 'S-1-2-0'
+        Batch = 'S-1-5-3'
+    }
+    foreach ($subject in $subjects.GetEnumerator()) {
+        $rights = @([ReleaseBatchRights]::Read($subject.Value))
+        [ordered]@{ subject = $subject.Key; sid = $subject.Value; allowBatch = $rights -contains 'SeBatchLogonRight'; denyBatch = $rights -contains 'SeDenyBatchLogonRight' }
+    }
+}
+function Read-OwnedTaskEvents {
+    # Filter at the event service; never collect other tasks, event messages, or task XML.
+    $eventErrors = @()
+    $events = @(Get-WinEvent -LogName $taskLogName -FilterXPath "*[EventData[Data[@Name='TaskName']='\$taskName']]" -MaxEvents 100 -ErrorAction SilentlyContinue -ErrorVariable eventErrors)
+    foreach ($failure in $eventErrors) {
+        if ($failure.FullyQualifiedErrorId -notlike 'NoMatchingEventsFound*') { throw $failure }
+    }
+    foreach ($event in $events | Sort-Object RecordId) {
+        $xml = [xml]$event.ToXml()
+        $data = [ordered]@{}
+        foreach ($item in $xml.Event.EventData.Data) {
+            if ($item.Name -in @('TaskName', 'UserContext', 'UserName', 'ResultCode', 'ErrorCode', 'ErrorValue', 'ProcessId', 'EnginePID', 'InstanceId', 'TaskInstanceId', 'ActionName')) { $data[$item.Name] = [string]$item.InnerText }
+        }
+        [ordered]@{ id = [int]$event.Id; recordId = [long]$event.RecordId; timeUtc = $event.TimeCreated.ToUniversalTime().ToString('o'); level = [int]$event.Level; data = $data }
+    }
+}
 try {
     New-Item -ItemType Directory -Path $staging | Out-Null
     $inputs = Join-Path $staging 'inputs'
@@ -91,22 +127,97 @@ try {
     $taskPrincipal = New-ScheduledTaskPrincipal -UserId ($env:COMPUTERNAME + '\' + $userName) -LogonType Password -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
     $task = New-ScheduledTask -Action $action -Principal $taskPrincipal -Settings $settings
+    $taskLog = Get-WinEvent -ListLog $taskLogName
+    $report.taskOperationalLogInitiallyEnabled = [bool]$taskLog.IsEnabled
+    if (-not $taskLog.IsEnabled) {
+        $taskLog.IsEnabled = $true
+        $taskLogChanged = $true
+        $taskLog.SaveChanges()
+    }
+    Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Security.Principal;
+public static class ReleaseBatchRights {
+    [StructLayout(LayoutKind.Sequential)] struct ObjectAttributes {
+        public uint Length; public IntPtr RootDirectory; public IntPtr ObjectName;
+        public uint Attributes; public IntPtr SecurityDescriptor; public IntPtr SecurityQualityOfService;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct UnicodeString {
+        public ushort Length; public ushort MaximumLength; public IntPtr Buffer;
+    }
+    [DllImport("advapi32.dll")] static extern uint LsaOpenPolicy(IntPtr system, ref ObjectAttributes attributes, uint access, out IntPtr policy);
+    [DllImport("advapi32.dll")] static extern uint LsaEnumerateAccountRights(IntPtr policy, byte[] sid, out IntPtr rights, out uint count);
+    [DllImport("advapi32.dll")] static extern uint LsaNtStatusToWinError(uint status);
+    [DllImport("advapi32.dll")] static extern uint LsaFreeMemory(IntPtr memory);
+    [DllImport("advapi32.dll")] static extern uint LsaClose(IntPtr policy);
+    public static string[] Read(string accountSid) {
+        var attributes = new ObjectAttributes { Length = (uint)Marshal.SizeOf(typeof(ObjectAttributes)) };
+        IntPtr policy;
+        uint status = LsaOpenPolicy(IntPtr.Zero, ref attributes, 0x00000800, out policy); // POLICY_LOOKUP_NAMES only.
+        if (status != 0) throw new Win32Exception((int)LsaNtStatusToWinError(status));
+        IntPtr rights = IntPtr.Zero;
+        try {
+            var sid = new SecurityIdentifier(accountSid);
+            var bytes = new byte[sid.BinaryLength]; sid.GetBinaryForm(bytes, 0);
+            uint count;
+            status = LsaEnumerateAccountRights(policy, bytes, out rights, out count);
+            uint error = LsaNtStatusToWinError(status);
+            if (error == 2) return new string[0]; // No rights are directly assigned to this SID.
+            if (status != 0) throw new Win32Exception((int)error);
+            var result = new List<string>();
+            int size = Marshal.SizeOf(typeof(UnicodeString));
+            for (uint index = 0; index < count; index++) {
+                var value = (UnicodeString)Marshal.PtrToStructure(IntPtr.Add(rights, checked((int)index * size)), typeof(UnicodeString));
+                string name = Marshal.PtrToStringUni(value.Buffer, value.Length / 2);
+                if (name == "SeBatchLogonRight" || name == "SeDenyBatchLogonRight") result.Add(name);
+            }
+            return result.ToArray();
+        } finally {
+            if (rights != IntPtr.Zero) LsaFreeMemory(rights);
+            LsaClose(policy);
+        }
+    }
+}
+'@
+    $report.batchLogonRightsBeforeRegistration = @(Read-BatchLogonRights $standardSid)
+    $report.taskRegistrationUtc = [DateTime]::UtcNow.ToString('o')
     Register-ScheduledTask -TaskName $taskName -InputObject $task -User ($env:COMPUTERNAME + '\' + $userName) -Password $password | Out-Null
     $registered = $true
     $report.taskRegistered = $true
     $password = $null
+    $effectiveTask = Get-ScheduledTask -TaskName $taskName
+    $report.taskConfiguration = [ordered]@{
+        principal = [ordered]@{ userId = [string]$effectiveTask.Principal.UserId; groupId = [string]$effectiveTask.Principal.GroupId; logonType = [string]$effectiveTask.Principal.LogonType; runLevel = [string]$effectiveTask.Principal.RunLevel }
+        settings = [ordered]@{ enabled = [bool]$effectiveTask.Settings.Enabled; allowDemandStart = [bool]$effectiveTask.Settings.AllowDemandStart; runOnlyIfIdle = [bool]$effectiveTask.Settings.RunOnlyIfIdle; runOnlyIfNetworkAvailable = [bool]$effectiveTask.Settings.RunOnlyIfNetworkAvailable; disallowStartIfOnBatteries = [bool]$effectiveTask.Settings.DisallowStartIfOnBatteries; stopIfGoingOnBatteries = [bool]$effectiveTask.Settings.StopIfGoingOnBatteries; startWhenAvailable = [bool]$effectiveTask.Settings.StartWhenAvailable; multipleInstances = [string]$effectiveTask.Settings.MultipleInstances; executionTimeLimit = [string]$effectiveTask.Settings.ExecutionTimeLimit; compatibility = [string]$effectiveTask.Settings.Compatibility }
+    }
+    $report.batchLogonRightsAfterRegistration = @(Read-BatchLogonRights $standardSid)
+    $requestedAt = [DateTime]::UtcNow
+    $report.taskStartRequestedUtc = $requestedAt.ToString('o')
     Start-ScheduledTask -TaskName $taskName
-    $deadline = [DateTime]::UtcNow.AddMinutes(14)
+    $startDeadline = $requestedAt.AddSeconds(75)
+    $runningDeadline = $null
     $workerReport = Join-Path $results 'worker-report.json'
+    $report.taskStartObserved = $false
     do {
         Start-Sleep -Seconds 2
         $taskInfo = Get-ScheduledTaskInfo -TaskName $taskName
         $state = (Get-ScheduledTask -TaskName $taskName).State
-        if ($state -ne 'Running' -and $taskInfo.LastRunTime.Year -gt 2000) { break }
-    } while ([DateTime]::UtcNow -lt $deadline)
-    $report.taskResult = $taskInfo.LastTaskResult
-    $report.taskState = [string]$state
-    if ($state -eq 'Running') { throw 'The limited-account worker exceeded its deadline.' }
+        $report.taskResult = [long]$taskInfo.LastTaskResult
+        $report.taskResultHex = '0x{0:X8}' -f [long]$taskInfo.LastTaskResult
+        $report.taskState = [string]$state
+        $report.taskLastRunTimeUtc = $taskInfo.LastRunTime.ToUniversalTime().ToString('o')
+        if (-not $report.taskStartObserved -and ($state -eq 'Running' -or $taskInfo.LastRunTime.Year -gt 2000)) {
+            $report.taskStartObserved = $true
+            $report.taskStartObservedUtc = [DateTime]::UtcNow.ToString('o')
+            $runningDeadline = [DateTime]::UtcNow.AddMinutes(14)
+        }
+        if ($report.taskStartObserved -and $state -notin @('Running', 'Queued')) { break }
+        if (-not $report.taskStartObserved -and [DateTime]::UtcNow -ge $startDeadline) { throw 'The limited-account task did not start within 75 seconds; inspect its effective configuration, batch-logon rights and task events.' }
+        if ($report.taskStartObserved -and [DateTime]::UtcNow -ge $runningDeadline) { throw 'The limited-account worker exceeded its running deadline.' }
+    } while ($true)
     if (-not (Test-Path -LiteralPath $workerReport)) { throw ('The worker produced no report. Task Scheduler result: ' + $taskInfo.LastTaskResult + '. A non-interactive desktop or batch-logon restriction may prevent this approach; never substitute an administrator run.') }
     $workerResult = Get-Content -LiteralPath $workerReport -Raw | ConvertFrom-Json
     $report.workerPassed = $workerResult.passed
@@ -116,12 +227,27 @@ try {
 catch { $report.error = $_.Exception.Message; Write-Error $_ -ErrorAction Continue }
 finally {
     if ($registered) {
-        if ((Get-ScheduledTask -TaskName $taskName).State -eq 'Running') {
+        try {
+            $finalTaskInfo = Get-ScheduledTaskInfo -TaskName $taskName
+            $report.taskResult = [long]$finalTaskInfo.LastTaskResult
+            $report.taskResultHex = '0x{0:X8}' -f [long]$finalTaskInfo.LastTaskResult
+            $report.taskLastRunTimeUtc = $finalTaskInfo.LastRunTime.ToUniversalTime().ToString('o')
+            $report.taskState = [string](Get-ScheduledTask -TaskName $taskName).State
+        }
+        catch { $report.taskStatusError = $_.Exception.Message }
+        try { $report.taskEvents = @(Read-OwnedTaskEvents) }
+        catch { $report.taskEventsError = $_.Exception.Message }
+        if ((Get-ScheduledTask -TaskName $taskName).State -in @('Running', 'Queued')) {
             Stop-ScheduledTask -TaskName $taskName
             $report.workerForcedToStop = $true
         }
         Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
     }
+    if ($taskLogChanged) {
+        try { $taskLog.IsEnabled = $false; $taskLog.SaveChanges(); $report.taskOperationalLogRestored = $true }
+        catch { $report.taskOperationalLogRestored = $false; $report.taskOperationalLogRestoreError = $_.Exception.Message; $report.passed = $false }
+    }
+    if ($null -ne $taskLog) { $taskLog.Dispose() }
     # Never guess which system process to kill. The disposable VM owns any remaining processes.
     # Evidence includes only known reports and screenshots, not profiles, preferences or credentials.
     if (Test-Path -LiteralPath (Join-Path $staging 'results')) {
