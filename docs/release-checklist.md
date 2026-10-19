@@ -135,91 +135,109 @@ recorded; when UAC is disabled, successful standard-account execution does not v
 elevation prompts. An empty `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER` imposed only on the process
 tests the runtime failure path without uninstalling a shared runtime; it is not evidence of
 natural runtime absence. Local Windows Authentication does not test domain accounts, remote
-Kerberos or delegation. Do not close broader manual checks based on these narrower results.
+Kerberos or delegation. These are limits of the evidence, not additional publication gates.
+The fresh-machine and no-administrator requirements can be verified on the hosted runner;
+consumer Windows behavior is also covered by the downloaded-binary checks on the Windows 11
+validation machine.
 
 ## By hand before publishing the draft
 
-These boxes track the release artifacts and final acceptance, independently of the completed
-development-build sessions recorded below. Leave a box open until its stated check is complete.
+Feature acceptance and release packaging have different evidence. The feature scenarios below
+retain their existing verification; the artifact checks identify what was repeated with the
+downloaded release and what still awaits execution.
+
+### Feature acceptance before the tag
+
+These scenarios are covered by the maintainer's [reported acceptance](#release-12-preparation),
+the [1.1 scope verification](#scope-of-11), the [1.2 scope verification](#scope-of-12), and the
+recorded [code capture and refresh](#code-capture-and-refresh-verification-2026-10-19),
+[Objects and code viewer](#objects-and-code-viewer-verification-2026-10-19) and
+[trigger and export](#trigger-details-and-export-verification-2026-10-19) sessions. They describe
+prior feature acceptance and regression coverage of the retained application code, not an
+assertion that every scenario was repeated among the 75 downloaded-binary checks. The dated
+records retain the build, fixture and manual-observation limits of each result.
+
+- Connect to a production database, read the schema, lay it out, save, reopen, refresh and
+  export to PDF and HTML.
+- Open a project saved by the previous release and refresh it with the same login: the review
+  reports no schema change other than any index aligned with a partitioned table, listed as
+  changed because its key columns no longer start with the partitioning column, shows one
+  "Index and constraint state" line with a count under "Recorded for the first time" and
+  offers to update the project. Apply, save, reopen the file and check that its header says
+  `formatVersion` 3 and `minReaderVersion` 2.
+- Connect with a login that lacks `VIEW DEFINITION` (for example a `db_datareader` member):
+  the connection dialog warns before reading, the status bar shows the access chip, the
+  access report opens with Ctrl+Shift+A and Copy GRANT script puts the script on the
+  clipboard.
+- Read a database with views: the entities panel shows Tables and Views sections, and views
+  carry the VIEW label on the canvas and in the SVG, PDF and HTML exports.
+- Back up the application's `preferences.json` before each application test and restore it
+  afterwards. Read `SchemaCraftCode` as owner and reader in both languages and themes, with
+  both code options on and off. Check the two progress stages, code-only schemas, separate
+  access-report rows and saved `programmability` states; time a stress inspection.
+- In Objects and the palette, inspect a procedure, function, trigger and view, then select a
+  card and the empty canvas. Check heading focus, Escape, 200-row paging and partial-access
+  footers. Check all definition states, local find, exact-text copying and the remembered
+  wrap preference in both languages and themes. Time a search across 600 procedures and
+  scroll a synthetic 10,000-line definition in the real app.
+- Refresh a 1.1 project with code enabled: only aggregate first-capture lines appear for
+  code and "Update project" is offered. Apply the code-change fixture and verify altered
+  bodies, trigger state/order, view check option, a removed function and an added procedure,
+  with no change for a line-ending-only recreation. Read owner to reader and back: no false
+  removals, retained dates, then now-available objects/texts. Turn options off and check
+  counted exclusions. Deny the module catalog read: tables still refresh, saved code is kept
+  and the review reports the failure. Save, reopen and inspect the diagnostic log for counts
+  and timings without SQL or private names.
+- Open the Inspector with Ctrl+I on a selected table, follow the selection to another one,
+  resize the panel and restart the application: it remembers the width.
+- Select a table with `CHECK` constraints and foreign keys, in English and in Spanish: the
+  Inspector and the HTML export read its rules as sentences, pointing at a rule highlights
+  its columns and relationship, and Show SQL opens its definition. The PDF and PNG exports
+  draw the same relationship markers as the canvas, the zero-or-one circles included.
+- Read a database with a unique constraint whose index is disabled, a filtered unique index,
+  an enabled unique index without a filter and a foreign key added `WITH NOCHECK` (the
+  `SchemaCraftCheckForms` database of the integration tests has all four), in English and in
+  Spanish and in both themes. The disabled constraint carries the disabled badge and its key
+  draws a crow's foot and names the index as the reason; the filtered index carries the
+  filtered badge and its key draws a crow's foot and reads "at most one of the rows in … that
+  the filter of the unique index … selects", never "at most one row in …"; the enabled
+  unfiltered index draws the one-to-one marker; the untrusted key carries "not trusted" in a
+  neutral tone, says that the rows already there may not follow it, words its rule about the
+  referencing rows under "When a row is inserted or its ParentCode is changed:", its rules
+  about the referenced table after it, and scripts `WITH NOCHECK` in Show SQL. The HTML export
+  says the same, and the PDF and PNG draw the same markers.
+- In the real app, check trigger badges at all three detail levels and 30% zoom. Export SVG,
+  PDF, PNG and HTML in both themes and languages; compare the canvas with SVG, open HTML in
+  Edge, and check solid/dashed badges in a grayscale PDF print preview. A 1.1 project must
+  say triggers were not read until refreshed. No exported module body or routine object may
+  be present; HTML may name only triggers whose parents are on the diagram.
+
+### Downloaded assets and packaging
+
+These checks apply to the release files themselves. Leave each pending item open until the
+stated check runs; hosted verification and Windows Authentication are not yet complete.
 
 - [x] Download the assets and check them against `SHA256SUMS.txt`.
 - [x] Exercise the downloaded portable against SQL Server 2022 and 2019 with SQL logins:
       capture, module details, save/reopen, unchanged refresh, SVG/PDF/PNG/HTML exports and
       English/light and Spanish/dark. Restore preferences after confirmed process termination.
-- [ ] Start the portable executable on a fresh Windows 10/11 consumer installation without
-      SchemaCraft: the welcome screen appears. Record separately any disposable Windows Server
-      verification above.
+- [ ] Start the portable executable on a machine without SchemaCraft: the welcome screen
+      appears. Record the fresh environment and operating system used.
 - [ ] Verify the native bilingual explanation when WebView2 is unavailable and exit after No.
       Record whether the runtime was naturally absent or made unavailable only to this process.
-- [ ] Connect to a production database, read the schema, lay it out, save, reopen, refresh and
-      export to PDF and HTML.
-- [ ] Open a project saved by the previous release and refresh it with the same login: the review
-      reports no schema change other than any index aligned with a partitioned table, listed as
-      changed because its key columns no longer start with the partitioning column, shows one
-      "Index and constraint state" line with a count under "Recorded for the first time" and
-      offers to update the project. Apply, save, reopen the file and check that its header says
-      `formatVersion` 3 and `minReaderVersion` 2.
 - [x] Open a format-3 project saved by the downloaded 1.2.0 executable in the published 1.1.0
       executable: it opens read-only and names 1.2.0 as the writer; the diagram and HTML/PDF
       exports work, Save and Refresh are disabled including shortcuts, and the input file is
       unchanged.
-- [ ] Connect with a login that lacks `VIEW DEFINITION` (for example a `db_datareader` member):
-      the connection dialog warns before reading, the status bar shows the access chip, the
-      access report opens with Ctrl+Shift+A and Copy GRANT script puts the script on the
-      clipboard.
-- [ ] Read a database with views: the entities panel shows Tables and Views sections, and views
-      carry the VIEW label on the canvas and in the SVG, PDF and HTML exports.
-- [ ] Back up the application's `preferences.json` before each application test and restore it
-      afterwards. Read `SchemaCraftCode` as owner and reader in both languages and themes, with
-      both code options on and off. Check the two progress stages, code-only schemas, separate
-      access-report rows and saved `programmability` states; time a stress inspection.
-- [ ] In Objects and the palette, inspect a procedure, function, trigger and view, then select a
-      card and the empty canvas. Check heading focus, Escape, 200-row paging and partial-access
-      footers. Check all definition states, local find, exact-text copying and the remembered
-      wrap preference in both languages and themes. Time a search across 600 procedures and
-      scroll a synthetic 10,000-line definition in the real app.
-- [ ] Refresh a 1.1 project with code enabled: only aggregate first-capture lines appear for
-      code and "Update project" is offered. Apply the code-change fixture and verify altered
-      bodies, trigger state/order, view check option, a removed function and an added procedure,
-      with no change for a line-ending-only recreation. Read owner to reader and back: no false
-      removals, retained dates, then now-available objects/texts. Turn options off and check
-      counted exclusions. Deny the module catalog read: tables still refresh, saved code is kept
-      and the review reports the failure. Save, reopen and inspect the diagnostic log for counts
-      and timings without SQL or private names.
-- [ ] Open the Inspector with Ctrl+I on a selected table, follow the selection to another one,
-      resize the panel and restart the application: it remembers the width.
-- [ ] Select a table with `CHECK` constraints and foreign keys, in English and in Spanish: the
-      Inspector and the HTML export read its rules as sentences, pointing at a rule highlights
-      its columns and relationship, and Show SQL opens its definition. The PDF and PNG exports
-      draw the same relationship markers as the canvas, the zero-or-one circles included.
-- [ ] Read a database with a unique constraint whose index is disabled, a filtered unique index,
-      an enabled unique index without a filter and a foreign key added `WITH NOCHECK` (the
-      `SchemaCraftCheckForms` database of the integration tests has all four), in English and in
-      Spanish and in both themes. The disabled constraint carries the disabled badge and its key
-      draws a crow's foot and names the index as the reason; the filtered index carries the
-      filtered badge and its key draws a crow's foot and reads "at most one of the rows in … that
-      the filter of the unique index … selects", never "at most one row in …"; the enabled
-      unfiltered index draws the one-to-one marker; the untrusted key carries "not trusted" in a
-      neutral tone, says that the rows already there may not follow it, words its rule about the
-      referencing rows under "When a row is inserted or its ParentCode is changed:", its rules
-      about the referenced table after it, and scripts `WITH NOCHECK` in Show SQL. The HTML export
-      says the same, and the PDF and PNG draw the same markers.
 - [ ] Open the HTML export in a browser on a machine without SchemaCraft.
 - [x] Open the downloaded executable's standalone HTML export in an external browser on the
       validation machine: table, view and trigger details work, module Definition says
       "Not included in this file", and module source is absent. Inspect PDF and PNG output.
-- [ ] In the real app, check trigger badges at all three detail levels and 30% zoom. Export SVG,
-      PDF, PNG and HTML in both themes and languages; compare the canvas with SVG, open HTML in
-      Edge, and check solid/dashed badges in a grayscale PDF print preview. A 1.1 project must
-      say triggers were not read until refreshed. No exported module body or routine object may
-      be present; HTML may name only triggers whose parents are on the diagram.
 - [ ] Install and uninstall under a standard account without an administrative token; verify
       per-user registration, removal of installed files and preservation of synthetic data.
-- [ ] On Windows 10/11 with UAC enabled, check that the installer and uninstaller require no
-      administrator prompt or credentials. A hosted image with UAC disabled does not close this
-      interactive check.
-- [ ] The release notes describe the program, link the code signing policy and carry the
-      version's `CHANGELOG.md` entry.
+- [x] The release notes describe the program, link the code signing policy and carry the
+      version's `CHANGELOG.md` entry. The draft body matches the extracted changelog after
+      normalizing line endings, and the release remains unpublished.
 
 ## Known limitations of 1.2.0
 

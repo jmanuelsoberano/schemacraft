@@ -48,6 +48,7 @@ $workPath = Join-Path $evidencePath ('sql-setup-' + [guid]::NewGuid().ToString('
 New-Item -ItemType Directory -Path $workPath | Out-Null
 $mediaPath = Join-Path $workPath 'SQLEXPR_x64_ENU.exe'
 $mediaUrl = 'https://download.microsoft.com/download/3/8/d/38de7036-2433-4207-8eae-06e247e17b25/SQLEXPR_x64_ENU.exe'
+Write-Host 'Downloading official SQL Server 2022 Express media.'
 Invoke-WebRequest -UseBasicParsing -Uri $mediaUrl -OutFile $mediaPath
 $signature = Get-AuthenticodeSignature -LiteralPath $mediaPath
 if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '(?:^|,\s*)O=Microsoft Corporation(?:,|$)') {
@@ -57,6 +58,7 @@ $mediaVersion = (Get-Item -LiteralPath $mediaPath).VersionInfo
 if ($mediaVersion.ProductMajorPart -ne 16) { throw 'The SQL installation media is not version 2022.' }
 $mediaHash = (Get-FileHash -LiteralPath $mediaPath -Algorithm SHA256).Hash
 $extractPath = Join-Path $workPath 'media'
+Write-Host 'Extracting signature-checked SQL Server media.'
 $extract = Start-Process -FilePath $mediaPath -ArgumentList @('/Q', ('/X="' + $extractPath + '"')) -WindowStyle Hidden -Wait -PassThru
 if ($extract.ExitCode -ne 0) { throw "SQL media extraction failed with exit code $($extract.ExitCode)." }
 $setup = Join-Path $extractPath 'setup.exe'
@@ -68,8 +70,12 @@ $setupArgs = @(
     '/SQLSVCACCOUNT="NT Service\MSSQL$SCACCEPT"', '/SQLSVCSTARTUPTYPE=Manual',
     ('/SQLSYSADMINACCOUNTS="' + $identity.Name + '"')
 )
-$install = Start-Process -FilePath $setup -ArgumentList $setupArgs -WindowStyle Hidden -Wait -PassThru
+Write-Host 'Installing the dedicated Windows-authentication-only SQL instance.'
+$install = Start-Process -FilePath $setup -ArgumentList $setupArgs -WindowStyle Hidden -PassThru
+if (-not $install.WaitForExit(1200000)) { throw 'SQL setup exceeded its 20-minute deadline; the disposable runner must be discarded.' }
+$install.Refresh()
 if ($install.ExitCode -notin @(0, 3010)) { throw "SQL setup failed with exit code $($install.ExitCode)." }
+Write-Host 'SQL setup completed; configuring the loopback listener.'
 
 # The engine was installed with TCP disabled. Configure only this new instance before enabling it.
 $serviceName = 'MSSQL$SCACCEPT'
@@ -118,6 +124,7 @@ try {
             [void]$command.ExecuteNonQuery()
         }
     }
+    Write-Host 'Synthetic SQL fixtures are ready; granting the standard test account read access.'
     $connection.ChangeDatabase('master')
     $quotedAccount = '[' + $TestAccount.Replace(']', ']]') + ']'
     $command.CommandText = 'CREATE LOGIN ' + $quotedAccount + ' FROM WINDOWS;'

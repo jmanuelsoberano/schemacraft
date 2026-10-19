@@ -2,14 +2,21 @@
 import assert from "node:assert/strict";
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { execFile, spawn } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
-import { launch, sleep } from "./release-cdp.mjs";
+import { promisify } from "node:util";
+import { pathToFileURL } from "node:url";
+import { assertPortFree, launch, sleep } from "./release-cdp.mjs";
 
 assert.equal(
   process.env.SCHEMACRAFT_ACCEPTANCE_EPHEMERAL,
   "1",
   "The guarded worker must launch this check",
 );
+if (process.argv[2] === "--html-viewer") {
+  await verifyStandaloneHtml(...process.argv.slice(3));
+  process.exit(process.exitCode ?? 0);
+}
 const [executable, directory, version = "1.2.0"] = process.argv.slice(2);
 assert(executable && directory);
 const out = resolve(directory);
@@ -76,11 +83,26 @@ async function windowsAuthentication() {
   // Observe actual Rust responses. No connection, schema or authentication response is mocked.
   await app.evaluate(`(() => {
     const original = window.fetch.bind(window);
-    const state = window.__windowsAcceptance = { test: null, capture: null, errors: [] };
+    const exportDestination = ${j(join(out, "diagram.html"))};
+    const state = window.__windowsAcceptance = { test: null, capture: null, errors: [], nextSave: null, exports: 0 };
+    const reply = (value, status = 'ok') => new Response(JSON.stringify(value), {headers:{'Content-Type':'application/json','Tauri-Response':status}});
     window.fetch = async (input, options) => {
       const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, location.href);
       if (url.hostname !== 'ipc.localhost') return original(input, options);
       const command = decodeURIComponent(url.pathname.slice(1));
+      if (command === 'plugin:dialog|save') {
+        if (!state.nextSave) return reply({kind:'acceptanceFileGuard',message:'Unexpected native file picker'}, 'error');
+        const path = state.nextSave; state.nextSave = null; return reply(path);
+      }
+      if (command === 'export_diagram') {
+        let request;
+        try { request = JSON.parse(options.body).request; } catch { return reply({kind:'acceptanceFileGuard',message:'Unreadable export request'}, 'error'); }
+        if (request?.destination !== exportDestination || request.format !== 'html') return reply({kind:'acceptanceFileGuard',message:'Only the owned HTML export is allowed'}, 'error');
+        const response = await original(input, options);
+        if (response.headers.get('Tauri-Response') === 'ok') state.exports++;
+        else state.errors.push({command,kind:(await response.clone().json()).kind});
+        return response;
+      }
       const settingsCommands = ['test_connection', 'list_databases', 'describe_database', 'inspect_database'];
       if (!settingsCommands.includes(command)) return original(input, options);
       const args = JSON.parse(options.body);
@@ -141,6 +163,41 @@ async function windowsAuthentication() {
   report.windowsAuthentication = await app.evaluate("window.__windowsAcceptance");
   assert.deepEqual(report.windowsAuthentication.errors, []);
   await app.shot("04-windows-auth-capture");
+  const htmlPath = join(out, "diagram.html");
+  const dialogButton = (text) =>
+    `[...document.querySelector('[role=dialog]').querySelectorAll('button')].find(e => e.textContent.trim() === ${j(text)})`;
+  await key("e", "KeyE", 69, 2);
+  await check(
+    "Export dialog opens",
+    `!!document.querySelector('[role=dialog] [aria-label=Format]')`,
+  );
+  await press(dialogButton("HTML"));
+  await app.evaluate(`window.__windowsAcceptance.nextSave = ${j(htmlPath)}; true`);
+  await press(dialogButton("Export"));
+  await check(
+    "Standalone HTML is written by the actual Rust exporter",
+    `window.__windowsAcceptance.exports === 1 && document.querySelector('[role=dialog]')?.textContent.includes('Diagram exported')`,
+  );
+  await press(dialogButton("Close"));
+  const htmlBytes = await readFile(htmlPath);
+  const payload = /<script id="schemacraft-data" type="application\/json">(.*?)<\/script>/su.exec(
+    htmlBytes.toString("utf8"),
+  )?.[1];
+  assert(payload, "Export embeds its self-contained schema data");
+  const data = JSON.parse(payload);
+  assert.deepEqual(data.snapshot.programmability.routines, []);
+  assert(
+    data.snapshot.programmability.triggers.some(
+      (trigger) => trigger.name === "TR_Orders_InsertUpdate",
+    ),
+  );
+  assert(data.snapshot.views.some((view) => view.name.name === "OrderSummary"));
+  assert(
+    !/CREATE\s+(?:OR\s+ALTER\s+)?(?:PROCEDURE|FUNCTION|TRIGGER|VIEW)\b/iu.test(payload),
+    "Export excludes module source",
+  );
+  report.htmlExport = { path: htmlPath, bytes: htmlBytes.length, sha256: hash(htmlBytes) };
+  assert.deepEqual(await app.evaluate("window.__windowsAcceptance.errors"), []);
 }
 async function menu(label, item) {
   const selector = `button[aria-label=${JSON.stringify(label)}]`;
@@ -244,4 +301,211 @@ try {
   await writeFile(join(out, "report.json"), JSON.stringify(report, null, 2));
   // The profile and any recovery backup are deliberately excluded from uploaded evidence.
   process.exitCode = report.passed ? 0 : 1;
+}
+
+/** Opens the unmodified exported file after uninstall, without launching SchemaCraft. */
+async function verifyStandaloneHtml(edgeExecutable, htmlFile, outputDirectory) {
+  assert(edgeExecutable && htmlFile && outputDirectory);
+  const output = resolve(outputDirectory);
+  await mkdir(output, { recursive: true });
+  const fileUrl = pathToFileURL(resolve(htmlFile)).href;
+  const result = {
+    browser: resolve(edgeExecutable),
+    htmlSha256: createHash("sha256")
+      .update(await readFile(htmlFile))
+      .digest("hex"),
+    checks: [],
+    passed: false,
+    terminationConfirmed: true,
+  };
+  const pending = new Map();
+  let child;
+  let socket;
+  let exited = false;
+  let nextId = 0;
+  const send = (method, params = {}) =>
+    new Promise((resolveRequest, rejectRequest) => {
+      const id = ++nextId;
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        rejectRequest(new Error(`Browser CDP timed out: ${method}`));
+      }, 15000);
+      pending.set(id, { resolve: resolveRequest, reject: rejectRequest, timer });
+      try {
+        socket.send(JSON.stringify({ id, method, params }));
+      } catch (error) {
+        clearTimeout(timer);
+        pending.delete(id);
+        rejectRequest(error);
+      }
+    });
+  const evaluate = async (expression) => {
+    const answer = await send("Runtime.evaluate", {
+      expression,
+      returnByValue: true,
+      awaitPromise: true,
+    });
+    assert(!answer.exceptionDetails, "Standalone viewer expression completes");
+    return answer.result.value;
+  };
+  const check = async (name, expression) => {
+    let passed = false;
+    const deadline = Date.now() + 20000;
+    while (!passed && Date.now() < deadline) {
+      passed = !!(await evaluate(expression));
+      if (!passed) await sleep(100);
+    }
+    result.checks.push({ name, passed });
+    assert(passed, name);
+  };
+  const screenshot = async (name) => {
+    const capture = await send("Page.captureScreenshot", { format: "png" });
+    await writeFile(join(output, name), Buffer.from(capture.data, "base64"));
+  };
+  try {
+    await assertPortFree(9396);
+    child = spawn(
+      resolve(edgeExecutable),
+      [
+        "--headless=new",
+        "--disable-gpu",
+        "--disable-background-networking",
+        "--disable-component-update",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--window-size=1440,1000",
+        "--remote-debugging-address=127.0.0.1",
+        "--remote-debugging-port=9396",
+        `--user-data-dir=${join(output, "edge-profile")}`,
+        fileUrl,
+      ],
+      { windowsHide: true, stdio: "ignore" },
+    );
+    result.terminationConfirmed = false;
+    child.once("exit", () => {
+      exited = true;
+    });
+    let spawnFailure;
+    child.once("error", (error) => {
+      spawnFailure = error;
+      if (!child.pid) exited = true;
+    });
+    let page;
+    const deadline = Date.now() + 60000;
+    while (!page && Date.now() < deadline) {
+      if (spawnFailure) throw spawnFailure;
+      assert(!exited, "The owned browser remains running");
+      try {
+        const targets = await (
+          await fetch("http://127.0.0.1:9396/json", { signal: AbortSignal.timeout(1000) })
+        ).json();
+        page = targets.find((target) => target.type === "page" && target.url === fileUrl);
+      } catch {
+        /* The owned browser may still be starting. */
+      }
+      if (!page) await sleep(200);
+    }
+    assert(page, "The owned browser opened the exact exported local file");
+    socket = new WebSocket(page.webSocketDebuggerUrl);
+    await new Promise((resolveSocket, rejectSocket) => {
+      const timer = setTimeout(() => rejectSocket(new Error("Browser CDP did not open")), 10000);
+      socket.addEventListener(
+        "open",
+        () => {
+          clearTimeout(timer);
+          resolveSocket();
+        },
+        { once: true },
+      );
+      socket.addEventListener(
+        "error",
+        () => {
+          clearTimeout(timer);
+          rejectSocket(new Error("Browser CDP failed"));
+        },
+        { once: true },
+      );
+    });
+    socket.addEventListener("message", (event) => {
+      const message = JSON.parse(event.data);
+      const request = pending.get(message.id);
+      if (!request) return;
+      clearTimeout(request.timer);
+      pending.delete(message.id);
+      if (message.error) request.reject(new Error(message.error.message));
+      else request.resolve(message.result);
+    });
+    await send("Network.enable");
+    await send("Network.setBlockedURLs", { urls: ["http://*", "https://*", "ws://*", "wss://*"] });
+    await send("Page.reload", { ignoreCache: true });
+    await check(
+      "Standalone viewer renders tables and views with network access blocked",
+      `document.readyState === 'complete' && document.querySelectorAll('.sc-world [data-entity]').length === 8 && document.querySelector('.sc-summary')?.textContent.includes('4 tables') && document.querySelector('.sc-summary')?.textContent.includes('4 views') && document.querySelector('.sc-world').textContent.includes('Orders')`,
+    );
+    assert.equal(await evaluate("typeof window.__TAURI_INTERNALS__"), "undefined");
+    result.checks.push({ name: "Standalone browser has no Tauri runtime", passed: true });
+    await screenshot("01-diagram.png");
+    const select = async (name) => {
+      await evaluate(
+        `(() => { const search = document.querySelector('.sc-search'); search.focus(); search.value = ${JSON.stringify(name)}; search.dispatchEvent(new Event('input', {bubbles:true})); return true; })()`,
+      );
+      await check(
+        `Search finds ${name}`,
+        `[...document.querySelectorAll('.sc-result-name')].some(e => e.textContent === ${JSON.stringify(name)})`,
+      );
+      await evaluate(
+        `(() => { const item = [...document.querySelectorAll('.sc-result')].find(e => e.querySelector('.sc-result-name')?.textContent === ${JSON.stringify(name)}); item.dispatchEvent(new MouseEvent('mousedown', {bubbles:true,button:0})); return true; })()`,
+      );
+      await check(
+        `Details open for ${name}`,
+        `!!document.querySelector('.sc-panel:not([hidden])') && document.querySelector('.sc-panel').textContent.includes(${JSON.stringify(name)})`,
+      );
+    };
+    await select("app.Orders");
+    await check(
+      "Table details expose trigger metadata",
+      `document.querySelector('.sc-panel .sc-triggers')?.textContent.includes('TR_Orders_InsertUpdate')`,
+    );
+    await screenshot("02-table-triggers.png");
+    await select("app.OrderSummary");
+    await check(
+      "View details expose trigger metadata and exclude its SQL definition",
+      `document.querySelector('.sc-panel .sc-triggers')?.textContent.includes('TR_OrderSummary_Insert') && document.querySelector('.sc-panel .sc-view-definition')?.textContent.includes('Not included in this file')`,
+    );
+    await screenshot("03-view-definition.png");
+    result.passed = true;
+  } catch (error) {
+    result.error = String(error);
+  } finally {
+    if (socket?.readyState === WebSocket.OPEN) {
+      // Browser.close can terminate the connection before its response arrives.
+      try {
+        socket.send(JSON.stringify({ id: ++nextId, method: "Browser.close" }));
+      } catch {
+        /* The browser may already have closed. */
+      }
+    }
+    if (child?.pid && !exited) {
+      const deadline = Date.now() + 10000;
+      while (!exited && Date.now() < deadline) await sleep(100);
+      if (!exited) {
+        try {
+          await promisify(execFile)("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+            windowsHide: true,
+            timeout: 5000,
+          });
+        } catch (error) {
+          result.shutdownError = String(error);
+        }
+        const stopDeadline = Date.now() + 5000;
+        while (!exited && Date.now() < stopDeadline) await sleep(100);
+      }
+    }
+    socket?.close();
+    for (const request of pending.values()) clearTimeout(request.timer);
+    result.terminationConfirmed = !child?.pid || exited;
+    result.passed = result.passed && result.terminationConfirmed;
+    await writeFile(join(output, "report.json"), JSON.stringify(result, null, 2));
+    process.exitCode = result.passed ? 0 : 1;
+  }
 }

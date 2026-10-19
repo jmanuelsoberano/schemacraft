@@ -125,9 +125,9 @@ finally {
     # Never guess which system process to kill. The disposable VM owns any remaining processes.
     # Evidence includes only known reports and screenshots, not profiles, preferences or credentials.
     if (Test-Path -LiteralPath (Join-Path $staging 'results')) {
-        $evidenceFiles = @('worker-report.json', 'missing-runtime\report.json', 'installer-manifest.json')
+        $evidenceFiles = @('worker-report.json', 'missing-runtime\report.json', 'installer-manifest.json', 'html-viewer\report.json', 'html-viewer\01-diagram.png', 'html-viewer\02-table-triggers.png', 'html-viewer\03-view-definition.png')
         foreach ($session in @('portable', 'installed')) {
-            foreach ($name in @('report.json', '01-welcome-en-light.png', '02-about.png', '03-welcome-es-dark.png', '04-windows-auth-capture.png')) { $evidenceFiles += Join-Path $session $name }
+            foreach ($name in @('report.json', 'diagram.html', '01-welcome-en-light.png', '02-about.png', '03-welcome-es-dark.png', '04-windows-auth-capture.png')) { $evidenceFiles += Join-Path $session $name }
         }
         foreach ($relative in $evidenceFiles) {
             $source = Join-Path (Join-Path $staging 'results') $relative

@@ -226,6 +226,34 @@ public static class ReleaseNativeDialog {
     foreach ($path in $shortcuts) { Check 'Installed shortcut was removed' (-not (Test-Path -LiteralPath $path)) }
     foreach ($marker in $markers) { Check 'Default uninstall preserves synthetic app data' ((Sha256 $marker) -eq $markerHash) }
     Check 'Default uninstall preserves synthetic preferences byte for byte' ((Sha256 $preferences) -eq $syntheticPreferenceHash)
+    if ($SqlPort -gt 0) {
+        Check 'No SchemaCraft process remains before opening the standalone HTML' (-not (Get-Process -Name 'schemacraft*' -ErrorAction SilentlyContinue))
+        $edge = @(
+            (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),
+            (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe')
+        ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+        Check 'The hosted image provides Microsoft Edge for the independent HTML check' ([bool]$edge)
+        $htmlFile = Join-Path $ResultsDirectory 'installed\diagram.html'
+        Check 'The installed application produced the owned HTML file' (Test-Path -LiteralPath $htmlFile -PathType Leaf)
+        $browserOutput = Join-Path $ResultsDirectory 'html-viewer'
+        $htmlPreferenceBackup = Join-Path $ResultsDirectory 'html-preferences.backup'
+        Copy-Item -LiteralPath $preferences -Destination $htmlPreferenceBackup
+        Check 'Independent HTML test preference backup is byte-identical' ((Sha256 $htmlPreferenceBackup) -eq $syntheticPreferenceHash)
+        try {
+            & $node (Join-Path $InputsDirectory 'smoke-release-standard-user.mjs') '--html-viewer' $edge $htmlFile $browserOutput
+            $browserExit = $LASTEXITCODE
+        }
+        finally {
+            $browserReport = Join-Path $browserOutput 'report.json'
+            $browserResult = if (Test-Path -LiteralPath $browserReport) { Get-Content -LiteralPath $browserReport -Raw | ConvertFrom-Json } else { $null }
+            Check 'The exact browser process stopped before restoring preferences' ($null -ne $browserResult -and $browserResult.terminationConfirmed)
+            Copy-Item -LiteralPath $htmlPreferenceBackup -Destination $preferences -Force
+            Check 'Independent HTML test restores preferences byte for byte' ((Sha256 $preferences) -eq $syntheticPreferenceHash)
+            Remove-Item -LiteralPath $htmlPreferenceBackup
+        }
+        Check 'Exported HTML renders independently after SchemaCraft is uninstalled' ($browserExit -eq 0 -and $browserResult.passed)
+        Check 'The independent viewer did not launch SchemaCraft' (-not (Get-Process -Name 'schemacraft*' -ErrorAction SilentlyContinue))
+    }
     $report.passed = $true
 }
 catch { $report.error = $_.Exception.Message; Write-Error $_ -ErrorAction Continue }
