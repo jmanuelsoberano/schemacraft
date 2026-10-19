@@ -25,7 +25,8 @@ type Signature =
   | {
       whenEnabled: Signature[];
     }
-  | { whenEnabledNotRecorded: Signature[] };
+  | { whenEnabledNotRecorded: Signature[] }
+  | { whenWritten: Signature[] };
 
 interface GoldenCase {
   name: string;
@@ -37,7 +38,8 @@ interface GoldenCase {
 
 // The JSON holds the reading notation as plain strings and objects; this is its shape.
 const GOLDEN_CASES = golden.cases as unknown as readonly GoldenCase[];
-const ENTITY = entityKey(golden.table);
+const TABLE = golden.table;
+const ENTITY = entityKey(TABLE);
 
 /** A column of the given SQL declaration, e.g. `decimal(18,2)`, `varchar(max)` or `datetime2(0)`. */
 function dataType(declaration: string): SqlDataType {
@@ -87,12 +89,21 @@ const COLUMNS: readonly Column[] = [
   column("Notes", "text", true),
 ];
 
-function check(text: string, isEnabled: boolean | null = true): CheckConstraint {
-  return { name: "CK_Test", expression: { status: "readable", text }, isEnabled };
+function check(
+  text: string,
+  isEnabled: boolean | null = true,
+  isTrusted?: boolean,
+): CheckConstraint {
+  return {
+    name: "CK_Test",
+    expression: { status: "readable", text },
+    isEnabled,
+    ...(isTrusted === undefined ? {} : { isTrusted }),
+  };
 }
 
-function read(text: string, isEnabled: boolean | null = true): CheckReading {
-  return readCheckConstraint(check(text, isEnabled), COLUMNS, ENTITY);
+function read(text: string, isEnabled: boolean | null = true, isTrusted?: boolean): CheckReading {
+  return readCheckConstraint(check(text, isEnabled, isTrusted), COLUMNS, TABLE);
 }
 
 function argumentSignature(argument: RuleArgument): string {
@@ -106,6 +117,8 @@ function argumentSignature(argument: RuleArgument): string {
       return argument.text;
     case "literals":
       return argument.texts.join(", ");
+    case "names":
+      return argument.names.join(", ");
     case "now":
       return argument.utc ? "utcNow" : "now";
     case "number":
@@ -154,6 +167,7 @@ const CALLS: Readonly<Record<string, (argument: (name: string) => string) => str
   "rule.check.notBlank": (a) => `notBlank(${a("column")})`,
   "rule.check.notEmpty": (a) => `notEmpty(${a("column")})`,
   "rule.check.onlyDigits": (a) => `onlyDigits(${a("column")})`,
+  "rule.trust.notVerified": (a) => `notVerified(${a("table")})`,
 };
 
 /** One sentence in the notation of the golden file, e.g. `Quantity > 0` or `oneOf(A, 'x')`. */
@@ -196,13 +210,15 @@ function signature(nodes: readonly RuleNode[]): Signature[] {
         return { anyOf: rules };
       case "whenEnabled":
         return node.group.isRecorded ? { whenEnabled: rules } : { whenEnabledNotRecorded: rules };
+      case "whenWritten":
+        return { whenWritten: rules };
     }
   });
 }
 
 /** The reading of `text` in the golden notation, or "unread". */
-function readingOf(text: string, isEnabled: boolean | null = true) {
-  const reading = read(text, isEnabled);
+function readingOf(text: string, isEnabled: boolean | null = true, isTrusted?: boolean) {
+  const reading = read(text, isEnabled, isTrusted);
   switch (reading.status) {
     case "read":
       return { rules: signature(reading.rules), notes: [...reading.notes].sort() };
@@ -279,18 +295,46 @@ describe("readCheckConstraint on what the capture says about the text", () => {
   it("says a text the login cannot see is not available, and a 1.0 gap not recorded", () => {
     const states = (["notVisible", "unknown", "notRecorded"] as const).map(
       (status) =>
-        readCheckConstraint(
-          { name: "CK", expression: { status }, isEnabled: true },
-          COLUMNS,
-          ENTITY,
-        ).status,
+        readCheckConstraint({ name: "CK", expression: { status }, isEnabled: true }, COLUMNS, TABLE)
+          .status,
     );
     expect(states).toEqual(["notAvailable", "notAvailable", "notRecorded"]);
+  });
+
+  it("still says the rows already there may not follow a rule whose text is missing", () => {
+    // Trust needs no VIEW DEFINITION, so a login that cannot see the text still sees it.
+    const hidden = (isEnabled: boolean | null, isTrusted?: boolean) =>
+      readCheckConstraint(
+        {
+          name: "CK",
+          expression: { status: "notVisible" },
+          isEnabled,
+          ...(isTrusted === undefined ? {} : { isTrusted }),
+        },
+        COLUMNS,
+        TABLE,
+      );
+    const untrusted = hidden(true, false);
+    expect(untrusted.status).toBe("notAvailable");
+    expect(untrusted.status === "notAvailable" && signature(untrusted.rules)).toEqual([
+      `notVerified(${ENTITY})`,
+    ]);
+    expect(hidden(true, true)).toEqual({ status: "notAvailable", rules: [] });
+    expect(hidden(true)).toEqual({ status: "notAvailable", rules: [] });
+    expect(hidden(false, false)).toEqual({ status: "notAvailable", rules: [] });
+    expect(
+      readCheckConstraint(
+        { name: "CK", expression: { status: "notRecorded" }, isEnabled: true, isTrusted: false },
+        COLUMNS,
+        TABLE,
+      ),
+    ).toMatchObject({ status: "notRecorded", rules: [{ kind: "sentence" }] });
   });
 
   it("gives up on texts it cannot tokenize, keeping what columns it can", () => {
     expect(read(`([Code]='${"x".repeat(4000)}')`)).toEqual({
       status: "unread",
+      rules: [],
       columns: [],
       sql: `([Code]='${"x".repeat(4000)}')`,
     });
@@ -387,6 +431,73 @@ describe("readCheckConstraint on enabled state", () => {
       rules: [{ whenEnabledNotRecorded: ["Quantity > 0"] }],
       notes: [],
     });
+  });
+});
+
+describe("readCheckConstraint on trust", () => {
+  const forms = `${TABLE.schema}.${TABLE.name}`;
+
+  it("says the rows already there may not follow a rule SQL Server marks as not trusted", () => {
+    expect(readingOf("([Rating]>(0))", true, false)).toEqual({
+      rules: [
+        `notVerified(${forms})`,
+        { whenWritten: [{ when: ["Rating"], rules: ["Rating > 0"] }] },
+      ],
+      notes: [],
+    });
+  });
+
+  it("names the columns the rule reads in the heading, since only writing one is checked", () => {
+    const reading = read("([Quantity]>(0) AND [Rating]<=(5))", true, false);
+    const group = reading.status === "read" ? reading.rules[1] : undefined;
+    expect(group?.kind === "group" && group.group).toEqual({
+      kind: "whenWritten",
+      rule: "check",
+      columns: ["Quantity", "Rating"],
+    });
+  });
+
+  it("adds nothing for a trusted rule or one whose trust was not recorded", () => {
+    const plain = { rules: ["Quantity > 0"], notes: [] };
+    expect(readingOf("([Quantity]>(0))", true, true)).toEqual(plain);
+    expect(readingOf("([Quantity]>(0))", true)).toEqual(plain);
+  });
+
+  it("reads a disabled rule, never trusted, under 'When enabled:' alone", () => {
+    expect(readingOf("([Quantity]>(0))", false, false)).toEqual({
+      rules: [{ whenEnabled: ["Quantity > 0"] }],
+      notes: [],
+    });
+  });
+
+  it("still says it of a rule it cannot put into words", () => {
+    const reading = read("([dbo].[fn_check]([Code])=(1))", true, false);
+    expect(reading.status).toBe("unread");
+    expect(reading.status === "unread" && signature(reading.rules)).toEqual([
+      `notVerified(${forms})`,
+    ]);
+    const trusted = read("([dbo].[fn_check]([Code])=(1))", true, true);
+    expect(trusted.status === "unread" && trusted.rules).toEqual([]);
+  });
+
+  it("words the sentence and the heading in both languages", () => {
+    const reading = read("([Quantity]>(0))", true, false);
+    const lines = (translator: RuleTranslator) =>
+      reading.status === "read"
+        ? reading.rules.map((node) =>
+            ruleTextToString(
+              formatRuleText(node.kind === "sentence" ? node.text : node.heading, translator),
+            ),
+          )
+        : [];
+    expect(lines(createCatalogTranslator(messageCatalogs.en, "en"))).toEqual([
+      `Rows already in ${forms} may not follow this rule: SQL Server marks it as not trusted`,
+      "When a row is inserted or its Quantity is changed:",
+    ]);
+    expect(lines(createCatalogTranslator(messageCatalogs.es, "es"))).toEqual([
+      `Las filas que ya hay en ${forms} pueden no cumplir esta regla: SQL Server la marca como no confiable`,
+      "Cuando se inserta una fila o se modifica su Quantity:",
+    ]);
   });
 });
 

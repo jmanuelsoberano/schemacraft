@@ -15,6 +15,7 @@ import type {
   DatabaseDescription,
   ForeignKey,
   ForeignKeyToInvisibleTable,
+  Index,
   InspectionOptions,
   InspectionStage,
   SchemaAccess,
@@ -212,9 +213,36 @@ function column(name: string, declaration: string, traits: ColumnTraits = {}): C
   };
 }
 
-/** A `CHECK` constraint with its expression in the normal form SQL Server stores. */
-function check(name: string, text: string, isEnabled = true): CheckConstraint {
-  return { name, expression: { status: "readable", text }, isEnabled };
+/**
+ * A `CHECK` constraint with its expression in the normal form SQL Server stores. A disabled one
+ * is never trusted; an enabled one is unless it was enabled again without checking the rows.
+ */
+function check(
+  name: string,
+  text: string,
+  isEnabled = true,
+  isTrusted = isEnabled,
+): CheckConstraint {
+  return { name, expression: { status: "readable", text }, isEnabled, isTrusted };
+}
+
+/** An index as a 1.2 capture records it: enabled, without a filter or included columns. */
+function tableIndex(
+  name: string,
+  kind: Index["kind"],
+  columns: string[],
+  state: Partial<Pick<Index, "includedColumns" | "isFiltered" | "isEnabled">> = {},
+): Index {
+  return {
+    name,
+    columns,
+    kind,
+    isClustered: false,
+    includedColumns: [],
+    isFiltered: false,
+    isEnabled: true,
+    ...state,
+  };
 }
 
 function table(schema: string, name: string, definition: Omit<Table, "name">): Table {
@@ -235,7 +263,10 @@ interface PreviewDatabase {
  * The fixture database every preview server holds, in the order inspectors list it. It has a
  * unique and a non-unique index, `DEFAULT` and `CHECK` texts in stored form (a reversed `IN`
  * chain, a `LIKE`, a function call and a disabled constraint), a computed column, a disabled
- * and a `SET NULL` foreign key, and keys across schemas, so the schema filter drops some.
+ * and a `SET NULL` foreign key, and keys across schemas, so the schema filter drops some. Every
+ * state is recorded as a 1.2 capture records it: an index with an included column, a filtered
+ * unique index and a disabled unique constraint on the columns of keys, a `CHECK` and a key SQL
+ * Server marks as not trusted, and the rest enabled and trusted.
  */
 function fixtureDatabase(): PreviewDatabase {
   return {
@@ -248,18 +279,17 @@ function fixtureDatabase(): PreviewDatabase {
           column("Notes", "NVARCHAR(MAX)", { isNullable: true }),
           column("CreatedAt", "DATETIME2(7)", { defaultText: "(sysutcdatetime())" }),
         ],
-        primaryKey: { name: "PK_Customers", columns: ["CustomerId"], isClustered: true },
-        indexes: [
-          {
-            name: "UX_Customers_Email",
-            columns: ["Email"],
-            kind: "uniqueIndex",
-            isClustered: false,
-          },
-        ],
+        primaryKey: {
+          name: "PK_Customers",
+          columns: ["CustomerId"],
+          isClustered: true,
+          isEnabled: true,
+        },
+        indexes: [tableIndex("UX_Customers_Email", "uniqueIndex", ["Email"])],
         checkConstraints: [
           check("CK_Customers_Email", "([Email] like '%_@_%')"),
-          check("CK_Customers_Name", "([dbo].[fn_valid_name]([Name])=(1))"),
+          // Enabled again without checking the rows already there.
+          check("CK_Customers_Name", "([dbo].[fn_valid_name]([Name])=(1))", true, false),
         ],
       }),
       table("hr", "Employees", {
@@ -269,7 +299,12 @@ function fixtureDatabase(): PreviewDatabase {
           column("ManagerId", "INT", { isNullable: true }),
           column("HiredOn", "DATE", { defaultText: "(CONVERT([date],getdate()))" }),
         ],
-        primaryKey: { name: "PK_Employees", columns: ["EmployeeId"], isClustered: true },
+        primaryKey: {
+          name: "PK_Employees",
+          columns: ["EmployeeId"],
+          isClustered: true,
+          isEnabled: true,
+        },
         indexes: [],
         checkConstraints: [check("CK_Employees_Manager", "([ManagerId]<>[EmployeeId])", false)],
       }),
@@ -286,6 +321,7 @@ function fixtureDatabase(): PreviewDatabase {
           name: "PK_OrderLines",
           columns: ["OrderId", "LineNumber"],
           isClustered: true,
+          isEnabled: true,
         },
         indexes: [],
         checkConstraints: [check("CK_OrderLines_Quantity", "([Quantity]>(0))")],
@@ -298,14 +334,17 @@ function fixtureDatabase(): PreviewDatabase {
           column("PlacedAt", "DATETIME2(7)", { defaultText: "(sysutcdatetime())" }),
           column("Status", "CHAR(1)", { defaultText: "('N')" }),
         ],
-        primaryKey: { name: "PK_Orders", columns: ["OrderId"], isClustered: true },
+        primaryKey: { name: "PK_Orders", columns: ["OrderId"], isClustered: true, isEnabled: true },
         indexes: [
-          {
-            name: "IX_Orders_CustomerId",
-            columns: ["CustomerId"],
-            kind: "nonUnique",
-            isClustered: false,
-          },
+          tableIndex("IX_Orders_CustomerId", "nonUnique", ["CustomerId"], {
+            includedColumns: ["PlacedAt"],
+          }),
+          // One open order per customer: a unique index over the rows of a filter only.
+          tableIndex("UX_Orders_OpenCustomer", "uniqueIndex", ["CustomerId"], { isFiltered: true }),
+          // A unique constraint whose index is disabled limits nothing.
+          tableIndex("UQ_Orders_SalesRep", "uniqueConstraint", ["SalesRepId"], {
+            isEnabled: false,
+          }),
         ],
         checkConstraints: [
           check(
@@ -332,8 +371,10 @@ function fixtureDatabase(): PreviewDatabase {
         onDelete: "noAction",
         onUpdate: "noAction",
         isEnabled: false,
+        isTrusted: false,
       },
       {
+        // Added WITH NOCHECK: enabled, not trusted.
         name: "FK_OrderLines_Orders",
         referencingTable: { schema: "sales", name: "OrderLines" },
         referencedTable: { schema: "sales", name: "Orders" },
@@ -341,6 +382,7 @@ function fixtureDatabase(): PreviewDatabase {
         onDelete: "cascade",
         onUpdate: "noAction",
         isEnabled: true,
+        isTrusted: false,
       },
       {
         name: "FK_Orders_Customers",
@@ -350,6 +392,7 @@ function fixtureDatabase(): PreviewDatabase {
         onDelete: "noAction",
         onUpdate: "cascade",
         isEnabled: true,
+        isTrusted: true,
       },
       {
         name: "FK_Orders_SalesRep",
@@ -359,6 +402,7 @@ function fixtureDatabase(): PreviewDatabase {
         onDelete: "setNull",
         onUpdate: "noAction",
         isEnabled: true,
+        isTrusted: true,
       },
     ],
   };
@@ -425,6 +469,7 @@ export function previewSnapshot(
         onDelete: key.onDelete,
         onUpdate: key.onUpdate,
         isEnabled: key.isEnabled,
+        ...(key.isTrusted === undefined ? {} : { isTrusted: key.isTrusted }),
       });
     }
   }

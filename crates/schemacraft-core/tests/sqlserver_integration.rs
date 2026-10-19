@@ -16,8 +16,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use schemacraft_core::diff::{
-    ChangeCounts, ColumnChange, ColumnProperty, ForeignKeyChange, ForeignKeyProperty, IndexChange,
-    SchemaDiff, TableChange,
+    ChangeCounts, CheckConstraintChange, ColumnChange, ColumnProperty, ForeignKeyChange,
+    ForeignKeyProperty, IndexChange, SchemaDiff, TableChange,
 };
 use schemacraft_core::inspectors::sqlserver::SqlServerConnectionSettings;
 use schemacraft_core::inspectors::{
@@ -57,6 +57,12 @@ const CONSTRAINT_CONFLICT: u32 = 547;
 const IDENTITY_UPDATE: u32 = 8102;
 /// Error 2601: a duplicate key in a unique index.
 const DUPLICATE_KEY: u32 = 2601;
+/// Error 2627: a duplicate key in a primary key or unique constraint.
+const DUPLICATE_CONSTRAINT_KEY: u32 = 2627;
+/// Error 8655: no plan can read or write a table whose clustered index is disabled.
+const INDEX_DISABLED: u32 = 8655;
+/// Error 1974: the operation needs the clustered index of the table, which is disabled.
+const CLUSTERED_INDEX_DISABLED: u32 = 1974;
 
 /// Budget for inspecting 200 tables; the product target is 3 seconds on a local network.
 const STRESS_BUDGET: Duration = Duration::from_secs(5);
@@ -422,6 +428,32 @@ async fn inspects_keys_indexes_and_constraints() {
         ]
     );
 
+    // The state of every index and key is recorded: included columns in index order, the
+    // filter flag and whether it is enabled.
+    let mut index_states: Vec<String> = orders
+        .indexes
+        .iter()
+        .chain(&customers.indexes)
+        .map(|index| {
+            format!(
+                "{} include {:?} filtered {:?} enabled {:?}",
+                index.name, index.included_columns, index.is_filtered, index.is_enabled
+            )
+        })
+        .collect();
+    index_states.sort();
+    assert_eq!(
+        index_states,
+        [
+            "IX_Orders_CustomerId include Some([\"PlacedAt\"]) filtered Some(false) enabled Some(true)",
+            "IX_Orders_Open include Some([]) filtered Some(true) enabled Some(true)",
+            "UQ_Customers_Email include Some([]) filtered Some(false) enabled Some(true)",
+            "UX_Orders_Customer_PlacedAt include Some([]) filtered Some(false) enabled Some(true)",
+        ]
+    );
+    assert_eq!(primary_key.is_enabled, Some(true));
+    assert_eq!(customers.check_constraints[0].is_trusted, Some(true));
+
     let lines = snapshot
         .table(&QualifiedName::new("sales", "OrderLines"))
         .expect("order lines");
@@ -434,6 +466,7 @@ async fn inspects_keys_indexes_and_constraints() {
         Definition::readable("([Quantity]>(0))")
     );
     assert_eq!(lines.check_constraints[0].is_enabled, Some(true));
+    assert_eq!(lines.check_constraints[0].is_trusted, Some(true));
 }
 
 #[tokio::test]
@@ -472,6 +505,21 @@ async fn inspects_foreign_keys_with_actions_and_state() {
             "FK_Shipments_OrderLines sales.Shipments->sales.OrderLines NoAction/NoAction enabled",
             "FK_Shipments_Orders_Disabled sales.Shipments->sales.Orders NoAction/NoAction disabled",
         ]
+    );
+
+    // A disabled key is never trusted; every other key of the fixture was checked when added.
+    let untrusted: Vec<&str> = snapshot
+        .foreign_keys
+        .iter()
+        .filter(|key| key.is_trusted != Some(true))
+        .map(|key| key.name.as_str())
+        .collect();
+    assert_eq!(untrusted, ["FK_Shipments_Orders_Disabled"]);
+    assert!(
+        snapshot
+            .foreign_keys
+            .iter()
+            .all(|key| key.is_trusted.is_some())
     );
 
     let composite = snapshot
@@ -643,10 +691,14 @@ async fn refresh_reports_the_differences_and_keeps_surviving_positions() {
 
     let diff = SchemaDiff::between(&previous, &current);
 
-    // Both captures see everything, so nothing is kept unchecked or newly readable.
+    // Both captures see everything and record every state, so nothing is kept unchecked, newly
+    // readable or newly recorded.
     assert_eq!(diff.not_checked, []);
     assert_eq!(diff.now_available, []);
     assert!(!diff.access_changed);
+    assert_eq!(diff.capture_changes, []);
+    assert!(diff.has_object_changes());
+    assert!(!diff.is_up_to_date());
     assert_eq!(
         diff.summary.tables,
         ChangeCounts {
@@ -705,7 +757,10 @@ async fn refresh_reports_the_differences_and_keeps_surviving_positions() {
     ));
 
     let TableChange::Changed {
-        columns, indexes, ..
+        columns,
+        indexes,
+        check_constraints,
+        ..
     } = &diff.tables[2]
     else {
         panic!(
@@ -718,6 +773,24 @@ async fn refresh_reports_the_differences_and_keeps_surviving_positions() {
         &indexes[0],
         IndexChange::Removed { index } if index.name == "IX_Orders_CustomerId"
     ));
+    // A disabled index is a change of the index, with its key columns as they were.
+    assert!(matches!(
+        &indexes[1],
+        IndexChange::Changed { before, after }
+            if after.name == "UX_Orders_Customer_PlacedAt"
+                && before.is_enabled == Some(true)
+                && after.is_enabled == Some(false)
+                && after.columns == before.columns
+    ));
+    assert_eq!(indexes.len(), 2);
+    // So is a CHECK enabled again without checking the rows already there.
+    assert!(matches!(
+        check_constraints.as_slice(),
+        [CheckConstraintChange::Changed { before, after }]
+            if after.name == "CK_Orders_Status"
+                && (before.is_enabled, before.is_trusted) == (Some(true), Some(true))
+                && (after.is_enabled, after.is_trusted) == (Some(true), Some(false))
+    ));
 
     assert!(matches!(
         &diff.foreign_keys[0],
@@ -728,7 +801,14 @@ async fn refresh_reports_the_differences_and_keeps_surviving_positions() {
         ForeignKeyChange::Changed { after, properties, .. }
             if after.name == "FK_Orders_Customers"
                 && after.on_delete == ReferentialAction::Cascade
-                && properties == &[ForeignKeyProperty::OnDelete, ForeignKeyProperty::OnUpdate]
+                && after.is_enabled
+                && after.is_trusted == Some(false)
+                && properties
+                    == &[
+                        ForeignKeyProperty::OnDelete,
+                        ForeignKeyProperty::OnUpdate,
+                        ForeignKeyProperty::Trust,
+                    ]
     ));
 
     let canvas = CanvasState {
@@ -1139,6 +1219,117 @@ async fn check_engine_facts_behind_the_sentences() {
         Ok(1)
     );
 
+    // A CHECK enabled again without WITH CHECK is not trusted: it still checks every row
+    // inserted and every row whose columns it reads are written, while a row it never checked
+    // stays, even when its other columns change, and WITH CHECK refuses to trust it until the row
+    // is gone.
+    let trust = |constraint: &str| {
+        format!(
+            "SELECT CONCAT(is_disabled, ' ', is_not_trusted) FROM sys.check_constraints \
+             WHERE name = '{constraint}'"
+        )
+    };
+    assert_eq!(
+        text_rows(&mut client, &trust("CK_RecheckedValues_Amount")).await,
+        ["0 1"]
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "INSERT INTO facts.RecheckedValues VALUES (2, -2, 1)"
+        )
+        .await,
+        Err(CONSTRAINT_CONFLICT)
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "UPDATE facts.RecheckedValues SET Quantity = Quantity WHERE ValueId = 1"
+        )
+        .await,
+        Ok(1)
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "UPDATE facts.RecheckedValues SET Amount = Amount WHERE ValueId = 1"
+        )
+        .await,
+        Err(CONSTRAINT_CONFLICT)
+    );
+    assert_eq!(
+        text_rows(
+            &mut client,
+            "SELECT CONCAT(ValueId, ' ', Amount) FROM facts.RecheckedValues"
+        )
+        .await,
+        ["1 -1"]
+    );
+    // A CHECK NOT FOR REPLICATION is never trusted, even after WITH CHECK over rows that follow
+    // it.
+    let replicated = |constraint: &str| {
+        format!(
+            "SELECT CONCAT(is_disabled, ' ', is_not_trusted, ' ', is_not_for_replication) \
+             FROM sys.check_constraints WHERE name = '{constraint}'"
+        )
+    };
+    assert_eq!(
+        text_rows(&mut client, &replicated("CK_ReplicatedChildren_Amount")).await,
+        ["0 1 1"]
+    );
+    execute(
+        &mut client,
+        "ALTER TABLE facts.ReplicatedChildren WITH CHECK CHECK CONSTRAINT CK_ReplicatedChildren_Amount",
+    )
+    .await
+    .expect("checked again");
+    assert_eq!(
+        text_rows(&mut client, &replicated("CK_ReplicatedChildren_Amount")).await,
+        ["0 1 1"]
+    );
+    // CK_RecheckedValues_Limit goes through the same states: disabled, a row let in, enabled
+    // again untrusted, refused WITH CHECK while the row is there, and trusted once it is gone.
+    let limit = |statement: &str| {
+        format!("ALTER TABLE facts.RecheckedValues {statement} CONSTRAINT CK_RecheckedValues_Limit")
+    };
+    execute(&mut client, &limit("NOCHECK"))
+        .await
+        .expect("disabled");
+    assert_eq!(
+        text_rows(&mut client, &trust("CK_RecheckedValues_Limit")).await,
+        ["1 1"]
+    );
+    execute(
+        &mut client,
+        "INSERT INTO facts.RecheckedValues VALUES (3, 1, 99)",
+    )
+    .await
+    .expect("a row the disabled CHECK lets in");
+    execute(&mut client, &limit("CHECK"))
+        .await
+        .expect("enabled again");
+    assert_eq!(
+        text_rows(&mut client, &trust("CK_RecheckedValues_Limit")).await,
+        ["0 1"]
+    );
+    assert_eq!(
+        execute(&mut client, &limit("WITH CHECK CHECK")).await,
+        Err(CONSTRAINT_CONFLICT)
+    );
+    execute(
+        &mut client,
+        "DELETE FROM facts.RecheckedValues WHERE ValueId = 3",
+    )
+    .await
+    .expect("the row goes");
+    execute(&mut client, &limit("WITH CHECK CHECK"))
+        .await
+        .expect("trusted again");
+    assert_eq!(
+        text_rows(&mut client, &trust("CK_RecheckedValues_Limit")).await,
+        ["0 0"]
+    );
+
     // On a datetime column, '2000-02-01' is read with the DATEFORMAT of the session that writes
     // the row, so the same CHECK refuses 15 January under mdy and accepts it under ydm.
     let mid_january = insert(13, "LoggedAt", "'20000115'");
@@ -1189,29 +1380,94 @@ async fn foreign_key_engine_facts_behind_the_sentences() {
             "FK_OwnedChildren_Owners Cascade/NoAction enabled",
             "FK_OwnedChildren_Parents NoAction/NoAction enabled",
             "FK_PairChildren_Pairs NoAction/NoAction enabled",
+            "FK_ReplicatedChildren_Parents NoAction/NoAction enabled",
             "FK_SetDefaultChildren_Parents SetDefault/NoAction enabled",
             "FK_SetNullChildren_Parents SetNull/SetNull enabled",
+            "FK_UniqueIndexChildren_Parents NoAction/NoAction enabled",
+            "FK_UntrustedChildren_Parents NoAction/NoAction enabled",
         ]
     );
-    // The snapshot records neither index filters nor disabled indexes, so a filtered unique
-    // index looks like any other unique index, and a unique constraint whose index is disabled
-    // like one that holds (see the last facts below).
-    let index_kind = |table: &str, name: &str| {
+    // A disabled key is never trusted, a key added WITH NOCHECK is enabled yet not trusted, and
+    // so is a key NOT FOR REPLICATION, whatever rows it checked.
+    let untrusted: Vec<&str> = snapshot
+        .foreign_keys
+        .iter()
+        .filter(|key| key.referencing_table.schema == "facts" && key.is_trusted != Some(true))
+        .map(|key| key.name.as_str())
+        .collect();
+    assert_eq!(
+        untrusted,
+        [
+            "FK_DisabledChildren_Parents",
+            "FK_ReplicatedChildren_Parents",
+            "FK_UntrustedChildren_Parents"
+        ]
+    );
+    // The snapshot records whether an index is filtered and whether it is enabled, which decide
+    // whether a unique one keeps a parent row to one child row (see the last facts below).
+    let index_state = |table: &str, name: &str| {
         snapshot
             .table(&QualifiedName::new("facts", table))
             .and_then(|table| table.indexes.iter().find(|index| index.name == name))
-            .map(|index| index.kind)
+            .map(|index| (index.kind, index.is_filtered, index.is_enabled))
     };
     assert_eq!(
-        index_kind("FilteredChildren", "UX_FilteredChildren_Current"),
-        Some(IndexKind::UniqueIndex)
+        index_state("FilteredChildren", "UX_FilteredChildren_Current"),
+        Some((IndexKind::UniqueIndex, Some(true), Some(true)))
     );
     assert_eq!(
-        index_kind(
+        index_state(
             "DisabledUniqueChildren",
             "UQ_DisabledUniqueChildren_ParentCode"
         ),
-        Some(IndexKind::UniqueConstraint)
+        Some((IndexKind::UniqueConstraint, Some(false), Some(false)))
+    );
+    assert_eq!(
+        index_state("UniqueIndexChildren", "UX_UniqueIndexChildren_ParentCode"),
+        Some((IndexKind::UniqueIndex, Some(false), Some(true)))
+    );
+    // A CHECK enabled again without WITH CHECK is enabled and not trusted.
+    let rechecked = snapshot
+        .table(&QualifiedName::new("facts", "RecheckedValues"))
+        .and_then(|table| {
+            table
+                .check_constraints
+                .iter()
+                .find(|constraint| constraint.name == "CK_RecheckedValues_Amount")
+        })
+        .expect("the rechecked CHECK");
+    assert_eq!(
+        (rechecked.is_enabled, rechecked.is_trusted),
+        (Some(true), Some(false))
+    );
+    // So is a CHECK NOT FOR REPLICATION.
+    let replicated = snapshot
+        .table(&QualifiedName::new("facts", "ReplicatedChildren"))
+        .and_then(|table| {
+            table
+                .check_constraints
+                .iter()
+                .find(|constraint| constraint.name == "CK_ReplicatedChildren_Amount")
+        })
+        .expect("the CHECK NOT FOR REPLICATION");
+    assert_eq!(
+        (replicated.is_enabled, replicated.is_trusted),
+        (Some(true), Some(false))
+    );
+    // The partitioning column SQL Server adds to an aligned index is neither a key column nor an
+    // included one, while one the key names stays in it.
+    let events = snapshot
+        .table(&QualifiedName::new("facts", "PartitionedEvents"))
+        .expect("the partitioned table");
+    assert_eq!(
+        events.primary_key.as_ref().expect("its key").columns,
+        ["EventId", "EventYear"]
+    );
+    assert_eq!(events.indexes[0].name, "IX_PartitionedEvents_Label");
+    assert_eq!(events.indexes[0].columns, ["Label"]);
+    assert_eq!(
+        events.indexes[0].included_columns,
+        Some(vec!["Note".to_string()])
     );
 
     let mut client = connect(&server, Some(CHECK_FORMS_DATABASE)).await;
@@ -1462,6 +1718,111 @@ async fn foreign_key_engine_facts_behind_the_sentences() {
         scripted(" WITH NOCHECK")
     );
     assert!(execute(&mut client, &disabled).await.is_ok());
+    let key_state = |name: &str| {
+        format!(
+            "SELECT CONCAT(is_disabled, ' ', is_not_trusted) FROM sys.foreign_keys \
+             WHERE name = '{name}'"
+        )
+    };
+    assert_eq!(
+        text_rows(&mut client, &key_state("FK_UncheckedChildren_Parents")).await,
+        ["1 1"]
+    );
+    // An enabled key that is not trusted is scripted WITH NOCHECK alone, which adds it enabled
+    // and not trusted over the same rows.
+    execute(
+        &mut client,
+        "ALTER TABLE facts.UncheckedChildren DROP CONSTRAINT FK_UncheckedChildren_Parents",
+    )
+    .await
+    .expect("the key goes");
+    assert!(
+        execute(&mut client, &scripted(" WITH NOCHECK"))
+            .await
+            .is_ok()
+    );
+    assert_eq!(
+        text_rows(&mut client, &key_state("FK_UncheckedChildren_Parents")).await,
+        ["0 1"]
+    );
+
+    // A key added WITH NOCHECK is not trusted, yet it checks every row inserted after and every
+    // row whose referencing columns are written: a new row without a parent row is refused while
+    // the one already there stays, even when its other columns change, and WITH CHECK refuses to
+    // trust the key while that row is there.
+    assert_eq!(
+        text_rows(&mut client, &key_state("FK_UntrustedChildren_Parents")).await,
+        ["0 1"]
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "INSERT INTO facts.UntrustedChildren (ChildId, ParentCode) VALUES (2, 'YY')"
+        )
+        .await,
+        Err(CONSTRAINT_CONFLICT)
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "INSERT INTO facts.UntrustedChildren (ChildId, ParentCode) VALUES (3, 'P0')"
+        )
+        .await,
+        Ok(1)
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "UPDATE facts.UntrustedChildren SET Note = N'x' WHERE ChildId = 1"
+        )
+        .await,
+        Ok(1)
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "UPDATE facts.UntrustedChildren SET ParentCode = ParentCode WHERE ChildId = 1"
+        )
+        .await,
+        Err(CONSTRAINT_CONFLICT)
+    );
+    assert_eq!(
+        text_rows(
+            &mut client,
+            "SELECT CONCAT(ChildId, ' ', ParentCode) FROM facts.UntrustedChildren ORDER BY ChildId"
+        )
+        .await,
+        ["1 ZZ", "3 P0"]
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "ALTER TABLE facts.UntrustedChildren WITH CHECK CHECK CONSTRAINT FK_UntrustedChildren_Parents"
+        )
+        .await,
+        Err(CONSTRAINT_CONFLICT)
+    );
+    // A key NOT FOR REPLICATION is never trusted, even after WITH CHECK over rows that follow it.
+    let replicated = |name: &str| {
+        format!(
+            "SELECT CONCAT(is_disabled, ' ', is_not_trusted, ' ', is_not_for_replication) \
+             FROM sys.foreign_keys WHERE name = '{name}'"
+        )
+    };
+    assert_eq!(
+        text_rows(&mut client, &replicated("FK_ReplicatedChildren_Parents")).await,
+        ["0 1 1"]
+    );
+    execute(
+        &mut client,
+        "ALTER TABLE facts.ReplicatedChildren WITH CHECK CHECK CONSTRAINT FK_ReplicatedChildren_Parents",
+    )
+    .await
+    .expect("checked again");
+    assert_eq!(
+        text_rows(&mut client, &replicated("FK_ReplicatedChildren_Parents")).await,
+        ["0 1 1"]
+    );
 
     // A self-reference, checked once the statement has run: a row may point to itself, a row
     // that other rows still point to afterwards cannot be deleted or re-keyed, and one statement
@@ -1549,7 +1910,7 @@ async fn foreign_key_engine_facts_behind_the_sentences() {
         .await,
         Err(DUPLICATE_KEY)
     );
-    // Nor does a unique constraint whose index is disabled, which the snapshot still reports.
+    // Nor does a unique constraint whose index is disabled, which the snapshot records as such.
     assert_eq!(
         execute(
             &mut client,
@@ -1557,6 +1918,23 @@ async fn foreign_key_engine_facts_behind_the_sentences() {
         )
         .await,
         Ok(2)
+    );
+    // A unique index that is enabled and has no filter does.
+    assert_eq!(
+        execute(
+            &mut client,
+            "INSERT INTO facts.UniqueIndexChildren VALUES (1, 'P0')"
+        )
+        .await,
+        Ok(1)
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "INSERT INTO facts.UniqueIndexChildren VALUES (2, 'P0')"
+        )
+        .await,
+        Err(DUPLICATE_KEY)
     );
 }
 
@@ -1991,16 +2369,19 @@ async fn the_capability_probe_returns_only_allowed_counts() {
     }
 
     // The unique index and the unique constraint of rule_facts.sql that limit nothing, one
-    // filtered and one whose index is disabled, both on the column of a foreign key.
+    // filtered and one whose index is disabled, both on the column of a foreign key, and its one
+    // index that SQL Server aligned with a partitioned table.
     let rule_facts = run_probe(&server, CHECK_FORMS_DATABASE).await;
     for (metric, expected) in [
         ("disabled_unique_constraints", 1),
         ("disabled_unique_indexes", 0),
         ("filtered_unique", 1),
         ("unique_on_foreign_key_disabled_or_filtered", 2),
+        ("with_implicit_partition_column", 1),
     ] {
         assert_eq!(rule_facts.value("indexes", metric), expected, "{metric}");
     }
+    assert_eq!(rule_facts.value("objects", "partitioned_tables"), 1);
 }
 
 #[tokio::test]
@@ -2148,6 +2529,102 @@ DECLARE @scan_text bit = 0;
     );
     // The line-end counts of the modules do not depend on the scan.
     assert_eq!(probe.value("modules", "P.with_cr"), 1);
+}
+
+/// A database of its own whose clustered primary key the test disables, which no other test may
+/// read meanwhile.
+const CLUSTERED_DATABASE: &str = "SchemaCraftClusteredFacts";
+
+#[tokio::test]
+async fn a_disabled_clustered_index_keeps_the_keys_of_its_table_disabled_until_it_is_rebuilt() {
+    let Some(server) = test_server() else { return };
+    let seed = format!(
+        "IF DB_ID('{CLUSTERED_DATABASE}') IS NOT NULL
+BEGIN
+    ALTER DATABASE {CLUSTERED_DATABASE} SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+    DROP DATABASE {CLUSTERED_DATABASE};
+END
+GO
+CREATE DATABASE {CLUSTERED_DATABASE};
+GO
+USE {CLUSTERED_DATABASE};
+GO
+CREATE TABLE dbo.Parents (Code char(2) NOT NULL CONSTRAINT PK_Parents PRIMARY KEY);
+CREATE TABLE dbo.ClusteredChildren (
+    ParentCode char(2) NOT NULL CONSTRAINT PK_ClusteredChildren PRIMARY KEY CLUSTERED
+        CONSTRAINT FK_ClusteredChildren_Parents FOREIGN KEY REFERENCES dbo.Parents (Code),
+    Label varchar(10) NULL
+);
+CREATE UNIQUE INDEX UX_ClusteredChildren_Label ON dbo.ClusteredChildren (Label);
+INSERT INTO dbo.Parents VALUES ('P0'), ('P1');
+INSERT INTO dbo.ClusteredChildren VALUES ('P0', 'a');"
+    );
+    ensure_seeded(&server, CLUSTERED_DATABASE, &seed).await;
+    let mut client = connect(&server, Some(CLUSTERED_DATABASE)).await;
+    let key_state = "SELECT CONCAT(is_disabled, ' ', is_not_trusted) FROM sys.foreign_keys \
+                     WHERE name = 'FK_ClusteredChildren_Parents'";
+    let index_states = "SELECT CONCAT(name, ' ', is_disabled) FROM sys.indexes \
+                        WHERE object_id = OBJECT_ID('dbo.ClusteredChildren') ORDER BY name";
+    let enable_key = "ALTER TABLE dbo.ClusteredChildren WITH CHECK CHECK CONSTRAINT FK_ClusteredChildren_Parents";
+
+    // Disabling the clustered primary key disables the key of its table and every other index,
+    // and the table then takes no row.
+    execute(
+        &mut client,
+        "ALTER INDEX PK_ClusteredChildren ON dbo.ClusteredChildren DISABLE",
+    )
+    .await
+    .expect("the clustered key is disabled");
+    assert_eq!(text_rows(&mut client, key_state).await, ["1 1"]);
+    assert_eq!(
+        text_rows(&mut client, index_states).await,
+        ["PK_ClusteredChildren 1", "UX_ClusteredChildren_Label 1"]
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "INSERT INTO dbo.ClusteredChildren VALUES ('P1', 'b')"
+        )
+        .await,
+        Err(INDEX_DISABLED)
+    );
+    // The key cannot be enabled, checked or not, until the index is rebuilt, which makes it
+    // unique again; the rebuild leaves the key and the other indexes disabled.
+    assert_eq!(
+        execute(&mut client, enable_key).await,
+        Err(CLUSTERED_INDEX_DISABLED)
+    );
+    assert_eq!(
+        execute(
+            &mut client,
+            "ALTER TABLE dbo.ClusteredChildren CHECK CONSTRAINT FK_ClusteredChildren_Parents"
+        )
+        .await,
+        Err(CLUSTERED_INDEX_DISABLED)
+    );
+    execute(
+        &mut client,
+        "ALTER INDEX PK_ClusteredChildren ON dbo.ClusteredChildren REBUILD",
+    )
+    .await
+    .expect("the clustered key is rebuilt");
+    assert_eq!(text_rows(&mut client, key_state).await, ["1 1"]);
+    assert_eq!(
+        text_rows(&mut client, index_states).await,
+        ["PK_ClusteredChildren 0", "UX_ClusteredChildren_Label 1"]
+    );
+    execute(&mut client, enable_key)
+        .await
+        .expect("the key is enabled");
+    assert_eq!(text_rows(&mut client, key_state).await, ["0 0"]);
+    assert_eq!(
+        execute(
+            &mut client,
+            "INSERT INTO dbo.ClusteredChildren VALUES ('P0', 'c')"
+        )
+        .await,
+        Err(DUPLICATE_CONSTRAINT_KEY)
+    );
 }
 
 /// A database of its own whose one table another connection locks while the probe runs.

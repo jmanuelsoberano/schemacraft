@@ -84,9 +84,9 @@ pub struct CheckConstraint {
     /// when the file that holds it did not record the state.
     #[serde(default)]
     pub is_enabled: Option<bool>,
-    /// `false` when SQL Server has not verified that the rows already in the table follow the
-    /// rule (`is_not_trusted`, after `WITH NOCHECK` or a re-enable without `WITH CHECK`); `None`
-    /// when the capture did not record it, as before 1.2.
+    /// `false` when SQL Server does not trust the rule, so the rows already in the table may not
+    /// follow it (`is_not_trusted`, after `WITH NOCHECK`, a re-enable without `WITH CHECK` or on a
+    /// NOT FOR REPLICATION rule); `None` when the capture did not record it, as before 1.2.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub is_trusted: Option<bool>,

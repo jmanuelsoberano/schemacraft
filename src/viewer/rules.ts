@@ -78,11 +78,19 @@ export function ruleSentences(nodes: readonly RuleNodeView[], link: TableLink | 
   );
 }
 
-/** The sentences, or the line that says the rule cannot be put into words. */
-export function ruleBody(rule: RuleView, link: TableLink | null): HTMLElement {
-  return rule.unread === null
-    ? ruleSentences(rule.sentences, link)
-    : h("p", { class: "sc-rule-unread" }, rule.unread);
+/**
+ * The sentences, then the line that says the rule cannot be put into words when it cannot,
+ * after what is still known in words, such as that the rows already there may not follow it.
+ */
+export function ruleBody(rule: RuleView, link: TableLink | null): DocumentFragment {
+  const body = document.createDocumentFragment();
+  if (rule.sentences.length > 0) {
+    body.append(ruleSentences(rule.sentences, link));
+  }
+  if (rule.unread !== null) {
+    body.append(h("p", { class: "sc-rule-unread" }, rule.unread));
+  }
+  return body;
 }
 
 /**

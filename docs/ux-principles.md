@@ -167,6 +167,22 @@ leaves the selection ring alone. The SQL is one click away behind Show SQL, with
 SchemaCraft cannot read in full says so and shows its SQL, never half a sentence. The HTML viewer
 reads and highlights rules the same way.
 
+Since 1.2 the words follow the state SQL Server keeps for each key, index and constraint. A rule
+SQL Server marks as not trusted (added or enabled again `WITH NOCHECK`, or `NOT FOR REPLICATION`,
+which it never trusts) first says "Rows already in sales.OrderLines may not follow this rule: SQL
+Server marks it as not trusted", without guessing why, and its sentences then sit under "When a row
+is inserted or its OrderId is changed:", naming the columns whose change SQL Server checks; a
+relationship's sentences about the referenced table follow, since they hold for every row. Its
+badge, "not trusted", takes the neutral tone of every badge: it is a fact about the data, not a
+warning. A disabled key or index carries "disabled" and limits nothing, so a relationship it would
+have made one-to-one reads "any number of rows … because the index UQ_X is disabled" and draws a
+crow's foot, unless the index is the clustered one, which SQL Server rebuilds, unique again, before
+the relationship can be enabled; a filtered unique index carries "filtered" and limits only the rows
+its filter selects, so its relationship draws a crow's foot and reads "at most one of the rows in …
+that the filter of the unique index UX_X selects", never "at most one row"; and an index lists its
+included columns as an `INCLUDE (…)` line. A project saved before 1.2 did not record these states
+and reads as 1.1 read it until a refresh records them.
+
 ### Refreshing from the database
 
 The diff is presented before it is applied: new, changed and removed tables, views, columns,
@@ -177,7 +193,12 @@ A login that sees less never makes anything look removed: what it could not chec
 listed as not checked, with the date it was read, and what became readable is listed as now
 available. A refresh that changed no object but learned something offers "Update project"; one
 with nothing to report says the project is up to date, or, under partial access, that nothing
-changed in what this login can read.
+changed in what this login can read. The first refresh of a project saved before 1.2 records the
+state of its indexes, keys and constraints in one counted line under "Recorded for the first
+time", never as hundreds of changes, except an index aligned with a partitioned table, whose key
+columns 1.1 read with the partitioning column first and which that refresh shows once as changed,
+and an index or a constraint whose state changed shows the same marks as the Inspector on both sides
+of the change.
 
 ### Exporting
 

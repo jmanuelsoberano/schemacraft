@@ -18,6 +18,16 @@ All notable changes to SchemaCraft are documented here. The format follows
   never sent anywhere. The place of a crash goes
   to `schemacraft-panic.log`. About shows the folder and opens it, and so does "Open diagnostic
   log folder" in the command palette.
+- The Inspector and the HTML viewer show the state SQL Server keeps for keys, indexes and
+  constraints: "disabled" on a primary key, index or constraint that enforces nothing, "filtered"
+  on an index that covers only the rows of a filter, an `INCLUDE (…)` line for included columns,
+  and "not trusted" on a `CHECK` or foreign key SQL Server does not trust, for example one added
+  `WITH NOCHECK`. Such a rule says that the rows already in the table may not follow it and words
+  its rules for the rows inserted, and those whose rule columns are changed, from now on, and its
+  scripted SQL adds the key `WITH NOCHECK`.
+- A refresh reports an index that was disabled or enabled again and a `CHECK` or foreign key whose
+  trust changed. The first refresh of a project saved by an earlier version records these states
+  in one line instead of reporting each object as changed.
 
 ### Changed
 
@@ -28,6 +38,17 @@ All notable changes to SchemaCraft are documented here. The format follows
   triggers and the state of indexes, keys and constraints. Projects saved by 1.0 and 1.1 open and
   are converted when saved. SchemaCraft 1.1 opens a project saved by 1.2 read-only, without its
   code, and SchemaCraft 1.0 cannot open it.
+
+### Fixed
+
+- A nonclustered unique constraint or primary key whose index is disabled no longer makes a foreign
+  key read "at most one" or draw the one-to-one marker; the sentence now says the index is disabled.
+  A unique index that is enabled and has no filter now makes the key one-to-one, and a filtered one
+  never does. Existing diagrams and exports may change their markers after a refresh; a project
+  keeps the reading of 1.1 until then.
+- The key columns of an index aligned with a partitioned table no longer start with the
+  partitioning column SQL Server adds to it on its own. The first refresh reports such an index as
+  changed.
 
 ## [1.1.0] - 2026-10-18
 

@@ -1,12 +1,20 @@
-import type { CheckConstraint, Column } from "@/shared/contracts";
+import type { CheckConstraint, Column, QualifiedName } from "@/shared/contracts";
 import type { RuleMessageKey } from "@/shared/i18n/messages/rules/en";
 
 import { definitionText, isUnknownDefinition } from "../definition";
+import { entityKey } from "../entities";
 import { parseCheck } from "./checkParser";
 import type { CheckExpression, ComparisonOperator } from "./checkParser";
 import { referencedColumns, resolveColumn, tokenizeCheck } from "./checkTokens";
-import { anyOfGroup, countedSentence, enabledRules, sentence, whenPresentGroup } from "./ruleText";
-import type { RuleArgument, RuleArguments, RuleNode } from "./ruleText";
+import {
+  anyOfGroup,
+  countedSentence,
+  sentence,
+  stateRules,
+  untrustedRules,
+  whenPresentGroup,
+} from "./ruleText";
+import type { RuleArgument, RuleArguments, RuleNode, RuleState } from "./ruleText";
 
 /**
  * Puts a `CHECK` constraint into words, from the text SQL Server stores for it. The reader
@@ -21,7 +29,9 @@ import type { RuleArgument, RuleArguments, RuleNode } from "./ruleText";
  * - text comparisons carry the collation note, and comparisons whose meaning depends on the
  *   session (a `'YYYY-MM-DD'` datetime) or on how values convert are not read;
  * - the time now is "when the value is saved": SQL Server checks a CHECK only when a statement
- *   writes one of its columns.
+ *   writes one of its columns;
+ * - a CHECK SQL Server marks as not trusted says so, and its rules then hold for the rows
+ *   inserted, and for those whose columns it reads are changed, from now on.
  */
 
 /** A note a reading needs under its sentences. */
@@ -36,12 +46,15 @@ export type CheckReading =
       notes: ReadonlySet<RuleNote>;
       sql: string;
     }
-  /** Not put into words; the stored SQL is shown, and the columns it mentions highlighted. */
-  | { status: "unread"; columns: readonly string[]; sql: string }
-  /** The constraint exists but its text is not visible to the login. */
-  | { status: "notAvailable" }
-  /** A SchemaCraft 1.0 file did not record the text. */
-  | { status: "notRecorded" };
+  /**
+   * Not put into words; the stored SQL is shown, and the columns it mentions highlighted.
+   * `rules` holds what is still known in words: that the rows already there may not follow it.
+   */
+  | { status: "unread"; rules: readonly RuleNode[]; columns: readonly string[]; sql: string }
+  /** The constraint exists but its text is not visible to the login; `rules` as for `unread`. */
+  | { status: "notAvailable"; rules: readonly RuleNode[] }
+  /** A SchemaCraft 1.0 file did not record the text; `rules` as for `unread`. */
+  | { status: "notRecorded"; rules: readonly RuleNode[] };
 
 type Family = "number" | "text" | "date" | "time" | "binary";
 
@@ -1049,21 +1062,23 @@ function assemble(context: Context, readings: readonly Reading[]): RuleNode[] {
 
 /**
  * The reading of a stored `CHECK` text against the columns of its table: in full, or not at
- * all with the columns it mentions. `isEnabled` puts the rules of a constraint SQL Server
- * does not check, or whose state was not recorded, under "When enabled:".
+ * all with the columns it mentions. `state` puts the rules of a constraint SQL Server does not
+ * check, or whose state was not recorded, under "When enabled:", and those of one it marks as not
+ * trusted after the sentence that says so, under a heading that names the columns it reads.
  */
 function readStoredText(
   sql: string,
   columns: readonly Column[],
   entity: string,
-  isEnabled: boolean | null,
+  state: RuleState,
 ): CheckReading {
   const tokens = tokenizeCheck(sql);
+  const untrusted = untrustedRules(state);
   if (tokens === null) {
-    return { status: "unread", columns: [], sql };
+    return { status: "unread", rules: untrusted, columns: [], sql };
   }
   const mentioned = referencedColumns(tokens, columns);
-  const unread: CheckReading = { status: "unread", columns: mentioned, sql };
+  const unread: CheckReading = { status: "unread", rules: untrusted, columns: mentioned, sql };
   const expression = parseCheck(tokens);
   if (expression === null || mentioned.length === 0) {
     return unread;
@@ -1081,7 +1096,7 @@ function readStoredText(
   }
   return {
     status: "read",
-    rules: enabledRules(isEnabled, assemble(context, readings)),
+    rules: stateRules(state, assemble(context, readings), mentioned),
     columns: mentioned,
     notes: context.notes,
     sql,
@@ -1089,17 +1104,27 @@ function readStoredText(
 }
 
 /**
- * The words for `constraint`, a `CHECK` of the table or view `entity` (its entity key) with
- * `columns`. A text the capture could not read is said to be not available or not recorded.
+ * The words for `constraint`, a `CHECK` of the table `table` with `columns`. A text the capture
+ * could not read is said to be not available or not recorded, with what is still known in words.
  */
 export function readCheckConstraint(
   constraint: CheckConstraint,
   columns: readonly Column[],
-  entity: string,
+  table: QualifiedName,
 ): CheckReading {
+  const state: RuleState = {
+    rule: "check",
+    table,
+    isEnabled: constraint.isEnabled,
+    isTrusted: constraint.isTrusted ?? null,
+  };
   const text = definitionText(constraint.expression);
   if (text === null) {
-    return { status: isUnknownDefinition(constraint.expression) ? "notRecorded" : "notAvailable" };
+    // Trust needs no VIEW DEFINITION, so a text the login cannot see still says it.
+    return {
+      status: isUnknownDefinition(constraint.expression) ? "notRecorded" : "notAvailable",
+      rules: untrustedRules(state),
+    };
   }
-  return readStoredText(text, columns, entity, constraint.isEnabled);
+  return readStoredText(text, columns, entityKey(table), state);
 }

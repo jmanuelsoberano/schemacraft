@@ -87,6 +87,18 @@ export const spanishRuleMessages: RuleMessageCatalog = {
     "Una fila de {parent} puede estar referenciada por cualquier número de filas de la misma tabla, o por ninguna",
   "rule.fk.self.parentOne":
     "Una fila de {parent} puede estar referenciada como mucho por una fila de la misma tabla",
+  "rule.fk.parentManyDisabled.one":
+    "Una fila de {parent} puede estar referenciada por cualquier número de filas de {child}, o por ninguna, porque el índice {indexes} está deshabilitado",
+  "rule.fk.parentManyDisabled.other":
+    "Una fila de {parent} puede estar referenciada por cualquier número de filas de {child}, o por ninguna, porque los índices {indexes} están deshabilitados",
+  "rule.fk.self.parentManyDisabled.one":
+    "Una fila de {parent} puede estar referenciada por cualquier número de filas de la misma tabla, o por ninguna, porque el índice {indexes} está deshabilitado",
+  "rule.fk.self.parentManyDisabled.other":
+    "Una fila de {parent} puede estar referenciada por cualquier número de filas de la misma tabla, o por ninguna, porque los índices {indexes} están deshabilitados",
+  "rule.fk.parentFiltered":
+    "Una fila de {parent} puede estar referenciada como mucho por una de las filas de {child} que selecciona el filtro del índice único {index}",
+  "rule.fk.self.parentFiltered":
+    "Una fila de {parent} puede estar referenciada como mucho por una de las filas de la misma tabla que selecciona el filtro del índice único {index}",
   "rule.fk.delete.noAction":
     "Borrar una fila de {parent} se bloquea si, al terminar la sentencia, aún hay filas de {child} que la referencian",
   "rule.fk.self.delete.noAction":
@@ -137,6 +149,11 @@ export const spanishRuleMessages: RuleMessageCatalog = {
 
   "rule.whenEnabled": "Cuando se habilite:",
   "rule.whenEnabled.notRecorded": "Si la regla está habilitada (este archivo no lo registró):",
+  "rule.trust.notVerified":
+    "Las filas que ya hay en {table} pueden no cumplir esta regla: SQL Server la marca como no confiable",
+  "rule.whenWritten.one": "Cuando se inserta una fila o se modifica su {columns}:",
+  "rule.whenWritten.other":
+    "Cuando se inserta una fila o se modifica alguna de sus columnas {columns}:",
   "rule.value.now": "la fecha y hora del servidor al guardar el valor",
   "rule.value.utcNow": "la fecha y hora UTC al guardar el valor",
   "rule.value.referencedTable": "la tabla referenciada",
@@ -147,6 +164,8 @@ export const spanishRuleMessages: RuleMessageCatalog = {
     "Las comparaciones de texto siguen la intercalación de la columna, que puede no distinguir mayúsculas, acentos o algunos caracteres, y dos textos que solo difieren en los espacios finales cuentan como iguales.",
   "rule.note.derived":
     "SchemaCraft redacta estas reglas a partir de sus definiciones. SQL Server las comprueba al escribir los valores, así que las filas guardadas antes de existir una regla pueden no cumplirla.",
+  "rule.note.derivedRecorded":
+    "SchemaCraft redacta estas reglas a partir de sus definiciones. SQL Server las comprueba al escribir los valores.",
   "rule.sql.show": "Mostrar SQL",
   "rule.sql.hide": "Ocultar SQL",
   "rule.sql.copy": "Copiar SQL",

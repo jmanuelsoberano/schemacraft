@@ -12,7 +12,7 @@ import { InspectionProgressPanel } from "./InspectionProgressPanel";
 import { ReviewChangesPanel } from "./ReviewChangesPanel";
 import { canReadSchema, useConnectionStore } from "./connectionStore";
 import { describeOperationError } from "@/shared/errors/describeOperationError";
-import { countChanges, isUpToDate } from "./reviewChanges";
+import { hasObjectChanges, isUpToDate } from "./reviewChanges";
 
 /**
  * Connect to a SQL Server instance and read its schema, with progress and cancellation. The
@@ -46,10 +46,11 @@ export function ConnectionDialog() {
   const isApplying = phase === "applying";
   const isBusy = phase !== "idle";
   // A review with no schema change can still teach the project something: items it could not
-  // check, texts that became readable or another access verdict. Only a review with none of
-  // these is up to date and offers nothing to apply.
+  // check, texts that became readable, facts recorded for the first time or another access
+  // verdict. Only a review with none of these is up to date and offers nothing to apply; Rust
+  // decides both verdicts with the diff.
   const reviewIsEmpty = review !== null && isUpToDate(review.diff);
-  const reviewHasChanges = review !== null && countChanges(review.diff.summary) > 0;
+  const reviewHasChanges = review !== null && hasObjectChanges(review.diff);
 
   const title = isReviewing
     ? t("review.title", { database: review.snapshot.databaseName })

@@ -10,9 +10,11 @@ import {
   formatRuleText,
   ruleTextToString,
   sentence,
+  stateRules,
+  untrustedRules,
   whenPresentGroup,
 } from "./ruleText";
-import type { RuleNode, RuleText, RuleTranslator } from "./ruleText";
+import type { RuleNode, RuleState, RuleText, RuleTranslator } from "./ruleText";
 
 const en: RuleTranslator = createCatalogTranslator(messageCatalogs.en, "en");
 const es: RuleTranslator = createCatalogTranslator(messageCatalogs.es, "es");
@@ -184,6 +186,77 @@ describe("rule groups", () => {
     expect(notRecorded).toMatchObject({ group: { kind: "whenEnabled", isRecorded: false } });
     expect(say(notRecorded, en)).toBe("If enabled (this file did not record whether it is):");
     expect(say(notRecorded, es)).toBe("Si la regla está habilitada (este archivo no lo registró):");
+  });
+
+  it("says the rows already there may not follow an enabled rule SQL Server marks as not trusted", () => {
+    const rules = [sentence("rule.check.required", { column: STATUS })];
+    const always = [sentence("rule.fk.parentMany", {})];
+    const state = (overrides: Partial<RuleState>): RuleState => ({
+      rule: "check",
+      table: { schema: "sales", name: "Orders" },
+      isEnabled: true,
+      isTrusted: false,
+      ...overrides,
+    });
+
+    const [notice, group] = stateRules(state({}), rules, ["Status"]);
+    expect(say(notice, en)).toBe(
+      "Rows already in sales.Orders may not follow this rule: SQL Server marks it as not trusted",
+    );
+    expect(say(notice, es)).toBe(
+      "Las filas que ya hay en sales.Orders pueden no cumplir esta regla: SQL Server la marca como no confiable",
+    );
+    expect(notice?.kind === "sentence" && formatRuleText(notice.text, en)[1]).toEqual({
+      kind: "table",
+      key: "sales.Orders",
+      label: "sales.Orders",
+    });
+    // SQL Server checks an UPDATE only when it writes one of the rule's columns, so the heading
+    // names them, as chips of the rule's table.
+    expect(group).toMatchObject({
+      group: { kind: "whenWritten", rule: "check", columns: ["Status"] },
+      items: rules,
+    });
+    expect(say(group, en)).toBe("When a row is inserted or its Status is changed:");
+    expect(say(group, es)).toBe("Cuando se inserta una fila o se modifica su Status:");
+    expect(group?.kind === "group" && formatRuleText(group.heading, en)[1]).toEqual({
+      kind: "column",
+      entity: "sales.Orders",
+      name: "Status",
+    });
+    const [, pairGroup] = stateRules(state({ rule: "foreignKey" }), rules, ["A", "B"]);
+    expect(pairGroup).toMatchObject({
+      group: { kind: "whenWritten", rule: "foreignKey", columns: ["A", "B"] },
+    });
+    expect(say(pairGroup, en)).toBe("When a row is inserted or any of its A and B is changed:");
+    expect(say(pairGroup, es)).toBe(
+      "Cuando se inserta una fila o se modifica alguna de sus columnas A y B:",
+    );
+    // The sentences that hold for every row follow the group, outside it.
+    const withAlways = stateRules(state({}), rules, ["Status"], always);
+    expect(withAlways).toHaveLength(3);
+    expect(withAlways[1]).toMatchObject({ kind: "group", items: rules });
+    expect(withAlways[2]).toBe(always[0]);
+
+    // Trusted, or trust not recorded: as before. Disabled, never trusted: under "When enabled:",
+    // the sentences that hold for every row included.
+    expect(stateRules(state({ isTrusted: true }), rules, ["Status"])).toEqual(rules);
+    expect(stateRules(state({ isTrusted: null }), rules, ["Status"])).toEqual(rules);
+    expect(stateRules(state({ isTrusted: true }), rules, ["Status"], always)).toEqual([
+      ...rules,
+      ...always,
+    ]);
+    expect(stateRules(state({ isEnabled: false }), rules, ["Status"])).toEqual(
+      enabledRules(false, rules),
+    );
+    expect(stateRules(state({ isEnabled: false }), rules, ["Status"], always)).toEqual(
+      enabledRules(false, [...rules, ...always]),
+    );
+    expect(stateRules(state({ isEnabled: null, isTrusted: null }), rules, ["Status"])).toEqual(
+      enabledRules(null, rules),
+    );
+    expect(untrustedRules(state({ isEnabled: false }))).toEqual([]);
+    expect(untrustedRules(state({}))).toHaveLength(1);
   });
 });
 

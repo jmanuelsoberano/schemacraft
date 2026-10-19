@@ -138,6 +138,9 @@ function diff(partial: Partial<SchemaDiff> = {}): SchemaDiff {
     notChecked: [],
     nowAvailable: [],
     accessChanged: false,
+    captureChanges: [],
+    hasObjectChanges: false,
+    isUpToDate: true,
     ...partial,
   };
 }
@@ -320,6 +323,7 @@ describe("a login with partial access", () => {
         },
       ],
       accessChanged: true,
+      isUpToDate: false,
     });
     projectBackend.computeSchemaDiff.mockResolvedValue(notChecked);
 

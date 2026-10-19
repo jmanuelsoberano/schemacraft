@@ -369,8 +369,21 @@ it offers to apply, worded "Update project" when no object changed. Applying run
 not checked and lists it in `snapshot.carriedOver`.
 
 Since 1.2 a state recorded on one side only is never a change: an index or a primary key compares
-its enabled, filtered and included-column state only when both snapshots recorded it, and
-`access_changed` compares a coverage of code only when both captures judged it (ADR-042).
+its enabled, filtered and included-column state only when both snapshots recorded it, a `CHECK`
+and a foreign key compare their trust the same way (`ForeignKeyProperty::Trust`, also for a key
+whose referenced table became visible or invisible), and `access_changed` compares a coverage of
+code only when both captures judged it (ADR-042). A capture that records such a family of facts
+for the first time, as the first 1.2 refresh of a 1.1 project records the state of its indexes and
+constraints, says so in `SchemaDiff::capture_changes`, one line per family with a count
+(`indexAndConstraintStateRecorded`: the indexes, primary keys, `CHECK`s and foreign keys held by
+both snapshots whose state is now recorded), never as a change of each object. The one exception is
+an index aligned with a partitioned table: 1.1 read the partitioning column as its first key column,
+so the first 1.2 refresh reports that index as changed, once (ADR-039). The verdicts the review
+needs travel with the diff, computed in Rust: `hasObjectChanges` (the opposite of `is_empty`) and
+`isUpToDate`, which also requires no capture line. `reviewChanges.ts` reads them and never works
+them out again, so a fact the lists do not show cannot make the review say the project is up to
+date. A review with a capture line and no object change offers "Update project", and the panel lists
+the line under "Recorded for the first time".
 
 ### ADR-017: Preferences live in one Rust-owned file in the user's configuration directory
 
@@ -1205,6 +1218,71 @@ form per case. Should a version store a case differently, the file records that 
 the case beside the other, and the test checks each against its own version; a case is never
 skipped on a version.
 
+Since 1.2 the snapshot records whether an index or a primary key is enabled and whether an index is
+filtered (ADR-042), which lifts the known limitation of 1.1.0 described above. A disabled index
+enforces nothing, and a filtered unique index limits only the rows its filter selects.
+`foreignKeyChildCardinality` judges the primary key, the unique constraints and the unique indexes
+that lie within the key's columns: the primary key and a unique constraint hold unless they are
+recorded as disabled, and a unique index holds only when it is recorded as enabled and without a
+filter. The key is at most one when any of them holds; unknown when none holds but a unique index
+is filtered or its state was not recorded, so a filtered unique index never gives `atMostOne`; and
+many otherwise, every one of them disabled included. A disabled clustered index is the exception:
+SQL Server then takes no row in the table, keeps every foreign key on it disabled and refuses to
+enable one until the index is rebuilt, which makes it unique again, so a disabled clustered primary
+key, unique constraint or unique index holds and is not named among the disabled ones; the
+nonclustered indexes disabled along with it stay disabled after that rebuild and count as disabled.
+A project saved before 1.2 did not record the state, so its primary keys and unique constraints keep
+the 1.1 reading and its unique indexes stay unknown until a refresh records it: opening an old file
+changes no diagram, and the first refresh may change markers, which the review announces in one line
+(ADR-016). The sentence names the reason, with the index names drawn as code: a key that can be
+referenced by any number of rows because of a disabled index says "…, or by none, because the index
+UQ_X is disabled", and one that is unknown because of a filter says "A row in … can be referenced by
+at most one of the rows in … that the filter of the unique index UX_X selects", which claims nothing
+about the other rows; a state not recorded leaves the sentence out, as in 1.1. `relationEnds` calls
+the same function, so the canvas and every export follow: an enabled unique index without a filter
+now draws zero or one at the referencing end, and a disabled nonclustered unique constraint a crow's
+foot. Key columns come from `key_ordinal` greater than 0 and included columns from
+`is_included_column`, in `index_column_id` order, so the partitioning column SQL Server adds on its
+own to an aligned index, listed with neither, is no longer the first key column; memory-optimized
+hash indexes (type 7) are not read in 1.2.
+
+Since 1.2 the snapshot also records whether SQL Server trusts each `CHECK` and foreign key
+(`is_not_trusted`). An enabled rule it does not trust, after `WITH NOCHECK`, an enable without
+`WITH CHECK`, or because it is `NOT FOR REPLICATION`, which SQL Server never trusts even when it
+checked every row, first says "Rows already in {table} may not follow this rule: SQL Server marks it
+as not trusted", with no cause claimed, since several statements leave the same flag. Its sentences
+then sit under "When a row is inserted or its {columns} is changed:", naming the columns a `CHECK`
+reads or a key's referencing columns, because SQL Server checks an UPDATE only when it writes one of
+them, so a row that breaks the rule stays as it is while its other columns change. A key's sentences
+about the referenced table hold for every row and follow the group (`stateRules` in `ruleText.ts`,
+RuleNode parts like every sentence). A `CHECK` the reader cannot put into words keeps that first
+sentence above its SQL, and one whose text the login cannot see keeps it above the words for the
+missing text, since `is_not_trusted` needs no VIEW DEFINITION. A disabled rule, never trusted, reads
+under "When enabled:" as before, and a rule whose trust was not recorded reads as in 1.1. The note
+under a section with rules in words keeps its last clause, that rows saved before a rule existed may
+not follow it, only while the file has not recorded whether SQL Server trusts one of the section's
+rules; once trust is recorded it ends at "when values are written", because SQL Server verified a
+trusted rule against every row and an untrusted one says so itself, without a cause. The view-model
+badges such a rule "not trusted", a disabled key, index or constraint "disabled" and a filtered
+index "filtered", all in the neutral tone every badge but the key and link ones has, and gives an
+index with included columns an `INCLUDE (…)` line, in the Inspector and the viewer alike (ADR-038).
+`foreignKeyDefinitionSql` scripts an enabled key that is not trusted as
+`ALTER TABLE … WITH NOCHECK ADD CONSTRAINT …` with no `NOCHECK CONSTRAINT` statement after it, which
+recreates it enabled and not trusted; 1.2 does not read `NOT FOR REPLICATION`, so the statement
+leaves it out. The engine facts gain, on both versions: a key added `WITH NOCHECK` is enabled and
+not trusted, refuses a new row without a parent row and a write of the referencing column of the old
+one, which stays and takes changes to its other columns, and `WITH CHECK CHECK CONSTRAINT` refuses
+to trust it while that row is there; a `CHECK` enabled again without `WITH CHECK` is not trusted,
+checks every row inserted and every row whose columns it reads are written, leaves a row that breaks
+it in place when other columns change, and becomes trusted with `WITH CHECK CHECK CONSTRAINT` once
+the row that breaks it is gone; a `CHECK` and a key `NOT FOR REPLICATION` stay not trusted after
+`WITH CHECK CHECK CONSTRAINT`; disabling a clustered primary key disables the key of its table and
+its other indexes, the table takes no row, and the key cannot be enabled until the index is rebuilt,
+which leaves the other indexes disabled; the scripted statement recreates an enabled key that is not
+trusted; an enabled unique index without a filter keeps a referenced row to one referencing row; the
+filtered and the disabled unique indexes are reported as such; and the partitioning column of an
+aligned index is neither a key column nor an included one.
+
 ### ADR-040: A database that cannot be shared is measured by a probe its owner runs, and the probe returns numbers only
 
 Some decisions rest on databases the project cannot see: how much code a real schema holds, how
@@ -1482,9 +1560,13 @@ application.
 
 A field or a family recorded on one side only is never a change. Indexes and primary keys compare
 their name, key columns, kind and clustering always, and the new state fields only when both sides
-recorded them, and `access_changed` compares a code coverage only when both captures judged it, so
-refreshing a 1.1 project reports no index and no access as changed. Where a state was not
-recorded, the diagram reads as it did in 1.1.
+recorded them, `CHECK` constraints and foreign keys compare their trust the same way, and
+`access_changed` compares a code coverage only when both captures judged it, so refreshing a 1.1
+project reports no access as changed and no index as changed except one aligned with a partitioned
+table: 1.1 read its key columns with the partitioning column first, and that first refresh reports
+it once as changed, with the corrected key columns (ADR-039). It also reports one line saying that
+the state is recorded now (ADR-016). Where a state was not recorded, the diagram reads as it did in
+1.1 (ADR-039).
 
 Module texts travel inside the snapshot, over the IPC every command already uses. A refresh followed
 by a save moves the snapshot about seven times, which stays well under a second below 20 MB of

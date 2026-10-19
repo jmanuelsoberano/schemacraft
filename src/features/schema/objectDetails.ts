@@ -94,6 +94,8 @@ export interface KeyFacts {
   name: string;
   columns: readonly string[];
   isClustered: boolean;
+  /** `false` when its index is disabled; `null` when the file did not record it (before 1.2). */
+  isEnabled: boolean | null;
 }
 
 export interface IndexFacts {
@@ -101,6 +103,12 @@ export interface IndexFacts {
   columns: readonly string[];
   kind: IndexKind;
   isClustered: boolean;
+  /** `INCLUDE` columns in index order; `null` when the file did not record them. */
+  includedColumns: readonly string[] | null;
+  /** Whether it covers only the rows of a filter; `null` when the file did not record it. */
+  isFiltered: boolean | null;
+  /** `false` when it is disabled; `null` when the file did not record it. */
+  isEnabled: boolean | null;
 }
 
 export interface CheckFacts {
@@ -108,6 +116,11 @@ export interface CheckFacts {
   expression: FactText;
   /** `null` when the file did not record whether the constraint is enabled. */
   isEnabled: boolean | null;
+  /**
+   * `false` when SQL Server marks it as not trusted, so the rows already in the table may not
+   * follow it; `null` when the file did not record it.
+   */
+  isTrusted: boolean | null;
   /** The constraint in words, or why it is not: its text cannot be read or put into words. */
   reading: CheckReading;
 }
@@ -139,6 +152,11 @@ export interface RelationFacts {
   onDelete: ReferentialAction;
   onUpdate: ReferentialAction;
   isEnabled: boolean;
+  /**
+   * `false` when SQL Server marks it as not trusted, so the rows already in the referencing table
+   * may not follow it; `null` when the file did not record it.
+   */
+  isTrusted: boolean | null;
   /** The other table: the referenced one under "references", the referencing one under "referenced by". */
   target: RelationTarget;
   /** When the key was kept from an earlier read, the moment it was last read; `null` otherwise. */
@@ -267,7 +285,12 @@ function columnFacts(
 }
 
 function keyFacts(key: PrimaryKey): KeyFacts {
-  return { name: key.name, columns: key.columns, isClustered: key.isClustered };
+  return {
+    name: key.name,
+    columns: key.columns,
+    isClustered: key.isClustered,
+    isEnabled: key.isEnabled ?? null,
+  };
 }
 
 function indexFacts(index: Index): IndexFacts {
@@ -276,18 +299,17 @@ function indexFacts(index: Index): IndexFacts {
     columns: index.columns,
     kind: index.kind,
     isClustered: index.isClustered,
+    includedColumns: index.includedColumns ?? null,
+    isFiltered: index.isFiltered ?? null,
+    isEnabled: index.isEnabled ?? null,
   };
 }
 
 /**
- * A `CHECK` of the table `texts` belongs to, read against the table's columns. A text kept
+ * A `CHECK` of `table`, whose texts `texts` dates, read against the table's columns. A text kept
  * from an earlier read is read as well; its date says how far it is vouched for.
  */
-function checkFacts(
-  constraint: CheckConstraint,
-  columns: readonly Column[],
-  texts: TextMoments,
-): CheckFacts {
+function checkFacts(constraint: CheckConstraint, table: Table, texts: TextMoments): CheckFacts {
   return {
     name: constraint.name,
     expression: factText(
@@ -295,7 +317,8 @@ function checkFacts(
       textReadAt(texts, { kind: "checkConstraint", name: constraint.name }),
     ),
     isEnabled: constraint.isEnabled,
-    reading: readCheckConstraint(constraint, columns, texts.ownerKey),
+    isTrusted: constraint.isTrusted ?? null,
+    reading: readCheckConstraint(constraint, table.columns, table.name),
   };
 }
 
@@ -343,6 +366,7 @@ function relation(context: TableContext, key: ForeignKey, other: QualifiedName):
     onDelete: key.onDelete,
     onUpdate: key.onUpdate,
     isEnabled: key.isEnabled,
+    isTrusted: key.isTrusted ?? null,
     target: target(context, other),
     notCheckedSince:
       context.moments.get(
@@ -363,6 +387,7 @@ function relationToInvisibleTable(
     onDelete: key.onDelete,
     onUpdate: key.onUpdate,
     isEnabled: key.isEnabled,
+    isTrusted: key.isTrusted ?? null,
     target: { status: "notVisible" },
     notCheckedSince:
       context.moments.get(carriedFactId(context.key, { kind: "foreignKey", name: key.name })) ??
@@ -467,9 +492,7 @@ function describeTable(snapshot: SchemaSnapshot, table: Table, scope: DetailsSco
       },
       {
         kind: "checks",
-        items: table.checkConstraints.map((constraint) =>
-          checkFacts(constraint, table.columns, texts),
-        ),
+        items: table.checkConstraints.map((constraint) => checkFacts(constraint, table, texts)),
         completeness: ownCompleteness(context.objectReadAt),
       },
       {

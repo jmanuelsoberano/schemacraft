@@ -194,3 +194,10 @@
 .after {
   color: var(--color-text);
 }
+
+/* A family of facts recorded for the first time reads as words, not as an identifier. */
+.captureLabel {
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}

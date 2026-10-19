@@ -166,8 +166,9 @@ interface ConstraintListProps {
 }
 
 /**
- * Primary key, indexes and `CHECK`s: the name with its columns and badges, then for a `CHECK`
- * its rule in words, or the marked words for a text the capture could not read.
+ * Primary key, indexes and `CHECK`s: the name with its columns and badges, an index's `INCLUDE`
+ * line, then for a `CHECK` its rule in words, or the marked words for a text the capture could
+ * not read, under what is still known about it in words.
  */
 function ConstraintList({ section, onShowAccessReport }: ConstraintListProps) {
   return (
@@ -187,21 +188,31 @@ function ConstraintList({ section, onShowAccessReport }: ConstraintListProps) {
           </>
         );
         if (item.rule !== null) {
-          // A text kept from an earlier read is worded too; its date says how far it holds.
-          const hint = item.expression?.state === "notChecked" ? item.expression.hint : null;
+          // A text kept from an earlier read is worded too; its date says how far it holds. A
+          // text the capture could not read keeps its marked words under what is still known.
+          const { expression } = item;
+          const hint = expression?.state === "notChecked" ? expression.hint : null;
+          const footer =
+            hint !== null ? (
+              <div className={styles.hint}>{hint}</div>
+            ) : expression !== null &&
+              (expression.state === "notAvailable" || expression.state === "notRecorded") ? (
+              <div className={styles.subLine}>
+                <Value value={expression} onShowAccessReport={onShowAccessReport} />
+              </div>
+            ) : null;
           return (
-            <RuleItem
-              key={item.name}
-              rule={item.rule}
-              head={head}
-              link={null}
-              footer={hint === null ? null : <div className={styles.hint}>{hint}</div>}
-            />
+            <RuleItem key={item.name} rule={item.rule} head={head} link={null} footer={footer} />
           );
         }
         return (
           <li key={item.name} className={styles.item}>
             <div className={styles.itemHead}>{head}</div>
+            {item.include === null ? null : (
+              <div className={classNames(styles.subLine, styles.mono, styles.secondary)}>
+                {item.include}
+              </div>
+            )}
             {item.expression === null ? null : (
               <div className={styles.subLine}>
                 <Value value={item.expression} onShowAccessReport={onShowAccessReport} />

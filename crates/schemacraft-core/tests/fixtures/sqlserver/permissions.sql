@@ -68,6 +68,19 @@ CREATE TABLE audit.ChangeLog (
     ChangedAt datetime2(3) NOT NULL CONSTRAINT DF_ChangeLog_ChangedAt DEFAULT (sysutcdatetime())
 );
 GO
+-- Index and constraint state, which every login that sees the table reads: a filtered index, a
+-- disabled index with an included column, and a CHECK enabled again without checking the rows
+-- already there, so it is not trusted.
+CREATE INDEX IX_Orders_Open ON sales.Orders (CustomerId) WHERE Status = 'N';
+GO
+CREATE INDEX IX_OrderLines_Product ON sales.OrderLines (ProductId) INCLUDE (Quantity);
+GO
+ALTER INDEX IX_OrderLines_Product ON sales.OrderLines DISABLE;
+GO
+ALTER TABLE dbo.Products NOCHECK CONSTRAINT CK_Products_Price;
+GO
+ALTER TABLE dbo.Products CHECK CONSTRAINT CK_Products_Price;
+GO
 -- A legacy bound default: no row in sys.default_constraints, readable with OBJECT_DEFINITION.
 CREATE DEFAULT dbo.LegacyZero AS 0;
 GO

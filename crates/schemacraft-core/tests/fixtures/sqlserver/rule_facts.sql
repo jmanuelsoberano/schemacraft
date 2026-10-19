@@ -1,6 +1,7 @@
 -- Scratch tables for the engine behaviour that the rule reader's sentences rely on.
 -- Appended to the script generated from check_forms.json, after `USE SchemaCraftCheckForms`,
--- by tests/sqlserver_integration.rs; the tests add the rows themselves.
+-- by tests/sqlserver_integration.rs. The tests add the rows themselves, except the ones a
+-- constraint added or enabled again without checking must find already there.
 CREATE SCHEMA facts;
 GO
 -- CHECK semantics. Each test row sets one column and leaves the others NULL.
@@ -153,4 +154,70 @@ CREATE TABLE facts.Nodes (
     NodeId int NOT NULL CONSTRAINT PK_Nodes PRIMARY KEY,
     ParentNodeId int NULL CONSTRAINT FK_Nodes_Parent FOREIGN KEY REFERENCES facts.Nodes (NodeId)
 );
+GO
+-- A unique index that holds, enabled and without a filter, keeps a parent row to one child row.
+CREATE TABLE facts.UniqueIndexChildren (
+    ChildId int NOT NULL CONSTRAINT PK_UniqueIndexChildren PRIMARY KEY,
+    ParentCode char(2) NOT NULL CONSTRAINT FK_UniqueIndexChildren_Parents
+        FOREIGN KEY REFERENCES facts.Parents (Code)
+);
+GO
+CREATE UNIQUE INDEX UX_UniqueIndexChildren_ParentCode ON facts.UniqueIndexChildren (ParentCode);
+GO
+-- A key added WITH NOCHECK over a row without a parent row: enabled, not trusted. Note is a
+-- column outside the key, whose change the key does not check.
+CREATE TABLE facts.UntrustedChildren (
+    ChildId int NOT NULL CONSTRAINT PK_UntrustedChildren PRIMARY KEY,
+    ParentCode char(2) NOT NULL,
+    Note nvarchar(20) NULL
+);
+GO
+INSERT INTO facts.UntrustedChildren (ChildId, ParentCode) VALUES (1, 'ZZ');
+GO
+ALTER TABLE facts.UntrustedChildren WITH NOCHECK
+    ADD CONSTRAINT FK_UntrustedChildren_Parents FOREIGN KEY (ParentCode) REFERENCES facts.Parents (Code);
+GO
+-- A CHECK enabled again without WITH CHECK over a row that does not follow it: enabled, not
+-- trusted. Limit is trusted; the test takes it through the same states and back.
+CREATE TABLE facts.RecheckedValues (
+    ValueId int NOT NULL CONSTRAINT PK_RecheckedValues PRIMARY KEY,
+    Amount int NOT NULL CONSTRAINT CK_RecheckedValues_Amount CHECK (Amount > 0),
+    Quantity int NOT NULL CONSTRAINT CK_RecheckedValues_Limit CHECK (Quantity <= 10)
+);
+GO
+ALTER TABLE facts.RecheckedValues NOCHECK CONSTRAINT CK_RecheckedValues_Amount;
+GO
+INSERT INTO facts.RecheckedValues (ValueId, Amount, Quantity) VALUES (1, -1, 1);
+GO
+ALTER TABLE facts.RecheckedValues CHECK CONSTRAINT CK_RecheckedValues_Amount;
+GO
+-- A key and a CHECK NOT FOR REPLICATION, added WITH CHECK over rows that follow them: SQL Server
+-- never trusts them.
+CREATE TABLE facts.ReplicatedChildren (
+    ChildId int NOT NULL CONSTRAINT PK_ReplicatedChildren PRIMARY KEY,
+    ParentCode char(2) NOT NULL,
+    Amount int NOT NULL
+);
+GO
+ALTER TABLE facts.ReplicatedChildren WITH CHECK ADD CONSTRAINT FK_ReplicatedChildren_Parents
+    FOREIGN KEY (ParentCode) REFERENCES facts.Parents (Code) NOT FOR REPLICATION;
+ALTER TABLE facts.ReplicatedChildren WITH CHECK ADD CONSTRAINT CK_ReplicatedChildren_Amount
+    CHECK NOT FOR REPLICATION (Amount > 0);
+GO
+-- A table partitioned by year. An index aligned with it gets the partitioning column from SQL
+-- Server, which sys.index_columns lists with key_ordinal 0 and not as an included column.
+CREATE PARTITION FUNCTION PF_FactsYears (int) AS RANGE RIGHT FOR VALUES (2020, 2025);
+GO
+CREATE PARTITION SCHEME PS_FactsYears AS PARTITION PF_FactsYears ALL TO ([PRIMARY]);
+GO
+CREATE TABLE facts.PartitionedEvents (
+    EventId int NOT NULL,
+    EventYear int NOT NULL,
+    Label varchar(20) NOT NULL,
+    Note varchar(20) NULL,
+    CONSTRAINT PK_PartitionedEvents PRIMARY KEY CLUSTERED (EventId, EventYear)
+) ON PS_FactsYears (EventYear);
+GO
+CREATE INDEX IX_PartitionedEvents_Label ON facts.PartitionedEvents (Label) INCLUDE (Note)
+    ON PS_FactsYears (EventYear);
 GO

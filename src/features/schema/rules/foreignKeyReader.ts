@@ -13,8 +13,8 @@ import type { RuleMessageKey, RulePluralBase } from "@/shared/i18n/messages/rule
 import { definitionText } from "../definition";
 import { entityKey } from "../entities";
 import { quoteIdentifier } from "../sqlIdentifiers";
-import { countedSentence, enabledRules, sentence } from "./ruleText";
-import type { RuleArgument, RuleArguments, RuleNode, RuleText } from "./ruleText";
+import { countedSentence, sentence, stateRules } from "./ruleText";
+import type { RuleArgument, RuleArguments, RuleNode, RuleState, RuleText } from "./ruleText";
 
 /**
  * Puts a foreign key into words: which rows belong to which, how many referencing rows one
@@ -22,10 +22,13 @@ import type { RuleArgument, RuleArguments, RuleNode, RuleText } from "./ruleText
  * named as tables ("each row in sales.Orders"), never turned into nouns, so every sentence
  * reads right in both languages whatever the tables are called. Every claim is one SQL Server
  * makes good on when values are written, as far as the snapshot can tell (see
- * {@link ChildCardinality} for what it does not record), and the integration tests pin the
- * engine facts the sentences rest on: a disabled key checks nothing, a row with a NULL in any
- * column of the key is not checked, NO ACTION is checked once the statement has run, an
- * identity column cannot be updated, and SET DEFAULT falls back to NULL.
+ * {@link ChildCardinality} for what a file saved before 1.2 does not record), and the
+ * integration tests pin the engine facts the sentences rest on: a disabled key checks nothing, a
+ * key added WITH NOCHECK still checks every row inserted after and every row whose referencing
+ * columns are written, a row with a NULL in any column of the key is not checked, NO ACTION is
+ * checked once the statement has run, an identity column cannot be updated, SET DEFAULT falls
+ * back to NULL, and a disabled nonclustered or filtered unique index does not keep a referenced
+ * row to one referencing row.
  */
 
 /**
@@ -36,21 +39,49 @@ import type { RuleArgument, RuleArguments, RuleNode, RuleText } from "./ruleText
 export type ForeignKeyOptionality = "required" | "optional" | "unknown";
 
 /**
- * How many referencing rows one referenced row can have: `atMostOne` when the primary key or a
- * unique constraint of the referencing table lies within the key's columns, `unknown` when only
- * a unique index does (the snapshot does not record whether an index is filtered, and a
- * filtered one allows several), `many` otherwise. The snapshot does not record whether an
- * index is disabled either, so a unique constraint or a nonclustered primary key whose index
- * is disabled, which no longer limits anything, still gives `atMostOne` until index state is
- * captured.
+ * How many referencing rows one referenced row can have, judged from the primary key, the unique
+ * constraints and the unique indexes of the referencing table that lie within the key's columns:
+ *
+ * - `atMostOne` when one of them holds: the primary key or a unique constraint not recorded as
+ *   disabled, a unique index recorded as enabled and without a filter, or a disabled clustered
+ *   one of any of them, since SQL Server then keeps every key of its table disabled until the
+ *   index is rebuilt, which makes it unique again;
+ * - `unknown` when none holds but a unique index has a filter, which limits only the rows it
+ *   selects, or a state a file saved before 1.2 did not record;
+ * - `many` otherwise, every one of them disabled included: a disabled nonclustered index limits
+ *   nothing.
+ *
+ * A primary key or a unique constraint whose state was not recorded keeps the reading of 1.1,
+ * `atMostOne`, until a refresh records it, while a unique index whose state was not recorded
+ * stays `unknown`.
  */
 export type ChildCardinality = "many" | "atMostOne" | "unknown";
+
+/**
+ * The cardinality of a key with the indexes behind it that do not hold: the disabled ones, which
+ * make it `many` when no other holds, and the filtered unique indexes, which make it `unknown`.
+ */
+export interface ChildCardinalityReading {
+  cardinality: ChildCardinality;
+  /**
+   * Nonclustered primary key, unique constraints and unique indexes within the key that are
+   * disabled. A disabled clustered one holds and is not named.
+   */
+  disabled: readonly string[];
+  /** Enabled unique indexes within the key that have a filter. */
+  filtered: readonly string[];
+}
 
 export interface ForeignKeyExplanation {
   optionality: ForeignKeyOptionality;
   /** `null` for a key to a table the login cannot see, whose referenced side is unknown. */
   childCardinality: ChildCardinality | null;
-  /** The sentences in order, under "When enabled:" for a disabled key. */
+  /**
+   * The sentences in order: under "When enabled:" for a disabled key, and, for an enabled key
+   * SQL Server marks as not trusted, after the sentence that says so, the one about the
+   * referencing rows under the heading for the rows inserted, or whose referencing columns are
+   * changed, from now on, and the ones about the referenced table after it.
+   */
   rules: readonly RuleNode[];
   /**
    * The ON DELETE sentence alone, the one fact a one-line label has room for. On a disabled
@@ -124,34 +155,85 @@ export function foreignKeyOptionality(
   return columns.some((column) => column?.isNullable === true) ? "optional" : "required";
 }
 
-/** How many rows of `referencingTable` one referenced row can have through `key`. */
-export function foreignKeyChildCardinality(
+/** Whether a unique index or key behind a key holds, as far as the snapshot recorded its state. */
+type Enforcement = "holds" | "disabled" | "filtered" | "notRecorded";
+
+/**
+ * Whether `index` keeps rows unique. A primary key or a unique constraint not recorded as
+ * disabled holds, as 1.1 read every one of them; a unique index holds only when it is recorded
+ * as enabled and without a filter; and a disabled one of any of them holds only when it is
+ * clustered.
+ */
+function enforcement(
+  index: { isEnabled?: boolean; isFiltered?: boolean; isClustered: boolean },
+  isConstraint: boolean,
+): Enforcement {
+  if (index.isEnabled === false) {
+    // A disabled clustered index takes no row, and SQL Server keeps every foreign key of its
+    // table disabled, refusing to enable one, until the index is rebuilt, which makes it unique
+    // again: by the time the key can be enabled, the index holds.
+    return index.isClustered ? "holds" : "disabled";
+  }
+  if (index.isFiltered === true) {
+    return "filtered";
+  }
+  if (isConstraint) {
+    return "holds";
+  }
+  return index.isEnabled === true && index.isFiltered === false ? "holds" : "notRecorded";
+}
+
+/** How many rows of `referencingTable` one referenced row can have through `key`, and why. */
+export function foreignKeyChildCardinalityReading(
   referencingTable: Table | undefined,
   key: AnyForeignKey,
-): ChildCardinality {
+): ChildCardinalityReading {
   if (referencingTable === undefined) {
-    return "unknown";
+    return { cardinality: "unknown", disabled: [], filtered: [] };
   }
   const keyColumns = new Set(referencingColumnNames(key));
   const within = (columns: readonly string[]) =>
     columns.length > 0 && columns.every((column) => keyColumns.has(column));
   const { primaryKey, indexes } = referencingTable;
-  if (
-    (primaryKey !== null && within(primaryKey.columns)) ||
-    indexes.some((index) => index.kind === "uniqueConstraint" && within(index.columns))
-  ) {
-    return "atMostOne";
+  const candidates = [
+    ...(primaryKey !== null && within(primaryKey.columns)
+      ? [{ name: primaryKey.name, state: enforcement(primaryKey, true) }]
+      : []),
+    ...indexes
+      .filter((index) => index.kind !== "nonUnique" && within(index.columns))
+      .map((index) => ({
+        name: index.name,
+        state: enforcement(index, index.kind === "uniqueConstraint"),
+      })),
+  ];
+  const named = (state: Enforcement) =>
+    candidates.filter((candidate) => candidate.state === state).map((candidate) => candidate.name);
+  const disabled = named("disabled");
+  const filtered = named("filtered");
+  if (candidates.some((candidate) => candidate.state === "holds")) {
+    return { cardinality: "atMostOne", disabled, filtered };
   }
-  return indexes.some((index) => index.kind === "uniqueIndex" && within(index.columns))
-    ? "unknown"
-    : "many";
+  const isUnknown = candidates.some(
+    (candidate) => candidate.state === "filtered" || candidate.state === "notRecorded",
+  );
+  return { cardinality: isUnknown ? "unknown" : "many", disabled, filtered };
+}
+
+/** How many rows of `referencingTable` one referenced row can have through `key`. */
+export function foreignKeyChildCardinality(
+  referencingTable: Table | undefined,
+  key: AnyForeignKey,
+): ChildCardinality {
+  return foreignKeyChildCardinalityReading(referencingTable, key).cardinality;
 }
 
 /**
  * The key as an `ALTER TABLE … ADD CONSTRAINT` statement, scripted from the catalog: ON DELETE
  * and ON UPDATE only when they are not NO ACTION. A disabled key is added `WITH NOCHECK`, as
- * the rows it let in may not follow it, and then disabled with a NOCHECK statement. Names are
- * bracketed with closing brackets doubled.
+ * the rows it let in may not follow it, and then disabled with a NOCHECK statement. An enabled
+ * key SQL Server marks as not trusted is added `WITH NOCHECK` and left enabled, which recreates
+ * it enabled and not trusted. 1.2 does not record NOT FOR REPLICATION, so a key that has it is
+ * scripted without it. Names are bracketed with closing brackets doubled.
  */
 export function foreignKeyDefinitionSql(key: ForeignKey): string {
   const table = (name: QualifiedName) =>
@@ -159,7 +241,7 @@ export function foreignKeyDefinitionSql(key: ForeignKey): string {
   const list = (names: readonly string[]) => names.map(quoteIdentifier).join(", ");
   const referencing = list(key.columnPairs.map((pair) => pair.referencingColumn));
   const referenced = list(key.columnPairs.map((pair) => pair.referencedColumn));
-  const check = key.isEnabled ? "" : " WITH NOCHECK";
+  const check = key.isEnabled && key.isTrusted !== false ? "" : " WITH NOCHECK";
   const lines = [
     `ALTER TABLE ${table(key.referencingTable)}${check} ADD CONSTRAINT ${quoteIdentifier(key.name)}`,
     `  FOREIGN KEY (${referencing}) REFERENCES ${table(key.referencedTable)} (${referenced})`,
@@ -354,18 +436,45 @@ function belongsTo(
   }
 }
 
-/** "A row in … can be referenced by …", left out when the cardinality is unknown. */
-function parentSide(sides: Sides, cardinality: ChildCardinality): RuleNode[] {
+/**
+ * "A row in … can be referenced by …": by any number, naming the disabled indexes when they are
+ * why; by at most one; or, when no index holds but a unique index has a filter, by at most one of
+ * the rows each filter selects, which says nothing of the other rows. Left out when the
+ * cardinality is unknown for a state the file did not record.
+ */
+function parentSide(sides: Sides, reading: ChildCardinalityReading): RuleNode[] {
+  const { cardinality, disabled, filtered } = reading;
   switch (cardinality) {
     case "many":
-      return [
-        sentence(sides.isSelf ? "rule.fk.self.parentMany" : "rule.fk.parentMany", args(sides)),
-      ];
+      return disabled.length === 0
+        ? [sentence(sides.isSelf ? "rule.fk.self.parentMany" : "rule.fk.parentMany", args(sides))]
+        : [
+            countedSentence(
+              sides.isSelf ? "rule.fk.self.parentManyDisabled" : "rule.fk.parentManyDisabled",
+              disabled.length,
+              args(sides, { indexes: { kind: "names", names: disabled, join: "and" } }),
+            ),
+          ];
     case "atMostOne":
       return [sentence(sides.isSelf ? "rule.fk.self.parentOne" : "rule.fk.parentOne", args(sides))];
     case "unknown":
-      return [];
+      return filtered.map((name) =>
+        sentence(
+          sides.isSelf ? "rule.fk.self.parentFiltered" : "rule.fk.parentFiltered",
+          args(sides, { index: { kind: "names", names: [name], join: "and" } }),
+        ),
+      );
   }
+}
+
+/** What SQL Server enforces of `key`, for its sentences to say. */
+function keyState(key: AnyForeignKey): RuleState {
+  return {
+    rule: "foreignKey",
+    table: key.referencingTable,
+    isEnabled: key.isEnabled,
+    isTrusted: key.isTrusted ?? null,
+  };
 }
 
 /** The text of a node the sentence builders made, which is never a group. */
@@ -406,20 +515,24 @@ export function explainForeignKey(
     defaults: defaultsState(scope, childTable, referencing),
   };
   const optionality = foreignKeyOptionality(childTable?.columns ?? [], key);
-  const childCardinality = foreignKeyChildCardinality(childTable, key);
+  const cardinality = foreignKeyChildCardinalityReading(childTable, key);
   const onDelete = deleteSentence(sides, key.onDelete);
-  const rules = [
-    belongsTo(
-      sides,
-      optionality,
-      nullableColumns(childTable, referencing),
-      childEntity,
-      isSelf ? "self" : "plain",
-    ),
-    ...parentSide(sides, childCardinality),
-    onDelete,
-    ...updateSentences(sides, key.onUpdate),
-  ];
+  // Only the referencing rows depend on trust; what a referenced row allows and what deleting or
+  // changing one does hold for every row.
+  const rules = stateRules(
+    keyState(key),
+    [
+      belongsTo(
+        sides,
+        optionality,
+        nullableColumns(childTable, referencing),
+        childEntity,
+        isSelf ? "self" : "plain",
+      ),
+    ],
+    referencing,
+    [...parentSide(sides, cardinality), onDelete, ...updateSentences(sides, key.onUpdate)],
+  );
   const columns = new Map<string, readonly string[]>([[childEntity, referencing]]);
   columns.set(
     parentEntity,
@@ -429,8 +542,8 @@ export function explainForeignKey(
   );
   return {
     optionality,
-    childCardinality,
-    rules: enabledRules(key.isEnabled, rules),
+    childCardinality: cardinality.cardinality,
+    rules,
     deleteRule: sentenceText(onDelete),
     columns,
     sql: foreignKeyDefinitionSql(key),
@@ -461,21 +574,24 @@ export function explainForeignKeyToInvisibleTable(
   };
   const optionality = foreignKeyOptionality(childTable?.columns ?? [], key);
   const onDelete = deleteSentence(sides, key.onDelete);
-  const rules = [
-    belongsTo(
-      sides,
-      optionality,
-      nullableColumns(childTable, key.columns),
-      childEntity,
-      "invisible",
-    ),
-    onDelete,
-    ...updateSentences(sides, key.onUpdate),
-  ];
+  const rules = stateRules(
+    keyState(key),
+    [
+      belongsTo(
+        sides,
+        optionality,
+        nullableColumns(childTable, key.columns),
+        childEntity,
+        "invisible",
+      ),
+    ],
+    key.columns,
+    [onDelete, ...updateSentences(sides, key.onUpdate)],
+  );
   return {
     optionality,
     childCardinality: null,
-    rules: enabledRules(key.isEnabled, rules),
+    rules,
     deleteRule: sentenceText(onDelete),
     columns: new Map([[childEntity, key.columns]]),
     sql: null,

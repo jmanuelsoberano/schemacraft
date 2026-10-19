@@ -6,8 +6,9 @@
  *
  * The samples cover the ways a project opens: `northwind.scraft` was read with full access,
  * `northwind-reporting.scraft` by a login that sees part of the database, `northwind-1.0.scraft`
- * is a format 1 file upgraded on open, and `northwind-next.scraft` was written by a newer
- * version, so it opens read-only and carries fields this version does not know.
+ * is a format 1 file upgraded on open, `northwind-1.1.scraft` a format 2 file saved without the
+ * state of indexes and constraints, and `northwind-next.scraft` was written by a newer version,
+ * so it opens read-only and carries fields this version does not know.
  *
  * A refresh keeps what the fresh capture could not check, as the Rust side does, and the review
  * reports it. When the verdict on access changed, another login read the same database, so the
@@ -37,6 +38,7 @@ import type {
 import { OperationError } from "./operationError";
 import {
   accessChanged,
+  captureChanges,
   compareKeys,
   compareNames,
   factsNowAvailable,
@@ -97,12 +99,54 @@ function sampleProject(snapshot: SchemaSnapshot, connection = LOCAL_CONNECTION):
 }
 
 /**
+ * The snapshot as a version before 1.2 saved it: without whether indexes and primary keys are
+ * enabled or filtered, their included columns, or whether constraints are trusted.
+ */
+function withoutRecordedState(snapshot: SchemaSnapshot): SchemaSnapshot {
+  const table = (source: Table): Table => ({
+    ...source,
+    primaryKey:
+      source.primaryKey === null
+        ? null
+        : {
+            name: source.primaryKey.name,
+            columns: source.primaryKey.columns,
+            isClustered: source.primaryKey.isClustered,
+          },
+    indexes: source.indexes.map(({ name, columns, kind, isClustered }) => ({
+      name,
+      columns,
+      kind,
+      isClustered,
+    })),
+    checkConstraints: source.checkConstraints.map(({ name, expression, isEnabled }) => ({
+      name,
+      expression,
+      isEnabled,
+    })),
+  });
+  const withoutTrust = <Key extends { isTrusted?: boolean }>(key: Key): Key => {
+    const copy = { ...key };
+    delete copy.isTrusted;
+    return copy;
+  };
+  const keys = snapshot.foreignKeysToInvisibleTables?.map(withoutTrust);
+  return {
+    ...snapshot,
+    tables: snapshot.tables.map(table),
+    foreignKeys: snapshot.foreignKeys.map(withoutTrust),
+    ...(keys === undefined ? {} : { foreignKeysToInvisibleTables: keys }),
+  };
+}
+
+/**
  * What reading a SchemaCraft 1.0 file gives, for a capture whose login could not read the
  * texts of the sales schema: 1.0 saved those `CHECK` texts empty and those defaults as absent,
- * so the upgrade marks both not recorded. No access profile and no `CHECK` state were saved.
+ * so the upgrade marks both not recorded. No access profile, no `CHECK` state and no state of
+ * an index or a constraint were saved.
  */
 function upgradedFormatOneSnapshot(): SchemaSnapshot {
-  const snapshot = previewSnapshot("Northwind");
+  const snapshot = withoutRecordedState(previewSnapshot("Northwind"));
   delete snapshot.access;
   const upgraded = (table: Table): Table =>
     table.name.schema === "sales"
@@ -191,6 +235,16 @@ const SAMPLES = new Map<string, () => OpenedProject>([
     }),
   ],
   [
+    "C:\\Projects\\northwind-1.1.scraft",
+    () => ({
+      project: {
+        ...sampleProject(withoutRecordedState(previewSnapshot("Northwind"))),
+        savedWith: "SchemaCraft 1.1.0",
+      },
+      isReadOnly: false,
+    }),
+  ],
+  [
     "C:\\Projects\\northwind-next.scraft",
     () => ({ project: newerFormatProject(), isReadOnly: true }),
   ],
@@ -214,8 +268,19 @@ function column(name: string, typeName: string, isNullable = false) {
   };
 }
 
-/** The schema changes of a diff, without what the fresh capture could or could not check. */
-type SchemaChanges = Omit<SchemaDiff, "notChecked" | "nowAvailable" | "accessChanged">;
+/**
+ * The schema changes of a diff, without what the fresh capture could or could not check or
+ * recorded for the first time, and without the verdicts drawn from all of it.
+ */
+type SchemaChanges = Omit<
+  SchemaDiff,
+  | "notChecked"
+  | "nowAvailable"
+  | "accessChanged"
+  | "captureChanges"
+  | "hasObjectChanges"
+  | "isUpToDate"
+>;
 
 function countsOf(changes: readonly { kind: ChangeKind }[]): ChangeCounts {
   const count = (kind: ChangeKind) => changes.filter((change) => change.kind === kind).length;
@@ -261,12 +326,36 @@ function fabricatedChanges(current: SchemaSnapshot): SchemaChanges {
       primaryKey: null,
       indexes: [
         {
+          kind: "changed",
+          before: {
+            name: "IX_Orders_CustomerId",
+            columns: ["CustomerId"],
+            kind: "nonUnique",
+            isClustered: false,
+            includedColumns: ["PlacedAt"],
+            isFiltered: false,
+            isEnabled: true,
+          },
+          after: {
+            name: "IX_Orders_CustomerId",
+            columns: ["CustomerId"],
+            kind: "nonUnique",
+            isClustered: false,
+            includedColumns: ["PlacedAt"],
+            isFiltered: false,
+            isEnabled: false,
+          },
+        },
+        {
           kind: "added",
           index: {
             name: "IX_Orders_PlacedAt",
             columns: ["PlacedAt"],
             kind: "nonUnique",
             isClustered: false,
+            includedColumns: [],
+            isFiltered: false,
+            isEnabled: true,
           },
         },
       ],
@@ -465,11 +554,33 @@ export const previewProjectBackend: ProjectBackend = {
     await wait(300);
     const merged = withUncheckedFacts(current, previous);
     const changedAccess = accessChanged(previous, merged);
+    const recorded = captureChanges(previous, merged);
+    // A project saved before 1.2 refreshed by the same login: nothing changed but the state now
+    // recorded, which the review reports as one line.
+    const changes =
+      changedAccess || recorded.length > 0
+        ? visibilityChanges(previous, merged)
+        : fabricatedChanges(merged);
+    const notChecked = merged.carriedOver ?? [];
+    const nowAvailable = factsNowAvailable(previous, merged);
+    const hasObjectChanges =
+      changes.tables.length > 0 ||
+      changes.views.length > 0 ||
+      changes.foreignKeys.length > 0 ||
+      changes.foreignKeysToInvisibleTables.length > 0;
     return {
-      ...(changedAccess ? visibilityChanges(previous, merged) : fabricatedChanges(merged)),
-      notChecked: merged.carriedOver ?? [],
-      nowAvailable: factsNowAvailable(previous, merged),
+      ...changes,
+      notChecked,
+      nowAvailable,
       accessChanged: changedAccess,
+      captureChanges: recorded,
+      hasObjectChanges,
+      isUpToDate:
+        !hasObjectChanges &&
+        notChecked.length === 0 &&
+        nowAvailable.length === 0 &&
+        !changedAccess &&
+        recorded.length === 0,
     };
   },
 

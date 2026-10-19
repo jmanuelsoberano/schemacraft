@@ -10,12 +10,14 @@ import type {
   AccessProbe,
   AccessProfile,
   AvailableFact,
+  CaptureChange,
   CaptureScope,
   CarriedFact,
   Completeness,
   Definition,
   ForeignKey,
   ForeignKeyToInvisibleTable,
+  Index,
   QualifiedName,
   SchemaSnapshot,
   SnapshotFact,
@@ -359,11 +361,80 @@ export function keysWhoseTargetBecameVisible(
               invisible.columns.join("\u0000") &&
             key.onDelete === invisible.onDelete &&
             key.onUpdate === invisible.onUpdate &&
-            key.isEnabled === invisible.isEnabled,
+            key.isEnabled === invisible.isEnabled &&
+            !recordedStateDiffers(key.isTrusted, invisible.isTrusted),
         ),
       )
       .map(keyIdentity),
   );
+}
+
+/** Whether both sides recorded a state and it differs; one recorded on one side is no change. */
+function recordedStateDiffers<T>(before: T | undefined, after: T | undefined): boolean {
+  return before !== undefined && after !== undefined && before !== after;
+}
+
+/** Whether a capture recorded the state of `index`, as every 1.2 capture does. */
+function indexStateRecorded(index: Index): boolean {
+  return (
+    index.isEnabled !== undefined ||
+    index.isFiltered !== undefined ||
+    index.includedColumns !== undefined
+  );
+}
+
+function newlyRecordedInTable(previous: Table, current: Table): number {
+  const newly = (before: boolean, after: boolean) => (!before && after ? 1 : 0);
+  const primaryKey =
+    previous.primaryKey !== null && current.primaryKey !== null
+      ? newly(
+          previous.primaryKey.isEnabled !== undefined,
+          current.primaryKey.isEnabled !== undefined,
+        )
+      : 0;
+  const indexes = current.indexes.reduce((total, index) => {
+    const saved = previous.indexes.find((candidate) => candidate.name === index.name);
+    return (
+      total +
+      (saved === undefined ? 0 : newly(indexStateRecorded(saved), indexStateRecorded(index)))
+    );
+  }, 0);
+  const checks = current.checkConstraints.reduce((total, constraint) => {
+    const saved = previous.checkConstraints.find((candidate) => candidate.name === constraint.name);
+    return (
+      total +
+      (saved === undefined
+        ? 0
+        : newly(saved.isTrusted !== undefined, constraint.isTrusted !== undefined))
+    );
+  }, 0);
+  return primaryKey + indexes + checks;
+}
+
+/**
+ * The families of facts `merged` records for objects `previous` holds without them, as Rust
+ * `capture_changes` reports them: the state of indexes, keys and constraints next to a project
+ * saved before 1.2.
+ */
+export function captureChanges(previous: SchemaSnapshot, merged: SchemaSnapshot): CaptureChange[] {
+  const savedTables = new Map(previous.tables.map((table) => [nameKey(table.name), table]));
+  const inTables = merged.tables.reduce((total, table) => {
+    const saved = savedTables.get(nameKey(table.name));
+    return total + (saved === undefined ? 0 : newlyRecordedInTable(saved, table));
+  }, 0);
+  const keys = (snapshot: SchemaSnapshot) => [
+    ...snapshot.foreignKeys,
+    ...(snapshot.foreignKeysToInvisibleTables ?? []),
+  ];
+  const savedTrust = new Map(keys(previous).map((key) => [keyIdentity(key), key.isTrusted]));
+  const inKeys = keys(merged).filter(
+    (key) =>
+      savedTrust.has(keyIdentity(key)) &&
+      savedTrust.get(keyIdentity(key)) === undefined &&
+      key.isTrusted !== undefined,
+  ).length;
+  const count = inTables + inKeys;
+  return count === 0 ? [] : [{ kind: "indexAndConstraintStateRecorded", count }];
 }
 
 function becameReadable(before: Definition | null | undefined, after: Definition | null) {

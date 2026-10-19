@@ -3,4 +3,4 @@
 /**
  * Part of a foreign key definition that can change.
  */
-export type ForeignKeyProperty = "referencedTable" | "columns" | "onDelete" | "onUpdate" | "enabled";
+export type ForeignKeyProperty = "referencedTable" | "columns" | "onDelete" | "onUpdate" | "enabled" | "trust";

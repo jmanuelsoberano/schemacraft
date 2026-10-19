@@ -657,8 +657,9 @@ class Viewer {
   }
 
   /**
-   * Primary key, indexes and `CHECK`s: the name with its columns and badges, then for a `CHECK`
-   * its rule in words with the SQL behind a disclosure, or the marked words for a missing text.
+   * Primary key, indexes and `CHECK`s: the name with its columns and badges, an index's `INCLUDE`
+   * line, then for a `CHECK` its rule in words with the SQL behind a disclosure, or the marked
+   * words for a missing text, under what is still known about it in words.
    */
   private constraintList(section: ConstraintSectionView): HTMLElement {
     return h(
@@ -675,16 +676,29 @@ class Viewer {
           ...item.badges.map(badgeElement),
         );
         if (item.rule === null) {
-          return h("li", {}, head, item.expression === null ? null : valueElement(item.expression));
+          return h(
+            "li",
+            {},
+            head,
+            item.include === null ? null : h("div", { class: "sc-value sc-mono" }, item.include),
+            item.expression === null ? null : valueElement(item.expression),
+          );
         }
-        // A text kept from an earlier read is worded too; its date says how far it holds.
-        const hint = item.expression?.state === "notChecked" ? item.expression.hint : null;
+        // A text kept from an earlier read is worded too; its date says how far it holds. A text
+        // the capture could not read keeps its marked words under what is still known.
+        const { expression } = item;
+        const hint = expression?.state === "notChecked" ? expression.hint : null;
+        const missing =
+          expression !== null &&
+          (expression.state === "notAvailable" || expression.state === "notRecorded")
+            ? valueElement(expression)
+            : null;
         const element = h(
           "li",
           { class: "sc-rule" },
           head,
           ruleBody(item.rule, null),
-          hint === null ? null : h("div", { class: "sc-hint" }, hint),
+          hint === null ? missing : h("div", { class: "sc-hint" }, hint),
           ruleSql(item.rule, this.t),
         );
         this.bindRule(element, item.rule.targets);

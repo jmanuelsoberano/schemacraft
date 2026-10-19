@@ -349,6 +349,8 @@ export const spanishMessages: MessageCatalog = {
     "Actualiza el proyecto para registrar esta lectura; lo que no se pudo comprobar conserva su valor guardado.",
   "review.noChanges.accessChanged":
     "Actualiza el proyecto para registrar lo que ve este inicio de sesión.",
+  "review.noChanges.captureRecorded":
+    "Esta lectura registra detalles que el proyecto aún no tenía. Actualiza el proyecto para conservarlos.",
   "review.notChecked.title": "No se pudo comprobar todo",
   "review.notChecked.body.one":
     "{count} elemento no es visible para este inicio de sesión, así que no se comprobó y conserva su valor guardado.",
@@ -356,6 +358,10 @@ export const spanishMessages: MessageCatalog = {
     "{count} elementos no son visibles para este inicio de sesión, así que no se comprobaron y conservan sus valores guardados.",
   "review.section.notChecked": "Sin comprobar",
   "review.section.nowAvailable": "Ahora disponible",
+  "review.section.captureRecorded": "Registrado por primera vez",
+  "review.capture.indexAndConstraintState": "Estado de índices y restricciones",
+  "review.capture.objects.one": "{count} índice, clave o restricción",
+  "review.capture.objects.other": "{count} índices, claves y restricciones",
   "review.accessChanged": "Esta actualización también registra lo que ve este inicio de sesión.",
   "review.foreignKey.invisibleTable":
     "{table} ({columns}) → una tabla no visible para este inicio de sesión",
@@ -377,6 +383,7 @@ export const spanishMessages: MessageCatalog = {
   "review.index": "Índice",
   "review.checkConstraint": "Check",
   "review.checkConstraint.disabled": "{name} {expression} (deshabilitada)",
+  "review.checkConstraint.untrusted": "{name} {expression} (no confiable)",
   "review.property.dataType": "Tipo",
   "review.property.nullability": "Nulable",
   "review.property.defaultExpression": "Valor por defecto",
@@ -387,6 +394,7 @@ export const spanishMessages: MessageCatalog = {
   "review.property.onDelete": "Al eliminar",
   "review.property.onUpdate": "Al actualizar",
   "review.property.enabled": "Habilitada",
+  "review.property.trust": "Confiable",
   "review.value.yes": "sí",
   "review.value.no": "no",
   "review.value.none": "ninguno",
@@ -438,6 +446,10 @@ export const spanishMessages: MessageCatalog = {
   "details.badge.identity": "identidad",
   "details.badge.computed": "calculada",
   "details.badge.disabled": "deshabilitada",
+  "details.badge.indexDisabled": "deshabilitado",
+  "details.badge.filtered": "filtrado",
+  "details.badge.untrusted": "no confiable",
+  "details.include": "INCLUDE ({columns})",
   "details.default": "DEFAULT {expression}",
   "details.hint.notAvailable": "El texto no es visible para este inicio de sesión.",
   "details.hint.notRecorded":

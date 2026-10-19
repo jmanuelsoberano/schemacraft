@@ -22,7 +22,7 @@ use std::collections::BTreeSet;
 use std::hash::{BuildHasher, RandomState};
 use std::sync::LazyLock;
 
-use schemacraft_core::diff::SchemaDiff;
+use schemacraft_core::diff::{CaptureChange, SchemaDiff};
 use schemacraft_core::inspectors::sqlserver::EncryptionMode;
 use schemacraft_core::inspectors::{DatabaseDescription, InspectionOptions, SilentProgress};
 use schemacraft_core::model::{
@@ -208,10 +208,66 @@ fn project_with(snapshot: SchemaSnapshot) -> ProjectContent {
     }
 }
 
+/// Removes from a saved snapshot what SchemaCraft 1.2 records and earlier versions did not: the
+/// state of indexes and primary keys, and whether `CHECK` constraints and foreign keys are
+/// trusted.
+fn without_index_and_constraint_state(snapshot: &mut serde_json::Map<String, Value>) {
+    for table in snapshot["tables"].as_array_mut().unwrap() {
+        if let Some(key) = table["primaryKey"].as_object_mut() {
+            key.remove("isEnabled");
+        }
+        for index in table["indexes"].as_array_mut().unwrap() {
+            let index = index.as_object_mut().unwrap();
+            for key in ["includedColumns", "isFiltered", "isEnabled"] {
+                index.remove(key);
+            }
+        }
+        for constraint in table["checkConstraints"].as_array_mut().unwrap() {
+            constraint.as_object_mut().unwrap().remove("isTrusted");
+        }
+    }
+    for list in ["foreignKeys", "foreignKeysToInvisibleTables"] {
+        for key in snapshot
+            .get_mut(list)
+            .and_then(Value::as_array_mut)
+            .into_iter()
+            .flatten()
+        {
+            key.as_object_mut().unwrap().remove("isTrusted");
+        }
+    }
+}
+
+/// Writes `document` to a file and opens it as this version opens a project.
+fn reopened(document: &Value) -> SchemaSnapshot {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("saved-earlier.scraft");
+    std::fs::write(&path, serde_json::to_vec_pretty(document).unwrap()).unwrap();
+    let opened = read_project(&path).unwrap();
+    assert!(!opened.is_read_only);
+    opened.project.content.snapshot
+}
+
+/// The project SchemaCraft 1.1 would have saved from what `snapshot` read, opened by this
+/// version: format 2, without the state of indexes, keys and constraints.
+fn saved_by_1_1_and_reopened(snapshot: &SchemaSnapshot) -> SchemaSnapshot {
+    let project = Project::new(
+        project_with(snapshot.clone()),
+        snapshot.extracted_at,
+        "SchemaCraft 1.1.0",
+    );
+    let mut document = serde_json::to_value(&project).unwrap();
+    let root = document.as_object_mut().unwrap();
+    root.insert("formatVersion".to_string(), json!(2));
+    without_index_and_constraint_state(root.get_mut("snapshot").unwrap().as_object_mut().unwrap());
+    reopened(&document)
+}
+
 /// The project SchemaCraft 1.0 would have saved from what `snapshot` read, opened by this
 /// version: 1.0 wrote format 1 without an access profile, an empty text for a `CHECK` it could
 /// not read, no default whose text it could not read, no default bound with `sp_bindefault`
-/// (it read `sys.default_constraints` only) and no key to a table the login could not see.
+/// (it read `sys.default_constraints` only), no key to a table the login could not see, and
+/// no state of an index, a key or a constraint but whether a key was enabled.
 fn saved_by_1_0_and_reopened(snapshot: &SchemaSnapshot) -> SchemaSnapshot {
     let project = Project::new(
         project_with(snapshot.clone()),
@@ -223,6 +279,7 @@ fn saved_by_1_0_and_reopened(snapshot: &SchemaSnapshot) -> SchemaSnapshot {
     root.insert("formatVersion".to_string(), json!(1));
     root.remove("minReaderVersion");
     let saved = root.get_mut("snapshot").unwrap().as_object_mut().unwrap();
+    without_index_and_constraint_state(saved);
     for key in ["access", "foreignKeysToInvisibleTables", "carriedOver"] {
         saved.remove(key);
     }
@@ -244,13 +301,22 @@ fn saved_by_1_0_and_reopened(snapshot: &SchemaSnapshot) -> SchemaSnapshot {
             constraint.as_object_mut().unwrap().remove("isEnabled");
         }
     }
+    reopened(&document)
+}
 
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("saved-by-1.0.scraft");
-    std::fs::write(&path, serde_json::to_vec_pretty(&document).unwrap()).unwrap();
-    let opened = read_project(&path).unwrap();
-    assert!(!opened.is_read_only);
-    opened.project.content.snapshot
+/// How many indexes, primary keys, `CHECK` constraints and foreign keys `snapshot` holds: the
+/// objects whose state a capture records.
+fn objects_with_state(snapshot: &SchemaSnapshot) -> usize {
+    let in_tables: usize = snapshot
+        .tables
+        .iter()
+        .map(|table| {
+            usize::from(table.primary_key.is_some())
+                + table.indexes.len()
+                + table.check_constraints.len()
+        })
+        .sum();
+    in_tables + snapshot.foreign_keys.len() + snapshot.foreign_keys_to_invisible_tables.len()
 }
 
 #[tokio::test]
@@ -843,6 +909,14 @@ async fn a_1_0_project_refreshed_with_the_same_login_changes_nothing() {
         assert_eq!(diff.summary.total(), 0, "{login}");
         assert_eq!(diff.not_checked, [], "{login}");
         assert!(diff.access_changed, "{login}");
+        // The keys to invisible tables 1.0 dropped are now available, not newly recorded.
+        assert_eq!(
+            diff.capture_changes,
+            [CaptureChange::IndexAndConstraintStateRecorded {
+                count: objects_with_state(&upgraded)
+            }],
+            "{login}"
+        );
 
         // Applying the review records exactly what this login reads.
         let refreshed = project_with(upgraded).with_refreshed_snapshot(fresh.clone());
@@ -869,6 +943,126 @@ async fn a_1_0_project_refreshed_with_the_same_login_changes_nothing() {
         .filter(|fact| matches!(fact, SnapshotFact::ForeignKey { .. }))
         .collect();
     assert_eq!(keys.len(), 2, "{diff:?}");
+}
+
+#[tokio::test]
+async fn a_1_1_project_refreshed_with_the_same_login_records_the_state_without_changes() {
+    let Some(server) = test_server() else { return };
+
+    for login in [OWNER, READER, TWO_TABLES] {
+        let read = inspect_as(&server, login, DATABASE).await;
+        let upgraded = saved_by_1_1_and_reopened(&read);
+        assert!(
+            upgraded
+                .tables
+                .iter()
+                .flat_map(|table| &table.indexes)
+                .all(|index| index.is_enabled.is_none()),
+            "{login}"
+        );
+
+        let fresh = inspect_as(&server, login, DATABASE).await;
+        let diff = SchemaDiff::between(&upgraded, &fresh);
+
+        // Nothing changed and nothing was recorded on one side only as a change: one line says
+        // that the state is recorded now, and the review offers to update the project.
+        assert!(diff.is_empty(), "{login}: {diff:?}");
+        assert!(!diff.has_object_changes(), "{login}");
+        assert_eq!(diff.summary.total(), 0, "{login}");
+        assert_eq!(diff.not_checked, [], "{login}");
+        assert_eq!(diff.now_available, [], "{login}");
+        assert!(!diff.access_changed, "{login}");
+        assert_eq!(
+            diff.capture_changes,
+            [CaptureChange::IndexAndConstraintStateRecorded {
+                count: objects_with_state(&fresh)
+            }],
+            "{login}"
+        );
+        assert!(!diff.is_up_to_date(), "{login}");
+
+        let refreshed = project_with(upgraded).with_refreshed_snapshot(fresh.clone());
+        assert_eq!(refreshed.snapshot, fresh, "{login}");
+        assert!(
+            SchemaDiff::between(&refreshed.snapshot, &fresh).is_up_to_date(),
+            "{login}"
+        );
+    }
+
+    // The owner's capture: six keys, five CHECKs, two indexes and four foreign keys.
+    let owner = inspect_as(&server, OWNER, DATABASE).await;
+    assert_eq!(objects_with_state(&owner), 17);
+}
+
+#[tokio::test]
+async fn every_login_that_sees_a_table_reads_the_state_of_its_indexes_and_constraints() {
+    let Some(server) = test_server() else { return };
+
+    // The state lives in catalog columns VIEW DEFINITION does not guard, so a reader reads it as
+    // the owner does, while the texts it cannot read stay not visible.
+    for login in [OWNER, READER, TWO_TABLES] {
+        let snapshot = inspect_as(&server, login, DATABASE).await;
+        let index = |table: &str, name: &str| {
+            snapshot
+                .table(&QualifiedName::new("sales", table))
+                .and_then(|table| table.indexes.iter().find(|index| index.name == name))
+                .map(|index| {
+                    (
+                        index.included_columns.clone(),
+                        index.is_filtered,
+                        index.is_enabled,
+                    )
+                })
+        };
+        assert_eq!(
+            index("Orders", "IX_Orders_Open"),
+            Some((Some(vec![]), Some(true), Some(true))),
+            "{login}"
+        );
+        assert_eq!(
+            index("OrderLines", "IX_OrderLines_Product"),
+            Some((Some(vec!["Quantity".to_string()]), Some(false), Some(false))),
+            "{login}"
+        );
+        for table in &snapshot.tables {
+            assert_eq!(
+                table.primary_key.as_ref().and_then(|key| key.is_enabled),
+                Some(true),
+                "{login}: {}",
+                table.name
+            );
+            for constraint in &table.check_constraints {
+                let expected = Some(constraint.name != "CK_Products_Price");
+                assert_eq!(
+                    constraint.is_trusted, expected,
+                    "{login}: {}",
+                    constraint.name
+                );
+                assert_eq!(constraint.is_enabled, Some(true), "{login}");
+            }
+        }
+        assert!(
+            snapshot
+                .foreign_keys
+                .iter()
+                .all(|key| key.is_trusted == Some(true)),
+            "{login}"
+        );
+        assert!(
+            snapshot
+                .foreign_keys_to_invisible_tables
+                .iter()
+                .all(|key| key.is_trusted == Some(true)),
+            "{login}"
+        );
+    }
+    let reader = inspect_as(&server, READER, DATABASE).await;
+    let price = reader
+        .table(&QualifiedName::new("dbo", "Products"))
+        .map(|table| table.check_constraints[0].clone())
+        .expect("the reader sees dbo.Products");
+    assert_eq!(price.expression, Definition::NotVisible);
+    assert_eq!(price.is_trusted, Some(false));
 }
 
 #[tokio::test]

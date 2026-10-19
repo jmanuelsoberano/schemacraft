@@ -54,10 +54,11 @@ interface RuleItemProps {
 }
 
 /**
- * One rule: the head with the SQL toggle at its end, the sentences or the line that says they
- * cannot be given, the item's own lines, and the SQL, shown from the start when there are no
- * sentences. Focusing any control of the item highlights the rule as the pointer does, so the
- * highlight adds no stop for the keyboard of its own.
+ * One rule: the head with the SQL toggle at its end, the item's own lines, the sentences, the
+ * line that says the rule cannot be put into words (after what is still known in words, such as
+ * that the rows already there may not follow it), and the SQL, shown from the start when the rule
+ * cannot be put into words. Focusing any control of the item highlights the rule as the pointer
+ * does, so the highlight adds no stop for the keyboard of its own.
  */
 export function RuleItem({ rule, head, children, footer, link }: RuleItemProps) {
   const { t } = useI18n();
@@ -133,11 +134,8 @@ export function RuleItem({ rule, head, children, footer, link }: RuleItemProps) 
         )}
       </div>
       {children}
-      {rule.unread === null ? (
-        <RuleSentences nodes={rule.sentences} link={link} />
-      ) : (
-        <p className={styles.unread}>{rule.unread}</p>
-      )}
+      {rule.sentences.length === 0 ? null : <RuleSentences nodes={rule.sentences} link={link} />}
+      {rule.unread === null ? null : <p className={styles.unread}>{rule.unread}</p>}
       {footer}
       {rule.sql === null ? null : (
         <div id={sqlId} className={styles.sql} hidden={!isSqlOpen}>

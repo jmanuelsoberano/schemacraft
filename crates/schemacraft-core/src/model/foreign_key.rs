@@ -51,9 +51,10 @@ pub struct ForeignKey {
     pub on_update: ReferentialAction,
     /// `false` when the constraint exists but is disabled (`NOCHECK`) in the database.
     pub is_enabled: bool,
-    /// `false` when SQL Server has not verified that the rows already in the referencing table
-    /// follow the key (`is_not_trusted`, after `WITH NOCHECK` or a re-enable without
-    /// `WITH CHECK`); `None` when the capture did not record it, as before 1.2.
+    /// `false` when SQL Server does not trust the key, so the rows already in the referencing
+    /// table may not follow it (`is_not_trusted`, after `WITH NOCHECK`, a re-enable without
+    /// `WITH CHECK` or on a NOT FOR REPLICATION key); `None` when the capture did not record it,
+    /// as before 1.2.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub is_trusted: Option<bool>,
@@ -80,9 +81,10 @@ pub struct ForeignKeyToInvisibleTable {
     pub on_update: ReferentialAction,
     /// `false` when the constraint exists but is disabled (`NOCHECK`) in the database.
     pub is_enabled: bool,
-    /// `false` when SQL Server has not verified that the rows already in the referencing table
-    /// follow the key (`is_not_trusted`, after `WITH NOCHECK` or a re-enable without
-    /// `WITH CHECK`); `None` when the capture did not record it, as before 1.2.
+    /// `false` when SQL Server does not trust the key, so the rows already in the referencing
+    /// table may not follow it (`is_not_trusted`, after `WITH NOCHECK`, a re-enable without
+    /// `WITH CHECK` or on a NOT FOR REPLICATION key); `None` when the capture did not record it,
+    /// as before 1.2.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub is_trusted: Option<bool>,

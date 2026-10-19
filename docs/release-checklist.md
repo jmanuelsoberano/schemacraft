@@ -60,11 +60,13 @@ local SQL Server 2022 container, in both languages and themes, before it was mer
 - [ ] Connect to a production database, read the schema, lay it out, save, reopen, refresh and
       export to PDF and HTML.
 - [ ] Open a project saved by the previous release and refresh it with the same login: the review
-      reports no schema change and offers to update the project. Apply, save, reopen the file
-      and check that its header says `formatVersion` 3 and `minReaderVersion` 2. Open the saved
-      file in the previous release: it opens read-only, with the chip naming the version that
-      wrote it, the diagram and the HTML and PDF exports work, and Save and Refresh are not
-      offered.
+      reports no schema change other than any index aligned with a partitioned table, listed as
+      changed because its key columns no longer start with the partitioning column, shows one
+      "Index and constraint state" line with a count under "Recorded for the first time" and
+      offers to update the project. Apply, save, reopen the file and check that its header says
+      `formatVersion` 3 and `minReaderVersion` 2. Open the saved file in the previous release: it
+      opens read-only, with the chip naming the version that wrote it, the diagram and the HTML
+      and PDF exports work, and Save and Refresh are not offered.
 - [ ] Connect with a login that lacks `VIEW DEFINITION` (for example a `db_datareader` member):
       the connection dialog warns before reading, the status bar shows the access chip, the
       access report opens with Ctrl+Shift+A and Copy GRANT script puts the script on the
@@ -77,6 +79,18 @@ local SQL Server 2022 container, in both languages and themes, before it was mer
       Inspector and the HTML export read its rules as sentences, pointing at a rule highlights
       its columns and relationship, and Show SQL opens its definition. The PDF and PNG exports
       draw the same relationship markers as the canvas, the zero-or-one circles included.
+- [ ] Read a database with a unique constraint whose index is disabled, a filtered unique index,
+      an enabled unique index without a filter and a foreign key added `WITH NOCHECK` (the
+      `SchemaCraftCheckForms` database of the integration tests has all four), in English and in
+      Spanish and in both themes. The disabled constraint carries the disabled badge and its key
+      draws a crow's foot and names the index as the reason; the filtered index carries the
+      filtered badge and its key draws a crow's foot and reads "at most one of the rows in … that
+      the filter of the unique index … selects", never "at most one row in …"; the enabled
+      unfiltered index draws the one-to-one marker; the untrusted key carries "not trusted" in a
+      neutral tone, says that the rows already there may not follow it, words its rule about the
+      referencing rows under "When a row is inserted or its ParentCode is changed:", its rules
+      about the referenced table after it, and scripts `WITH NOCHECK` in Show SQL. The HTML export
+      says the same, and the PDF and PNG draw the same markers.
 - [ ] Open the HTML export in a browser on a machine without SchemaCraft.
 - [ ] Run the installer and uninstall it; no administrator prompt appears.
 - [ ] The release notes describe the program, link the code signing policy and carry the
@@ -87,6 +101,13 @@ local SQL Server 2022 container, in both languages and themes, before it was mer
 - SchemaCraft 1.1 opens projects saved by 1.2 read-only, without the code of views, procedures,
   functions and triggers, and cannot save or refresh them; SchemaCraft 1.0 refuses them. Keep a
   copy of a project that must still be edited in 1.1.
+- Only clustered and nonclustered indexes are read. A hash index of a memory-optimized table is
+  not listed, nor is the primary key or unique constraint it backs, so such a table can show no
+  primary key and a foreign key the hash index would make one-to-one draws a crow's foot. Reading
+  hash indexes moves to 1.3.
+- NOT FOR REPLICATION on `CHECK` constraints and foreign keys is not read. SQL Server never trusts
+  such a rule, so it shows "not trusted". Its sentences do not say that writes by replication
+  agents skip it, and its scripted SQL omits NOT FOR REPLICATION. Reading it moves to 1.3.
 
 ## Known limitations of 1.1.0
 
@@ -98,7 +119,7 @@ local SQL Server 2022 container, in both languages and themes, before it was mer
 - A `CHECK` constraint outside the forms SchemaCraft reads shows its SQL instead of a sentence.
 - A unique constraint or a nonclustered primary key whose index is disabled still makes a
   foreign key read "at most one" and draw the one-to-one marker, because the snapshot does not
-  record whether an index is disabled (ADR-039).
+  record whether an index is disabled (ADR-039). Fixed in 1.2.0, which records index state.
 - In layered layouts an edge spanning several layers can pass behind a table placed between its
   ends (ADR-022).
 

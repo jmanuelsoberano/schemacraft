@@ -1,4 +1,4 @@
-import { ShieldQuestionMark, Sparkles } from "lucide-react";
+import { ListChecks, ShieldQuestionMark, Sparkles } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -9,6 +9,7 @@ import { definitionText, isUnknownDefinition } from "@/features/schema/definitio
 import { entityKey } from "@/features/schema/entities";
 import type {
   AvailableFact,
+  CaptureChange,
   CarriedFact,
   ChangeCounts,
   ChangeKind,
@@ -38,7 +39,7 @@ import { Alert } from "@/shared/ui/Alert";
 import { classNames } from "@/shared/ui/classNames";
 
 import styles from "./ReviewChangesPanel.module.css";
-import { countChanges, isUpToDate } from "./reviewChanges";
+import { hasObjectChanges, isUpToDate } from "./reviewChanges";
 
 interface ReviewChangesPanelProps {
   diff: SchemaDiff;
@@ -52,14 +53,39 @@ const BADGE_CLASS: Record<ChangeKind, string | undefined> = {
   changed: styles.changed,
 };
 
+/**
+ * Names a primary key and its columns, and says when its index is disabled, so a change of that
+ * state alone never reads as identical before and after.
+ */
 function describePrimaryKey(key: PrimaryKey | null, t: Translator["t"]): string {
-  return key === null ? t("review.value.none") : `${key.name} (${key.columns.join(", ")})`;
+  if (key === null) {
+    return t("review.value.none");
+  }
+  const disabled = key.isEnabled === false ? ` · ${t("details.badge.disabled")}` : "";
+  return `${key.name} (${key.columns.join(", ")})${disabled}`;
 }
 
+/**
+ * Names an index, its key and included columns, its kind and the marks the Inspector gives it:
+ * disabled and filtered. A state a project saved before 1.2 did not record is not mentioned.
+ */
 function describeIndex(index: Index, t: Translator["t"]): string {
-  const kind = t(`indexKind.${index.kind}`);
-  const clustered = index.isClustered ? `, ${t("indexKind.clustered")}` : "";
-  return `${index.name} (${index.columns.join(", ")}) · ${kind}${clustered}`;
+  const marks = [
+    t(`indexKind.${index.kind}`),
+    index.isClustered ? t("indexKind.clustered") : null,
+    index.isEnabled === false
+      ? t(
+          index.kind === "uniqueConstraint"
+            ? "details.badge.disabled"
+            : "details.badge.indexDisabled",
+        )
+      : null,
+    index.isFiltered === true ? t("details.badge.filtered") : null,
+  ].filter((mark): mark is string => mark !== null);
+  const included = index.includedColumns ?? [];
+  const include =
+    included.length === 0 ? "" : ` ${t("details.include", { columns: included.join(", ") })}`;
+  return `${index.name} (${index.columns.join(", ")})${include} · ${marks.join(", ")}`;
 }
 
 function describeDefinition(definition: Definition, t: Translator["t"]): string {
@@ -70,14 +96,18 @@ function describeDefinition(definition: Definition, t: Translator["t"]): string 
 }
 
 /**
- * Names a CHECK and its expression, and says when it is disabled, so a change of the enabled
- * state alone never reads as identical before and after. A 1.0 project does not record the
- * state (`isEnabled` is null), and then nothing is said about it.
+ * Names a CHECK and its expression, and says when it is disabled or not trusted, so a change of
+ * either state alone never reads as identical before and after. A 1.0 project does not record
+ * whether it is enabled (`isEnabled` is null), nor one saved before 1.2 whether it is trusted,
+ * and then nothing is said about it.
  */
 function describeCheckConstraint(constraint: CheckConstraint, t: Translator["t"]): string {
   const expression = describeDefinition(constraint.expression, t);
-  return constraint.isEnabled === false
-    ? t("review.checkConstraint.disabled", { name: constraint.name, expression })
+  if (constraint.isEnabled === false) {
+    return t("review.checkConstraint.disabled", { name: constraint.name, expression });
+  }
+  return constraint.isEnabled === true && constraint.isTrusted === false
+    ? t("review.checkConstraint.untrusted", { name: constraint.name, expression })
     : `${constraint.name} ${expression}`;
 }
 
@@ -149,6 +179,9 @@ function keyToInvisibleTablePropertyValues(
       return [t(`referentialAction.${before.onUpdate}`), t(`referentialAction.${after.onUpdate}`)];
     case "enabled":
       return [yesNo(before.isEnabled, t), yesNo(after.isEnabled, t)];
+    // Reported only when both sides recorded it.
+    case "trust":
+      return [yesNo(before.isTrusted === true, t), yesNo(after.isTrusted === true, t)];
   }
 }
 
@@ -173,6 +206,9 @@ function foreignKeyPropertyValues(
       return [t(`referentialAction.${before.onUpdate}`), t(`referentialAction.${after.onUpdate}`)];
     case "enabled":
       return [yesNo(before.isEnabled, t), yesNo(after.isEnabled, t)];
+    // Reported only when both sides recorded it.
+    case "trust":
+      return [yesNo(before.isTrusted === true, t), yesNo(after.isTrusted === true, t)];
   }
 }
 
@@ -504,6 +540,24 @@ function NowAvailableSection({ facts }: { facts: readonly AvailableFact[] }) {
   );
 }
 
+/**
+ * Families of facts this read records for the first time, one counted line each, such as the
+ * state of every index and constraint of a project saved before 1.2. Applied, but not changes.
+ */
+function CaptureRecordedSection({ changes }: { changes: readonly CaptureChange[] }) {
+  const { t, tCount } = useI18n();
+  return (
+    <Section title={t("review.section.captureRecorded")} icon={ListChecks}>
+      {changes.map((change) => (
+        <li key={change.kind} className={styles.factItem}>
+          <span className={styles.captureLabel}>{t("review.capture.indexAndConstraintState")}</span>
+          <span className={styles.meta}>{tCount("review.capture.objects", change.count)}</span>
+        </li>
+      ))}
+    </Section>
+  );
+}
+
 /** What a review without any schema change still brings to the project. */
 function noChangeDescription(diff: SchemaDiff, t: Translator["t"]): string {
   if (diff.nowAvailable.length > 0) {
@@ -511,6 +565,9 @@ function noChangeDescription(diff: SchemaDiff, t: Translator["t"]): string {
   }
   if (diff.notChecked.length > 0) {
     return t("review.noChanges.notChecked");
+  }
+  if (diff.captureChanges.length > 0) {
+    return t("review.noChanges.captureRecorded");
   }
   return t("review.noChanges.accessChanged");
 }
@@ -524,7 +581,7 @@ export function ReviewChangesPanel({ diff, capture }: ReviewChangesPanelProps) {
   const { t, tCount } = useI18n();
   const { summary } = diff;
   const isPartialCapture = capture.access?.level === "partial";
-  const hasChanges = countChanges(summary) > 0;
+  const hasChanges = hasObjectChanges(diff);
 
   if (isUpToDate(diff)) {
     return isPartialCapture ? (
@@ -596,6 +653,9 @@ export function ReviewChangesPanel({ diff, capture }: ReviewChangesPanelProps) {
         </Section>
       ) : null}
       {diff.nowAvailable.length > 0 ? <NowAvailableSection facts={diff.nowAvailable} /> : null}
+      {diff.captureChanges.length > 0 ? (
+        <CaptureRecordedSection changes={diff.captureChanges} />
+      ) : null}
       {diff.notChecked.length > 0 ? <NotCheckedSection facts={diff.notChecked} /> : null}
       {diff.accessChanged && hasChanges ? (
         <p className={styles.note}>{t("review.accessChanged")}</p>

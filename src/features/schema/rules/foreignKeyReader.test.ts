@@ -19,6 +19,7 @@ import {
   explainForeignKey,
   explainForeignKeyToInvisibleTable,
   foreignKeyChildCardinality,
+  foreignKeyChildCardinalityReading,
   foreignKeyDefinitionSql,
   foreignKeyExplanation,
   foreignKeyExplanations,
@@ -60,8 +61,14 @@ function column(name: string, traits: ColumnTraits = {}): Column {
   };
 }
 
-function index(name: string, kind: Index["kind"], columns: string[]): Index {
-  return { name, columns, kind, isClustered: false };
+/** An index whose state, unless given, was not recorded, as in a file saved before 1.2. */
+function index(
+  name: string,
+  kind: Index["kind"],
+  columns: string[],
+  state: Pick<Index, "includedColumns" | "isFiltered" | "isEnabled"> = {},
+): Index {
+  return { name, columns, kind, isClustered: false, ...state };
 }
 
 function table(
@@ -307,12 +314,14 @@ function snapshotWith(
 const SNAPSHOT = snapshotWith(Object.values(FOREIGN_KEYS));
 
 /** The sentences of an explanation as message keys, a counted one with its count. */
-type Outline = string | { whenEnabled: Outline[] };
+type Outline = string | { whenEnabled: Outline[] } | { whenWritten: Outline[] };
 
 function outline(nodes: readonly RuleNode[]): Outline[] {
   return nodes.map((node): Outline => {
     if (node.kind === "group") {
-      return { whenEnabled: outline(node.items) };
+      return node.group.kind === "whenWritten"
+        ? { whenWritten: outline(node.items) }
+        : { whenEnabled: outline(node.items) };
     }
     return "key" in node.text ? node.text.key : `${node.text.plural}(${node.text.count})`;
   });
@@ -807,6 +816,322 @@ describe("foreignKeyDefinitionSql", () => {
     );
     expect(explain(FOREIGN_KEYS.ordersCustomers).sql).toBe(
       foreignKeyDefinitionSql(FOREIGN_KEYS.ordersCustomers),
+    );
+  });
+});
+
+describe("foreignKeyChildCardinality on the state of the keys and indexes behind it", () => {
+  type State = Pick<Index, "isEnabled" | "isFiltered">;
+  const states: readonly State[] = [true, false, undefined].flatMap((isEnabled) =>
+    [true, false, undefined].map((isFiltered) => ({
+      ...(isEnabled === undefined ? {} : { isEnabled }),
+      ...(isFiltered === undefined ? {} : { isFiltered }),
+    })),
+  );
+  const cardsKey = FOREIGN_KEYS.cardsCustomers;
+  /**
+   * sales.Cards with its key column covered by one primary key, unique constraint or unique
+   * index, clustered or not.
+   */
+  function cards(
+    holder: "primaryKey" | "uniqueConstraint" | "uniqueIndex",
+    state: State,
+    isClustered = false,
+  ): Table {
+    const base = table("sales.Cards", [column("CardId"), column("CustomerId")], ["CardId"]);
+    if (holder === "primaryKey") {
+      return {
+        ...base,
+        primaryKey: {
+          name: "PK_Cards",
+          columns: ["CustomerId"],
+          isClustered,
+          ...(state.isEnabled === undefined ? {} : { isEnabled: state.isEnabled }),
+        },
+      };
+    }
+    return {
+      ...base,
+      primaryKey: { name: "PK_Cards", columns: ["CardId"], isClustered: !isClustered },
+      indexes: [{ ...index("UX_Cards_Customer", holder, ["CustomerId"], state), isClustered }],
+    };
+  }
+
+  it.each(states)(
+    "reads a primary key, a unique constraint and a unique index that are %o",
+    (state) => {
+      // A primary key and a unique constraint hold unless recorded as disabled, as 1.1 read them;
+      // a unique index holds only when recorded as enabled and without a filter. A filter limits
+      // only the rows it selects, so it, or a state not recorded, leaves it unknown.
+      const constraint =
+        state.isEnabled === false ? "many" : state.isFiltered === true ? "unknown" : "atMostOne";
+      const uniqueIndex =
+        state.isEnabled === false
+          ? "many"
+          : state.isEnabled === true && state.isFiltered === false
+            ? "atMostOne"
+            : "unknown";
+      expect(foreignKeyChildCardinality(cards("primaryKey", state), cardsKey)).toBe(
+        state.isEnabled === false ? "many" : "atMostOne",
+      );
+      expect(foreignKeyChildCardinality(cards("uniqueConstraint", state), cardsKey)).toBe(
+        constraint,
+      );
+      expect(foreignKeyChildCardinality(cards("uniqueIndex", state), cardsKey)).toBe(uniqueIndex);
+      // A disabled clustered one takes no row, and SQL Server keeps the key disabled until it is
+      // rebuilt, which makes it unique again: by the time the key can be enabled, it holds.
+      expect(foreignKeyChildCardinality(cards("primaryKey", state, true), cardsKey)).toBe(
+        "atMostOne",
+      );
+      if (state.isEnabled === false) {
+        for (const holder of ["uniqueConstraint", "uniqueIndex"] as const) {
+          expect(foreignKeyChildCardinalityReading(cards(holder, state, true), cardsKey)).toEqual({
+            cardinality: "atMostOne",
+            disabled: [],
+            filtered: [],
+          });
+        }
+      }
+    },
+  );
+
+  it("names the disabled nonclustered indexes, which a rebuild of the clustered one leaves disabled", () => {
+    const disabledClusteredPk = (keyColumn: string): Table => ({
+      ...table("sales.Cards", [column("CardId"), column("CustomerId")], null),
+      primaryKey: { name: "PK_Cards", columns: [keyColumn], isClustered: true, isEnabled: false },
+      indexes: [
+        index("UX_Cards_Customer", "uniqueIndex", ["CustomerId"], {
+          isEnabled: false,
+          isFiltered: false,
+        }),
+      ],
+    });
+    expect(foreignKeyChildCardinalityReading(disabledClusteredPk("CardId"), cardsKey)).toEqual({
+      cardinality: "many",
+      disabled: ["UX_Cards_Customer"],
+      filtered: [],
+    });
+    expect(foreignKeyChildCardinalityReading(disabledClusteredPk("CustomerId"), cardsKey)).toEqual({
+      cardinality: "atMostOne",
+      disabled: ["UX_Cards_Customer"],
+      filtered: [],
+    });
+  });
+
+  it("is at most one when any of them holds, and many only when every one is disabled", () => {
+    const withIndexes = (indexes: Index[]) => ({
+      ...table("sales.Cards", [column("CardId"), column("CustomerId")], ["CardId"]),
+      indexes,
+    });
+    const disabled = { isEnabled: false, isFiltered: false };
+    const holds = { isEnabled: true, isFiltered: false };
+    const filtered = { isEnabled: true, isFiltered: true };
+    expect(
+      foreignKeyChildCardinalityReading(
+        withIndexes([
+          index("UQ_A", "uniqueConstraint", ["CustomerId"], disabled),
+          index("UX_B", "uniqueIndex", ["CustomerId"], holds),
+        ]),
+        cardsKey,
+      ),
+    ).toEqual({ cardinality: "atMostOne", disabled: ["UQ_A"], filtered: [] });
+    expect(
+      foreignKeyChildCardinalityReading(
+        withIndexes([
+          index("UQ_A", "uniqueConstraint", ["CustomerId"], disabled),
+          index("UX_B", "uniqueIndex", ["CustomerId"], disabled),
+        ]),
+        cardsKey,
+      ),
+    ).toEqual({ cardinality: "many", disabled: ["UQ_A", "UX_B"], filtered: [] });
+    expect(
+      foreignKeyChildCardinalityReading(
+        withIndexes([
+          index("UQ_A", "uniqueConstraint", ["CustomerId"], disabled),
+          index("UX_B", "uniqueIndex", ["CustomerId"], filtered),
+        ]),
+        cardsKey,
+      ),
+    ).toEqual({ cardinality: "unknown", disabled: ["UQ_A"], filtered: ["UX_B"] });
+    // An index wider than the key, or one that is not unique, never counts.
+    expect(
+      foreignKeyChildCardinalityReading(
+        withIndexes([
+          index("UX_Wide", "uniqueIndex", ["CustomerId", "CardId"], holds),
+          index("IX_Plain", "nonUnique", ["CustomerId"], disabled),
+        ]),
+        cardsKey,
+      ),
+    ).toEqual({ cardinality: "many", disabled: [], filtered: [] });
+  });
+});
+
+describe("explainForeignKey on the indexes that do not hold", () => {
+  const cardsKey = FOREIGN_KEYS.cardsCustomers;
+  function explainWith(indexes: Index[], foreignKey: ForeignKey = cardsKey) {
+    const tables = TABLES.map((entry) =>
+      entry.name.name === "Cards" || entry.name.name === "Nodes" ? { ...entry, indexes } : entry,
+    );
+    return explain(foreignKey, snapshotWith([foreignKey], { tables }));
+  }
+  const parentLines = (explanation: ForeignKeyExplanation, locale: "en" | "es") =>
+    words(explanation, locale).filter((line) => /^(A row in|Una fila de) /u.test(line));
+
+  it("names the disabled index that is why a row can be referenced by many", () => {
+    const explanation = explainWith([
+      index("UQ_Cards_Customer", "uniqueConstraint", ["CustomerId"], { isEnabled: false }),
+    ]);
+    expect(explanation.childCardinality).toBe("many");
+    expect(outline(explanation.rules)).toContain("rule.fk.parentManyDisabled(1)");
+    expect(parentLines(explanation, "en")).toEqual([
+      "A row in dbo.Customers can be referenced by any number of rows in sales.Cards, or by none, because the index UQ_Cards_Customer is disabled",
+    ]);
+    expect(parentLines(explanation, "es")).toEqual([
+      "Una fila de dbo.Customers puede estar referenciada por cualquier número de filas de sales.Cards, o por ninguna, porque el índice UQ_Cards_Customer está deshabilitado",
+    ]);
+
+    const two = explainWith([
+      index("UQ_Cards_Customer", "uniqueConstraint", ["CustomerId"], { isEnabled: false }),
+      index("UX_Cards_Customer", "uniqueIndex", ["CustomerId"], {
+        isEnabled: false,
+        isFiltered: false,
+      }),
+    ]);
+    expect(parentLines(two, "en")).toEqual([
+      "A row in dbo.Customers can be referenced by any number of rows in sales.Cards, or by none, because the indexes UQ_Cards_Customer and UX_Cards_Customer are disabled",
+    ]);
+    expect(parentLines(two, "es")).toEqual([
+      "Una fila de dbo.Customers puede estar referenciada por cualquier número de filas de sales.Cards, o por ninguna, porque los índices UQ_Cards_Customer y UX_Cards_Customer están deshabilitados",
+    ]);
+  });
+
+  it("says a filtered unique index limits only the rows its filter selects, never at most one", () => {
+    const explanation = explainWith([
+      index("UX_Cards_Current", "uniqueIndex", ["CustomerId"], {
+        isEnabled: true,
+        isFiltered: true,
+      }),
+    ]);
+    expect(explanation.childCardinality).toBe("unknown");
+    expect(outline(explanation.rules)).toContain("rule.fk.parentFiltered");
+    expect(outline(explanation.rules)).not.toContain("rule.fk.parentOne");
+    expect(parentLines(explanation, "en")).toEqual([
+      "A row in dbo.Customers can be referenced by at most one of the rows in sales.Cards that the filter of the unique index UX_Cards_Current selects",
+    ]);
+    expect(parentLines(explanation, "es")).toEqual([
+      "Una fila de dbo.Customers puede estar referenciada como mucho por una de las filas de sales.Cards que selecciona el filtro del índice único UX_Cards_Current",
+    ]);
+    // A unique index whose state was not recorded says nothing, as in 1.1.
+    expect(
+      parentLines(explainWith([index("UX_Cards_Current", "uniqueIndex", ["CustomerId"])]), "en"),
+    ).toEqual([]);
+  });
+
+  it("says the same of a self-reference", () => {
+    const nodes = (state: Pick<Index, "isEnabled" | "isFiltered">) =>
+      explainWith(
+        [index("UX_Nodes_Parent", "uniqueIndex", ["ParentNodeId"], state)],
+        FOREIGN_KEYS.nodesParent,
+      );
+    expect(parentLines(nodes({ isEnabled: false, isFiltered: false }), "en")).toEqual([
+      "A row in facts.Nodes can be referenced by any number of rows of the same table, or by none, because the index UX_Nodes_Parent is disabled",
+    ]);
+    expect(parentLines(nodes({ isEnabled: true, isFiltered: true }), "es")).toEqual([
+      "Una fila de facts.Nodes puede estar referenciada como mucho por una de las filas de la misma tabla que selecciona el filtro del índice único UX_Nodes_Parent",
+    ]);
+    expect(parentLines(nodes({ isEnabled: true, isFiltered: false }), "en")).toEqual([
+      "A row in facts.Nodes can be referenced by at most one row of the same table",
+    ]);
+  });
+
+  it("draws the index names as code", () => {
+    const explanation = explainWith([
+      index("UQ_Cards_Customer", "uniqueConstraint", ["CustomerId"], { isEnabled: false }),
+    ]);
+    const parent = explanation.rules.find(
+      (node) => node.kind === "sentence" && "plural" in node.text,
+    );
+    expect(
+      parent?.kind === "sentence" && formatRuleText(parent.text, translators.en).at(-1),
+    ).toEqual({ kind: "text", text: " is disabled" });
+    expect(
+      parent?.kind === "sentence" && formatRuleText(parent.text, translators.en).at(-2),
+    ).toEqual({ kind: "code", text: "UQ_Cards_Customer" });
+  });
+});
+
+describe("explainForeignKey on a key SQL Server marks as not trusted", () => {
+  const untrusted = { ...FOREIGN_KEYS.orderLinesOrders, isTrusted: false };
+
+  it("says the rows already there may not follow it, then words its rules for the rows written", () => {
+    const explanation = explain(untrusted);
+    // Only the referencing rows depend on trust, and an UPDATE is checked only when it writes a
+    // referencing column; the sentences about the referenced table hold for every row.
+    expect(outline(explanation.rules)).toEqual([
+      "rule.trust.notVerified",
+      { whenWritten: ["rule.fk.required"] },
+      "rule.fk.parentMany",
+      "rule.fk.delete.cascade",
+    ]);
+    expect(explanation.rules[1]).toMatchObject({
+      group: { kind: "whenWritten", rule: "foreignKey", columns: ["OrderId"] },
+    });
+    expect(words(explanation, "en")).toEqual([
+      "Rows already in sales.OrderLines may not follow this rule: SQL Server marks it as not trusted",
+      "When a row is inserted or its OrderId is changed:",
+      "Each row in sales.OrderLines belongs to exactly one row in sales.Orders",
+      "A row in sales.Orders can be referenced by any number of rows in sales.OrderLines, or by none",
+      "Deleting a row in sales.Orders also deletes the rows in sales.OrderLines that point to it",
+    ]);
+    expect(words(explanation, "es").slice(0, 2)).toEqual([
+      "Las filas que ya hay en sales.OrderLines pueden no cumplir esta regla: SQL Server la marca como no confiable",
+      "Cuando se inserta una fila o se modifica su OrderId:",
+    ]);
+    // The one-line label of the relationship keeps its delete sentence.
+    expect(explanation.deleteRule).toMatchObject({ key: "rule.fk.delete.cascade" });
+  });
+
+  it("adds nothing for a trusted key or one whose trust was not recorded", () => {
+    const plain = outline(explain(FOREIGN_KEYS.orderLinesOrders).rules);
+    expect(outline(explain({ ...FOREIGN_KEYS.orderLinesOrders, isTrusted: true }).rules)).toEqual(
+      plain,
+    );
+    expect(plain[0]).toBe("rule.fk.required");
+  });
+
+  it("reads a disabled key, never trusted, under 'When enabled:' alone", () => {
+    const disabled = { ...FOREIGN_KEYS.shipmentsOrdersDisabled, isTrusted: false };
+    expect(outline(explain(disabled).rules)).toEqual([
+      { whenEnabled: ["rule.fk.required", "rule.fk.parentMany", "rule.fk.delete.noAction"] },
+    ]);
+  });
+
+  it("says it of a key to a table the login cannot see as well", () => {
+    const explanation = explainForeignKeyToInvisibleTable(
+      { ...INVISIBLE, isTrusted: false },
+      SNAPSHOT,
+    );
+    expect(outline(explanation.rules)).toEqual([
+      "rule.trust.notVerified",
+      { whenWritten: ["rule.fk.invisible.optional(1)"] },
+      "rule.fk.delete.noAction",
+      "rule.fk.update.cascade",
+    ]);
+    expect(words(explanation, "en")[0]).toBe(
+      "Rows already in sales.Orders may not follow this rule: SQL Server marks it as not trusted",
+    );
+  });
+
+  it("scripts it WITH NOCHECK and leaves it enabled", () => {
+    expect(foreignKeyDefinitionSql(untrusted)).toBe(
+      [
+        "ALTER TABLE [sales].[OrderLines] WITH NOCHECK ADD CONSTRAINT [FK_OrderLines_Orders]",
+        "  FOREIGN KEY ([OrderId]) REFERENCES [sales].[Orders] ([OrderId])",
+        "  ON DELETE CASCADE;",
+      ].join("\n"),
+    );
+    expect(foreignKeyDefinitionSql({ ...FOREIGN_KEYS.orderLinesOrders, isTrusted: true })).toBe(
+      foreignKeyDefinitionSql(FOREIGN_KEYS.orderLinesOrders),
     );
   });
 });

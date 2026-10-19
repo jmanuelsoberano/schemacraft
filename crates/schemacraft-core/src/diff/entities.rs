@@ -185,7 +185,8 @@ pub enum IndexChange {
         /// The index as it was.
         index: Index,
     },
-    /// An index with the same name and a different definition.
+    /// An index with the same name and other key columns, kind or clustering, or another
+    /// included-column list, filter flag or enabled state where both sides recorded it.
     Changed {
         /// The index as it was.
         before: Index,
@@ -210,7 +211,7 @@ pub enum CheckConstraintChange {
         constraint: CheckConstraint,
     },
     /// A constraint with the same name and a different readable expression, or one that was
-    /// enabled or disabled.
+    /// enabled or disabled or whose trust changed.
     Changed {
         /// The constraint as it was.
         before: CheckConstraint,
@@ -370,19 +371,17 @@ fn default_changed(
     }
 }
 
-/// Whether a `CHECK` constraint changed: its readable text, or its state when both sides
-/// recorded it.
+/// Whether a `CHECK` constraint changed: its readable text, or its enabled or trusted state when
+/// both sides recorded it.
 fn check_constraint_changed(before: &CheckConstraint, after: &CheckConstraint) -> bool {
-    let state_changed = matches!(
-        (before.is_enabled, after.is_enabled),
-        (Some(was_enabled), Some(is_enabled)) if was_enabled != is_enabled
-    );
-    before.expression.differs_from(&after.expression) || state_changed
+    before.expression.differs_from(&after.expression)
+        || recorded_state_differs(before.is_enabled.as_ref(), after.is_enabled.as_ref())
+        || recorded_state_differs(before.is_trusted.as_ref(), after.is_trusted.as_ref())
 }
 
 /// Whether a state both sides recorded differs. A state recorded on one side only, as when a
 /// project saved before 1.2 is refreshed, is never a change.
-fn recorded_state_differs<T: PartialEq>(before: Option<&T>, after: Option<&T>) -> bool {
+pub(super) fn recorded_state_differs<T: PartialEq>(before: Option<&T>, after: Option<&T>) -> bool {
     matches!((before, after), (Some(before), Some(after)) if before != after)
 }
 
@@ -752,6 +751,17 @@ mod tests {
             ),
             1
         );
+
+        // Trust is compared only when both sides recorded it.
+        let with_trust = |is_trusted: Option<bool>| {
+            let mut table = with_check(readable(), Some(true));
+            table.check_constraints[0].is_trusted = is_trusted;
+            table
+        };
+        assert_eq!(changes(with_trust(None), with_trust(Some(false))), 0);
+        assert_eq!(changes(with_trust(Some(true)), with_trust(None)), 0);
+        assert_eq!(changes(with_trust(Some(true)), with_trust(Some(false))), 1);
+        assert_eq!(changes(with_trust(Some(false)), with_trust(Some(false))), 0);
     }
 
     #[test]

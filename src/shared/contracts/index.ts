@@ -10,6 +10,7 @@ export type { ExportOutcome } from "./generated/export/ExportOutcome";
 export type { ExportRequest } from "./generated/export/ExportRequest";
 export type { ExportStage } from "./generated/export/ExportStage";
 export type { AvailableFact } from "./generated/diff/AvailableFact";
+export type { CaptureChange } from "./generated/diff/CaptureChange";
 export type { ChangeKind } from "./generated/diff/ChangeKind";
 export type { CheckConstraintChange } from "./generated/diff/CheckConstraintChange";
 export type { ColumnChange } from "./generated/diff/ColumnChange";

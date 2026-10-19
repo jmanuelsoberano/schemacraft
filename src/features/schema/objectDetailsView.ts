@@ -54,8 +54,23 @@ export interface ValueView {
   hint: string | null;
 }
 
+/**
+ * The marks of a column, key, index or constraint. `disabled`, `filtered` and `untrusted` say what
+ * SQL Server does not enforce: a disabled index or constraint enforces nothing, a filtered index
+ * only the rows of its filter, and SQL Server marks an untrusted constraint as not trusted, so the
+ * rows already there may not follow it. They take the neutral tone of every badge but the key and
+ * link ones.
+ */
 export type BadgeKind =
-  "primaryKey" | "foreignKey" | "identity" | "computed" | "unique" | "clustered" | "disabled";
+  | "primaryKey"
+  | "foreignKey"
+  | "identity"
+  | "computed"
+  | "unique"
+  | "clustered"
+  | "disabled"
+  | "filtered"
+  | "untrusted";
 
 export interface BadgeView {
   kind: BadgeKind;
@@ -92,7 +107,10 @@ export function hasRuleTargets(targets: RuleTargets): boolean {
 
 /** A `CHECK` constraint or a foreign key in words, with its SQL one click away. */
 export interface RuleView {
-  /** The sentences in order; empty when the rule cannot be put into words. */
+  /**
+   * The sentences in order; for a rule that cannot be put into words, only what is still known
+   * in words, such as that the rows already there may not follow it, and often none.
+   */
   sentences: readonly RuleNodeView[];
   /** Says the rule cannot be put into words, before its SQL; `null` when it is in words. */
   unread: string | null;
@@ -122,11 +140,20 @@ export interface ConstraintItemView {
   columns: readonly string[];
   badges: readonly BadgeView[];
   /**
+   * The included columns of an index as the SQL line `INCLUDE (…)`; `null` when it has none or
+   * the file did not record them, and for keys and `CHECK`s.
+   */
+  include: string | null;
+  /**
    * The `CHECK` text, or the words for its missing text with why it is missing; `null` for keys
-   * and indexes. A renderer shows it when there is no {@link rule}, and its hint otherwise.
+   * and indexes. A renderer shows it when there is no {@link rule}; otherwise its hint, or, for a
+   * text that is missing, its words for the missing text under the rule's sentences.
    */
   expression: ValueView | null;
-  /** The `CHECK` in words or as SQL; `null` for keys, indexes and a `CHECK` without its text. */
+  /**
+   * The `CHECK` in words or as SQL; `null` for keys, indexes and a `CHECK` without its text,
+   * which has a rule only when something about it is still known in words.
+   */
   rule: RuleView | null;
 }
 
@@ -249,32 +276,36 @@ function ruleNodes(nodes: readonly RuleNode[], translator: DetailsTranslator): R
 
 /**
  * A `CHECK` of the entity `entity` in words, or its stored SQL under the line that says it
- * cannot be put into words; `null` when its text is missing, which the expression says.
+ * cannot be put into words. When its text is missing, which the expression says, it is what is
+ * still known in words, such as that the rows already there may not follow it, or `null` when
+ * nothing is.
  */
 function checkRule(constraint: CheckFacts, entity: string, words: Words): RuleView | null {
   const { reading } = constraint;
   if (reading.status === "notAvailable" || reading.status === "notRecorded") {
-    return null;
+    // The expression says the text is missing; what is still known in words is said above it.
+    return reading.rules.length === 0
+      ? null
+      : {
+          sentences: ruleNodes(reading.rules, words.translator),
+          unread: null,
+          sql: null,
+          sqlNote: null,
+          targets: { columns: new Map(), relation: null },
+        };
   }
   const targets: RuleTargets = {
     columns: new Map(reading.columns.length === 0 ? [] : [[entity, reading.columns]]),
     relation: null,
   };
-  return reading.status === "read"
-    ? {
-        sentences: ruleNodes(reading.rules, words.translator),
-        unread: null,
-        sql: reading.sql,
-        sqlNote: null,
-        targets,
-      }
-    : {
-        sentences: [],
-        unread: words.t("rule.check.unread"),
-        sql: reading.sql,
-        sqlNote: null,
-        targets,
-      };
+  // An unread rule still says when the rows already in the table may not follow it.
+  return {
+    sentences: ruleNodes(reading.rules, words.translator),
+    unread: reading.status === "read" ? null : words.t("rule.check.unread"),
+    sql: reading.sql,
+    sqlNote: null,
+    targets,
+  };
 }
 
 /** A key in words, with its SQL scripted from the catalog when both of its tables are known. */
@@ -289,31 +320,51 @@ function relationRule(relation: RelationFacts, words: Words): RuleView {
   };
 }
 
-/** The notes in the order a section shows them; `derived` applies to every rule in words. */
-type SectionNote = RuleNote | "derived";
+/** The notes in the order a section shows them; one derived note applies to every rule in words. */
+type SectionNote = RuleNote | "derived" | "derivedRecorded";
 
-const SECTION_NOTES: readonly SectionNote[] = ["pattern", "collation", "derived"];
+const SECTION_NOTES: readonly SectionNote[] = [
+  "pattern",
+  "collation",
+  "derived",
+  "derivedRecorded",
+];
+
+/**
+ * The derived note for the rules in words. It keeps the 1.1 clause that rows saved before a rule
+ * existed may not follow it while the file has not recorded whether SQL Server trusts one of
+ * them. Once trust is recorded the clause goes: SQL Server verified a trusted rule against every
+ * row, and an untrusted one says so itself, without a cause.
+ */
+function derivedNote(trust: readonly (boolean | null)[]): SectionNote {
+  return trust.includes(null) ? "derived" : "derivedRecorded";
+}
 
 /**
  * The notes under a section: for `CHECK`s, those their readings need and the derived note when
- * any is in words; for keys, which are always in words, the derived note.
+ * any is in words; for keys, which are always in words, the derived note. Which derived note
+ * depends on whether the trust of the section's rules in words is recorded.
  */
 function sectionNotes(section: DetailSection, { t }: Words): string[] {
   const needed = new Set<SectionNote>();
   if (section.kind === "checks") {
-    for (const { reading } of section.items) {
+    const trust: (boolean | null)[] = [];
+    for (const { reading, isTrusted } of section.items) {
       if (reading.status === "read") {
-        needed.add("derived");
+        trust.push(isTrusted);
         for (const note of reading.notes) {
           needed.add(note);
         }
       }
     }
+    if (trust.length > 0) {
+      needed.add(derivedNote(trust));
+    }
   } else if (
     (section.kind === "references" || section.kind === "referencedBy") &&
     section.items.length > 0
   ) {
-    needed.add("derived");
+    needed.add(derivedNote(section.items.map((item) => item.isTrusted)));
   }
   return SECTION_NOTES.filter((note) => needed.has(note)).map((note) => t(`rule.note.${note}`));
 }
@@ -400,10 +451,18 @@ function columnItem(column: ColumnFacts, words: Words): ColumnItemView {
 }
 
 function keyItem(key: KeyFacts, { t }: Words): ConstraintItemView {
+  const badges: BadgeView[] = [];
+  if (key.isClustered) {
+    badges.push(badge("clustered", t("indexKind.clustered")));
+  }
+  if (key.isEnabled === false) {
+    badges.push(badge("disabled", t("details.badge.disabled")));
+  }
   return {
     name: key.name,
     columns: key.columns,
-    badges: key.isClustered ? [badge("clustered", t("indexKind.clustered"))] : [],
+    badges,
+    include: null,
     expression: null,
     rule: null,
   };
@@ -417,15 +476,55 @@ function indexItem(index: IndexFacts, { t }: Words): ConstraintItemView {
   if (index.isClustered) {
     badges.push(badge("clustered", t("indexKind.clustered")));
   }
-  return { name: index.name, columns: index.columns, badges, expression: null, rule: null };
+  if (index.isEnabled === false) {
+    // A unique constraint is a constraint; the other kinds are indexes, whose word some
+    // languages give another gender.
+    badges.push(
+      badge(
+        "disabled",
+        t(
+          index.kind === "uniqueConstraint"
+            ? "details.badge.disabled"
+            : "details.badge.indexDisabled",
+        ),
+      ),
+    );
+  }
+  if (index.isFiltered === true) {
+    badges.push(badge("filtered", t("details.badge.filtered")));
+  }
+  const included = index.includedColumns ?? [];
+  return {
+    name: index.name,
+    columns: index.columns,
+    badges,
+    include: included.length === 0 ? null : t("details.include", { columns: included.join(", ") }),
+    expression: null,
+    rule: null,
+  };
+}
+
+/** The badges of an enabled or disabled constraint, and of one SQL Server marks as not trusted. */
+function constraintBadges(
+  isEnabled: boolean | null,
+  isTrusted: boolean | null,
+  { t }: Words,
+): BadgeView[] {
+  if (isEnabled === false) {
+    return [badge("disabled", t("details.badge.disabled"))];
+  }
+  // A disabled constraint is never trusted; only an enabled one is marked for it.
+  return isEnabled === true && isTrusted === false
+    ? [badge("untrusted", t("details.badge.untrusted"))]
+    : [];
 }
 
 function checkItem(constraint: CheckFacts, entity: string, words: Words): ConstraintItemView {
   return {
     name: constraint.name,
     columns: [],
-    badges:
-      constraint.isEnabled === false ? [badge("disabled", words.t("details.badge.disabled"))] : [],
+    badges: constraintBadges(constraint.isEnabled, constraint.isTrusted, words),
+    include: null,
     expression: expressionView(constraint.expression, words),
     rule: checkRule(constraint, entity, words),
   };
@@ -487,7 +586,7 @@ function relationItem(relation: RelationFacts, words: Words): RelationItemView {
     columns: relation.columns.map((pair) =>
       pair.referenced === null ? pair.referencing : `${pair.referencing} → ${pair.referenced}`,
     ),
-    badges: relation.isEnabled ? [] : [badge("disabled", t("details.badge.disabled"))],
+    badges: constraintBadges(relation.isEnabled, relation.isTrusted, words),
     target: targetView(relation.target, words),
     hint:
       relation.notCheckedSince === null

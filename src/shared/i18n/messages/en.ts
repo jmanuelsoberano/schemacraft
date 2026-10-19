@@ -347,6 +347,8 @@ export const englishMessages = {
   "review.noChanges.notChecked":
     "Update the project to record this read; what could not be checked keeps its saved value.",
   "review.noChanges.accessChanged": "Update the project to record what this login can see.",
+  "review.noChanges.captureRecorded":
+    "This read records details the project didn't have yet. Update the project to keep them.",
   "review.notChecked.title": "Not everything could be checked",
   "review.notChecked.body.one":
     "{count} item isn't visible to this login, so it was not checked and keeps its saved value.",
@@ -354,6 +356,10 @@ export const englishMessages = {
     "{count} items aren't visible to this login, so they were not checked and keep their saved values.",
   "review.section.notChecked": "Not checked",
   "review.section.nowAvailable": "Now available",
+  "review.section.captureRecorded": "Recorded for the first time",
+  "review.capture.indexAndConstraintState": "Index and constraint state",
+  "review.capture.objects.one": "{count} index, key or constraint",
+  "review.capture.objects.other": "{count} indexes, keys and constraints",
   "review.accessChanged": "This refresh also records what this login can see.",
   "review.foreignKey.invisibleTable": "{table} ({columns}) → a table not visible to this login",
   "review.summary.added.one": "{count} added",
@@ -374,6 +380,7 @@ export const englishMessages = {
   "review.index": "Index",
   "review.checkConstraint": "Check",
   "review.checkConstraint.disabled": "{name} {expression} (disabled)",
+  "review.checkConstraint.untrusted": "{name} {expression} (not trusted)",
   "review.property.dataType": "Type",
   "review.property.nullability": "Nullable",
   "review.property.defaultExpression": "Default",
@@ -384,6 +391,7 @@ export const englishMessages = {
   "review.property.onDelete": "On delete",
   "review.property.onUpdate": "On update",
   "review.property.enabled": "Enabled",
+  "review.property.trust": "Trusted",
   "review.value.yes": "yes",
   "review.value.no": "no",
   "review.value.none": "none",
@@ -435,6 +443,10 @@ export const englishMessages = {
   "details.badge.identity": "identity",
   "details.badge.computed": "computed",
   "details.badge.disabled": "disabled",
+  "details.badge.indexDisabled": "disabled",
+  "details.badge.filtered": "filtered",
+  "details.badge.untrusted": "not trusted",
+  "details.include": "INCLUDE ({columns})",
   "details.default": "DEFAULT {expression}",
   "details.hint.notAvailable": "The text isn't visible to this login.",
   "details.hint.notRecorded":

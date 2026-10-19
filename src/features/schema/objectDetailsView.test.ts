@@ -15,6 +15,7 @@ import type {
   DetailSection,
   DetailSectionKind,
   DetailsScope,
+  IndexFacts,
   ListCompleteness,
   ObjectDetails,
   RelationFacts,
@@ -59,6 +60,7 @@ function check(
   name: string,
   expression: CheckConstraint["expression"],
   isEnabled: boolean | null,
+  isTrusted: boolean | null = null,
 ): CheckFacts {
   const text = definitionText(expression);
   return {
@@ -68,7 +70,12 @@ function check(
         ? { status: isUnknownDefinition(expression) ? "notRecorded" : "notAvailable" }
         : { status: "readable", text },
     isEnabled,
-    reading: readCheckConstraint({ name, expression, isEnabled }, ORDERS_COLUMNS, "sales.Orders"),
+    isTrusted,
+    reading: readCheckConstraint(
+      { name, expression, isEnabled, ...(isTrusted === null ? {} : { isTrusted }) },
+      ORDERS_COLUMNS,
+      { schema: "sales", name: "Orders" },
+    ),
   };
 }
 
@@ -116,6 +123,20 @@ function column(overrides: Partial<ColumnFacts> = {}): ColumnFacts {
   };
 }
 
+/** An index whose state, unless given, was not recorded, as in a file saved before 1.2. */
+function index(overrides: Partial<IndexFacts> = {}): IndexFacts {
+  return {
+    name: "IX_Name",
+    columns: ["Name"],
+    kind: "nonUnique",
+    isClustered: false,
+    includedColumns: null,
+    isFiltered: null,
+    isEnabled: null,
+    ...overrides,
+  };
+}
+
 function relation(
   overrides: Partial<RelationFacts> = {},
   key: ForeignKey = ordersCustomers(),
@@ -126,6 +147,7 @@ function relation(
     onDelete: key.onDelete,
     onUpdate: key.onUpdate,
     isEnabled: key.isEnabled,
+    isTrusted: key.isTrusted ?? null,
     target: {
       status: "available",
       key: "dbo.Customers",
@@ -289,6 +311,134 @@ describe.each(SUPPORTED_LOCALES)("presentObjectDetails in %s", (locale) => {
     expect(disabled.rule.sentences).toHaveLength(1);
     expect(disabled.rule.sentences[0]).toMatchObject({ kind: "group", group: "whenEnabled" });
     expect(lines(disabled.rule.sentences)[0]).toBe(catalog["rule.whenEnabled"]);
+    // A disabled key is never trusted, and only its disabled badge says so.
+    expect(
+      presentRelation(
+        relation({ isEnabled: false, isTrusted: false }, ordersCustomers({ isEnabled: false })),
+        t,
+      ).badges,
+    ).toEqual([{ kind: "disabled", label: catalog["details.badge.disabled"] }]);
+  });
+
+  it("badges a key SQL Server marks as not trusted and says so before its sentences", () => {
+    const key = ordersCustomers({ isTrusted: false });
+    const untrusted = presentRelation(relation({ isTrusted: false }, key), t);
+    expect(untrusted.badges).toEqual([
+      { kind: "untrusted", label: catalog["details.badge.untrusted"] },
+    ]);
+    expect(lines(untrusted.rule.sentences).slice(0, 2)).toEqual([
+      catalog["rule.trust.notVerified"].replace("{table}", "sales.Orders"),
+      catalog["rule.whenWritten.one"].replace("{columns}", "CustomerId"),
+    ]);
+    expect(untrusted.rule.sentences[1]).toMatchObject({ kind: "group", group: "whenWritten" });
+    expect(untrusted.rule.sql?.startsWith("ALTER TABLE [sales].[Orders] WITH NOCHECK ADD")).toBe(
+      true,
+    );
+    expect(presentRelation(relation({ isTrusted: true }), t).badges).toEqual([]);
+    expect(presentRelation(relation({ isTrusted: null }), t).badges).toEqual([]);
+  });
+
+  it("badges a CHECK SQL Server marks as not trusted and says so before its sentences", () => {
+    const [untrusted, trusted, unrecorded] = sectionOf(
+      presentObjectDetails(
+        tableDetails([
+          {
+            kind: "checks",
+            items: [
+              check("CK_A", { status: "readable", text: "([OrderId]>(0))" }, true, false),
+              check("CK_B", { status: "readable", text: "([OrderId]>(0))" }, true, true),
+              check("CK_C", { status: "readable", text: "([OrderId]>(0))" }, true),
+            ],
+            completeness: COMPLETE,
+          },
+        ]),
+        t,
+      ),
+      "checks",
+    ).items;
+    expect(untrusted?.badges).toEqual([
+      { kind: "untrusted", label: catalog["details.badge.untrusted"] },
+    ]);
+    expect(lines(untrusted?.rule?.sentences ?? [])).toEqual([
+      catalog["rule.trust.notVerified"].replace("{table}", "sales.Orders"),
+      catalog["rule.whenWritten.one"].replace("{columns}", "OrderId"),
+      `  ${catalog["rule.check.gt"].replace("{column}", "OrderId").replace("{value}", "0")}`,
+    ]);
+    expect(trusted?.badges).toEqual([]);
+    expect(unrecorded?.badges).toEqual([]);
+    expect(lines(trusted?.rule?.sentences ?? [])).toEqual(lines(unrecorded?.rule?.sentences ?? []));
+  });
+
+  it("says a CHECK whose text the login cannot see may not hold for the rows there", () => {
+    // Trust needs no VIEW DEFINITION, so the sentence stays when the text is missing.
+    const present = (isTrusted: boolean | null) =>
+      sectionOf(
+        presentObjectDetails(
+          tableDetails([
+            {
+              kind: "checks",
+              items: [check("CK_Hidden", { status: "notVisible" }, true, isTrusted)],
+              completeness: COMPLETE,
+            },
+          ]),
+          t,
+        ),
+        "checks",
+      );
+    const section = present(false);
+    const [hidden] = section.items;
+    expect(hidden?.badges).toEqual([
+      { kind: "untrusted", label: catalog["details.badge.untrusted"] },
+    ]);
+    expect(hidden?.expression).toMatchObject({
+      state: "notAvailable",
+      text: catalog["definition.notAvailable"],
+    });
+    expect(lines(hidden?.rule?.sentences ?? [])).toEqual([
+      catalog["rule.trust.notVerified"].replace("{table}", "sales.Orders"),
+    ]);
+    expect(hidden?.rule).toMatchObject({ unread: null, sql: null, sqlNote: null });
+    expect(hidden?.rule && hasRuleTargets(hidden.rule.targets)).toBe(false);
+    // Nothing is worded from its definition, so no note is needed.
+    expect(section.notes).toEqual([]);
+    expect(present(true).items[0]?.rule).toBeNull();
+    expect(present(null).items[0]?.rule).toBeNull();
+  });
+
+  it("keeps the 1.1 derived note while the trust of a rule in words is not recorded", () => {
+    const derived = catalog["rule.note.derived"];
+    const recorded = catalog["rule.note.derivedRecorded"];
+    const notesOf = (sections: DetailSection[], kind: "checks" | "references") =>
+      sectionOf(presentObjectDetails(tableDetails(sections), t), kind).notes;
+    const checks = (...items: CheckFacts[]): DetailSection[] => [
+      { kind: "checks", items, completeness: COMPLETE },
+    ];
+    const text = { status: "readable", text: "([OrderId]>(0))" } as const;
+    expect(notesOf(checks(check("CK_A", text, true, true)), "checks")).toEqual([recorded]);
+    expect(notesOf(checks(check("CK_A", text, true, false)), "checks")).toEqual([recorded]);
+    // A file saved before 1.2 did not record trust, and a section that mixes keeps the clause.
+    expect(notesOf(checks(check("CK_A", text, true)), "checks")).toEqual([derived]);
+    expect(
+      notesOf(checks(check("CK_A", text, true, true), check("CK_B", text, true)), "checks"),
+    ).toEqual([derived]);
+    // Only the rules in words count: a CHECK whose text is missing says nothing of the note.
+    expect(
+      notesOf(
+        checks(check("CK_A", text, true, true), check("CK_B", { status: "notVisible" }, true)),
+        "checks",
+      ),
+    ).toEqual([recorded]);
+    const references = (...items: RelationFacts[]): DetailSection[] => [
+      { kind: "references", items, completeness: COMPLETE },
+    ];
+    expect(notesOf(references(relation({ isTrusted: true })), "references")).toEqual([recorded]);
+    expect(notesOf(references(relation({ isTrusted: null })), "references")).toEqual([derived]);
+    expect(
+      notesOf(
+        references(relation({ isTrusted: false }), relation({ isTrusted: null })),
+        "references",
+      ),
+    ).toEqual([derived]);
   });
 
   it("says nothing it cannot know about a key to a table the login cannot see", () => {
@@ -424,6 +574,7 @@ describe.each(SUPPORTED_LOCALES)("presentObjectDetails in %s", (locale) => {
         name: "CK_OrderId",
         columns: [],
         badges: [],
+        include: null,
         expression: { state: "readable", text: "([OrderId]>(0))", hint: null },
         rule: "rule",
       },
@@ -431,6 +582,7 @@ describe.each(SUPPORTED_LOCALES)("presentObjectDetails in %s", (locale) => {
         name: "CK_Email",
         columns: [],
         badges: [{ kind: "disabled", label: catalog["details.badge.disabled"] }],
+        include: null,
         expression: {
           state: "notAvailable",
           text: catalog["definition.notAvailable"],
@@ -442,6 +594,7 @@ describe.each(SUPPORTED_LOCALES)("presentObjectDetails in %s", (locale) => {
         name: "CK_Status",
         columns: [],
         badges: [],
+        include: null,
         expression: {
           state: "notRecorded",
           text: catalog["definition.notRecorded"],
@@ -473,15 +626,27 @@ describe.each(SUPPORTED_LOCALES)("presentObjectDetails in %s", (locale) => {
       tableDetails([
         {
           kind: "primaryKey",
-          items: [{ name: "PK_Orders", columns: ["OrderId", "LineNumber"], isClustered: true }],
+          items: [
+            {
+              name: "PK_Orders",
+              columns: ["OrderId", "LineNumber"],
+              isClustered: true,
+              isEnabled: null,
+            },
+          ],
           completeness: COMPLETE,
         },
         {
           kind: "indexes",
           items: [
-            { name: "UX_Email", columns: ["Email"], kind: "uniqueIndex", isClustered: false },
-            { name: "UQ_Code", columns: ["Code"], kind: "uniqueConstraint", isClustered: true },
-            { name: "IX_Name", columns: ["Name"], kind: "nonUnique", isClustered: false },
+            index({ name: "UX_Email", columns: ["Email"], kind: "uniqueIndex" }),
+            index({
+              name: "UQ_Code",
+              columns: ["Code"],
+              kind: "uniqueConstraint",
+              isClustered: true,
+            }),
+            index({ name: "IX_Name", columns: ["Name"], kind: "nonUnique" }),
           ],
           completeness: COMPLETE,
         },
@@ -493,19 +658,72 @@ describe.each(SUPPORTED_LOCALES)("presentObjectDetails in %s", (locale) => {
         name: "PK_Orders",
         columns: ["OrderId", "LineNumber"],
         badges: [{ kind: "clustered", label: catalog["indexKind.clustered"] }],
+        include: null,
         expression: null,
         rule: null,
       },
     ]);
     // Keys and indexes are no rules to put into words, and need no notes.
     expect(sectionOf(view, "indexes").notes).toEqual([]);
-    expect(sectionOf(view, "indexes").items.map((index) => index.badges)).toEqual([
+    expect(sectionOf(view, "indexes").items.map((item) => item.badges)).toEqual([
       [{ kind: "unique", label: catalog["indexKind.uniqueIndex"] }],
       [
         { kind: "unique", label: catalog["indexKind.uniqueConstraint"] },
         { kind: "clustered", label: catalog["indexKind.clustered"] },
       ],
       [],
+    ]);
+  });
+
+  it("marks what a key or an index does not enforce, and lists included columns", () => {
+    const view = presentObjectDetails(
+      tableDetails([
+        {
+          kind: "primaryKey",
+          items: [
+            { name: "PK_Orders", columns: ["OrderId"], isClustered: false, isEnabled: false },
+          ],
+          completeness: COMPLETE,
+        },
+        {
+          kind: "indexes",
+          items: [
+            index({ name: "UX_Open", kind: "uniqueIndex", isFiltered: true, isEnabled: true }),
+            index({ name: "UQ_Code", kind: "uniqueConstraint", isEnabled: false }),
+            index({
+              name: "IX_Placed",
+              includedColumns: ["Total", "Status"],
+              isEnabled: false,
+              isFiltered: false,
+            }),
+            index({ name: "IX_Saved", includedColumns: [] }),
+          ],
+          completeness: COMPLETE,
+        },
+      ]),
+      t,
+    );
+    expect(sectionOf(view, "primaryKey").items[0]?.badges).toEqual([
+      { kind: "disabled", label: catalog["details.badge.disabled"] },
+    ]);
+    const indexes = sectionOf(view, "indexes").items;
+    expect(indexes.map((item) => item.badges)).toEqual([
+      [
+        { kind: "unique", label: catalog["indexKind.uniqueIndex"] },
+        { kind: "filtered", label: catalog["details.badge.filtered"] },
+      ],
+      [
+        { kind: "unique", label: catalog["indexKind.uniqueConstraint"] },
+        { kind: "disabled", label: catalog["details.badge.disabled"] },
+      ],
+      [{ kind: "disabled", label: catalog["details.badge.indexDisabled"] }],
+      [],
+    ]);
+    expect(indexes.map((item) => item.include)).toEqual([
+      null,
+      null,
+      t.t("details.include", { columns: "Total, Status" }),
+      null,
     ]);
   });
 });
@@ -539,10 +757,22 @@ describe("a table of the preview fixture, read with partial access", () => {
     expect(view.sections.map((section) => [section.title, section.count])).toEqual([
       ["Columns", 5],
       ["Primary key", 1],
-      ["Indexes", 1],
+      ["Indexes", 3],
       ["Check constraints", 1],
       ["References", 2],
       ["Referenced by", 1],
+    ]);
+    // A reader sees the state of the indexes as the owner does.
+    expect(
+      sectionOf(view, "indexes").items.map((item) => [
+        item.name,
+        item.badges.map((badge) => badge.label),
+        item.include,
+      ]),
+    ).toEqual([
+      ["IX_Orders_CustomerId", [], "INCLUDE (PlacedAt)"],
+      ["UX_Orders_OpenCustomer", ["unique index", "filtered"], null],
+      ["UQ_Orders_SalesRep", ["unique constraint", "disabled"], null],
     ]);
     const columns = sectionOf(view, "columns");
     expect(columns.headers).toEqual({ name: "Column", type: "Type", nullable: "Nullable" });
@@ -583,7 +813,7 @@ describe("a table of the preview fixture, read with partial access", () => {
     });
     expect(lines(references.items[0]?.rule.sentences ?? [])).toEqual([
       "Each row in sales.Orders belongs to at most one row in hr.Employees, and to none when SalesRepId is NULL",
-      "A row in hr.Employees can be referenced by any number of rows in sales.Orders, or by none",
+      "A row in hr.Employees can be referenced by any number of rows in sales.Orders, or by none, because the index UQ_Orders_SalesRep is disabled",
       "Deleting a row in hr.Employees sets SalesRepId to NULL in the rows of sales.Orders that point to it",
     ]);
     // A key to a table the login cannot see says what its local columns and actions reveal.
@@ -597,7 +827,7 @@ describe("a table of the preview fixture, read with partial access", () => {
       "Changing the referenced key of a row in the referenced table also changes CustomerId in the rows of sales.Orders that point to it",
     ]);
     expect(references.notes).toEqual([
-      "SchemaCraft words these rules from their definitions. SQL Server checks them when values are written, so rows saved before a rule existed may not follow it.",
+      "SchemaCraft words these rules from their definitions. SQL Server checks them when values are written.",
     ]);
     const referencedBy = sectionOf(view, "referencedBy");
     expect(referencedBy.items.map((item) => item.name)).toEqual(["FK_OrderLines_Orders"]);
@@ -639,9 +869,12 @@ describe("a table of the preview fixture, read with partial access", () => {
     expect(references.items[0]).toMatchObject({ target: { goLabel: "Ir a hr.Employees" } });
     expect(lines(references.items[0]?.rule.sentences ?? [])).toEqual([
       "Cada fila de sales.Orders pertenece como mucho a una fila de hr.Employees, y a ninguna cuando SalesRepId es NULL",
-      "Una fila de hr.Employees puede estar referenciada por cualquier número de filas de sales.Orders, o por ninguna",
+      "Una fila de hr.Employees puede estar referenciada por cualquier número de filas de sales.Orders, o por ninguna, porque el índice UQ_Orders_SalesRep está deshabilitado",
       "Al borrar una fila de hr.Employees, las filas de sales.Orders que la referenciaban quedan con SalesRepId en NULL",
     ]);
+    expect(
+      sectionOf(view, "indexes").items.map((item) => item.badges.map((badge) => badge.label)),
+    ).toEqual([[], ["índice único", "filtrado"], ["restricción única", "deshabilitada"]]);
     expect(references.items[1]?.target.label).toBe(
       "Una tabla no visible para este inicio de sesión",
     );
@@ -724,17 +957,22 @@ describe("the CHECKs of the preview fixture, read by its owner", () => {
     const [email, name] = checks.items;
     expect(lines(email?.rule?.sentences ?? [])).toEqual(["Email must match the pattern '%_@_%'"]);
     expect(email?.rule?.targets.columns).toEqual(new Map([["dbo.Customers", ["Email"]]]));
-    expect(name?.rule).toEqual({
-      sentences: [],
+    // It was enabled again without checking the rows already there, which is still said.
+    expect(name?.rule).toMatchObject({
       unread: "This rule can't be put into words. Its definition, as SQL Server stores it:",
       sql: "([dbo].[fn_valid_name]([Name])=(1))",
       sqlNote: null,
       targets: { columns: new Map([["dbo.Customers", ["Name"]]]), relation: null },
     });
+    expect(lines(name?.rule?.sentences ?? [])).toEqual([
+      "Rows already in dbo.Customers may not follow this rule: SQL Server marks it as not trusted",
+    ]);
+    expect(name?.badges).toEqual([{ kind: "untrusted", label: "not trusted" }]);
+    expect(email?.badges).toEqual([]);
     expect(checks.notes).toEqual([
       "In a pattern, % stands for any text, _ for any one character and [ ] for one character from a set.",
       "Text comparisons follow the column's collation, which may ignore case, accents or some characters, and two texts that differ only in trailing spaces count as equal.",
-      "SchemaCraft words these rules from their definitions. SQL Server checks them when values are written, so rows saved before a rule existed may not follow it.",
+      "SchemaCraft words these rules from their definitions. SQL Server checks them when values are written.",
     ]);
     expect(checksOf("dbo.Customers", spanish).notes).toHaveLength(3);
   });
