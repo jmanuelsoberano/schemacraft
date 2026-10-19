@@ -218,7 +218,10 @@ less than before, what appeared, what disappeared and what could not be checked.
 
 A `.scraft` file is pretty-printed JSON: a header with the format version, the oldest format a
 reader needs (`minReaderVersion`) and the save time, the connection without its password, the
-inspection options, the full snapshot and the diagram state. The snapshot also records what the
+inspection options, the full snapshot and the diagram state. Since 1.2 the snapshot can also hold
+the code of views, procedures, functions and triggers. That code is business logic and may contain
+anything its authors wrote into it, credentials included, so treat a `.scraft` file like the source
+code of the database; no export carries it. The snapshot also records what the
 login that read it could see: its permissions in that database, including the name of its
 database user, and the list of facts kept from an earlier read that it could not check. No export
 carries the permissions or the database user. An HTML export carries the access verdicts (the
@@ -229,11 +232,11 @@ object on the diagram. A project reopens
 without a database; refresh reconnects through the connection dialog and shows the differences
 before applying them, keeping the positions of surviving tables.
 
-SchemaCraft 1.1 saves projects in format 2. It opens 1.0 projects and converts them when they
-are saved, after which SchemaCraft 1.0 can no longer open them. A project saved by a newer
-version opens read-only when that version allows it: it can be rearranged and exported, but not
-saved or refreshed. Data this version does not understand is kept as it is when a project is
-saved.
+SchemaCraft 1.2 saves projects in format 3. It opens 1.0 and 1.1 projects and converts them when
+they are saved. SchemaCraft 1.1 opens a project saved by 1.2 read-only, without its code, and 1.0
+cannot open it at all. A project saved by a newer version opens read-only when that version allows
+it: it can be rearranged and exported, but not saved or refreshed. Data this version does not
+understand is kept as it is when a project is saved.
 
 Recent connections (never passwords) and recent projects are stored in `preferences.json`
 inside the per-user configuration directory, `%APPDATA%\com.jmanuelsoberano.schemacraft` on
@@ -245,7 +248,8 @@ The interface also keeps two conveniences in the WebView2 local storage, under
 - `schemacraft.settings`: the theme, the language, the entities panel's state and width, the
   Inspector's width, and the partial-access notices you closed.
 - `schemacraft.connection`: the last connection form. The password is always blank; the server,
-  login, database, schemas, encryption and certificate choice are kept.
+  login, database, schemas, the view and code options, encryption and certificate choice are
+  kept.
 
 Deleting `preferences.json` clears neither. Deleting the WebView2 data in that folder, with
 SchemaCraft closed, resets both: the default theme and language return, closed notices show

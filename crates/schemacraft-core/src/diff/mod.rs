@@ -224,7 +224,7 @@ mod tests {
         reader_snapshot, sample_snapshot, schema_reader_profile, with_access,
     };
     use crate::model::{
-        AccessCounts, Column, Definition, ForeignKeyToInvisibleTable, QualifiedName,
+        AccessCounts, Column, Completeness, Definition, ForeignKeyToInvisibleTable, QualifiedName,
         ReferentialAction, SchemaSnapshot, SnapshotFact, SqlDataType, Table,
     };
 
@@ -337,6 +337,75 @@ mod tests {
         assert_eq!(now_available(&diff), hidden_texts());
         assert_eq!(diff.not_checked, []);
         assert!(diff.access_changed);
+    }
+
+    #[test]
+    fn a_coverage_of_code_counts_only_when_both_captures_judged_it() {
+        let previous = sample_snapshot();
+        let with_code = |programmability, module_definitions| {
+            let mut snapshot = sample_snapshot();
+            let profile = snapshot.access.as_mut().unwrap();
+            profile.coverage.programmability = programmability;
+            profile.coverage.module_definitions = module_definitions;
+            snapshot
+        };
+
+        // The first capture that judges code is no change of access.
+        let first = with_code(
+            Some(Completeness::Partial),
+            Some(Completeness::NotAvailable),
+        );
+        assert!(!SchemaDiff::between(&previous, &first).access_changed);
+        assert!(SchemaDiff::between(&previous, &first).is_up_to_date());
+        // Two captures that judged it and disagree are.
+        let later = with_code(
+            Some(Completeness::Complete),
+            Some(Completeness::NotAvailable),
+        );
+        assert!(SchemaDiff::between(&first, &later).access_changed);
+        let texts = with_code(Some(Completeness::Partial), Some(Completeness::Complete));
+        assert!(SchemaDiff::between(&first, &texts).access_changed);
+        assert!(!SchemaDiff::between(&first, &first.clone()).access_changed);
+    }
+
+    #[test]
+    fn index_and_key_state_recorded_on_one_side_only_is_no_change() {
+        let previous = sample_snapshot();
+        let mut recorded = sample_snapshot();
+        for table in &mut recorded.tables {
+            if let Some(key) = table.primary_key.as_mut() {
+                key.is_enabled = Some(true);
+            }
+            for index in &mut table.indexes {
+                index.included_columns = Some(vec!["Notes".to_string()]);
+                index.is_filtered = Some(false);
+                index.is_enabled = Some(true);
+            }
+        }
+
+        assert!(SchemaDiff::between(&previous, &recorded).is_empty());
+        assert!(SchemaDiff::between(&recorded, &previous).is_empty());
+
+        // Recorded on both sides, a different state is a change.
+        let mut disabled = recorded.clone();
+        disabled.tables[0].indexes[0].is_enabled = Some(false);
+        disabled.tables[1].primary_key.as_mut().unwrap().is_enabled = Some(false);
+        let diff = SchemaDiff::between(&recorded, &disabled);
+        let [
+            TableChange::Changed {
+                primary_key: None,
+                indexes,
+                ..
+            },
+            TableChange::Changed {
+                primary_key: Some(_),
+                ..
+            },
+        ] = diff.tables.as_slice()
+        else {
+            panic!("expected an index and a key change: {:?}", diff.tables);
+        };
+        assert_eq!(indexes.len(), 1);
     }
 
     #[test]

@@ -88,6 +88,25 @@ describe("draftToInspectionOptions", () => {
         schemas: ["sales"],
         includeViews: false,
       }),
-    ).toEqual({ schemas: ["sales"], includeViews: false });
+    ).toEqual({
+      schemas: ["sales"],
+      includeViews: false,
+      includeProgrammability: true,
+      includeModuleDefinitions: true,
+    });
+  });
+
+  it("reads and saves code unless the user turns it off", () => {
+    expect(draftToInspectionOptions(emptyConnectionDraft)).toMatchObject({
+      includeProgrammability: true,
+      includeModuleDefinitions: true,
+    });
+    expect(
+      draftToInspectionOptions({
+        ...emptyConnectionDraft,
+        includeProgrammability: false,
+        includeModuleDefinitions: false,
+      }),
+    ).toMatchObject({ includeProgrammability: false, includeModuleDefinitions: false });
   });
 });

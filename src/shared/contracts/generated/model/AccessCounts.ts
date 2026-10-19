@@ -5,7 +5,7 @@
  */
 export type AccessCounts = { 
 /**
- * `CHECK` and `DEFAULT` expressions, readable or not.
+ * `CHECK` and `DEFAULT` expressions, readable or not. Module texts are counted apart.
  */
 definitions: number, 
 /**
@@ -15,4 +15,17 @@ definitionsNotVisible: number,
 /**
  * Foreign keys that reference a table the login cannot see.
  */
-foreignKeysToInvisibleTables: number, };
+foreignKeysToInvisibleTables: number, 
+/**
+ * Texts of views, procedures, functions and triggers written in T-SQL, readable or not;
+ * zero when the capture read no code.
+ */
+moduleDefinitions?: number, 
+/**
+ * Module texts the login cannot see.
+ */
+moduleDefinitionsNotVisible?: number, 
+/**
+ * Module texts that are encrypted, which no login can read.
+ */
+moduleDefinitionsEncrypted?: number, };

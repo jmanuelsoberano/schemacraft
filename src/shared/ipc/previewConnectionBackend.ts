@@ -29,7 +29,12 @@ import type { ConnectionBackend } from "./connectionBackend";
 import { OperationError } from "./operationError";
 import { nameKey, observedAccess, predictedAccess } from "./previewAccess";
 
-const EVERYTHING: InspectionOptions = { schemas: [], includeViews: true };
+const EVERYTHING: InspectionOptions = {
+  schemas: [],
+  includeViews: true,
+  includeProgrammability: true,
+  includeModuleDefinitions: true,
+};
 
 const STAGES: readonly InspectionStage[] = [
   "connecting",

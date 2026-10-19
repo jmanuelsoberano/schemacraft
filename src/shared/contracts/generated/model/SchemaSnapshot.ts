@@ -3,6 +3,7 @@ import type { AccessProfile } from "./AccessProfile";
 import type { CarriedFact } from "./CarriedFact";
 import type { ForeignKey } from "./ForeignKey";
 import type { ForeignKeyToInvisibleTable } from "./ForeignKeyToInvisibleTable";
+import type { Programmability } from "./Programmability";
 import type { Table } from "./Table";
 import type { View } from "./View";
 
@@ -51,4 +52,11 @@ foreignKeysToInvisibleTables?: Array<ForeignKeyToInvisibleTable>,
  * Facts kept from an earlier snapshot because this extraction could not check them, with
  * the moment each was last read. See [`SchemaSnapshot::with_unchecked_facts_from`].
  */
-carriedOver?: Array<CarriedFact>, };
+carriedOver?: Array<CarriedFact>, 
+/**
+ * Procedures, functions, DML triggers and the code of views; `None` when the extraction
+ * did not record them, as in every file written before 1.2, which says nothing about
+ * whether the database has any. Code lives here and never inside a table or view, so an
+ * export, which rebuilds the snapshot from the keys it knows, cannot carry it.
+ */
+programmability?: Programmability, };

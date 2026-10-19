@@ -93,7 +93,8 @@ vi.mock("@/shared/settings/settingsStore", () => ({
   useSettingsStore: { getState: () => ({ locale: "en" }) },
 }));
 
-const { canReadSchema, useConnectionStore } = await import("./connectionStore");
+const { canReadSchema, mergePersistedConnection, useConnectionStore } =
+  await import("./connectionStore");
 const { useProjectStore } = await import("@/features/project/projectStore");
 const { emptyConnectionDraft } = await import("./connectionDraft");
 
@@ -361,6 +362,32 @@ describe("a read-only project", () => {
 });
 
 describe("the persisted draft", () => {
+  it("keeps the defaults of the fields a draft stored by an older version lacks", () => {
+    const current = { draft: emptyConnectionDraft, phase: "idle" };
+    // A draft that SchemaCraft 1.1 stored, without the code options.
+    const stored = {
+      draft: { ...emptyConnectionDraft, server: "db", schemas: ["sales"] } as Record<
+        string,
+        unknown
+      >,
+    };
+    delete stored.draft.includeProgrammability;
+    delete stored.draft.includeModuleDefinitions;
+
+    const merged = mergePersistedConnection(stored, current);
+
+    expect(merged.phase).toBe("idle");
+    expect(merged.draft).toEqual({
+      ...emptyConnectionDraft,
+      server: "db",
+      schemas: ["sales"],
+      includeProgrammability: true,
+      includeModuleDefinitions: true,
+    });
+    expect(mergePersistedConnection(null, current)).toBe(current);
+    expect(mergePersistedConnection({ draft: "nope" }, current)).toBe(current);
+  });
+
   it("never holds the password", async () => {
     await testedAgainstShop(personas.owner);
 
@@ -390,5 +417,10 @@ function liveSettings(): ConnectionSettings {
 }
 
 function everything(): InspectionOptions {
-  return { schemas: [], includeViews: true };
+  return {
+    schemas: [],
+    includeViews: true,
+    includeProgrammability: true,
+    includeModuleDefinitions: true,
+  };
 }

@@ -48,11 +48,20 @@ pub struct InspectionOptions {
     #[serde(default)]
     pub schemas: Vec<String>,
     /// Whether views are extracted alongside tables.
-    #[serde(default = "default_include_views")]
+    #[serde(default = "included_by_default")]
     pub include_views: bool,
+    /// Whether procedures, functions and triggers are read. On unless the user turns it off, so
+    /// a project saved before 1.2, which has no such option, reads them on its next refresh.
+    #[serde(default = "included_by_default")]
+    pub include_programmability: bool,
+    /// Whether the code of views, procedures, functions and triggers is read and saved in the
+    /// project; it only applies while `include_programmability` is on. On unless the user turns
+    /// it off, like `include_programmability`.
+    #[serde(default = "included_by_default")]
+    pub include_module_definitions: bool,
 }
 
-fn default_include_views() -> bool {
+fn included_by_default() -> bool {
     true
 }
 
@@ -60,7 +69,9 @@ impl Default for InspectionOptions {
     fn default() -> Self {
         Self {
             schemas: Vec::new(),
-            include_views: default_include_views(),
+            include_views: included_by_default(),
+            include_programmability: included_by_default(),
+            include_module_definitions: included_by_default(),
         }
     }
 }
@@ -73,11 +84,15 @@ impl InspectionOptions {
 }
 
 impl From<&InspectionOptions> for CaptureScope {
-    /// The scope an access profile records for a capture made with these options.
+    /// The scope an access profile records for a capture made with these options. The
+    /// inspectors read no code, so the scope never says that its capture asked for code,
+    /// whatever the options say: a profile records what its capture read.
     fn from(options: &InspectionOptions) -> Self {
         Self {
             schemas: options.schemas.clone(),
             include_views: options.include_views,
+            include_programmability: false,
+            include_module_definitions: false,
         }
     }
 }
@@ -130,7 +145,7 @@ pub struct ServerInformation {
 #[cfg(test)]
 mod tests {
     use super::{DatabaseDescription, InspectionOptions};
-    use crate::model::{AccessLevel, AccessProbe, SchemaAccess};
+    use crate::model::{AccessLevel, AccessProbe, CaptureScope, SchemaAccess};
 
     #[test]
     fn a_description_offers_only_schemas_with_visible_objects() {
@@ -140,11 +155,14 @@ mod tests {
             can_read_data: true,
             is_denied: false,
             has_visible_objects,
+            has_visible_programmability: false,
+            is_execute_denied: false,
         };
         let probe = AccessProbe {
             can_read_definitions: false,
             can_read_data: true,
             explicit_denials: Some(0),
+            execute_denials: None,
             sees_objects: true,
             schemas: vec![
                 schema("dbo", true),
@@ -165,6 +183,8 @@ mod tests {
     fn empty_schema_filter_includes_everything() {
         let options = InspectionOptions::default();
         assert!(options.include_views);
+        assert!(options.include_programmability);
+        assert!(options.include_module_definitions);
         assert!(options.includes_schema("dbo"));
         assert!(options.includes_schema("sales"));
     }
@@ -174,6 +194,7 @@ mod tests {
         let options = InspectionOptions {
             schemas: vec!["sales".to_string()],
             include_views: false,
+            ..InspectionOptions::default()
         };
         assert!(options.includes_schema("sales"));
         assert!(!options.includes_schema("Sales"));
@@ -184,5 +205,34 @@ mod tests {
     fn missing_fields_take_defaults_when_deserialising() {
         let options: InspectionOptions = serde_json::from_str("{}").unwrap_or_default();
         assert_eq!(options, InspectionOptions::default());
+    }
+
+    #[test]
+    fn options_saved_before_1_2_read_and_save_code() {
+        // The inspection options of a 1.1 project: no code options at all.
+        let saved = r#"{ "schemas": ["sales"], "includeViews": false }"#;
+        let options: InspectionOptions = serde_json::from_str(saved).unwrap_or_default();
+        assert_eq!(options.schemas, ["sales"]);
+        assert!(!options.include_views);
+        assert!(options.include_programmability);
+        assert!(options.include_module_definitions);
+
+        let turned_off =
+            r#"{ "includeProgrammability": false, "includeModuleDefinitions": false }"#;
+        let options: InspectionOptions = serde_json::from_str(turned_off).unwrap_or_default();
+        assert!(!options.include_programmability);
+        assert!(!options.include_module_definitions);
+        let written = serde_json::to_value(&options).unwrap_or_default();
+        let off = Some(&serde_json::Value::Bool(false));
+        assert_eq!(written.get("includeProgrammability"), off);
+        assert_eq!(written.get("includeModuleDefinitions"), off);
+    }
+
+    #[test]
+    fn a_capture_scope_never_claims_code_it_did_not_read() {
+        let scope = CaptureScope::from(&InspectionOptions::default());
+        assert_eq!(scope, CaptureScope::everything());
+        assert!(!scope.include_programmability);
+        assert!(!scope.include_module_definitions);
     }
 }

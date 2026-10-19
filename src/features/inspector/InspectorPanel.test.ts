@@ -113,7 +113,12 @@ describe("InspectorPanel", () => {
       content: {
         snapshot: previewSnapshot("Shop", "full"),
         canvas: { nodes: [] },
-        inspection: { schemas: [], includeViews: true },
+        inspection: {
+          schemas: [],
+          includeViews: true,
+          includeProgrammability: true,
+          includeModuleDefinitions: true,
+        },
       },
     };
     try {

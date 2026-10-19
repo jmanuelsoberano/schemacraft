@@ -24,6 +24,10 @@ All notable changes to SchemaCraft are documented here. The format follows
 - SQL Server 2019 and 2022 are the tested versions: the integration tests run against both on
   every change to the core. SQL Server 2016 and 2017 are supported on a best-effort basis, without
   tests.
+- Projects are saved in format 3, which can hold the code of views, procedures, functions and
+  triggers and the state of indexes, keys and constraints. Projects saved by 1.0 and 1.1 open and
+  are converted when saved. SchemaCraft 1.1 opens a project saved by 1.2 read-only, without its
+  code, and SchemaCraft 1.0 cannot open it.
 
 ## [1.1.0] - 2026-10-18
 

@@ -82,13 +82,18 @@ const settings: ConnectionSettings = {
   connectTimeoutSeconds: 15,
 };
 
-const inspection = { schemas: [], includeViews: true };
+const inspection = {
+  schemas: [],
+  includeViews: true,
+  includeProgrammability: true,
+  includeModuleDefinitions: true,
+};
 
 const emptyPreferences = { formatVersion: 1, recentConnections: [], recentProjects: [] };
 
 function savedFile(): Project {
   return {
-    formatVersion: 2,
+    formatVersion: 3,
     minReaderVersion: 2,
     savedAt: "2026-10-13T18:30:00Z",
     savedWith: "SchemaCraft 0.1.0",
@@ -115,7 +120,7 @@ function openedFile(): OpenedProject {
 /** A file a newer version wrote, which this one opens read-only. */
 function newerFile(): OpenedProject {
   return {
-    project: { ...savedFile(), formatVersion: 3, savedWith: "SchemaCraft 1.3.0" },
+    project: { ...savedFile(), formatVersion: 4, savedWith: "SchemaCraft 1.3.0" },
     isReadOnly: true,
   };
 }
@@ -131,7 +136,7 @@ async function open(opened: OpenedProject, path: string): Promise<void> {
 /** What the Rust side answers to a save: the content under a fresh header. */
 function writtenAs(content: ProjectContent): Promise<Project> {
   return Promise.resolve({
-    formatVersion: 2,
+    formatVersion: 3,
     minReaderVersion: 2,
     savedAt: "2026-10-15T20:00:00Z",
     savedWith: "SchemaCraft 1.1.0",
@@ -376,7 +381,18 @@ describe("keys this version does not know", () => {
         project: {
           ...file,
           ...{ annotations: [{ entity: customers, text: "Monthly partitions" }] },
-          snapshot: { ...file.snapshot, ...{ routines: [{ name: "usp_PlaceOrder" }] } },
+          snapshot: {
+            ...file.snapshot,
+            ...{ routines: [{ name: "usp_PlaceOrder" }] },
+            // The fifth level that keeps keys a newer version wrote.
+            programmability: {
+              capture: { objects: { status: "read" }, definitions: { status: "read" } },
+              views: [],
+              routines: [],
+              triggers: [],
+              ...{ synonyms: [{ name: { schema: "dbo", name: "Clients" } }] },
+            },
+          },
           canvas: {
             ...file.canvas,
             ...{ gridSize: 16 },
@@ -412,7 +428,10 @@ describe("keys this version does not know", () => {
     const written = projectBackend.writeProject.mock.calls[0]?.[1];
     const expected = {
       annotations: [{ entity: customers, text: "Monthly partitions" }],
-      snapshot: { routines: [{ name: "usp_PlaceOrder" }] },
+      snapshot: {
+        routines: [{ name: "usp_PlaceOrder" }],
+        programmability: { synonyms: [{ name: { schema: "dbo", name: "Clients" } }] },
+      },
       canvas: {
         gridSize: 16,
         layout: "layered",

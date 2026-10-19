@@ -127,8 +127,29 @@ const FIELDS_KEPT_AFTER_TEST: ReadonlySet<keyof ConnectionDraft> = new Set([
   "database",
   "schemas",
   "includeViews",
+  "includeProgrammability",
+  "includeModuleDefinitions",
   "rememberPassword",
 ]);
+
+/**
+ * The state with the stored draft restored over the current one, field by field, so a field the
+ * stored draft predates, such as the code options of 1.2, keeps its default instead of being
+ * left out.
+ */
+export function mergePersistedConnection<State extends { draft: ConnectionDraft }>(
+  persisted: unknown,
+  current: State,
+): State {
+  const stored =
+    typeof persisted === "object" && persisted !== null && "draft" in persisted
+      ? persisted.draft
+      : null;
+  if (typeof stored !== "object" || stored === null) {
+    return current;
+  }
+  return { ...current, draft: { ...current.draft, ...stored } };
+}
 
 export const useConnectionStore = create<ConnectionState>()(
   persist(
@@ -497,6 +518,7 @@ export const useConnectionStore = create<ConnectionState>()(
       name: CONNECTION_STORAGE_KEY,
       version: 1,
       partialize: (state) => ({ draft: { ...state.draft, password: "" } }),
+      merge: mergePersistedConnection,
     },
   ),
 );

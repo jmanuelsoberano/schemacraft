@@ -14,6 +14,11 @@ pub struct PrimaryKey {
     pub columns: Vec<String>,
     /// Whether the key is backed by the clustered index.
     pub is_clustered: bool,
+    /// `false` when the index behind the key is disabled, so the key enforces nothing; `None`
+    /// when the capture did not record the state, as before 1.2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub is_enabled: Option<bool>,
 }
 
 /// Classification of a secondary index.
@@ -42,6 +47,21 @@ pub struct Index {
     pub kind: IndexKind,
     /// Whether this is the clustered index of the table.
     pub is_clustered: bool,
+    /// Columns stored with the index without being part of its key (`INCLUDE`), in index order;
+    /// `None` when the capture did not record them, as before 1.2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub included_columns: Option<Vec<String>>,
+    /// Whether the index covers only the rows of a filter (`WHERE`), so a unique one enforces
+    /// uniqueness among those rows only; `None` when the capture did not record it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub is_filtered: Option<bool>,
+    /// `false` when the index is disabled, so it enforces nothing; `None` when the capture did
+    /// not record the state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub is_enabled: Option<bool>,
 }
 
 impl Index {
@@ -64,6 +84,12 @@ pub struct CheckConstraint {
     /// when the file that holds it did not record the state.
     #[serde(default)]
     pub is_enabled: Option<bool>,
+    /// `false` when SQL Server has not verified that the rows already in the table follow the
+    /// rule (`is_not_trusted`, after `WITH NOCHECK` or a re-enable without `WITH CHECK`); `None`
+    /// when the capture did not record it, as before 1.2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub is_trusted: Option<bool>,
 }
 
 #[cfg(test)]
@@ -76,6 +102,9 @@ mod tests {
             columns: vec!["Id".to_string()],
             kind,
             is_clustered: false,
+            included_columns: None,
+            is_filtered: None,
+            is_enabled: None,
         }
     }
 

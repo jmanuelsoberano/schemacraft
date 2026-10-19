@@ -157,9 +157,12 @@ const outcome: ExportOutcome = {
 };
 
 function openProject(): void {
-  useProjectStore
-    .getState()
-    .loadFromInspection(snapshot, connection, { schemas: [], includeViews: true });
+  useProjectStore.getState().loadFromInspection(snapshot, connection, {
+    schemas: [],
+    includeViews: true,
+    includeProgrammability: true,
+    includeModuleDefinitions: true,
+  });
 }
 
 /** The document the store handed to the Rust side in its last export. */

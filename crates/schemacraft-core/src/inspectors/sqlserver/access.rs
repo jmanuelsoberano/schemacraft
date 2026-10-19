@@ -95,6 +95,8 @@ impl DatabaseAccessRow {
             can_read_definitions: is_granted(self.view_definition),
             can_read_data: is_granted(self.select_permission),
             explicit_denials,
+            // The probe does not count EXECUTE denials: not recorded, so some may exist.
+            execute_denials: None,
             sees_objects: self.sees_objects,
             schemas,
             database_user: self.database_user,
@@ -185,6 +187,9 @@ fn map_schema_row(row: &Row) -> Result<SchemaAccess, InspectorError> {
         can_read_data: is_granted(optional(row, "select_permission", query)?),
         is_denied: required(row, "is_denied", query)?,
         has_visible_objects: required(row, "has_visible_objects", query)?,
+        // The probe does not ask; `false` is what a profile without these facts says.
+        has_visible_programmability: false,
+        is_execute_denied: false,
     })
 }
 

@@ -62,6 +62,8 @@ pub(super) fn assemble_snapshot(
                     name: index_row.index_name.clone(),
                     columns: key_columns,
                     is_clustered: index_row.index_type == CLUSTERED_INDEX_TYPE,
+                    // The catalog queries do not read index state: not recorded.
+                    is_enabled: None,
                 },
             );
         } else {
@@ -70,6 +72,9 @@ pub(super) fn assemble_snapshot(
                 columns: key_columns,
                 kind: index_kind(index_row),
                 is_clustered: index_row.index_type == CLUSTERED_INDEX_TYPE,
+                included_columns: None,
+                is_filtered: None,
+                is_enabled: None,
             });
         }
     }
@@ -118,6 +123,8 @@ pub(super) fn assemble_snapshot(
         foreign_keys,
         foreign_keys_to_invisible_tables: to_invisible_tables,
         carried_over: Vec::new(),
+        // No code is read: absent says it was not captured, never that there is none.
+        programmability: None,
         unknown: UnknownFields::new(),
     };
     let counts = AccessCounts::of(&snapshot);
@@ -271,6 +278,7 @@ fn group_check_constraints(
                     .clone()
                     .map_or(Definition::NotVisible, Definition::readable),
                 is_enabled: Some(!row.is_disabled),
+                is_trusted: None,
             });
     }
     grouped
@@ -316,6 +324,7 @@ fn assemble_foreign_keys(
                     on_delete: referential_action(row.delete_referential_action),
                     on_update: referential_action(row.update_referential_action),
                     is_enabled: !row.is_disabled,
+                    is_trusted: None,
                 }),
                 // A referenced column the login cannot see leaves the edge without an end, so
                 // the key is kept the way keys to invisible tables are.
@@ -364,6 +373,7 @@ fn to_invisible_table(
         on_delete: referential_action(row.delete_referential_action),
         on_update: referential_action(row.update_referential_action),
         is_enabled: !row.is_disabled,
+        is_trusted: None,
     }
 }
 
@@ -413,11 +423,14 @@ mod tests {
             can_read_data: true,
             is_denied: false,
             has_visible_objects: true,
+            has_visible_programmability: false,
+            is_execute_denied: false,
         };
         AccessProbe {
             can_read_definitions,
             can_read_data: true,
             explicit_denials: Some(0),
+            execute_denials: None,
             sees_objects: true,
             schemas: vec![schema("dbo"), schema("hr"), schema("sales")],
             database_user: Some("reporting".to_string()),
@@ -707,6 +720,7 @@ mod tests {
         let options = InspectionOptions {
             schemas: vec!["sales".to_string()],
             include_views: false,
+            ..InspectionOptions::default()
         };
         let snapshot = assemble(&options);
 
@@ -829,6 +843,48 @@ mod tests {
     }
 
     #[test]
+    fn records_no_code_and_no_index_or_trust_state_it_did_not_read() {
+        let snapshot = assemble(&InspectionOptions::default());
+
+        assert_eq!(snapshot.programmability, None);
+        for table in &snapshot.tables {
+            assert_eq!(
+                table.primary_key.as_ref().and_then(|key| key.is_enabled),
+                None
+            );
+            for index in &table.indexes {
+                assert_eq!(
+                    (&index.included_columns, index.is_filtered, index.is_enabled),
+                    (&None, None, None)
+                );
+            }
+            assert!(
+                table
+                    .check_constraints
+                    .iter()
+                    .all(|constraint| constraint.is_trusted.is_none())
+            );
+        }
+        assert!(
+            snapshot
+                .foreign_keys
+                .iter()
+                .all(|key| key.is_trusted.is_none())
+        );
+        assert!(
+            snapshot
+                .foreign_keys_to_invisible_tables
+                .iter()
+                .all(|key| key.is_trusted.is_none())
+        );
+        let access = snapshot.access.as_ref().unwrap();
+        assert_eq!(access.probe.execute_denials, None);
+        assert_eq!(access.coverage.programmability, None);
+        assert_eq!(access.coverage.module_definitions, None);
+        assert!(!access.scope.include_programmability);
+    }
+
+    #[test]
     fn records_what_the_login_could_see() {
         let mut rows = sample_rows();
         rows.check_constraints[0].definition = None;
@@ -836,6 +892,7 @@ mod tests {
         let options = InspectionOptions {
             schemas: vec!["dbo".to_string(), "sales".to_string()],
             include_views: true,
+            ..InspectionOptions::default()
         };
 
         let snapshot = assemble_with(&rows, probe(false), &options);
@@ -847,6 +904,7 @@ mod tests {
                 definitions: 2,
                 definitions_not_visible: 2,
                 foreign_keys_to_invisible_tables: 1,
+                ..AccessCounts::default()
             }
         );
         assert_eq!(access.scope, CaptureScope::from(&options));

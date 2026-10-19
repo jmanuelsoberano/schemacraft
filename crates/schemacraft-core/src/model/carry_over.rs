@@ -322,6 +322,7 @@ fn completed_with_referenced_side(
         on_delete: invisible.on_delete,
         on_update: invisible.on_update,
         is_enabled: invisible.is_enabled,
+        is_trusted: invisible.is_trusted,
     })
 }
 
@@ -590,6 +591,7 @@ mod tests {
         profile.scope = CaptureScope {
             schemas: vec!["sales".to_string()],
             include_views: false,
+            ..CaptureScope::everything()
         };
         current.views.clear();
 

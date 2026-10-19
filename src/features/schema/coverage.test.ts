@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { AccessProfile, Completeness, SchemaSnapshot } from "@/shared/contracts";
 
 import {
+  accessSummary,
   definitionsCoverage,
   emptySchemaReason,
   listsEveryObject,
@@ -54,7 +55,12 @@ function snapshot(access?: AccessProfile, tables = [table]): SchemaSnapshot {
   };
 }
 
-const everything = { schemas: [], includeViews: true };
+const everything = {
+  schemas: [],
+  includeViews: true,
+  includeProgrammability: true,
+  includeModuleDefinitions: true,
+};
 
 describe("coverage", () => {
   it("reads the frozen verdicts and says when none were recorded", () => {
@@ -64,6 +70,23 @@ describe("coverage", () => {
     expect(definitionsCoverage(snapshot(profile("complete", "notAvailable")))).toBe("notAvailable");
     expect(objectsCoverage(snapshot(profile("partial", "complete")))).toBe("partial");
     expect(objectsCoverage(snapshot(profile("notAvailable", "notAvailable")))).toBe("partial");
+  });
+
+  it("summarises the verdicts on objects and texts, never the coverage of code", () => {
+    const withCode: AccessProfile = {
+      ...profile("complete", "complete"),
+      coverage: {
+        objects: "complete",
+        definitions: "complete",
+        programmability: "partial",
+        moduleDefinitions: "notAvailable",
+      },
+    };
+    expect(accessSummary(snapshot(withCode))).toEqual({
+      level: "full",
+      coverage: { objects: "complete", definitions: "complete" },
+    });
+    expect(accessSummary(snapshot())).toBeNull();
   });
 
   it("vouches for absences only when the object list is complete or was never judged", () => {
@@ -79,13 +102,13 @@ describe("coverage", () => {
     expect(emptySchemaReason(empty(), everything)).toBe("database");
     expect(
       emptySchemaReason(empty(profile("complete", "complete")), {
+        ...everything,
         schemas: ["sales"],
-        includeViews: true,
       }),
     ).toBe("selection");
     expect(
       emptySchemaReason(empty(profile("complete", "complete")), {
-        schemas: [],
+        ...everything,
         includeViews: false,
       }),
     ).toBe("selection");

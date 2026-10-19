@@ -499,6 +499,7 @@ async fn inspects_views_and_honours_filters() {
         InspectionOptions {
             schemas: vec!["sales".to_string()],
             include_views: false,
+            ..InspectionOptions::default()
         },
     )
     .await;

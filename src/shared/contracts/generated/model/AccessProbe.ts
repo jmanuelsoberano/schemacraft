@@ -20,6 +20,12 @@ canReadData: boolean,
  */
 explicitDenials: number | null, 
 /**
+ * Explicit denials of `EXECUTE` for the login and its roles, which may hide procedures and
+ * functions. `None` when the probe did not count them, as before 1.2, or the login cannot
+ * see its own denials; either way some may exist.
+ */
+executeDenials?: number, 
+/**
  * Whether the login sees at least one user table or view.
  */
 seesObjects: boolean, 

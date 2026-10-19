@@ -242,10 +242,13 @@ pub(super) fn diff_tables(
 
 fn table_changes(previous: &Table, current: &Table, baseline: Baseline) -> Option<TableChange> {
     let columns = diff_columns(&previous.columns, &current.columns, baseline);
-    let primary_key = (previous.primary_key != current.primary_key).then(|| PrimaryKeyChange {
-        before: previous.primary_key.clone(),
-        after: current.primary_key.clone(),
-    });
+    let primary_key =
+        primary_key_changed(previous.primary_key.as_ref(), current.primary_key.as_ref()).then(
+            || PrimaryKeyChange {
+                before: previous.primary_key.clone(),
+                after: current.primary_key.clone(),
+            },
+        );
     let indexes = diff_indexes(&previous.indexes, &current.indexes);
     let check_constraints =
         diff_check_constraints(&previous.check_constraints, &current.check_constraints);
@@ -377,6 +380,41 @@ fn check_constraint_changed(before: &CheckConstraint, after: &CheckConstraint) -
     before.expression.differs_from(&after.expression) || state_changed
 }
 
+/// Whether a state both sides recorded differs. A state recorded on one side only, as when a
+/// project saved before 1.2 is refreshed, is never a change.
+fn recorded_state_differs<T: PartialEq>(before: Option<&T>, after: Option<&T>) -> bool {
+    matches!((before, after), (Some(before), Some(after)) if before != after)
+}
+
+/// Whether the primary key appeared, disappeared or changed: its name, columns or clustering, or
+/// its enabled state when both sides recorded it.
+fn primary_key_changed(before: Option<&PrimaryKey>, after: Option<&PrimaryKey>) -> bool {
+    match (before, after) {
+        (None, None) => false,
+        (Some(before), Some(after)) => {
+            before.name != after.name
+                || before.columns != after.columns
+                || before.is_clustered != after.is_clustered
+                || recorded_state_differs(before.is_enabled.as_ref(), after.is_enabled.as_ref())
+        }
+        (Some(_), None) | (None, Some(_)) => true,
+    }
+}
+
+/// Whether an index changed: its key columns, kind or clustering, or its included columns,
+/// filter flag or enabled state when both sides recorded them.
+fn index_changed(before: &Index, after: &Index) -> bool {
+    before.columns != after.columns
+        || before.kind != after.kind
+        || before.is_clustered != after.is_clustered
+        || recorded_state_differs(
+            before.included_columns.as_ref(),
+            after.included_columns.as_ref(),
+        )
+        || recorded_state_differs(before.is_filtered.as_ref(), after.is_filtered.as_ref())
+        || recorded_state_differs(before.is_enabled.as_ref(), after.is_enabled.as_ref())
+}
+
 fn diff_indexes(previous: &[Index], current: &[Index]) -> Vec<IndexChange> {
     pair_by_key(previous, current, |index| index.name.as_str())
         .into_iter()
@@ -388,7 +426,7 @@ fn diff_indexes(previous: &[Index], current: &[Index]) -> Vec<IndexChange> {
                 index: index.clone(),
             }),
             Pairing::Both { previous, current } => {
-                (previous != current).then(|| IndexChange::Changed {
+                index_changed(previous, current).then(|| IndexChange::Changed {
                     before: previous.clone(),
                     after: current.clone(),
                 })
@@ -533,6 +571,7 @@ mod tests {
             name: "PK_Orders".to_string(),
             columns: vec!["OrderId".to_string(), "CustomerId".to_string()],
             is_clustered: true,
+            is_enabled: None,
         });
         current.indexes[0].kind = IndexKind::UniqueIndex;
         current.indexes.push(Index {
@@ -540,11 +579,15 @@ mod tests {
             columns: vec!["PlacedAt".to_string()],
             kind: IndexKind::NonUnique,
             is_clustered: false,
+            included_columns: None,
+            is_filtered: None,
+            is_enabled: None,
         });
         current.check_constraints.push(CheckConstraint {
             name: "CK_Orders_Total".to_string(),
             expression: Definition::readable("([Total]>=(0))"),
             is_enabled: Some(true),
+            is_trusted: None,
         });
 
         let changes = diff_tables(&[previous], &[current], Baseline::Recorded);

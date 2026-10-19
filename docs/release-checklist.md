@@ -61,7 +61,10 @@ local SQL Server 2022 container, in both languages and themes, before it was mer
       export to PDF and HTML.
 - [ ] Open a project saved by the previous release and refresh it with the same login: the review
       reports no schema change and offers to update the project. Apply, save, reopen the file
-      and check that its header says `formatVersion` 2 and `minReaderVersion` 2.
+      and check that its header says `formatVersion` 3 and `minReaderVersion` 2. Open the saved
+      file in the previous release: it opens read-only, with the chip naming the version that
+      wrote it, the diagram and the HTML and PDF exports work, and Save and Refresh are not
+      offered.
 - [ ] Connect with a login that lacks `VIEW DEFINITION` (for example a `db_datareader` member):
       the connection dialog warns before reading, the status bar shows the access chip, the
       access report opens with Ctrl+Shift+A and Copy GRANT script puts the script on the
@@ -78,6 +81,12 @@ local SQL Server 2022 container, in both languages and themes, before it was mer
 - [ ] Run the installer and uninstall it; no administrator prompt appears.
 - [ ] The release notes describe the program, link the code signing policy and carry the
       version's `CHANGELOG.md` entry.
+
+## Known limitations of 1.2.0
+
+- SchemaCraft 1.1 opens projects saved by 1.2 read-only, without the code of views, procedures,
+  functions and triggers, and cannot save or refresh them; SchemaCraft 1.0 refuses them. Keep a
+  copy of a project that must still be edited in 1.1.
 
 ## Known limitations of 1.1.0
 

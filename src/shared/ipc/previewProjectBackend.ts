@@ -49,7 +49,7 @@ import { previewSnapshot } from "./previewConnectionBackend";
 import type { ProjectBackend } from "./projectBackend";
 
 /** Format the preview writes, as `FORMAT_VERSION` and `MIN_READER_VERSION` on the Rust side. */
-const FORMAT_VERSION = 2;
+const FORMAT_VERSION = 3;
 const MIN_READER_VERSION = 2;
 const GENERATOR = "SchemaCraft (preview)";
 
@@ -85,7 +85,12 @@ function sampleProject(snapshot: SchemaSnapshot, connection = LOCAL_CONNECTION):
     savedAt: hoursAgo(1),
     savedWith: GENERATOR,
     connection,
-    inspection: { schemas: [], includeViews: true },
+    inspection: {
+      schemas: [],
+      includeViews: true,
+      includeProgrammability: true,
+      includeModuleDefinitions: true,
+    },
     snapshot: { ...snapshot, extractedAt: hoursAgo(2) },
     canvas: { detailLevel: "keys", layout: "manual", viewport: { x: 0, y: 0, zoom: 1 }, nodes: [] },
   };
@@ -124,7 +129,7 @@ function upgradedFormatOneSnapshot(): SchemaSnapshot {
 }
 
 /**
- * A file written by a newer version that still lets this one read it: format 3 with
+ * A file written by a newer version that still lets this one read it: format 4 with
  * `minReaderVersion` 2. It carries fields this version does not know at the root, in the
  * snapshot, in the canvas and in every node, which must survive untouched.
  */
@@ -140,7 +145,7 @@ function newerFormatProject(): Project {
   });
   return {
     ...project,
-    formatVersion: 3,
+    formatVersion: 4,
     savedWith: "SchemaCraft 1.3.0",
     canvas: {
       ...project.canvas,

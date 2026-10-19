@@ -16,7 +16,7 @@ structure as an interactive map: layers, components, data stores, flows and how 
 ```
 schemacraft/
 ├── crates/schemacraft-core/   Rust library, free of Tauri: everything the app knows and does
-│   ├── src/model/             pure schema types (tables, columns, keys, snapshot), access profile, carry-over
+│   ├── src/model/             pure schema types (tables, columns, keys, snapshot, code objects), access profile, carry-over
 │   ├── src/inspectors/        DatabaseInspector strategy, errors, progress, SQL Server implementation and access probe
 │   ├── src/project/           .scraft documents and their migrations, saved connections, canvas state
 │   ├── src/diff/              comparison of two snapshots behind "refresh from database"
@@ -327,6 +327,11 @@ The canvas state is the Memento of the diagram: an immutable, serialisable value
 produces when a project is saved and restores when it is opened. Milestone 4 adds the
 caretaker (undo and redo) on top of the same value.
 
+Since 1.2 the header says `formatVersion` 3 and `minReaderVersion` 2, and the snapshot can hold
+the code of views, procedures, functions and triggers under `programmability`, apart from the
+tables and views (ADR-042). A project of 1.0 or 1.1 is upgraded when it is read and saved as
+format 3.
+
 ### ADR-016: The diff matches objects by name and is reviewed before it is applied
 
 `SchemaDiff::between` pairs tables and views by schema-qualified name, foreign keys by
@@ -362,6 +367,10 @@ is up to date only when none of these is present either (`SchemaDiff::is_up_to_d
 it offers to apply, worded "Update project" when no object changed. Applying runs the same merge
 (`ProjectContent::with_refreshed_snapshot`), so the project keeps every fact the review called
 not checked and lists it in `snapshot.carriedOver`.
+
+Since 1.2 a state recorded on one side only is never a change: an index or a primary key compares
+its enabled, filtered and included-column state only when both snapshots recorded it, and
+`access_changed` compares a coverage of code only when both captures judged it (ADR-042).
 
 ### ADR-017: Preferences live in one Rust-owned file in the user's configuration directory
 
@@ -868,6 +877,14 @@ numbers let a later version add facts without locking 1.1 out, opening read-only
 version from destroying what it does not understand, and migrations on raw JSON keep today's
 types free of yesterday's shapes.
 
+Since 1.2 SchemaCraft writes format 3 with `minReaderVersion` 2 (ADR-042), refuses a file whose
+`minReaderVersion` is above 3 and upgrades formats 1 and 2. Keys a newer version wrote are kept at
+five levels: the snapshot's `programmability` joins the four above, so later families of code can
+arrive without a bump. Format 3 adds only keys that 1.1 keeps or ignores and changes neither a
+meaning nor a closed enum, which `project/forward_read.rs` tests, so 1.1 opens a 1.2 file read-only.
+`migrations::format_2_to_3` rewrites the header only, and `fixtures/format-2.scraft`, written by the
+SchemaCraft 1.1.0 core, is the fixture of the previous format.
+
 ### ADR-036: Tables and views are told apart by section, label, icon and colour
 
 A database view is drawn as a card like a table, and 1.0 told them apart only by a tint on the
@@ -1365,6 +1382,121 @@ could not do, because errors carry server, login and object names; counts and ti
 slow or failing inspection needs. Date-named files make rotation safe for two processes without a
 lock between them, and resolving the folder before Tauri starts covers the failures users meet
 first.
+
+### ADR-042: Project format 3 keeps code under `snapshot.programmability` and state facts in optional fields, so 1.1 reads it forward
+
+SchemaCraft 1.2 records what 1.1 could not: the code of views, procedures, functions and DML
+triggers, the state of indexes, keys and constraints, and what a login sees of code. It writes
+them as format 3 with `minReaderVersion` 2 (`project/document.rs`), so SchemaCraft 1.1 still opens
+a 1.2 project, read-only.
+
+All code lives under one key at the snapshot root, `programmability` (`model/programmability.rs`),
+never inside a table or a view. It holds what the capture read of the objects and of their texts
+(`capture`, each `read`, `notRead` with the reason `optionOff`, `queryFailed` or `timedOut`, or
+`unknown`); the view modules (`view`, `definition`, `hasCheckOption`, `isIndexed`); the routines
+(name, kind, `body`, the parameters in declaration order, the return type of a scalar function and
+the columns of a table function); the DML triggers, whose identity is their parent and their name,
+since a DML trigger lives in its parent's schema (timing, events with the firing order set for each
+statement, enabled, `NOT FOR REPLICATION`, `body`); and `carriedOver`, the code kept from an
+earlier read, with the part kept (`whole` or `definition`) and when it was last read. A parameter
+has no default, because `sys.parameters` keeps a T-SQL parameter's default only in the module
+text. A `body` is `sql { definition }`, `clr` or `unknown`, and a `CodeObjectRef` names a view, a
+routine or a trigger. `Definition` gains `encrypted`: a module created `WITH ENCRYPTION` has a
+`NULL` text for every login, the database owner included, so the state is known, has no text and
+never differs from anything. It occurs only under `programmability`. Every new enum reads a value
+written by a newer version as `unknown`, with `#[serde(other)]` in an attribute of its own
+(ADR-035).
+
+The placement is a privacy rule as much as a model. The HTML export rebuilds the snapshot root from
+the keys it knows (ADR-025), so code cannot reach an export by accident, and `accessSummary`
+rebuilds the coverage from the objects and the `CHECK` and `DEFAULT` texts, so an export never
+speaks of code it does not contain. As objects of their own, like foreign keys, code objects can be
+compared and kept on a weaker refresh apart from the tables, and the canvas, its geometry and every
+node stay as they are. `programmability` keeps keys a newer version wrote, the fifth level that does
+so after the document root, the snapshot root, the canvas and each node, so database triggers,
+synonyms or table types can arrive later without raising `minReaderVersion`. The frontend passes the
+snapshot through as it is, so those keys survive a save from the application too.
+
+The other facts are new fields of structs that are not flattened, which an older serde ignores.
+Some are optional and written only when recorded (`skip_serializing_if = "Option::is_none"`, and
+`#[ts(optional)]` in the contracts): `includedColumns`, `isFiltered` and `isEnabled` on `Index`;
+`isEnabled` on `PrimaryKey`; `isTrusted` on `CheckConstraint`, `ForeignKey` and
+`ForeignKeyToInvisibleTable`; `executeDenials` on `AccessProbe`; and `programmability` and
+`moduleDefinitions` on `AccessCoverage`. For these, absent means not recorded, never `false` and
+never none: a 1.1 file has no `programmability` because its code was never read, and its indexes
+have no state because none was read. The rest are plain flags and counts, written only when true
+or not zero, so an absent key reads as `false` or 0 (`serde(default)`):
+`hasVisibleProgrammability` and `isExecuteDenied` on `SchemaAccess` (not seen, or not asked, as
+before 1.2); `includeProgrammability` and `includeModuleDefinitions` on `CaptureScope` (the
+capture did not ask); and `moduleDefinitions`, `moduleDefinitionsNotVisible` and
+`moduleDefinitionsEncrypted` on `AccessCounts` (none counted). Whether code was judged at all is
+read from `AccessCoverage.programmability` and `moduleDefinitions`, never from these flags or
+counts. `isEnabled`, not `isDisabled`, follows `CheckConstraint.isEnabled` and
+`ForeignKey.isEnabled`. The inspection options gain `includeProgrammability` (read procedures,
+functions and triggers) and `includeModuleDefinitions` (save their code), on by default through
+serde, so a 1.1 project refreshed in 1.2 reads and saves code unless the user turns them off; the
+connection draft carries both and restores them from a saved project. A capture's `CaptureScope` says that it asked for code only when the inspector read
+code, whatever the options say.
+
+For 1.1 to read a 1.2 file without misreading it, no key it parses may change meaning and no closed
+enum it knows may gain a value. The audit:
+
+- `SnapshotFact`, `Completeness`, `AccessLevel`, `IndexKind` and every enum of the canvas are
+  untouched; kept code has its own list under `programmability`.
+- `AccessLevel`, and with it the 1.1 chip, bar, notice and export note, is still judged over the
+  tables and views and the `CHECK` and `DEFAULT` texts only (`AccessCoverage::is_full`). The
+  coverage of code is reported apart and never changes the level.
+- `AccessCounts.definitions` still counts `CHECK` and `DEFAULT` texts only; module texts have
+  counts of their own.
+- `Definition.encrypted` never appears where 1.1 parses a `Definition`.
+
+So `minReaderVersion` stays 2. SchemaCraft 1.1.0 opens a 1.2 file read-only: it shows and exports
+it without code and cannot save or refresh it. That block must stay, because a 1.1 refresh would
+drop the snapshot's unknown keys, and the code with them. SchemaCraft 1.0 refuses the file, as it
+refuses format 2.
+
+`migrations::format_2_to_3` rewrites the header only, since a format 2 document is already valid
+format 3 content. `fixtures/format-2.scraft` was written by the SchemaCraft 1.1.0 core, never by a
+later version: a throwaway test in a worktree of the tag `v1.1.0` read the integration fixture
+database as `sa` and refreshed it as the 1.1.0 "two tables" login, with a `CHECK` disabled for the
+run, so the file holds an access profile, kept facts, a disabled `CHECK`, a key to an invisible
+table and a key written by a newer version at each of the four levels 1.1 keeps
+(`project/test_fixtures.rs` says how). Tests open it, find every fact, save it as format 3 and find
+the same document with only the header and the two options new; the format 1 tests run through the
+chain 1 to 2 to 3. `project/forward_read.rs` holds the guarantee itself: it removes exactly the keys
+format 3 added from a fully populated 1.2 project and finds the document a capture without them
+writes, the verdicts on access included, which it judges again without code, from a project read
+by a login that sees everything as well as from the reader's; it checks every value of a closed
+enum 1.1 parses (the provider, the authentication mode, the encryption, the type length, the
+access level and coverage, the index kind, the referential actions, the kind of a kept fact and
+the canvas enums) and that `encrypted` appears only under `programmability`. The same check was
+made once with 1.1.0's own code, in that worktree: it opens such a file read-only, keeps
+`programmability` among the snapshot's unknown keys and reads every other key exactly as in the
+1.1 file it came from. A sentinel test
+exports a snapshot whose code carries a sentinel in every text and name and finds it nowhere in the
+page, and `projection.test.ts` pins every key path an export carries of a table, view, column,
+index, key and constraint over fixtures typed `DeepRequired`, with one fixture for each variant of
+a union (`EveryVariant`), so a field Rust adds, to a type or to any variant, or a new variant fails
+to compile there and then fails the inventory until someone decides whether it may leave the
+application.
+
+A field or a family recorded on one side only is never a change. Indexes and primary keys compare
+their name, key columns, kind and clustering always, and the new state fields only when both sides
+recorded them, and `access_changed` compares a code coverage only when both captures judged it, so
+refreshing a 1.1 project reports no index and no access as changed. Where a state was not
+recorded, the diagram reads as it did in 1.1.
+
+Module texts travel inside the snapshot, over the IPC every command already uses. A refresh followed
+by a save moves the snapshot about seven times, which stays well under a second below 20 MB of
+readable module text, about ten million characters. If a real database holds more, the fresh
+snapshot is to stay on the Rust side, and the diff and the refresh are to take its id instead of a
+second copy; the probe of ADR-040 measures that size.
+
+Why: code is business logic, and the one place an export cannot reach by accident is a key it does
+not know. Optional fields and a fifth kept level add facts without changing any 1.1 reading, so the
+door format 2 opened stays open both ways: 1.1 can show a 1.2 project and cannot damage it.
+Recording an absent state as "not recorded" keeps the first 1.2 refresh of an old project from reading as
+hundreds of changes and keeps a gap from reading as a fact.
 
 ## Milestones
 

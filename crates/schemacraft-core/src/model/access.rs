@@ -3,11 +3,15 @@
 //! An inspector reads the raw permission facts once per database ([`AccessProbe`]); the rules
 //! here turn them into a level and a per-fact coverage. The rules are pure so that the
 //! connection dialog, the snapshot and the refresh agree on every case.
+//!
+//! The level is judged over the tables and views and the `CHECK` and `DEFAULT` texts only. The
+//! coverage of procedures, functions, triggers and their texts is reported next to it and never
+//! changes it, so every verdict a capture made before 1.2 keeps its meaning.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use super::{Definition, SchemaSnapshot};
+use super::{Definition, Programmability, SchemaSnapshot};
 
 /// Permission facts about the login in one database, as the server reports them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -22,6 +26,12 @@ pub struct AccessProbe {
     /// none for a login that enters as the database owner, which no denial applies to.
     /// `None` when the login cannot see its own denials, so some may exist.
     pub explicit_denials: Option<u32>,
+    /// Explicit denials of `EXECUTE` for the login and its roles, which may hide procedures and
+    /// functions. `None` when the probe did not count them, as before 1.2, or the login cannot
+    /// see its own denials; either way some may exist.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub execute_denials: Option<u32>,
     /// Whether the login sees at least one user table or view.
     pub sees_objects: bool,
     /// Per-schema facts, for the schemas the login can see.
@@ -48,6 +58,14 @@ pub struct SchemaAccess {
     pub is_denied: bool,
     /// Whether the login sees at least one user table or view in the schema.
     pub has_visible_objects: bool,
+    /// Whether the login sees at least one procedure or function in the schema; `false` as well
+    /// when the probe did not ask, as before 1.2.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub has_visible_programmability: bool,
+    /// Whether an explicit denial of `EXECUTE` on the schema can hide some of its procedures and
+    /// functions; `false` as well when the probe did not ask, as before 1.2.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_execute_denied: bool,
 }
 
 /// Overall verdict on what a login sees.
@@ -80,6 +98,9 @@ pub enum Completeness {
 
 /// Completeness per kind of fact. Columns, keys, indexes and foreign keys of a visible table
 /// need no extra permission, so only the object list and the expression texts can be partial.
+///
+/// The code coverages are reported apart: they never change the level ([`Self::is_full`]), and
+/// an export, which says nothing of code, never carries them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "model/")]
@@ -88,6 +109,35 @@ pub struct AccessCoverage {
     pub objects: Completeness,
     /// `CHECK` and `DEFAULT` texts.
     pub definitions: Completeness,
+    /// Procedures, functions and triggers; `None` when the capture did not judge them: it did
+    /// not read them, or it was made before 1.2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub programmability: Option<Completeness>,
+    /// Texts of views, procedures, functions and triggers; `None` when the capture did not
+    /// judge them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub module_definitions: Option<Completeness>,
+}
+
+impl AccessCoverage {
+    /// Coverage of the objects and the `CHECK` and `DEFAULT` texts, with no judgement on code.
+    pub fn of_objects_and_texts(objects: Completeness, definitions: Completeness) -> Self {
+        Self {
+            objects,
+            definitions,
+            programmability: None,
+            module_definitions: None,
+        }
+    }
+
+    /// Whether the capture holds every table and view and every `CHECK` and `DEFAULT` text,
+    /// which is what the level `full` means. The code coverages take no part: a login that
+    /// misses procedures still reads the diagram whole.
+    pub fn is_full(&self) -> bool {
+        self.objects == Completeness::Complete && self.definitions == Completeness::Complete
+    }
 }
 
 /// What a capture found, counted over the objects it kept.
@@ -95,16 +145,33 @@ pub struct AccessCoverage {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "model/")]
 pub struct AccessCounts {
-    /// `CHECK` and `DEFAULT` expressions, readable or not.
+    /// `CHECK` and `DEFAULT` expressions, readable or not. Module texts are counted apart.
     pub definitions: u32,
     /// Expressions whose text the login cannot see.
     pub definitions_not_visible: u32,
     /// Foreign keys that reference a table the login cannot see.
     pub foreign_keys_to_invisible_tables: u32,
+    /// Texts of views, procedures, functions and triggers written in T-SQL, readable or not;
+    /// zero when the capture read no code.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub module_definitions: u32,
+    /// Module texts the login cannot see.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub module_definitions_not_visible: u32,
+    /// Module texts that are encrypted, which no login can read.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub module_definitions_encrypted: u32,
+}
+
+// serde hands `skip_serializing_if` the field by reference.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero(count: &u32) -> bool {
+    *count == 0
 }
 
 impl AccessCounts {
-    /// Counts the expressions and the foreign keys to invisible tables of `snapshot`.
+    /// Counts the expressions, the foreign keys to invisible tables and the module texts of
+    /// `snapshot`.
     pub fn of(snapshot: &SchemaSnapshot) -> Self {
         let definitions: Vec<&Definition> = snapshot
             .tables
@@ -131,12 +198,32 @@ impl AccessCounts {
             .iter()
             .filter(|definition| matches!(definition, Definition::NotVisible))
             .count();
+        let modules: Vec<&Definition> = snapshot
+            .programmability
+            .iter()
+            .flat_map(Programmability::module_definitions)
+            .collect();
+        let modules_where = |status: fn(&Definition) -> bool| {
+            saturating_count(
+                modules
+                    .iter()
+                    .filter(|definition| status(definition))
+                    .count(),
+            )
+        };
         Self {
             definitions: saturating_count(definitions.len()),
             definitions_not_visible: saturating_count(not_visible),
             foreign_keys_to_invisible_tables: saturating_count(
                 snapshot.foreign_keys_to_invisible_tables.len(),
             ),
+            module_definitions: saturating_count(modules.len()),
+            module_definitions_not_visible: modules_where(|definition| {
+                matches!(definition, Definition::NotVisible)
+            }),
+            module_definitions_encrypted: modules_where(|definition| {
+                matches!(definition, Definition::Encrypted)
+            }),
         }
     }
 }
@@ -154,14 +241,25 @@ pub struct CaptureScope {
     pub schemas: Vec<String>,
     /// Whether views were read alongside tables.
     pub include_views: bool,
+    /// Whether procedures, functions and triggers were asked for; `false` for every capture
+    /// that did not ask, those made before 1.2 included.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub include_programmability: bool,
+    /// Whether the texts of views, procedures, functions and triggers were asked for; `false`
+    /// for every capture that did not ask.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub include_module_definitions: bool,
 }
 
 impl CaptureScope {
-    /// Every schema, views included.
+    /// Every schema, views included, and no code: nothing judges code from the permissions
+    /// alone.
     pub fn everything() -> Self {
         Self {
             schemas: Vec::new(),
             include_views: true,
+            include_programmability: false,
+            include_module_definitions: false,
         }
     }
 
@@ -213,29 +311,24 @@ impl AccessProfile {
     ) -> Self {
         let objects = objects_coverage(&probe, &scope, counts);
         let (level, coverage) = if probe.sees_objects {
-            let coverage = AccessCoverage {
-                objects,
-                definitions,
-            };
-            let is_full = coverage.objects == Completeness::Complete
-                && coverage.definitions == Completeness::Complete;
-            let level = if is_full {
+            let coverage = AccessCoverage::of_objects_and_texts(objects, definitions);
+            let level = if coverage.is_full() {
                 AccessLevel::Full
             } else {
                 AccessLevel::Partial
             };
             (level, coverage)
         } else if probe.can_read_definitions && probe.explicit_denials == Some(0) {
-            let coverage = AccessCoverage {
-                objects: Completeness::Complete,
-                definitions: Completeness::Complete,
-            };
+            let coverage = AccessCoverage::of_objects_and_texts(
+                Completeness::Complete,
+                Completeness::Complete,
+            );
             (AccessLevel::Empty, coverage)
         } else {
-            let coverage = AccessCoverage {
-                objects: Completeness::NotAvailable,
-                definitions: Completeness::NotAvailable,
-            };
+            let coverage = AccessCoverage::of_objects_and_texts(
+                Completeness::NotAvailable,
+                Completeness::NotAvailable,
+            );
             (AccessLevel::NothingVisible, coverage)
         };
         Self {
@@ -338,10 +431,10 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 
     use super::{
-        AccessCounts, AccessLevel, AccessProbe, AccessProfile, CaptureScope, Completeness,
-        SchemaAccess,
+        AccessCounts, AccessCoverage, AccessLevel, AccessProbe, AccessProfile, CaptureScope,
+        Completeness, SchemaAccess,
     };
-    use crate::model::test_fixtures::{reader_snapshot, sample_snapshot};
+    use crate::model::test_fixtures::{reader_snapshot, sample_programmability, sample_snapshot};
 
     const SCHEMAS: [&str; 3] = ["audit", "dbo", "sales"];
 
@@ -352,6 +445,8 @@ mod tests {
             can_read_data: data,
             is_denied: false,
             has_visible_objects: definitions || data,
+            has_visible_programmability: false,
+            is_execute_denied: false,
         }
     }
 
@@ -367,6 +462,7 @@ mod tests {
             can_read_definitions: definitions,
             can_read_data: data,
             explicit_denials: Some(0),
+            execute_denials: None,
             sees_objects: schemas.iter().any(|access| access.has_visible_objects),
             schemas,
             database_user: Some("app_user".to_string()),
@@ -378,6 +474,7 @@ mod tests {
             definitions,
             definitions_not_visible: not_visible,
             foreign_keys_to_invisible_tables: invisible_keys,
+            ..AccessCounts::default()
         }
     }
 
@@ -553,7 +650,7 @@ mod tests {
         probe.explicit_denials = Some(0);
         let only_dbo = CaptureScope {
             schemas: vec!["dbo".to_string()],
-            include_views: true,
+            ..CaptureScope::everything()
         };
 
         let scoped = AccessProfile::observed(probe.clone(), only_dbo, counts(2, 0, 0));
@@ -615,9 +712,64 @@ mod tests {
     }
 
     #[test]
+    fn code_never_changes_the_level() {
+        // The objects and the CHECK and DEFAULT texts are complete; the procedures and their
+        // texts are not, and EXECUTE denials may hide more of them.
+        let mut probe = probe(true, true, uniform(true, true));
+        probe.execute_denials = Some(3);
+        probe.schemas[2].has_visible_programmability = true;
+        probe.schemas[2].is_execute_denied = true;
+        let found = AccessCounts {
+            module_definitions: 8,
+            module_definitions_not_visible: 5,
+            module_definitions_encrypted: 1,
+            ..counts(12, 0, 0)
+        };
+
+        let profile = AccessProfile::observed(probe, CaptureScope::everything(), found);
+
+        assert_eq!(profile.level, AccessLevel::Full);
+        assert_eq!(profile.coverage.objects, Completeness::Complete);
+        assert_eq!(profile.coverage.definitions, Completeness::Complete);
+        assert_eq!(profile.coverage.programmability, None);
+        assert_eq!(profile.coverage.module_definitions, None);
+
+        let with_partial_code = AccessCoverage {
+            programmability: Some(Completeness::Partial),
+            module_definitions: Some(Completeness::NotAvailable),
+            ..profile.coverage
+        };
+        assert!(with_partial_code.is_full());
+        let with_partial_texts = AccessCoverage {
+            definitions: Completeness::Partial,
+            programmability: Some(Completeness::Complete),
+            module_definitions: Some(Completeness::Complete),
+            ..profile.coverage
+        };
+        assert!(!with_partial_texts.is_full());
+    }
+
+    #[test]
     fn counts_the_texts_and_the_invisible_keys_of_a_snapshot() {
         assert_eq!(AccessCounts::of(&sample_snapshot()), counts(2, 0, 0));
         assert_eq!(AccessCounts::of(&reader_snapshot()), counts(1, 1, 1));
+    }
+
+    #[test]
+    fn counts_module_texts_apart_from_check_and_default_texts() {
+        let snapshot = crate::model::SchemaSnapshot {
+            programmability: Some(sample_programmability()),
+            ..sample_snapshot()
+        };
+        assert_eq!(
+            AccessCounts::of(&snapshot),
+            AccessCounts {
+                module_definitions: 6,
+                module_definitions_not_visible: 1,
+                module_definitions_encrypted: 1,
+                ..counts(2, 0, 0)
+            }
+        );
     }
 
     #[test]
@@ -634,5 +786,61 @@ mod tests {
 
         let restored: AccessProfile = serde_json::from_value(json).unwrap();
         assert_eq!(restored, profile);
+    }
+
+    #[test]
+    fn code_facts_are_left_out_until_they_are_recorded() {
+        // A profile without code facts reads and writes as 1.1 did.
+        let profile = AccessProfile::predicted(probe(false, true, uniform(false, true)));
+        let json = serde_json::to_value(&profile).unwrap();
+        for (object, keys) in [
+            (&json["probe"], &["executeDenials"][..]),
+            (
+                &json["probe"]["schemas"][0],
+                &["hasVisibleProgrammability", "isExecuteDenied"][..],
+            ),
+            (
+                &json["coverage"],
+                &["programmability", "moduleDefinitions"][..],
+            ),
+            (
+                &json["counts"],
+                &[
+                    "moduleDefinitions",
+                    "moduleDefinitionsNotVisible",
+                    "moduleDefinitionsEncrypted",
+                ][..],
+            ),
+            (
+                &json["scope"],
+                &["includeProgrammability", "includeModuleDefinitions"][..],
+            ),
+        ] {
+            for key in keys {
+                assert!(object.get(key).is_none(), "{key}");
+            }
+        }
+
+        // Recorded, they are written and read back.
+        let mut recorded = profile;
+        recorded.probe.execute_denials = Some(2);
+        recorded.probe.schemas[0].has_visible_programmability = true;
+        recorded.probe.schemas[0].is_execute_denied = true;
+        recorded.coverage.programmability = Some(Completeness::Partial);
+        recorded.coverage.module_definitions = Some(Completeness::NotAvailable);
+        recorded.counts.module_definitions = 4;
+        recorded.counts.module_definitions_not_visible = 4;
+        recorded.counts.module_definitions_encrypted = 0;
+        recorded.scope.include_programmability = true;
+        recorded.scope.include_module_definitions = true;
+        let json = serde_json::to_value(&recorded).unwrap();
+        assert_eq!(json["probe"]["executeDenials"], 2);
+        assert_eq!(json["probe"]["schemas"][0]["isExecuteDenied"], true);
+        assert_eq!(json["coverage"]["moduleDefinitions"], "notAvailable");
+        assert_eq!(json["counts"]["moduleDefinitionsNotVisible"], 4);
+        assert!(json["counts"].get("moduleDefinitionsEncrypted").is_none());
+        assert_eq!(json["scope"]["includeModuleDefinitions"], true);
+        let restored: AccessProfile = serde_json::from_value(json).unwrap();
+        assert_eq!(restored, recorded);
     }
 }

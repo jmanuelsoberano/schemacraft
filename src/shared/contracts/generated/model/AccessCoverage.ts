@@ -4,6 +4,9 @@ import type { Completeness } from "./Completeness";
 /**
  * Completeness per kind of fact. Columns, keys, indexes and foreign keys of a visible table
  * need no extra permission, so only the object list and the expression texts can be partial.
+ *
+ * The code coverages are reported apart: they never change the level ([`Self::is_full`]), and
+ * an export, which says nothing of code, never carries them.
  */
 export type AccessCoverage = { 
 /**
@@ -13,4 +16,14 @@ objects: Completeness,
 /**
  * `CHECK` and `DEFAULT` texts.
  */
-definitions: Completeness, };
+definitions: Completeness, 
+/**
+ * Procedures, functions and triggers; `None` when the capture did not judge them: it did
+ * not read them, or it was made before 1.2.
+ */
+programmability?: Completeness, 
+/**
+ * Texts of views, procedures, functions and triggers; `None` when the capture did not
+ * judge them.
+ */
+moduleDefinitions?: Completeness, };

@@ -20,4 +20,19 @@ kind: IndexKind,
 /**
  * Whether this is the clustered index of the table.
  */
-isClustered: boolean, };
+isClustered: boolean, 
+/**
+ * Columns stored with the index without being part of its key (`INCLUDE`), in index order;
+ * `None` when the capture did not record them, as before 1.2.
+ */
+includedColumns?: Array<string>, 
+/**
+ * Whether the index covers only the rows of a filter (`WHERE`), so a unique one enforces
+ * uniqueness among those rows only; `None` when the capture did not record it.
+ */
+isFiltered?: boolean, 
+/**
+ * `false` when the index is disabled, so it enforces nothing; `None` when the capture did
+ * not record the state.
+ */
+isEnabled?: boolean, };

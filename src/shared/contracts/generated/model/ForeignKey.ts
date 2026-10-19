@@ -37,4 +37,10 @@ onUpdate: ReferentialAction,
 /**
  * `false` when the constraint exists but is disabled (`NOCHECK`) in the database.
  */
-isEnabled: boolean, };
+isEnabled: boolean, 
+/**
+ * `false` when SQL Server has not verified that the rows already in the referencing table
+ * follow the key (`is_not_trusted`, after `WITH NOCHECK` or a re-enable without
+ * `WITH CHECK`); `None` when the capture did not record it, as before 1.2.
+ */
+isTrusted?: boolean, };

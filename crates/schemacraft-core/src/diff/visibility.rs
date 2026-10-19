@@ -10,7 +10,7 @@ use ts_rs::TS;
 
 use super::foreign_keys::KeyIdentity;
 use super::pairing::{Pairing, pair_by_key};
-use crate::model::{Definition, QualifiedName, SchemaSnapshot, SnapshotFact, Table};
+use crate::model::{Completeness, Definition, QualifiedName, SchemaSnapshot, SnapshotFact, Table};
 
 /// A fact the previous snapshot could not state and the fresh extraction reads.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
@@ -121,13 +121,30 @@ fn became_readable(before: &Definition, after: &Definition) -> bool {
 }
 
 /// Whether the two extractions reached a different verdict on what their login sees: another
-/// level or coverage, or a profile on one side only, as when a 1.0 file is refreshed.
+/// level or coverage, or a profile on one side only, as when a 1.0 file is refreshed. A code
+/// coverage counts only when both sides judged it, so the first capture that reads code is no
+/// change of access.
 pub(super) fn access_changed(previous: &SchemaSnapshot, current: &SchemaSnapshot) -> bool {
-    let verdict = |snapshot: &SchemaSnapshot| {
-        snapshot
-            .access
-            .as_ref()
-            .map(|profile| (profile.level, profile.coverage))
-    };
-    verdict(previous) != verdict(current)
+    match (previous.access.as_ref(), current.access.as_ref()) {
+        (None, None) => false,
+        (Some(before), Some(after)) => {
+            before.level != after.level
+                || before.coverage.objects != after.coverage.objects
+                || before.coverage.definitions != after.coverage.definitions
+                || code_coverage_differs(
+                    before.coverage.programmability,
+                    after.coverage.programmability,
+                )
+                || code_coverage_differs(
+                    before.coverage.module_definitions,
+                    after.coverage.module_definitions,
+                )
+        }
+        (Some(_), None) | (None, Some(_)) => true,
+    }
+}
+
+/// Whether both captures judged a coverage of code and reached another verdict.
+fn code_coverage_differs(before: Option<Completeness>, after: Option<Completeness>) -> bool {
+    matches!((before, after), (Some(before), Some(after)) if before != after)
 }

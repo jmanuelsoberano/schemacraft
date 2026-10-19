@@ -5,7 +5,12 @@ import { previewSnapshot } from "@/shared/ipc/previewConnectionBackend";
 
 import { inspectedKey, inspectorScope } from "./inspectorScope";
 
-const EVERYTHING: InspectionOptions = { schemas: [], includeViews: true };
+const EVERYTHING: InspectionOptions = {
+  schemas: [],
+  includeViews: true,
+  includeProgrammability: true,
+  includeModuleDefinitions: true,
+};
 
 function node(schema: string, name: string, isHidden = false): NodeState {
   return { name: { schema, name }, position: { x: 0, y: 0 }, isCollapsed: false, isHidden };
@@ -46,7 +51,7 @@ describe("inspectorScope", () => {
 
   it("marks a read narrowed to some schemas, which dropped the keys leaving them", () => {
     const snapshot = previewSnapshot("Shop", "full");
-    expect(inspectorScope(snapshot, [], { schemas: ["sales"], includeViews: true })).toMatchObject({
+    expect(inspectorScope(snapshot, [], { ...EVERYTHING, schemas: ["sales"] })).toMatchObject({
       isSchemaFiltered: true,
     });
     expect(inspectorScope(snapshot, [], EVERYTHING)).toMatchObject({ isSchemaFiltered: false });

@@ -11,4 +11,14 @@ schemas: Array<string>,
 /**
  * Whether views were read alongside tables.
  */
-includeViews: boolean, };
+includeViews: boolean, 
+/**
+ * Whether procedures, functions and triggers were asked for; `false` for every capture
+ * that did not ask, those made before 1.2 included.
+ */
+includeProgrammability?: boolean, 
+/**
+ * Whether the texts of views, procedures, functions and triggers were asked for; `false`
+ * for every capture that did not ask.
+ */
+includeModuleDefinitions?: boolean, };

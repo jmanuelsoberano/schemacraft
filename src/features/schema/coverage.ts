@@ -13,11 +13,18 @@ import type {
  */
 export type AccessSummary = Pick<AccessProfile, "level" | "coverage">;
 
-/** The verdicts of the snapshot's capture, or `null` when it recorded none (a 1.0 file). */
+/**
+ * The verdicts of the snapshot's capture, or `null` when it recorded none (a 1.0 file). The
+ * coverage is rebuilt from the objects and the `CHECK` and `DEFAULT` texts, which are what the
+ * level judges and what a diagram shows; the coverage of code stays behind, so an export never
+ * speaks of code it does not contain.
+ */
 export function accessSummary(snapshot: SchemaSnapshot): AccessSummary | null {
-  return snapshot.access === undefined
-    ? null
-    : { level: snapshot.access.level, coverage: snapshot.access.coverage };
+  if (snapshot.access === undefined) {
+    return null;
+  }
+  const { level, coverage } = snapshot.access;
+  return { level, coverage: { objects: coverage.objects, definitions: coverage.definitions } };
 }
 
 /** Completeness of one kind of fact; `notRecorded` for a snapshot written by SchemaCraft 1.0. */

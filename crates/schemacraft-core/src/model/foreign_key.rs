@@ -51,6 +51,12 @@ pub struct ForeignKey {
     pub on_update: ReferentialAction,
     /// `false` when the constraint exists but is disabled (`NOCHECK`) in the database.
     pub is_enabled: bool,
+    /// `false` when SQL Server has not verified that the rows already in the referencing table
+    /// follow the key (`is_not_trusted`, after `WITH NOCHECK` or a re-enable without
+    /// `WITH CHECK`); `None` when the capture did not record it, as before 1.2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub is_trusted: Option<bool>,
 }
 
 /// Foreign key from a visible table to a table the login cannot see.
@@ -74,6 +80,12 @@ pub struct ForeignKeyToInvisibleTable {
     pub on_update: ReferentialAction,
     /// `false` when the constraint exists but is disabled (`NOCHECK`) in the database.
     pub is_enabled: bool,
+    /// `false` when SQL Server has not verified that the rows already in the referencing table
+    /// follow the key (`is_not_trusted`, after `WITH NOCHECK` or a re-enable without
+    /// `WITH CHECK`); `None` when the capture did not record it, as before 1.2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub is_trusted: Option<bool>,
 }
 
 impl ForeignKey {

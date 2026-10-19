@@ -23,4 +23,14 @@ isDenied: boolean,
 /**
  * Whether the login sees at least one user table or view in the schema.
  */
-hasVisibleObjects: boolean, };
+hasVisibleObjects: boolean, 
+/**
+ * Whether the login sees at least one procedure or function in the schema; `false` as well
+ * when the probe did not ask, as before 1.2.
+ */
+hasVisibleProgrammability?: boolean, 
+/**
+ * Whether an explicit denial of `EXECUTE` on the schema can hide some of its procedures and
+ * functions; `false` as well when the probe did not ask, as before 1.2.
+ */
+isExecuteDenied?: boolean, };
