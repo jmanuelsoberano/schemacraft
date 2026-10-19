@@ -187,6 +187,13 @@ try {
     $result | ConvertTo-Json -Depth 5
 } catch {
     $setupError = $_
+    Write-Host ('SQL setup failed during ' + $setupPhase + ': ' + $setupError.Exception.Message)
+    if ($null -ne $lastConnectionError) {
+        Write-Host ('Last local connection error: ' + $lastConnectionError.message)
+        foreach ($sqlError in $lastConnectionError.sqlErrors) {
+            Write-Host ('SQL error ' + $sqlError.number + ', state ' + $sqlError.state + ', class ' + $sqlError.class + ': ' + $sqlError.message)
+        }
+    }
     # Collect only this execution's SQL setup logs and the exact owned instance's diagnostics.
     # https://learn.microsoft.com/en-us/sql/database-engine/install-windows/view-and-read-sql-server-setup-log-files
     $logFiles = @()
@@ -195,21 +202,29 @@ try {
     $logFiles += @(Get-ChildItem -LiteralPath $env:TEMP -Filter 'sqlsetup*.log' -File -ErrorAction SilentlyContinue |
         Where-Object { $_.LastWriteTime -ge $setupStarted } | Sort-Object LastWriteTime -Descending | Select-Object -First 2)
     $logs = @($logFiles | Where-Object { $_.LastWriteTime -ge $setupStarted } | ForEach-Object {
-        [ordered]@{ file = $_.Name; tail = @(Get-Content -LiteralPath $_.FullName -Tail 200 -ErrorAction SilentlyContinue) }
+        # Windows PowerShell attaches provider metadata to Get-Content strings; do not serialize it.
+        [ordered]@{ file = $_.Name.ToString(); tail = @(Get-Content -LiteralPath $_.FullName -Tail 200 -ErrorAction SilentlyContinue | ForEach-Object { $_.ToString() }) }
     })
     $ownedTcpPath = 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL16.SCACCEPT\MSSQLServer\SuperSocketNetLib\Tcp'
     $tcpConfiguration = $null
     if (Test-Path -LiteralPath $ownedTcpPath) {
+        $protocolValues = Get-ItemProperty -LiteralPath $ownedTcpPath
         $tcpConfiguration = [ordered]@{
-            protocol = Get-ItemProperty -LiteralPath $ownedTcpPath | Select-Object Enabled, ListenOnAllIPs
+            protocol = [ordered]@{ enabled = [int]$protocolValues.Enabled; listenOnAllIPs = [int]$protocolValues.ListenOnAllIPs }
             addresses = @(Get-ChildItem -LiteralPath $ownedTcpPath | Where-Object { $_.PSChildName -match '^IP(?:\d+|All)$' } | ForEach-Object {
-                Get-ItemProperty -LiteralPath $_.PSPath | Select-Object PSChildName, Enabled, Active, IpAddress, TcpDynamicPorts, TcpPort
+                $addressValues = Get-ItemProperty -LiteralPath $_.PSPath
+                $address = [ordered]@{ name = $_.PSChildName.ToString() }
+                foreach ($propertyName in @('Enabled', 'Active', 'IpAddress', 'TcpDynamicPorts', 'TcpPort')) {
+                    $property = $addressValues.PSObject.Properties[$propertyName]
+                    $address[$propertyName] = if ($null -ne $property -and $null -ne $property.Value) { $property.Value.ToString() } else { $null }
+                }
+                $address
             })
         }
     }
     $engineLog = Join-Path $env:ProgramFiles 'Microsoft SQL Server\MSSQL16.SCACCEPT\MSSQL\Log\ERRORLOG'
     $engineLogTail = @()
-    if (Test-Path -LiteralPath $engineLog -PathType Leaf) { $engineLogTail = @(Get-Content -LiteralPath $engineLog -Tail 200 -ErrorAction SilentlyContinue) }
+    if (Test-Path -LiteralPath $engineLog -PathType Leaf) { $engineLogTail = @(Get-Content -LiteralPath $engineLog -Tail 200 -ErrorAction SilentlyContinue | ForEach-Object { $_.ToString() }) }
     [ordered]@{
         passed = $false
         phase = $setupPhase
@@ -220,7 +235,9 @@ try {
         mediaProductVersion = $mediaVersion.ProductVersion
         setupLogs = $logs
         lastConnectionError = $lastConnectionError
-        listeners = @(Get-NetTCPConnection -LocalPort 14335 -State Listen -ErrorAction SilentlyContinue | Select-Object LocalAddress, LocalPort, OwningProcess)
+        listeners = @(Get-NetTCPConnection -LocalPort 14335 -State Listen -ErrorAction SilentlyContinue | ForEach-Object {
+            [ordered]@{ localAddress = $_.LocalAddress.ToString(); localPort = [int]$_.LocalPort; owningProcess = [int]$_.OwningProcess }
+        })
         tcpConfiguration = $tcpConfiguration
         engineLogTail = $engineLogTail
     } | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $evidencePath 'windows-auth-sql-setup.json') -Encoding UTF8
