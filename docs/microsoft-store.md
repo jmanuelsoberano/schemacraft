@@ -262,7 +262,7 @@ installed or submitted to Microsoft.
 | Recorded artifact                        | SHA-256                                                            |
 | ---------------------------------------- | ------------------------------------------------------------------ |
 | Source and extracted portable executable | `765dd024aeb87b8536ebf40b62f8d1a3faaee64a8133ca892ceed584ad08b033` |
-| Validation MSIX from this run            | `e48a531c76f6f48df80147beb47ed4dafb9eb14c5b4a71064416ae5d20666688` |
+| Validation MSIX from this run            | `096929947c0535988efc7fe20e16fe66b0c25ea4a82725dd10ed4f3a05f19645` |
 
 `npm run distribution:check` and all 14 distribution/packaging tests passed. They check the
 independent release boundary, identity and version validation, manifest declarations, the
