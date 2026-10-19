@@ -173,6 +173,13 @@ MakeAppx tool. Validate the manifest, version, architecture and payload before c
 upload. Retain the generated package and its provenance for review. Merely generating staging
 files or a ZIP archive does not demonstrate a valid MSIX or a successful installation.
 
+Before submission, run the applicable desktop-package tests in the
+[Windows App Certification Kit](https://learn.microsoft.com/en-us/windows/uwp/debug-test-perf/windows-app-certification-kit)
+and retain its HTML/XML reports with the tested package hash, Windows and kit versions. Record
+any unavailable tests and resolve failures before submission. MakeAppx validation does not replace
+these tests or Microsoft's certification. The kit has not been run for this preparation; its
+deployment, active-session and privilege requirements must be met in the acceptance environment.
+
 The current manifest targets x64 Windows desktop build 19041 or later and declares
 `packagedClassicApp`, `mediumIL` and `runFullTrust`. It carries English and Spanish resources,
 without adding an elevation request or bundled WebView2 runtime. These declarations are a
@@ -238,6 +245,7 @@ from an unpackaged application test or from successful package creation.
 | Account and product identity        | Individual account verified; name reserved; exact manifest identity and Store ID recorded                                                                                               | Pending                                                         |
 | Independent distribution            | Portable and NSIS build without Store credentials/configuration; shared core and project format remain independent                                                                      | Contract, tests and full local release/NSIS build passed        |
 | MakeAppx and payload validation     | Real SDK package created and validated; source release checksum, embedded executable, manifest, version and architecture checked                                                        | Passed with explicit validation identity; real identity pending |
+| Windows App Certification Kit       | Applicable desktop-package tests on the intended package; retain HTML/XML reports, versions and package hash, and review failures or unavailable tests                                  | Pending                                                         |
 | Actual MSIX installation            | Install and launch through the intended trusted distribution route on the target Windows environment; record account/privilege scope and version                                        | Pending                                                         |
 | MSIX update and coexistence         | Update an installed package of the same family; verify saved projects, preferences and remembered credentials; inspect coexistence with the existing portable/NSIS channel              | Pending                                                         |
 | MSIX uninstallation                 | Verify removal of package registration/application files and record actual handling of package data and external user projects                                                          | Pending                                                         |
@@ -275,6 +283,11 @@ workflow blocks passed parsing. These checks do not establish any pending instal
 The ordinary `npm run tauri build` also completed with the existing base configuration, producing
 the optimized executable and per-user NSIS installer without Store identity or account settings.
 These local outputs did not replace the published 1.2.0 assets.
+
+[CI run 39341425363](https://github.com/jmanuelsoberano/schemacraft/actions/runs/39341425363)
+also passed both required checks, including real MakeAppx validation on Windows and all 11
+portable-application smoke checks. The hosted application test covers opening, About 1.2.0,
+language/theme changes and keyboard behavior; it does not run the application under MSIX identity.
 
 ## What the 1.2 release already established
 
