@@ -682,8 +682,12 @@ release page what changed, a new project format included, and the changes are wr
 The separate `.github/workflows/verify-release.yml` checks the existing draft's downloaded
 portable executable, installer and `SHA256SUMS.txt` on a disposable `windows-2022` runner. It
 does not rebuild, replace, sign or publish release assets. The evidence identifies the release
-tag and source commit separately from the verifier commit and workflow run, and records asset
-hashes, versions and individual outcomes. `scripts/verify-release-runner.ps1` prepares a fresh
+tag and source commit separately from the verifier commit and workflow run. GitHub exposes draft
+releases only to identities with push access, so a dedicated download job has `contents: write`
+and performs only read requests and artifact upload; it neither checks out repository code nor
+executes downloaded assets. The independent execution job has `contents: read` and never receives
+the download job's token. The evidence also
+records asset hashes, versions and individual outcomes. `scripts/verify-release-runner.ps1` prepares a fresh
 standard local account and runs `verify-release-standard-user.ps1` with a limited token; the
 administrator controller never launches the application, installer or uninstaller itself.
 The worker checks hashes and the installer's manifest (`inspect-pe-manifest.mjs`), exercises
