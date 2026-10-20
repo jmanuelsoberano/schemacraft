@@ -8,21 +8,22 @@ package acceptance and publication remain governed by the [Store preparation gui
 
 ## Proposed listing fields
 
-| Field                                    | Draft value or status                                                                       |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Product name                             | SchemaCraft; subject to name reservation                                                    |
-| Category                                 | **Developer tools — proposal**, confirm the available label and selection in Partner Center |
-| Price                                    | Free, confirmed by the maintainer                                                           |
-| License                                  | AGPL-3.0-only; preserve the existing license and corresponding source links                 |
-| Listing languages                        | English and Spanish drafts below; confirm the portal locale selections                      |
-| Publisher, Store ID and package identity | Not supplied by this document; copy the verified Partner Center values                      |
-| Age rating and markets                   | Maintainer completes the portal questionnaire and selections                                |
+| Field                                    | Draft value or status                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------------------ |
+| Product name                             | SchemaCraft; reserved in Partner Center                                        |
+| Category                                 | Developer tools; confirmed by the maintainer                                   |
+| Price                                    | Free, confirmed by the maintainer                                              |
+| License                                  | AGPL-3.0-only; preserve the existing license and corresponding source links    |
+| Listing languages                        | General English and Spanish; confirmed and saved in the draft                  |
+| Publisher, Store ID and package identity | Verified values are recorded in the Store preparation guide                    |
+| Age rating and markets                   | IARC ratings saved; all markets, private audience for the maintainer's account |
 
 The known public links available for review are the [project repository](https://github.com/jmanuelsoberano/schemacraft),
 [privacy policy](https://github.com/jmanuelsoberano/schemacraft#privacy-policy),
 [issue tracker](https://github.com/jmanuelsoberano/schemacraft/issues) and
 [license](../LICENSE). Review the privacy wording and public issue-reporting implications before
-choosing the final listing links. This draft creates no support service, Store URL or account.
+choosing the final listing links. The reserved Store product is still a private draft; these
+links do not create a support service or establish public Store availability.
 
 ## English listing copy
 
@@ -225,8 +226,10 @@ credential entries synthetic, and record which package and environment were actu
 
 ## Review decisions still open
 
-- Approve or revise the EN/ES copy, proposed category and portal locale selections.
-- Select markets, age-rating answers and publication visibility in Partner Center.
+- Review the final EN/ES wording and media against the actual package. Category and general
+  English/Spanish locales are confirmed.
+- Verify the saved private audience, zero price, all-market selection and IARC ratings before
+  the maintainer submits. Keep publication held until the maintainer selects Publish now.
 - Review existing synthetic screenshots for privacy, dimensions and captions; this document
   adds no images and does not claim that any screenshot meets Store requirements yet.
 - Confirm the final privacy/license links, offline sample delivery and the live-capture review

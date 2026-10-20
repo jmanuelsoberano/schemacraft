@@ -1,9 +1,10 @@
 # Microsoft Store preparation
 
-Status: preparation in progress. The packager has created and unpacked a real MSIX with an
-explicit validation identity. Account verification, the real product identity, package
-installation and Microsoft certification remain pending. This guide records implementation and
-evidence; it does not announce Store availability.
+Status: private candidate in preparation. The Individual account is verified, SchemaCraft is
+reserved and Partner Center has validated the uploaded MSIX with its real product identity.
+Approval for `runFullTrust`, installed-package acceptance and Microsoft certification remain
+pending. The submission is a draft for a private audience and is held for manual publication;
+there is no public Store release.
 
 Official requirements were reviewed on **2026-10-19**. Microsoft Store Policies 7.19 apply on that
 date; the published 7.20 policy takes effect on 2026-10-22. Recheck the applicable terms when
@@ -38,9 +39,10 @@ See [App Developer Agreement 8.11, section 12(m)](https://go.microsoft.com/fwlin
 
 ## Maintainer account and costs
 
-The maintainer selected an **Individual account for a personal project published under their
-own name**. Account creation and verification remain pending; this choice does not supply a
-publisher identity or confirm any registration details.
+The maintainer completed an **Individual account for a personal project published under their
+own name**, including personal identity verification and developer-agreement acceptance. The
+confirmed public publisher name is **Manuel Soberano**. Personal contact details, credentials
+and identity documents do not belong in this repository.
 
 1. Start at [storedeveloper.microsoft.com](https://storedeveloper.microsoft.com/), choose the
    individual account flow and sign in with a personal Microsoft account.
@@ -74,18 +76,22 @@ profile or tax forms; see [payout and tax profiles](https://learn.microsoft.com/
    and package family name for reference. Do not derive them from the Tauri application ID,
    GitHub user name, display name or a sample manifest.
 
-| Partner Center value                    | MSIX destination                          | Current value                    |
-| --------------------------------------- | ----------------------------------------- | -------------------------------- |
-| Package/Identity/Name                   | `Identity Name`                           | Pending reservation              |
-| Package/Identity/Publisher              | `Identity Publisher`                      | Pending account/product identity |
-| Package/Properties/PublisherDisplayName | `Properties/PublisherDisplayName`         | Pending account/product identity |
-| Store ID                                | Submission record and eventual Store link | Pending reservation              |
-| Package Family Name                     | Installation/update verification record   | Pending product identity         |
+| Partner Center value                    | MSIX destination                          | Current value                              |
+| --------------------------------------- | ----------------------------------------- | ------------------------------------------ |
+| Package/Identity/Name                   | `Identity Name`                           | `ManuelSoberano.SchemaCraft`               |
+| Package/Identity/Publisher              | `Identity Publisher`                      | `CN=694356F4-87C7-4BE3-8344-FAE641137995`  |
+| Package/Properties/PublisherDisplayName | `Properties/PublisherDisplayName`         | `Manuel Soberano`                          |
+| Store ID                                | Submission record and eventual Store link | `9N5HMQ02KP3S`                             |
+| Package Family Name                     | Installation/update verification record   | `ManuelSoberano.SchemaCraft_8p2rqfsespz7a` |
 
 These values establish the package family and must remain consistent for updates. Microsoft's
 [product identity guide](https://learn.microsoft.com/en-us/windows/apps/publish/view-app-identity-details)
 describes their source. A sample identity is suitable only for package-structure tests and is
 never evidence that the submission identity is ready.
+
+The name is reserved and these values were copied from the product identity page. The eventual
+[Store link](https://apps.microsoft.com/detail/9N5HMQ02KP3S) identifies the product; it does not
+establish public availability.
 
 ## Run the preparation
 
@@ -173,12 +179,15 @@ MakeAppx tool. Validate the manifest, version, architecture and payload before c
 upload. Retain the generated package and its provenance for review. Merely generating staging
 files or a ZIP archive does not demonstrate a valid MSIX or a successful installation.
 
-Before submission, run the applicable desktop-package tests in the
+Before requesting public availability, complete the applicable desktop-package tests in the
 [Windows App Certification Kit](https://learn.microsoft.com/en-us/windows/uwp/debug-test-perf/windows-app-certification-kit)
 and retain its HTML/XML reports with the tested package hash, Windows and kit versions. Record
-any unavailable tests and resolve failures before submission. MakeAppx validation does not replace
+any unavailable tests and resolve failures before public availability. MakeAppx validation does not replace
 these tests or Microsoft's certification. The kit has not been run for this preparation; its
 deployment, active-session and privilege requirements must be met in the acceptance environment.
+For the first private candidate below, tests that require a trusted installed package remain
+explicitly pending while the maintainer obtains a Store-signed build. The private route does
+not turn package validation into a passed installation or certification-kit result.
 
 The current manifest targets x64 Windows desktop build 19041 or later and declares
 `packagedClassicApp`, `mediumIL` and `runFullTrust`. It carries English and Spanish resources,
@@ -240,25 +249,57 @@ Package preparation and its contract checks have evidence below. Account, deploy
 acceptance remain separate gates. Update each with actual evidence rather than inferring it
 from an unpackaged application test or from successful package creation.
 
-| Gate                                | Evidence required                                                                                                                                                                       | Status                                                          |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Account and product identity        | Individual account verified; name reserved; exact manifest identity and Store ID recorded                                                                                               | Pending                                                         |
-| Independent distribution            | Portable and NSIS build without Store credentials/configuration; shared core and project format remain independent                                                                      | Contract, tests and full local release/NSIS build passed        |
-| MakeAppx and payload validation     | Real SDK package created and validated; source release checksum, embedded executable, manifest, version and architecture checked                                                        | Passed with explicit validation identity; real identity pending |
-| Windows App Certification Kit       | Applicable desktop-package tests on the intended package; retain HTML/XML reports, versions and package hash, and review failures or unavailable tests                                  | Pending                                                         |
-| Actual MSIX installation            | Install and launch through the intended trusted distribution route on the target Windows environment; record account/privilege scope and version                                        | Pending                                                         |
-| MSIX update and coexistence         | Update an installed package of the same family; verify saved projects, preferences and remembered credentials; inspect coexistence with the existing portable/NSIS channel              | Pending                                                         |
-| MSIX uninstallation                 | Verify removal of package registration/application files and record actual handling of package data and external user projects                                                          | Pending                                                         |
-| WebView2                            | Verify packaged startup with the runtime and the actual missing-runtime experience; record whether absence was natural or simulated                                                     | Pending                                                         |
-| Credentials and data paths          | Test SQL-login connect/remember/forget, restart, save/reopen, logs and effective configuration paths under package identity; no connection passwords in project/configuration/log files | Pending                                                         |
-| SQL and Windows authentication      | Check packaged SQL capture against 2019/2022 and Windows authentication on an authorized Windows SQL instance; state local-account/domain scope explicitly                              | Pending                                                         |
-| Listing, privacy and license        | Review EN/ES material, privacy URL, AGPL/source links, dependencies and synthetic certification instructions                                                                            | Pending                                                         |
-| Store certification and publication | Microsoft accepts the submitted package; record outcome and maintainer authorization for public availability                                                                            | Pending                                                         |
+| Gate                                | Evidence required                                                                                                                                                                       | Status                                                      |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Account and product identity        | Individual account verified; name reserved; exact manifest identity and Store ID recorded                                                                                               | Passed; official identity recorded above                    |
+| Independent distribution            | Portable and NSIS build without Store credentials/configuration; shared core and project format remain independent                                                                      | Contract, tests and full local release/NSIS build passed    |
+| MakeAppx and payload validation     | Real SDK package created and validated; source release checksum, embedded executable, manifest, version and architecture checked                                                        | Passed with real identity; initial portal validation passed |
+| Windows App Certification Kit       | Applicable desktop-package tests on the intended package; retain HTML/XML reports, versions and package hash, and review failures or unavailable tests                                  | Pending                                                     |
+| Actual MSIX installation            | Install and launch through the intended trusted distribution route on the target Windows environment; record account/privilege scope and version                                        | Pending                                                     |
+| MSIX update and coexistence         | Update an installed package of the same family; verify saved projects, preferences and remembered credentials; inspect coexistence with the existing portable/NSIS channel              | Pending                                                     |
+| MSIX uninstallation                 | Verify removal of package registration/application files and record actual handling of package data and external user projects                                                          | Pending                                                     |
+| WebView2                            | Verify packaged startup with the runtime and the actual missing-runtime experience; record whether absence was natural or simulated                                                     | Pending                                                     |
+| Credentials and data paths          | Test SQL-login connect/remember/forget, restart, save/reopen, logs and effective configuration paths under package identity; no connection passwords in project/configuration/log files | Pending                                                     |
+| SQL and Windows authentication      | Check packaged SQL capture against 2019/2022 and Windows authentication on an authorized Windows SQL instance; state local-account/domain scope explicitly                              | Pending                                                     |
+| Listing, privacy and license        | Review EN/ES material, privacy URL, AGPL/source links, dependencies and synthetic certification instructions                                                                            | Pending                                                     |
+| Store certification and publication | Microsoft accepts the submitted package; record outcome and maintainer authorization for public availability                                                                            | Pending                                                     |
 
 Each real-app test must back up and restore existing preferences after confirmed application
 termination. Package-specific state and credentials used for tests must be synthetic. A local
 Windows-authentication result does not establish domain authentication, and a hosted Server
 environment does not establish consumer Windows behavior beyond what was actually checked.
+
+### First private candidate
+
+The maintainer chose a first private distribution for their own account, with all available
+markets and price zero. The `SchemaCraft private testing` group contains one member; its email
+is kept in Partner Center. Automatic conversion to a public audience is off. The submission is
+held until the maintainer selects **Publish now**, even after certification.
+
+The product uses the **Developer tools** category and general **English** and **Spanish**
+listings. Windows automatic OneDrive backup of application data is disabled in the product
+declarations; this does not control project files users save in their own synchronized folders.
+The IARC questionnaire and the maintainer's personal acceptance are saved: PEGI 3, ESRB Everyone
+and global IARC 3, with regional ratings supplied by IARC.
+
+The real-identity candidate wraps the published 1.2.0 portable, with source and extracted
+executable SHA-256 `765dd024aeb87b8536ebf40b62f8d1a3faaee64a8133ca892ceed584ad08b033`.
+MakeAppx `10.0.28000.1839` passed semantic packing, unpacking and closed-payload verification;
+the report has `validation: false`. Candidate MSIX SHA-256:
+`45be7de3b9a805d8d072305e8f5d91e2479118c39961a97913743527e8155c14`.
+Local provenance records the source release, packaging commit, GitHub asset digest and hashes.
+
+Partner Center accepted the upload as version `1.2.0.0`, x64, Windows.Desktop minimum
+`10.0.19041.0`, and shows Packages complete. Only the desktop family is selected; automatic
+addition to future device families is off. The portal still requires approval for
+`runFullTrust`; its saved justification describes the native host, normal user privilege,
+SQL metadata reads, local project/export files and optional Credential Manager use.
+
+The maintainer retains the final certification submission and publication actions. The private
+candidate can obtain a trusted Store-signed package for the installed-package gates; it is not
+acceptance for public rollout. Finish those gates and review their actual evidence before
+changing to a public audience. No installed-MSIX test, WACK result or Store approval is claimed
+by the successful upload.
 
 ### Preparation evidence, 2026-10-19
 
