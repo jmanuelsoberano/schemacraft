@@ -276,11 +276,22 @@ markets and price zero. The `SchemaCraft private testing` group contains one mem
 is kept in Partner Center. Automatic conversion to a public audience is off. The submission is
 held until the maintainer selects **Publish now**, even after certification.
 
-The product uses the **Developer tools** category and general **English** and **Spanish**
-listings. Windows automatic OneDrive backup of application data is disabled in the product
+The product uses the **Developer tools** category and **English (United States)** and
+**Spanish (Spain)** listings, the two locales required by the package. The maintainer chose
+the same neutral English/Spanish copy and no additional generic-language listings.
+Windows automatic OneDrive backup of application data is disabled in the product
 declarations; this does not control project files users save in their own synchronized folders.
 The IARC questionnaire and the maintainer's personal acceptance are saved: PEGI 3, ESRB Everyone
 and global IARC 3, with regional ratings supplied by IARC.
+
+Both required listings contain the approved neutral text, seven features, license/source links
+and one actual 1.2.0 synthetic screenshot with a localized caption. Partner Center marks both
+complete. The extra generic English/Spanish listings were removed; no private connection
+details or credentials were supplied as reviewer material.
+
+Private reviewer instructions are prepared with a direct download of the existing synthetic
+offline sample and an optional reviewer-controlled SQL setup. Their persistence in Partner
+Center must be confirmed before the maintainer submits; an edited form is not a saved record.
 
 The real-identity candidate wraps the published 1.2.0 portable, with source and extracted
 executable SHA-256 `765dd024aeb87b8536ebf40b62f8d1a3faaee64a8133ca892ceed584ad08b033`.

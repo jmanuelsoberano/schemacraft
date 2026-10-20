@@ -8,15 +8,15 @@ package acceptance and publication remain governed by the [Store preparation gui
 
 ## Proposed listing fields
 
-| Field                                    | Draft value or status                                                          |
-| ---------------------------------------- | ------------------------------------------------------------------------------ |
-| Product name                             | SchemaCraft; reserved in Partner Center                                        |
-| Category                                 | Developer tools; confirmed by the maintainer                                   |
-| Price                                    | Free, confirmed by the maintainer                                              |
-| License                                  | AGPL-3.0-only; preserve the existing license and corresponding source links    |
-| Listing languages                        | General English and Spanish; confirmed and saved in the draft                  |
-| Publisher, Store ID and package identity | Verified values are recorded in the Store preparation guide                    |
-| Age rating and markets                   | IARC ratings saved; all markets, private audience for the maintainer's account |
+| Field                                    | Draft value or status                                                                       |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Product name                             | SchemaCraft; reserved in Partner Center                                                     |
+| Category                                 | Developer tools; confirmed by the maintainer                                                |
+| Price                                    | Free, confirmed by the maintainer                                                           |
+| License                                  | AGPL-3.0-only; preserve the existing license and corresponding source links                 |
+| Listing languages                        | English (United States) and Spanish (Spain); neutral EN/ES copy, as required by the package |
+| Publisher, Store ID and package identity | Verified values are recorded in the Store preparation guide                                 |
+| Age rating and markets                   | IARC ratings saved; all markets, private audience for the maintainer's account              |
 
 The known public links available for review are the [project repository](https://github.com/jmanuelsoberano/schemacraft),
 [privacy policy](https://github.com/jmanuelsoberano/schemacraft#privacy-policy),
@@ -226,15 +226,18 @@ credential entries synthetic, and record which package and environment were actu
 
 ## Review decisions still open
 
-- Review the final EN/ES wording and media against the actual package. Category and general
-  English/Spanish locales are confirmed.
+- Review the final EN/ES wording and media against the actual package. The maintainer confirmed
+  English (United States) and Spanish (Spain), the two required package locales, with the same
+  neutral copy. Additional generic English/Spanish listings are not part of the offer.
 - Verify the saved private audience, zero price, all-market selection and IARC ratings before
   the maintainer submits. Keep publication held until the maintainer selects Publish now.
-- Review existing synthetic screenshots for privacy, dimensions and captions; this document
-  adds no images and does not claim that any screenshot meets Store requirements yet.
+- Each required listing has one reviewed 1440x900 synthetic screenshot from the real 1.2.0
+  application, with a localized caption. Partner Center marks both listings complete. This
+  confirms draft completeness, not certification or installed-MSIX acceptance. Review the
+  media again before public availability.
 - Confirm the final privacy/license links, offline sample delivery and the live-capture review
   arrangement before submission. A GitHub issue tracker is public and should not receive
   credentials, confidential projects or unredacted logs.
 - Complete the package acceptance gates in the main guide before presenting capabilities as
-  verified for Store distribution. No Store IDs, review credentials, approval or availability
-  dates are supplied by this draft.
+  verified for Store distribution. The verified public Store identity is recorded in that guide;
+  no review credentials, approval or availability dates are supplied by this draft.
