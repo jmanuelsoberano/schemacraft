@@ -1,10 +1,12 @@
 # Microsoft Store listing and certification draft
 
-**Draft for maintainer review.** These are proposed listing strings and reviewer instructions
-for SchemaCraft 1.2, not a submitted or approved listing. English and Spanish sections below
-are intended as user-facing copy; the rest is preparation guidance. Confirm the wording against
-the actual Store package before submitting. Account identity, screenshots, markets, ratings,
-package acceptance and publication remain governed by the [Store preparation guide](microsoft-store.md).
+**Listing copy and reviewer material.** The first private SchemaCraft 1.2 submission entered
+Microsoft's certification workflow on **2026-10-22**. The required EN/ES listings were complete;
+the optional reviewer notes below were not saved because of a portal error and were omitted
+with the maintainer's authorization. Neither certification approval nor public availability is
+claimed. English and Spanish sections below are user-facing copy; the rest is review guidance.
+Account identity, screenshots, markets, ratings, package acceptance and publication remain
+governed by the [Store preparation guide](microsoft-store.md).
 
 ## Proposed listing fields
 
@@ -22,7 +24,7 @@ The known public links available for review are the [project repository](https:/
 [privacy policy](https://github.com/jmanuelsoberano/schemacraft#privacy-policy),
 [issue tracker](https://github.com/jmanuelsoberano/schemacraft/issues) and
 [license](../LICENSE). Review the privacy wording and public issue-reporting implications before
-choosing the final listing links. The reserved Store product is still a private draft; these
+choosing the final listing links. The Store product is in private certification review; these
 links do not create a support service or establish public Store availability.
 
 ## English listing copy
@@ -170,9 +172,10 @@ keys. `sales.RecentOrders` is initially hidden. The sample intentionally records
 and retained facts, so those notices are expected. Its recorded local connection is fixture
 metadata, not a working reviewer account; opening the file does not connect to that server.
 
-Before submission, the maintainer must provide a reviewed downloadable copy or a precise
-download instruction in certification notes. No new sample, attachment or hosted endpoint is
-created by this draft.
+The prepared reviewer notes include the [direct sample download](https://raw.githubusercontent.com/jmanuelsoberano/schemacraft/v1.2.0/crates/schemacraft-core/src/project/fixtures/format-2.scraft).
+Partner Center failed to save those notes, so this instruction was not delivered with the first
+private submission. Retain it for reviewer follow-up; no new sample, attachment or hosted
+endpoint is created by this document.
 
 1. Copy the existing sample to a user-writable test folder and retain the original unchanged.
    Use **Open project** to open the copy without configuring a database connection.
@@ -229,14 +232,15 @@ credential entries synthetic, and record which package and environment were actu
 - Review the final EN/ES wording and media against the actual package. The maintainer confirmed
   English (United States) and Spanish (Spain), the two required package locales, with the same
   neutral copy. Additional generic English/Spanish listings are not part of the offer.
-- Verify the saved private audience, zero price, all-market selection and IARC ratings before
-  the maintainer submits. Keep publication held until the maintainer selects Publish now.
+- Private audience, zero price, all-market selection and saved IARC ratings were verified for
+  the first submission. Recheck them before any subsequent submission or publication action.
+  Keep publication held until the maintainer selects Publish now.
 - Each required listing has one reviewed 1440x900 synthetic screenshot from the real 1.2.0
   application, with a localized caption. Partner Center marks both listings complete. This
   confirms draft completeness, not certification or installed-MSIX acceptance. Review the
   media again before public availability.
-- Confirm the final privacy/license links, offline sample delivery and the live-capture review
-  arrangement before submission. A GitHub issue tracker is public and should not receive
+- Confirm the final privacy/license links and address any reviewer request for offline sample
+  delivery or live-capture arrangements. A GitHub issue tracker is public and should not receive
   credentials, confidential projects or unredacted logs.
 - Complete the package acceptance gates in the main guide before presenting capabilities as
   verified for Store distribution. The verified public Store identity is recorded in that guide;

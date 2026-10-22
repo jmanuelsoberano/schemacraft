@@ -1,14 +1,14 @@
 # Microsoft Store preparation
 
-Status: private candidate in preparation. The Individual account is verified, SchemaCraft is
-reserved and Partner Center has validated the uploaded MSIX with its real product identity.
-Approval for `runFullTrust`, installed-package acceptance and Microsoft certification remain
-pending. The submission is a draft for a private audience and is held for manual publication;
-there is no public Store release.
+Status observed on **2026-10-22**: the first private submission was received by Microsoft and
+entered preprocessing in the certification workflow. The Individual account and product identity
+are verified, and the uploaded MSIX passed initial portal validation. Approval for `runFullTrust`,
+installed-package acceptance and the certification outcome remain pending. Publication is held
+until the maintainer selects **Publish now**; there is no public Store release.
 
-Official requirements were reviewed on **2026-10-19**. Microsoft Store Policies 7.19 apply on that
-date; the published 7.20 policy takes effect on 2026-10-22. Recheck the applicable terms when
-submitting. See the [policy history](https://learn.microsoft.com/en-us/windows/apps/publish/store-policies-change-history).
+Official requirements were reviewed on **2026-10-19** and the applicable policy references were
+rechecked on **2026-10-22**. [Microsoft Store Policies 7.20](https://learn.microsoft.com/en-us/windows/apps/publish/store-policies)
+took effect on 2026-10-22. See the [policy history](https://learn.microsoft.com/en-us/windows/apps/publish/store-policies-change-history).
 
 ## Scope and distribution contract
 
@@ -231,7 +231,7 @@ and portal selections require maintainer review before submission.
 - Supply synthetic projects and clear certification steps. The application must be testable;
   required server access must work, and any needed review login must be a dedicated demo
   account. An offline project demonstrates offline features, not successful SQL capture.
-  See [Store policies 10.2.4, 10.3 and 10.5.1](https://learn.microsoft.com/en-us/windows/apps/publish/store-policy-archive/store-policy-7-19).
+  See [Store policies 10.2.4, 10.3 and 10.5.1](https://learn.microsoft.com/en-us/windows/apps/publish/store-policies).
 - Preserve **AGPL-3.0-only**, third-party notices and access to the corresponding source for the
   submitted release. Provide the project's license as the listing's license terms rather than
   silently relying on default application terms. The agreement accommodates FOSS and assigns
@@ -262,7 +262,7 @@ from an unpackaged application test or from successful package creation.
 | Credentials and data paths          | Test SQL-login connect/remember/forget, restart, save/reopen, logs and effective configuration paths under package identity; no connection passwords in project/configuration/log files | Pending                                                     |
 | SQL and Windows authentication      | Check packaged SQL capture against 2019/2022 and Windows authentication on an authorized Windows SQL instance; state local-account/domain scope explicitly                              | Pending                                                     |
 | Listing, privacy and license        | Review EN/ES material, privacy URL, AGPL/source links, dependencies and synthetic certification instructions                                                                            | Pending                                                     |
-| Store certification and publication | Microsoft accepts the submitted package; record outcome and maintainer authorization for public availability                                                                            | Pending                                                     |
+| Store certification and publication | Microsoft accepts the submitted package; record outcome and maintainer authorization for public availability                                                                            | Submitted 2026-10-22; outcome and publication pending       |
 
 Each real-app test must back up and restore existing preferences after confirmed application
 termination. Package-specific state and credentials used for tests must be synthetic. A local
@@ -290,8 +290,11 @@ complete. The extra generic English/Spanish listings were removed; no private co
 details or credentials were supplied as reviewer material.
 
 Private reviewer instructions are prepared with a direct download of the existing synthetic
-offline sample and an optional reviewer-controlled SQL setup. Their persistence in Partner
-Center must be confirmed before the maintainer submits; an edited form is not a saved record.
+offline sample and an optional reviewer-controlled SQL setup. Partner Center did not save them:
+it returned **Unable to save. Please try again.**, and reopening the page showed an empty field.
+The maintainer explicitly authorized the first private submission without these optional notes.
+The instructions remain available in the [reviewer material](microsoft-store-listing.md#certification-material-and-proposed-reviewer-steps);
+an edited form is not evidence that Microsoft received them.
 
 The real-identity candidate wraps the published 1.2.0 portable, with source and extracted
 executable SHA-256 `765dd024aeb87b8536ebf40b62f8d1a3faaee64a8133ca892ceed584ad08b033`.
@@ -306,11 +309,38 @@ addition to future device families is off. The portal still requires approval fo
 `runFullTrust`; its saved justification describes the native host, normal user privilege,
 SQL metadata reads, local project/export files and optional Credential Manager use.
 
-The maintainer retains the final certification submission and publication actions. The private
-candidate can obtain a trusted Store-signed package for the installed-package gates; it is not
-acceptance for public rollout. Finish those gates and review their actual evidence before
-changing to a public audience. No installed-MSIX test, WACK result or Store approval is claimed
-by the successful upload.
+The maintainer authorized the private certification submission and retains the publication
+actions. The private candidate can obtain a trusted Store-signed package for the installed-package
+gates; it is not acceptance for public rollout. Finish those gates and review their actual evidence
+before changing to a public audience. No installed-MSIX test, WACK result or Store approval is
+claimed by the successful upload.
+
+### Certification submission, 2026-10-22
+
+The maintainer authorized sending Submission 1 without the optional certification notes.
+Partner Center confirmed **In certification** for the existing `1.2.0.0` x64 package, with
+submission complete, preprocessing in progress, and certification and publication not started.
+This records receipt into the workflow, not a certification result or capability approval.
+The package and published GitHub release assets were unchanged.
+
+Before submission, persisted settings were read back: private audience, only the existing
+private testing group selected, automatic public conversion off, price zero, and manual
+publication hold. The accepted-submission page explicitly states that publication starts only
+after **Publish now**. No publication was authorized or performed.
+
+The note-saving failure reproduced after a fresh personal sign-in with the approved text below
+the displayed length limit. Microsoft documents [certification notes as optional](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/manage-submission-options#notes-for-certification).
+The support request remains open as last checked on this date, independently of certification.
+Reviewers may still require more information to test SQL features; no hosted database or review
+credentials were supplied. Respond to the actual review result rather than claiming that the
+missing instructions have been accepted.
+
+After approval, obtain maintainer authorization to make the package available to the existing
+private audience and download it through Store. Complete the acceptance gates above with that
+trusted package before requesting public availability. An update test requires a newer package
+of the same family; reinstalling the same version does not prove that updates preserve state.
+Keep further Store work in this branch and pull request. Support/reporting changes belong in a
+separate pull request and do not alter this submitted candidate.
 
 ### Preparation evidence, 2026-10-19
 

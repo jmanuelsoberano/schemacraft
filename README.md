@@ -53,10 +53,10 @@ code-signed yet (see the code signing policy below), so SmartScreen shows a warn
 first launch (More info, then Run anyway), and a PC with Smart App Control turned on refuses
 unsigned executables.
 
-Microsoft Store distribution is being prepared as an additional channel. The existing portable
-executable and installer remain independent of a Store account and package identity. See the
-[Store preparation guide](docs/microsoft-store.md) for the current status and remaining checks;
-there is no Store release available yet.
+Microsoft Store distribution is an additional channel in private certification review as of
+2026-10-22. The existing portable executable and installer remain independent of a Store account
+and package identity. See the [Store preparation guide](docs/microsoft-store.md) for the current
+status and remaining checks; there is no Store release available yet.
 
 ## Code signing policy
 
@@ -107,8 +107,8 @@ An MSIX installation can give configuration, logs and WebView2 data package-spec
 and Windows can remove virtualized package data on uninstall. User-selected projects outside the
 package remain under the user's control. Microsoft handles Store account, download and update
 information under its own privacy statement; SchemaCraft does not receive a Store account login.
-The Store package is still under preparation, as described above. Privacy questions and bug
-reports can be raised through [the issue tracker](https://github.com/jmanuelsoberano/schemacraft/issues);
+The Store package is in private certification review, as described above. Privacy questions and
+bug reports can be raised through [the issue tracker](https://github.com/jmanuelsoberano/schemacraft/issues);
 issues are public, so remove confidential details before submitting them.
 
 ## Stack
