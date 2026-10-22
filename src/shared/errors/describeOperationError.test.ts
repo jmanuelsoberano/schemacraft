@@ -14,6 +14,16 @@ const rejectedLogin = new OperationError(
 );
 
 describe("describeOperationError", () => {
+  it("offers local save guidance for a diagnostic failure without suggesting certificate trust", () => {
+    const error = new OperationError(
+      { type: "support", value: "writeFailed" },
+      "report write failed",
+    );
+    const presentation = describeOperationError(error, english);
+    expect(presentation.title).toBe("Could not save the diagnostic file");
+    expect(presentation.hint).toContain("writable folder");
+    expect(presentation.offersCertificateTrust).toBe(false);
+  });
   it("advises on the login name and password when a SQL login is rejected", () => {
     const presentation = describeOperationError(rejectedLogin, english, {
       usesIntegratedAuthentication: false,

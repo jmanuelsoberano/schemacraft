@@ -6,6 +6,7 @@ import { useAppActions } from "@/app/actions/useAppActions";
 import { useKeyboardShortcuts } from "@/app/actions/useKeyboardShortcuts";
 import { exposeFlowInstance } from "@/app/developmentHooks";
 import { AboutDialog } from "@/features/about/AboutDialog";
+import { SupportDialog } from "@/features/support/SupportDialog";
 import { AccessBar } from "@/features/access/AccessBar";
 import { AccessReportDialog } from "@/features/access/AccessReportDialog";
 import { CanvasContextMenu } from "@/features/canvas/CanvasContextMenu";
@@ -149,6 +150,7 @@ export function AppShell() {
       <ConnectionDialog />
       <UnsavedChangesDialog />
       <AboutDialog />
+      <SupportDialog />
       <AccessReportDialog />
       <ExportDialog />
       <CommandPalette actions={actions} />

@@ -11,6 +11,10 @@ Thanks for taking the time to contribute. This page covers what you need to get 
   SchemaCraft is tested against SQL Server 2019 and 2022. Attach today's diagnostic log, from the
   folder About (F1) opens, after reading it: it holds counts, timings and error kinds, never names
   or passwords. Never paste connection strings or passwords.
+  In builds with the unreleased support workflow, **About → Report a problem** prepares one
+  readable diagnostic `.txt` file for local review. Save it and attach it manually if useful;
+  the application never uploads it. The issue form also accepts reports without a diagnostic
+  file. Use synthetic examples and remove private data from descriptions and screenshots.
 - For anything beyond a small fix, open an issue first so the approach can be agreed before you
   write code.
 - Security problems have their own channel: see [SECURITY.md](SECURITY.md).

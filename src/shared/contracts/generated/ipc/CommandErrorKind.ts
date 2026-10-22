@@ -4,8 +4,9 @@ import type { ExportErrorKind } from "../export/ExportErrorKind";
 import type { InspectorErrorKind } from "../inspectors/InspectorErrorKind";
 import type { PreferencesErrorKind } from "../preferences/PreferencesErrorKind";
 import type { ProjectErrorKind } from "../project/ProjectErrorKind";
+import type { SupportErrorKind } from "./SupportErrorKind";
 
 /**
  * Classification of a command failure.
  */
-export type CommandErrorKind = { "type": "inspector", "value": InspectorErrorKind } | { "type": "project", "value": ProjectErrorKind } | { "type": "preferences", "value": PreferencesErrorKind } | { "type": "credential", "value": CredentialErrorKind } | { "type": "export", "value": ExportErrorKind } | { "type": "unknownJob" } | { "type": "invalidArgument" } | { "type": "unexpected" };
+export type CommandErrorKind = { "type": "inspector", "value": InspectorErrorKind } | { "type": "project", "value": ProjectErrorKind } | { "type": "preferences", "value": PreferencesErrorKind } | { "type": "credential", "value": CredentialErrorKind } | { "type": "export", "value": ExportErrorKind } | { "type": "support", "value": SupportErrorKind } | { "type": "unknownJob" } | { "type": "invalidArgument" } | { "type": "unexpected" };

@@ -21,7 +21,10 @@
       "forget_password",
       "export_diagram",
       "cancel_export",
-      "open_log_folder"
+      "open_log_folder",
+      "read_diagnostic_report",
+      "write_diagnostic_report",
+      "open_support_page"
     ],
     "featureFolders": [
       "about",
@@ -32,7 +35,8 @@
       "inspector",
       "preferences",
       "project",
-      "schema"
+      "schema",
+      "support"
     ],
     "coreModules": [
       "credentials",
@@ -49,9 +53,10 @@
       "credentialsBackend.ts",
       "exportBackend.ts",
       "preferencesBackend.ts",
-      "projectBackend.ts"
+      "projectBackend.ts",
+      "supportBackend.ts"
     ],
-    "adrCount": 44
+    "adrCount": 45
   },
   "en": {
     "overview": {
@@ -378,6 +383,13 @@
               "Non-modal landmark, never a dialog",
               "Highlight owned by the item that set it, no extra tab stop"
             ]
+          },
+          {
+            "id": "feature-support",
+            "name": "support",
+            "path": "src/features/support",
+            "responsibility": "Ephemeral support dialog and store: preview a bounded local report, save the exact reviewed text, reveal it and separately open a public bug form or private-security guidance. Closing clears the preview; generation and busy guards reject stale reads and duplicate pickers. No project, preferences or connection access (ADR-046).",
+            "patterns": ["Ephemeral dialog store", "Explicit local export"]
           }
         ]
       },
@@ -543,6 +555,20 @@
             "path": "src-tauri/src/commands/diagnostics.rs",
             "responsibility": "Async. open_log_folder takes the folder from AppState, never from the frontend, creates it if the user deleted it and opens it with the opener plugin's Rust API (OpenerExt::open_path) on run_blocking, so no capability grows. Without a folder it fails as invalidArgument (ADR-041).",
             "patterns": ["Thin command", "Rust-side plugin API"]
+          },
+          {
+            "id": "host-support",
+            "name": "support.rs",
+            "path": "src-tauri/src/support.rs",
+            "responsibility": "Bounded local collector and atomic text writer. At most seven recognized regular daily/panic log files, nonrecursive, no symlinks or Windows reparse points; up to 256 KiB of recent complete lines per file with visible notices. Basic build/runtime header, no project/preferences/credentials or arbitrary files. Fixed SupportPage URLs, version-only public query; no network client.",
+            "patterns": ["Bounded file allowlist", "Atomic text replacement", "Fixed destinations"]
+          },
+          {
+            "id": "cmd-support",
+            "name": "commands/support.rs",
+            "path": "src-tauri/src/commands/support.rs",
+            "responsibility": "Async commands for local diagnostic read/write and opening a fixed support page, on run_blocking through logged. Source log directory comes only from AppState; saving uses the exact reviewed text. Typed SupportErrorKind; no new window capability.",
+            "patterns": ["Thin command", "run_blocking", "Typed errors"]
           }
         ]
       },
@@ -711,6 +737,13 @@
             "path": "src/shared/settings/settingsStore.ts",
             "responsibility": "Two keys: 'schemacraft.settings' (theme, language, the entities panel, the Inspector's width and the closed access notices) and 'schemacraft.connection' (the last draft: the password blank, but server, login, database, schemas, encryption and trustServerCertificate kept). Both live in the WebView2 profile under %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft. Neither holds a secret; deleting preferences.json clears neither, and clearing the WebView2 data resets both (ADR-017).",
             "patterns": ["Per-window UI conveniences only"]
+          },
+          {
+            "id": "ext-github",
+            "name": "GitHub support",
+            "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
+            "responsibility": "Public bug-report form on the default branch, with version/environment/reproduction fields, an optional manually attached reviewed file and a public-data notice. Security details use the existing private-reporting policy. The application never submits an issue.",
+            "patterns": ["Manual public reporting"]
           }
         ]
       },
@@ -2109,6 +2142,76 @@
         "to": "core-diagnostics",
         "label": "export_written",
         "kind": "call"
+      },
+      {
+        "id": "action-registry-to-feature-support",
+        "from": "action-registry",
+        "to": "feature-support",
+        "label": "help.reportProblem",
+        "kind": "call"
+      },
+      {
+        "id": "app-shell-to-feature-support",
+        "from": "app-shell",
+        "to": "feature-support",
+        "label": "SupportDialog",
+        "kind": "call"
+      },
+      {
+        "id": "feature-about-to-feature-support",
+        "from": "feature-about",
+        "to": "feature-support",
+        "label": "Report a problem",
+        "kind": "call"
+      },
+      {
+        "id": "feature-support-to-shared-ipc",
+        "from": "feature-support",
+        "to": "shared-ipc",
+        "label": "supportBackend",
+        "kind": "call"
+      },
+      {
+        "id": "ipc-invoke-to-cmd-support",
+        "from": "ipc-invoke",
+        "to": "cmd-support",
+        "label": "read_diagnostic_report, write_diagnostic_report, open_support_page",
+        "kind": "ipc"
+      },
+      {
+        "id": "cmd-support-to-host-support",
+        "from": "cmd-support",
+        "to": "host-support",
+        "label": "read_report, write_report, SupportPage",
+        "kind": "call"
+      },
+      {
+        "id": "cmd-support-to-host-state",
+        "from": "cmd-support",
+        "to": "host-state",
+        "label": "log_directory",
+        "kind": "call"
+      },
+      {
+        "id": "cmd-support-to-ipc-error",
+        "from": "cmd-support",
+        "to": "ipc-error",
+        "label": "SupportErrorKind, logged",
+        "kind": "call"
+      },
+      {
+        "id": "host-support-to-ext-filesystem",
+        "from": "host-support",
+        "to": "ext-filesystem",
+        "label": "bounded log read, atomic .txt write",
+        "kind": "file"
+      },
+      {
+        "id": "cmd-support-to-ext-github",
+        "from": "cmd-support",
+        "to": "ext-github",
+        "label": "fixed browser URL; version only",
+        "kind": "call"
       }
     ],
     "dataStores": [
@@ -2183,6 +2286,14 @@
         "owner": "src-tauri/src/logging.rs, with the events of crates/schemacraft-core/src/diagnostics.rs",
         "contents": "schemacraft.<UTC date>.log, one per day, at most seven files kept, the panic file among them: the typed events only, versions, counts, timings, formats, read-only flags, sizes in KB, error kinds, SQL Server error numbers and fixed query and command names. Never a server, host, login, password, database, object name, path, SQL text, definition or error message. schemacraft-panic.log: time, version and file:line of a panic. stdout keeps the console events under SCHEMACRAFT_LOG.",
         "notes": "Local only, never sent anywhere; the about dialog shows the folder and opens it. Files are named by date and never renamed, so two instances append safely; every start and every UTC midnight first deletes the oldest files, by creation time, until six are left, then opens today's, so the panic file counts toward the seven and a second start on a day leaves six. Without the folder the console is the only output (ADR-041)."
+      },
+      {
+        "name": "Diagnostic reports",
+        "location": "User-selected .txt destination; ephemeral preview in supportStore",
+        "format": "UTF-8 text, report format 1",
+        "owner": "src-tauri/src/support.rs and features/support",
+        "contents": "UTC time, build/version, OS family/architecture, WebView2 version and up to seven bounded diagnostic files.",
+        "notes": "Explicit local save only; preview cleared on close, no automatic upload. No project, preferences, credentials, screenshots or arbitrary file collection."
       }
     ],
     "flows": [
@@ -2612,6 +2723,38 @@
             "detail": "Escape closes find first, then returns home: routine row, trigger-parent card or Objects search when absent. Closing the Inspector uses the same destination before inert."
           }
         ]
+      },
+      {
+        "id": "support",
+        "name": "Report a problem",
+        "summary": "Review/save a local text report and separately open a public issue form; no automatic upload or submission.",
+        "steps": [
+          {
+            "actor": "feature-support",
+            "action": "Open from About or the palette",
+            "detail": "The support dialog has no dependency on an open project or database connection."
+          },
+          {
+            "actor": "host-support",
+            "action": "Read recognized logs",
+            "detail": "Rust reads only its known log folder, at most seven bounded files, with visible omissions."
+          },
+          {
+            "actor": "cmd-support",
+            "action": "Review and save",
+            "detail": "The native picker chooses a .txt path; Rust atomically writes exactly the preview."
+          },
+          {
+            "actor": "cmd-support",
+            "action": "Open the reporting page",
+            "detail": "A closed enum selects the fixed GitHub bug form or security policy. Only the build version is prefilled."
+          },
+          {
+            "actor": "ext-github",
+            "action": "Submit manually",
+            "detail": "The user reviews, attaches and submits in the browser; SchemaCraft sends no diagnostic file."
+          }
+        ]
       }
     ],
     "commands": [
@@ -2718,6 +2861,21 @@
       {
         "name": "open_log_folder",
         "purpose": "Opens the folder of the diagnostic log in the file manager; the folder comes from the state, never from the frontend.",
+        "streamsEvents": false
+      },
+      {
+        "name": "read_diagnostic_report",
+        "purpose": "Read a bounded local diagnostic preview, without project or connection data.",
+        "streamsEvents": false
+      },
+      {
+        "name": "write_diagnostic_report",
+        "purpose": "Atomically write exactly the reviewed diagnostic text to a user-selected .txt destination.",
+        "streamsEvents": false
+      },
+      {
+        "name": "open_support_page",
+        "purpose": "Open a fixed bug-form or security-policy URL; never include report contents.",
         "streamsEvents": false
       }
     ],
@@ -3340,6 +3498,10 @@
         {
           "concern": "Teach the rule reader a CHECK form",
           "touches": "Add a case to crates/schemacraft-core/tests/fixtures/sqlserver/check_forms.json: as written, as stored, the columns it reads in order and the expected reading, or 'unread' with why. Run the SQL Server integration test against the local container (dev-sqlserver.ps1), which pins the stored form; add the rule.check.* keys to src/shared/i18n/messages/rules/en.ts and es.ts; teach checkReader.ts the form, leaving it unread wherever NULL, the collation, the session or a conversion could make the sentence false; run checkReader.test.ts, which reads every golden case (ADR-039)."
+        },
+        {
+          "concern": "User-controlled support evidence",
+          "touches": "features/support, supportBackend, host support commands/collector, GitHub issue form and SECURITY policy. Export and browser opening stay separate; no diagnostic content in URL queries."
         }
       ],
       "definitionOfDone": [
@@ -4280,6 +4442,13 @@
               "Landmark no modal, nunca un diálogo",
               "Resaltado cuyo dueño es el elemento que lo puso, sin otra parada de tabulación"
             ]
+          },
+          {
+            "id": "feature-support",
+            "name": "support",
+            "path": "src/features/support",
+            "responsibility": "Diálogo y almacén efímeros de soporte: vista previa local limitada, guardado exacto del texto revisado, mostrar el archivo y abrir por separado el formulario público o la guía de seguridad privada. Cerrar borra la vista previa; generación y ocupación impiden lecturas obsoletas y selectores duplicados. Sin acceso al proyecto, preferencias o conexión (ADR-046).",
+            "patterns": ["Ephemeral dialog store", "Explicit local export"]
           }
         ]
       },
@@ -4448,6 +4617,20 @@
             "path": "src-tauri/src/commands/diagnostics.rs",
             "responsibility": "Async. open_log_folder toma la carpeta de AppState, nunca del frontend, la crea si el usuario la borró y la abre con la API de Rust del plugin opener (OpenerExt::open_path) en run_blocking, así ninguna capability crece. Sin carpeta falla como invalidArgument (ADR-041).",
             "patterns": ["Comando delgado", "API del plugin desde Rust"]
+          },
+          {
+            "id": "host-support",
+            "name": "support.rs",
+            "path": "src-tauri/src/support.rs",
+            "responsibility": "Recolector local limitado y escritor atómico de texto. Hasta siete archivos regulares diarios o de fallo reconocidos, sin recursión, enlaces simbólicos ni puntos de reanálisis de Windows; hasta 256 KiB de líneas completas recientes por archivo, con avisos. Cabecera básica de compilación y runtime, sin proyectos, preferencias, credenciales o archivos arbitrarios. URL fijas de SupportPage, consulta pública solo con la versión; sin cliente de red.",
+            "patterns": ["Bounded file allowlist", "Atomic text replacement", "Fixed destinations"]
+          },
+          {
+            "id": "cmd-support",
+            "name": "commands/support.rs",
+            "path": "src-tauri/src/commands/support.rs",
+            "responsibility": "Comandos asíncronos de lectura/escritura del diagnóstico local y apertura de página fija, con run_blocking y logged. La carpeta de origen viene solo de AppState; se guarda exactamente la vista previa. SupportErrorKind tipado; sin ampliar capacidades de la ventana.",
+            "patterns": ["Thin command", "run_blocking", "Typed errors"]
           }
         ]
       },
@@ -4619,6 +4802,13 @@
             "path": "src/shared/settings/settingsStore.ts",
             "responsibility": "Dos claves: 'schemacraft.settings' (tema, idioma, el panel de entidades, el ancho del Inspector y los avisos de acceso cerrados) y 'schemacraft.connection' (el último borrador: la contraseña vacía, pero servidor, inicio de sesión, base de datos, esquemas, cifrado y trustServerCertificate se conservan). Ambas viven en el perfil de WebView2 bajo %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft. Ninguna guarda secretos; borrar preferences.json no limpia ninguna, y borrar los datos de WebView2 restablece ambas (ADR-017).",
             "patterns": ["Solo comodidades de la interfaz por ventana"]
+          },
+          {
+            "id": "ext-github",
+            "name": "GitHub support",
+            "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
+            "responsibility": "Formulario público de errores en la rama predeterminada, con versión, entorno, reproducción, adjunto opcional revisado manualmente y aviso de datos públicos. Los detalles de seguridad usan la política existente de reporte privado. La aplicación nunca envía una incidencia.",
+            "patterns": ["Manual public reporting"]
           }
         ]
       },
@@ -6024,6 +6214,76 @@
         "to": "core-diagnostics",
         "label": "export_written",
         "kind": "call"
+      },
+      {
+        "id": "action-registry-to-feature-support",
+        "from": "action-registry",
+        "to": "feature-support",
+        "label": "help.reportProblem",
+        "kind": "call"
+      },
+      {
+        "id": "app-shell-to-feature-support",
+        "from": "app-shell",
+        "to": "feature-support",
+        "label": "SupportDialog",
+        "kind": "call"
+      },
+      {
+        "id": "feature-about-to-feature-support",
+        "from": "feature-about",
+        "to": "feature-support",
+        "label": "Report a problem",
+        "kind": "call"
+      },
+      {
+        "id": "feature-support-to-shared-ipc",
+        "from": "feature-support",
+        "to": "shared-ipc",
+        "label": "supportBackend",
+        "kind": "call"
+      },
+      {
+        "id": "ipc-invoke-to-cmd-support",
+        "from": "ipc-invoke",
+        "to": "cmd-support",
+        "label": "read_diagnostic_report, write_diagnostic_report, open_support_page",
+        "kind": "ipc"
+      },
+      {
+        "id": "cmd-support-to-host-support",
+        "from": "cmd-support",
+        "to": "host-support",
+        "label": "read_report, write_report, SupportPage",
+        "kind": "call"
+      },
+      {
+        "id": "cmd-support-to-host-state",
+        "from": "cmd-support",
+        "to": "host-state",
+        "label": "log_directory",
+        "kind": "call"
+      },
+      {
+        "id": "cmd-support-to-ipc-error",
+        "from": "cmd-support",
+        "to": "ipc-error",
+        "label": "SupportErrorKind, logged",
+        "kind": "call"
+      },
+      {
+        "id": "host-support-to-ext-filesystem",
+        "from": "host-support",
+        "to": "ext-filesystem",
+        "label": "bounded log read, atomic .txt write",
+        "kind": "file"
+      },
+      {
+        "id": "cmd-support-to-ext-github",
+        "from": "cmd-support",
+        "to": "ext-github",
+        "label": "fixed browser URL; version only",
+        "kind": "call"
       }
     ],
     "dataStores": [
@@ -6098,6 +6358,14 @@
         "owner": "src-tauri/src/logging.rs, con los eventos de crates/schemacraft-core/src/diagnostics.rs",
         "contents": "schemacraft.<fecha UTC>.log, uno por día, se conservan como mucho siete archivos, el de panic entre ellos: solo los eventos tipados, versiones, conteos, tiempos, formatos, marcas de solo lectura, tamaños en KB, clasificaciones de error, números de error de SQL Server y nombres fijos de consultas y comandos. Nunca un servidor, host, inicio de sesión, contraseña, base de datos, nombre de objeto, ruta, texto SQL, definición ni mensaje de error. schemacraft-panic.log: hora, versión y archivo:línea de un panic. stdout conserva los eventos de consola según SCHEMACRAFT_LOG.",
         "notes": "Solo local, nunca se envía a ninguna parte; el diálogo Acerca de muestra la carpeta y la abre. Los archivos se nombran por fecha y nunca se renombran, así dos instancias abiertas a la vez escriben al final del mismo archivo sin estorbarse. Cada arranque y cada medianoche UTC borra primero los archivos más antiguos, por fecha de creación, hasta dejar seis, y luego abre el de hoy, de modo que el archivo de panic cuenta entre los siete y un segundo arranque en el mismo día deja seis. Sin la carpeta, la consola es la única salida (ADR-041)."
+      },
+      {
+        "name": "Informes de diagnóstico",
+        "location": "Destino .txt elegido por el usuario; vista previa efímera en supportStore",
+        "format": "Texto UTF-8, formato de informe 1",
+        "owner": "src-tauri/src/support.rs y features/support",
+        "contents": "Hora UTC, versión y compilación, familia de SO y arquitectura, versión de WebView2 y hasta siete registros limitados.",
+        "notes": "Solo guardado local explícito; la vista previa se borra al cerrar, sin carga automática. No recopila proyectos, preferencias, credenciales, capturas o archivos arbitrarios."
       }
     ],
     "flows": [
@@ -6527,6 +6795,38 @@
             "detail": "Escape cierra primero la búsqueda y luego devuelve el foco a la fila de rutina, tarjeta padre o búsqueda de Objetos si falta el destino. Cerrar el Inspector usa el mismo destino antes de inert."
           }
         ]
+      },
+      {
+        "id": "support",
+        "name": "Reportar un problema",
+        "summary": "Revisar y guardar un diagnóstico local y abrir por separado un formulario público; sin carga ni envío automáticos.",
+        "steps": [
+          {
+            "actor": "feature-support",
+            "action": "Abrir desde Acerca de o la paleta",
+            "detail": "El diálogo no depende de un proyecto abierto ni de una conexión a la base de datos."
+          },
+          {
+            "actor": "host-support",
+            "action": "Leer los registros reconocidos",
+            "detail": "Rust lee solo su carpeta conocida, como máximo siete archivos limitados, e informa de omisiones."
+          },
+          {
+            "actor": "cmd-support",
+            "action": "Revisar y guardar",
+            "detail": "El selector nativo elige un .txt; Rust escribe atómicamente el texto exacto de la vista previa."
+          },
+          {
+            "actor": "cmd-support",
+            "action": "Abrir la página de reporte",
+            "detail": "Un enum cerrado selecciona el formulario fijo de GitHub o la política de seguridad. Solo se rellena la versión."
+          },
+          {
+            "actor": "ext-github",
+            "action": "Enviar manualmente",
+            "detail": "El usuario revisa, adjunta y envía en el navegador; SchemaCraft no envía archivos de diagnóstico."
+          }
+        ]
       }
     ],
     "commands": [
@@ -6633,6 +6933,21 @@
       {
         "name": "open_log_folder",
         "purpose": "Abre la carpeta del registro de diagnóstico en el explorador de archivos; la carpeta sale del estado, nunca del frontend.",
+        "streamsEvents": false
+      },
+      {
+        "name": "read_diagnostic_report",
+        "purpose": "Leer una vista previa local limitada, sin datos del proyecto o conexión.",
+        "streamsEvents": false
+      },
+      {
+        "name": "write_diagnostic_report",
+        "purpose": "Escribir atómicamente el texto revisado en el archivo .txt elegido por el usuario.",
+        "streamsEvents": false
+      },
+      {
+        "name": "open_support_page",
+        "purpose": "Abrir la URL fija del formulario o política de seguridad, sin incluir el diagnóstico.",
         "streamsEvents": false
       }
     ],
@@ -7255,6 +7570,10 @@
         {
           "concern": "Enseñar al lector de reglas una forma de CHECK",
           "touches": "Agrega un caso a crates/schemacraft-core/tests/fixtures/sqlserver/check_forms.json: como se escribe, como se almacena, las columnas que lee en orden y la lectura esperada, o 'unread' con el motivo. Ejecuta la prueba de integración con SQL Server contra el contenedor local (dev-sqlserver.ps1), que fija la forma almacenada; agrega las claves rule.check.* a src/shared/i18n/messages/rules/en.ts y es.ts; enseña la forma a checkReader.ts, sin leerla siempre que NULL, la intercalación, la sesión o una conversión puedan volver falsa la frase; ejecuta checkReader.test.ts, que lee cada caso de referencia (ADR-039)."
+        },
+        {
+          "concern": "Evidencia de soporte controlada por el usuario",
+          "touches": "features/support, supportBackend, comandos/recolector del host, formulario de GitHub y política SECURITY. Exportar y abrir el navegador son acciones distintas; ningún diagnóstico entra en la URL."
         }
       ],
       "definitionOfDone": [

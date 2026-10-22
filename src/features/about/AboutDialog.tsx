@@ -1,4 +1,5 @@
 import { Logo } from "@/shared/brand/Logo";
+import { useSupportStore } from "@/features/support/supportStore";
 import { DEVELOPER_NAME, REPOSITORY_URL } from "@/shared/brand/credits";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { useAppInfo } from "@/shared/ipc/useAppInfo";
@@ -17,6 +18,7 @@ export function AboutDialog() {
   const { t } = useI18n();
   const isOpen = useAboutStore((state) => state.isOpen);
   const close = useAboutStore((state) => state.close);
+  const openSupport = useSupportStore((state) => state.open);
   const appInfo = useAppInfo();
 
   const version =
@@ -35,7 +37,19 @@ export function AboutDialog() {
       title={t("about.title")}
       closeLabel={t("connection.action.close")}
       width={480}
-      footer={<Button onClick={close}>{t("review.action.close")}</Button>}
+      footer={
+        <>
+          <Button
+            onClick={() => {
+              close();
+              void openSupport();
+            }}
+          >
+            {t("action.reportProblem")}
+          </Button>
+          <Button onClick={close}>{t("review.action.close")}</Button>
+        </>
+      }
     >
       <div className={styles.about}>
         <Logo size={48} />

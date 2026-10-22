@@ -1,5 +1,6 @@
 import {
   ChevronsDownUp,
+  Bug,
   ChevronsUpDown,
   Command,
   Database,
@@ -34,6 +35,7 @@ import {
 import { useMemo } from "react";
 
 import { useAboutStore } from "@/features/about/aboutStore";
+import { useSupportStore } from "@/features/support/supportStore";
 import { useAccessReportStore } from "@/features/access/accessReportStore";
 import {
   applyLastLayout,
@@ -74,6 +76,7 @@ export function useAppActions(): AppActions {
   const saveProjectAs = useProjectStore((state) => state.saveProjectAs);
   const setDetailLevel = useProjectStore((state) => state.setDetailLevel);
   const openAbout = useAboutStore((state) => state.open);
+  const openSupport = useSupportStore((state) => state.open);
   const openLogFolder = useAboutStore((state) => state.openLogFolder);
   const appInfo = useAppInfo();
   const hasLogFolder = appInfo.status === "ready" && appInfo.info.logDirectory !== null;
@@ -427,7 +430,16 @@ export function useAppActions(): AppActions {
         isAvailable: true,
         run: openAbout,
       },
-      // For a bug report, from the palette; the about dialog shows the folder and opens it too.
+      "help.reportProblem": {
+        id: "help.reportProblem",
+        labelKey: "action.reportProblem",
+        icon: Bug,
+        isAvailable: true,
+        run: () => {
+          void openSupport();
+        },
+      },
+      // The about dialog also opens the raw log folder; support offers a reviewed text export.
       "help.openLogFolder": {
         id: "help.openLogFolder",
         labelKey: "action.openLogFolder",
@@ -456,6 +468,7 @@ export function useAppActions(): AppActions {
     saveProjectAs,
     setDetailLevel,
     openAbout,
+    openSupport,
     openLogFolder,
     hasLogFolder,
     openAccessReport,

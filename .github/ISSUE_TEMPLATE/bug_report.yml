@@ -1,0 +1,80 @@
+name: Bug report
+description: Report a reproducible SchemaCraft problem without confidential information.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reports and attachments are public. Do not include passwords, connection strings,
+        server/account/database/object names, SQL source, private projects or unreviewed screenshots.
+        For vulnerabilities, follow [the security policy](https://github.com/jmanuelsoberano/schemacraft/security/policy)
+        instead of opening a public issue. You may describe the problem in English or Spanish.
+  - type: input
+    id: app_version
+    attributes:
+      label: SchemaCraft version
+      description: The version shown in About (F1).
+      placeholder: 1.2.0
+    validations:
+      required: true
+  - type: dropdown
+    id: distribution
+    attributes:
+      label: Installation
+      options:
+        - GitHub portable executable
+        - GitHub installer
+        - Microsoft Store
+        - Development build
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: windows_version
+    attributes:
+      label: Windows version
+      description: Windows 10 or 11 and the build number, if known. Do not include a device name.
+    validations:
+      required: true
+  - type: input
+    id: sql_server_version
+    attributes:
+      label: SQL Server version and authentication (if relevant)
+      description: For example, SQL Server 2022 with SQL login. No server, database or account names.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use synthetic examples and name the action that fails.
+      placeholder: |
+        1. Open...
+        2. Select...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Describe what happened. Remove confidential details from any quoted message.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Reviewed diagnostic file (optional)
+      description: Use About → Report a problem → Save diagnostic file. Review the .txt file, then attach it here if useful. Do not attach preferences or .scraft projects.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before submitting
+      options:
+        - label: I reviewed the text and attachments and removed confidential information.
+          required: true
+        - label: This report is not a security vulnerability.
+          required: true

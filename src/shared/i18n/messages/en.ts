@@ -45,6 +45,7 @@ export const englishMessages = {
   "action.languageEn": "Language: English",
   "action.languageEs": "Language: Español",
   "action.openLogFolder": "Open diagnostic log folder",
+  "action.reportProblem": "Report a problem…",
 
   "credits.developedBy": "Developed by {name}",
   "about.title": "About SchemaCraft",
@@ -59,6 +60,46 @@ export const englishMessages = {
   "about.log.none":
     "This session writes no log, because its folder could not be created. Restart SchemaCraft to try again.",
   "about.log.unavailable": "The desktop application writes the log; this preview has none.",
+
+  "support.title": "Report a problem",
+  "support.description":
+    "Review a local diagnostic report, then open a bug report if you want to share it.",
+  "support.diagnostic": "1. Prepare a diagnostic file",
+  "support.contents":
+    "Includes basic application and runtime information and up to seven local diagnostic files. Projects, preferences and stored credentials are not collected.",
+  "support.preview": "Diagnostic preview",
+  "support.loading": "Preparing diagnostics…",
+  "support.logCount": "Diagnostic files included: {count}",
+  "support.truncated": "Files with older lines omitted: {count}.",
+  "support.unavailable": "Files that could not be included: {count}.",
+  "support.noLogs":
+    "No log contents are available. You can still save the basic information or report the problem without an attachment.",
+  "support.save": "Save diagnostic file…",
+  "support.saving": "Saving…",
+  "support.fileType": "Diagnostic text file",
+  "support.reload": "Refresh preview",
+  "support.saved": "Diagnostic file saved. Review it before attaching it to your report.",
+  "support.reveal": "Show saved file",
+  "support.report": "2. Describe the problem",
+  "support.publicNotice":
+    "GitHub reports are public and require a GitHub account. Describe the steps and attach the reviewed file if useful. Remove confidential information from text, screenshots and attachments. Nothing is submitted automatically.",
+  "support.openIssue": "Open bug report on GitHub",
+  "support.security": "Security reporting guidance",
+  "error.support.readFailed.title": "Could not prepare diagnostics",
+  "error.support.readFailed.hint":
+    "Check access to the local diagnostic folder and refresh the preview. You can report the problem without a diagnostic file.",
+  "error.support.writeFailed.title": "Could not save the diagnostic file",
+  "error.support.writeFailed.hint":
+    "Choose a writable folder and try again. The preview remains available.",
+  "error.support.invalidDestination.title": "Choose a text file",
+  "error.support.invalidDestination.hint":
+    "Save the diagnostic report as a .txt file in a local folder.",
+  "error.support.reportTooLarge.title": "The diagnostic report is too large",
+  "error.support.reportTooLarge.hint":
+    "Refresh the preview to prepare a bounded report, then save it again.",
+  "error.support.pageOpenFailed.title": "Could not open the support page",
+  "error.support.pageOpenFailed.hint":
+    "Open github.com/jmanuelsoberano/schemacraft in your browser. Choose Issues for bugs or Security for private vulnerability reporting.",
 
   "export.dialog.title": "Export diagram",
   "export.dialog.description":
