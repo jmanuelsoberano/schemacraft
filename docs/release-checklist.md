@@ -1,5 +1,27 @@
 # Release checklist
 
+## Published 1.2.0: verification exception recorded on 2026-10-19
+
+[Version 1.2.0](https://github.com/jmanuelsoberano/schemacraft/releases/tag/v1.2.0) is published.
+The maintainer accepted the features and Spanish interface using SQL login authentication.
+The downloaded portable passed 75 real-application checks on each of SQL Server 2019 and 2022,
+and the published 1.1.0 reader passed 18 compatibility checks. The actual downloaded installer
+then passed local installation, opening the installed application and checking About 1.2.0,
+and uninstallation without elevation. Original preferences were restored byte for byte after
+confirmed application termination. The tag and release assets were not changed.
+
+The maintainer explicitly deferred Windows Authentication for 1.2, clean-environment and fresh
+standard-account checks, the full missing-WebView2 path, and exported HTML on another machine
+without SchemaCraft. These checks were **not passed**. This exception applies to the published
+1.2 distribution only; it does not waive future release checks or establish Store compatibility.
+The independent verifier's [PR #11](https://github.com/jmanuelsoberano/schemacraft/pull/11) was
+closed without merging and its branch retained for possible future work.
+
+The [Microsoft Store checklist](microsoft-store.md#acceptance-gates) tracks package-specific
+installation, updates, data and credentials, and certification separately.
+
+## Verification process
+
 How a SchemaCraft release is verified against the acceptance criteria of the PRD (section 5) and
 the scope each version adds (section 3.8 for 1.1 and 3.9 for 1.2), what CI covers and what is checked by hand
 before a draft release is published. The automated parts run on every pull request and push to

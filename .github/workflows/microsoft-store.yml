@@ -1,0 +1,110 @@
+name: Prepare Microsoft Store package
+
+# Preparation only: signing, certification and publication happen separately in Partner Center.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published stable GitHub release, for example v1.2.0
+        required: true
+        type: string
+      identity_name:
+        description: Exact Package/Identity/Name from Partner Center
+        required: true
+        type: string
+      identity_publisher:
+        description: Exact Package/Identity/Publisher from Partner Center
+        required: true
+        type: string
+      publisher_display_name:
+        description: Exact Package/Properties/PublisherDisplayName from Partner Center
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Package the published executable for Store submission
+    runs-on: windows-2025
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Check the distribution contract
+        run: |
+          node scripts/check-distribution.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'The distribution contract failed.' }
+          node --test scripts/check-distribution.test.mjs distribution/microsoft-store/package.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'The packaging contract tests failed.' }
+
+      - name: Retrieve and verify the published portable executable
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = $env:RELEASE_TAG
+          if ($tag -notmatch '^v[1-9][0-9]*\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { throw 'Use a stable release tag such as v1.2.0.' }
+          $releaseJson = gh release view $tag --repo $env:GITHUB_REPOSITORY --json tagName,isDraft,isPrerelease,assets
+          if ($LASTEXITCODE -ne 0) { throw 'The release could not be read.' }
+          $release = $releaseJson | ConvertFrom-Json
+          if ($release.isDraft -or $release.isPrerelease -or $release.tagName -ne $tag) { throw 'Only a published stable release can be packaged for Store.' }
+          $sourceCommit = gh api "repos/$env:GITHUB_REPOSITORY/commits/$tag" --jq '.sha'
+          if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'The source tag could not be resolved.' }
+          git merge-base --is-ancestor $sourceCommit origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'The published source must be on main.' }
+          $sourcePackage = git show "${sourceCommit}:package.json"
+          if ($LASTEXITCODE -ne 0 -or ($sourcePackage | ConvertFrom-Json).version -ne $tag.Substring(1)) { throw 'The source version does not match the release tag.' }
+          $directory = Join-Path $env:RUNNER_TEMP 'store-source'
+          New-Item -ItemType Directory -Path $directory | Out-Null
+          $name = "schemacraft-$tag-windows-x64.exe"
+          foreach ($assetName in @($name, 'SHA256SUMS.txt')) {
+            gh release download $tag --repo $env:GITHUB_REPOSITORY --pattern $assetName --dir $directory
+            if ($LASTEXITCODE -ne 0) { throw 'A release asset could not be downloaded.' }
+          }
+          $asset = @($release.assets | Where-Object name -eq $name)
+          if ($asset.Count -ne 1) { throw 'The executable asset is missing or ambiguous.' }
+          $actual = (Get-FileHash -LiteralPath (Join-Path $directory $name) -Algorithm SHA256).Hash.ToLowerInvariant()
+          $checksums = @(Get-Content -LiteralPath (Join-Path $directory 'SHA256SUMS.txt') | Where-Object { $_ -match ('^[a-fA-F0-9]{64}\s+\*?' + [regex]::Escape($name) + '$') })
+          if ($checksums.Count -ne 1 -or $checksums[0].Substring(0,64).ToLowerInvariant() -ne $actual -or $asset[0].digest -ne "sha256:$actual") { throw 'The published asset checksums do not agree.' }
+          [ordered]@{ releaseTag=$tag; sourceCommit=$sourceCommit.Trim(); packagingCommit=$env:GITHUB_SHA; assetName=$name; inputSha256=$actual; releaseUrl="https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$tag" } |
+            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'store-provenance.json') -Encoding utf8
+
+      - name: Build the unsigned submission package with the assigned identity
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          STORE_IDENTITY_NAME: ${{ inputs.identity_name }}
+          STORE_IDENTITY_PUBLISHER: ${{ inputs.identity_publisher }}
+          STORE_PUBLISHER_DISPLAY_NAME: ${{ inputs.publisher_display_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $identityPath = Join-Path $env:RUNNER_TEMP 'store-identity.json'
+          @{ name=$env:STORE_IDENTITY_NAME; publisher=$env:STORE_IDENTITY_PUBLISHER; publisherDisplayName=$env:STORE_PUBLISHER_DISPLAY_NAME } |
+            ConvertTo-Json | Set-Content -LiteralPath $identityPath -Encoding utf8
+          $executable = Join-Path $env:RUNNER_TEMP "store-source/schemacraft-$env:RELEASE_TAG-windows-x64.exe"
+          New-Item -ItemType Directory -Path target -Force | Out-Null
+          node distribution/microsoft-store/package.mjs --executable $executable --version ($env:RELEASE_TAG.Substring(1)) --identity $identityPath --output-dir target/store-submission
+          if ($LASTEXITCODE -ne 0) { throw 'Store package preparation failed.' }
+          Copy-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'store-provenance.json') -Destination target/store-submission/provenance.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: microsoft-store-submission
+          path: |
+            target/store-submission/*.msix
+            target/store-submission/report.json
+            target/store-submission/provenance.json
+          if-no-files-found: error
+          retention-days: 30

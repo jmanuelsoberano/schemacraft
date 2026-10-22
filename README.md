@@ -53,6 +53,11 @@ code-signed yet (see the code signing policy below), so SmartScreen shows a warn
 first launch (More info, then Run anyway), and a PC with Smart App Control turned on refuses
 unsigned executables.
 
+Microsoft Store distribution is an additional channel in private certification review as of
+2026-10-22. The existing portable executable and installer remain independent of a Store account
+and package identity. See the [Store preparation guide](docs/microsoft-store.md) for the current
+status and remaining checks; there is no Store release available yet.
+
 ## Code signing policy
 
 Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
@@ -84,6 +89,27 @@ specifies, and it opens Microsoft's WebView2 download page only when the user as
 interface runs in the Microsoft Edge WebView2 runtime that Windows provides, whose diagnostic
 data is covered by the [Microsoft Privacy Statement](https://privacy.microsoft.com/privacystatement)
 and follows the Windows diagnostic data setting.
+
+SchemaCraft reads database structure and, when selected, SQL module definitions from the server
+the user chooses. Saved `.scraft` files can contain object names, connection metadata without
+passwords, annotations and module definitions. They remain at the location the user chooses;
+the user controls whether to share them. Diagram exports can contain visible schema names and
+metadata, but exclude captured module bodies and routines.
+
+Recent connections and project paths are stored in local preferences. A password is remembered
+only at the user's request and is stored in Windows Credential Manager, separately from projects
+and preferences. The user can forget remembered credentials through the application. Local
+diagnostic files contain versions, counts, timings and error categories; they exclude SQL text,
+connection/object names and passwords. At most seven diagnostic files are retained. SchemaCraft
+does not upload those files or send crash reports automatically.
+
+An MSIX installation can give configuration, logs and WebView2 data package-specific locations,
+and Windows can remove virtualized package data on uninstall. User-selected projects outside the
+package remain under the user's control. Microsoft handles Store account, download and update
+information under its own privacy statement; SchemaCraft does not receive a Store account login.
+The Store package is in private certification review, as described above. Privacy questions and
+bug reports can be raised through [the issue tracker](https://github.com/jmanuelsoberano/schemacraft/issues);
+issues are public, so remove confidential details before submitting them.
 
 ## Stack
 
