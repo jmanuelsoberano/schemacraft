@@ -60,6 +60,8 @@ jobs:
           npm run typecheck
           npm test
           npm run docs:check
+          npm run distribution:check
+          npm run distribution:test
 
       - name: Rust quality gates
         if: steps.changes.outputs.code == 'true'
@@ -97,6 +99,21 @@ jobs:
       - name: Smoke-test the portable executable
         if: steps.changes.outputs.code == 'true'
         run: node scripts/smoke-test-release.mjs target/ci/schemacraft.exe smoke-test
+
+      - name: Validate an MSIX package without Store credentials
+        if: steps.changes.outputs.code == 'true'
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          node distribution/microsoft-store/package.mjs --validation --executable target/ci/schemacraft.exe --version $version --output-dir target/store-validation
+          if ($LASTEXITCODE -ne 0) { throw 'MSIX packaging validation failed.' }
+
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.changes.outputs.code == 'true'
+        with:
+          name: microsoft-store-validation-evidence
+          path: target/store-validation/report.json
+          if-no-files-found: warn
 
       - uses: actions/upload-artifact@v4
         if: steps.changes.outputs.code == 'true'

@@ -1848,10 +1848,80 @@ Why: code is useful beside the diagram without being a diagram element. Separate
 and a plain source surface keep selection, keyboard ownership and export privacy explicit while
 reusing the existing column renderer, language system and focus behavior.
 
+### ADR-045: Distribution channels wrap the same application and remain independent
+
+The portable executable and the current-user NSIS installer remain first-class distribution
+channels. The tag-driven workflow of ADR-027 builds and publishes their draft GitHub release
+without a Microsoft Store account, package identity or Store certificate. Their configuration,
+asset names and signing policy remain independent of Store preparation. Store signing applies to
+the package distributed by Microsoft; it does not supply a signing certificate for the portable
+executable or the NSIS installer (ADR-029).
+
+Microsoft Store packaging is an external adapter in `distribution/microsoft-store/package.mjs`,
+invoked by `.github/workflows/microsoft-store.yml`. It consumes an executable from a published
+GitHub release and verifies it against that release's SHA-256 checksum before packaging. It does
+not rebuild or modify the executable. The Windows SDK's MakeAppx creates a complete MSIX package
+containing that executable and the declared visual assets; it does not capture an NSIS
+installation or introduce a second application implementation. The package declares
+`packagedClassicApp`, `mediumIL`, `Windows.Desktop`, x64 and Windows 10 build 19041 or later, with
+`runFullTrust` as its only capability. It requests no elevation, external content or
+`unvirtualizedResources` exception.
+
+The package's name and publisher must come from the application's real Partner Center identity;
+the packager must reject missing production identity values. Test identities must be explicit
+and cannot stand in for Store acceptance. The package version derives from the selected release,
+with a fourth numeric component of zero, and updates preserve the package identity. No Store SDK,
+account, licensing check, updater or packaging configuration enters the domain, application host
+or frontend. The Tauri identifier, `.scraft` format and Windows Credential Manager service name
+stay the same across channels. Store manages Store-package updates; the existing direct-download
+channels keep their existing update behavior.
+
+Evergreen WebView2 remains a prerequisite, with the existing native bilingual message when it
+cannot load (ADR-027). This package does not bundle a runtime or promise that Store will install
+one. Microsoft's `ExternalDependency` mechanism applies to App Installer installations and is
+not evidence of automatic runtime installation by Store.
+
+The same application code does not imply identical physical data locations. Windows can
+virtualize the packaged application's AppData writes, read existing unvirtualized files and
+remove virtualized state on package uninstall. There is no automatic migration between channels
+and no promise that their preferences, WebView2 profiles or logs are either shared or fully
+isolated. User-selected `.scraft` files remain the interchange mechanism. The credential service
+is unchanged, but packaged credential access and Windows Authentication require acceptance under
+the actual user context; neither is inferred from a matching executable hash.
+
+`scripts/check-distribution.mjs` is the deterministic guard for the boundary: it checks the base
+portable/NSIS configuration, channel independence and the absence of Store-specific imports in
+product code. Packaging validation must also check the manifest and its content inventory, reject
+missing identity or invalid inputs, and verify that the executable extracted from the MSIX has
+the input hash. MakeAppx semantic validation remains enabled. These checks establish packaging
+properties; they do not establish installation, runtime behavior or Store certification.
+
+Before Store publication, the checklist in [microsoft-store.md](./microsoft-store.md) requires
+evidence for the package with its real identity: installation and activation, WebView2 behavior,
+SQL and Windows Authentication, remembered synthetic credentials, project open/save and exports,
+preferences and logs, update with state preserved, and uninstall without damage to user project
+files or the direct-download installation. Every real-app session backs up and restores
+preferences. A Store flight must then verify the Store-delivered package and its update path.
+Account setup, identity confirmation, package acceptance and publication are separate gates;
+preparing the tooling or passing the static checks does not mark any of them complete.
+
+Evidence: Microsoft's [manual MSIX packaging guide](https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-manual-conversion)
+defines the package model; [MakeAppx](https://learn.microsoft.com/en-us/windows/msix/package/create-app-package-with-makeappx-tool)
+provides package validation and extraction; [packaged desktop app behavior](https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-behind-the-scenes)
+defines data virtualization; [package requirements](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/app-package-requirements)
+cover Store identity, versioning and signing; and [WebView2 distribution](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)
+describes runtime prerequisites. Tauri's [Store guide](https://v2.tauri.app/distribute/microsoft-store/)
+covers its EXE/MSI output; the separate MakeAppx adapter supplies MSIX without changing those
+outputs.
+
+Why: a distribution account must not become a product dependency. Reusing a verified executable,
+keeping channel configuration outside the product and enforcing that boundary in CI preserve
+direct installation while making Store preparation reviewable. Explicit runtime gates keep
+packaging success from being mistaken for compatibility or publication approval.
+
 ### ADR-046: Support exports an explicit local preview and opens fixed reporting destinations
 
-ADR-045 is reserved for the independent distribution change in [PR #12](https://github.com/jmanuelsoberano/schemacraft/pull/12).
-This support change starts from main and has no dependency on that adapter.
+The support workflow remains independent of the distribution adapters described in ADR-045.
 
 `features/support` owns an ephemeral dialog store. About and the `help.reportProblem` registry
 action open it. It reads a local preview, offers a native text-file save and separately opens
