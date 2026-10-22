@@ -184,7 +184,11 @@ async function press(key, code, keyCode, modifiers = 0) {
     nativeVirtualKeyCode: keyCode,
     modifiers,
   };
-  await send("Input.dispatchKeyEvent", { type: "keyDown", ...base });
+  await send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    ...base,
+    ...(key === "Enter" && modifiers === 0 ? { text: "\r" } : {}),
+  });
   await send("Input.dispatchKeyEvent", { type: "keyUp", ...base });
   await sleep(250);
 }
@@ -207,6 +211,51 @@ async function chooseFromMenu(buttonLabel, itemText) {
   await evaluate(`document.querySelectorAll('[role="menuitemradio"]')[${index}].focus()`);
   await press("Enter", "Enter", 13);
   return true;
+}
+
+/** Checks the local support preview without opening an external page or uploading evidence. */
+async function checkSupportPreview(locale) {
+  await press("F1", "F1", 112);
+  const label = locale === "es" ? "Reportar un problema…" : "Report a problem…";
+  const focused = await waitFor(
+    `(() => {
+    const button = [...document.querySelectorAll('[role="dialog"] button')].find(item => item.textContent.trim() === ${JSON.stringify(label)});
+    if (!button) return false;
+    button.focus(); return document.activeElement === button;
+  })()`,
+    5000,
+  );
+  check(`support action available in About (${locale})`, focused);
+  if (!focused) return;
+  await press("Enter", "Enter", 13);
+  check(
+    `support preview is real read-only diagnostic text (${locale})`,
+    await waitFor(
+      `(() => {
+    const preview = document.querySelector('[role="dialog"] textarea');
+    return preview?.readOnly === true && preview.value.startsWith('SchemaCraft diagnostic report');
+  })()`,
+      10000,
+    ),
+  );
+  check(
+    `support keeps keyboard focus in its dialog (${locale})`,
+    await evaluate(`!!document.activeElement?.closest('[role="dialog"]')`),
+  );
+  const notice =
+    locale === "es" ? "No se envía nada automáticamente." : "Nothing is submitted automatically.";
+  check(
+    `support explains manual sharing (${locale})`,
+    await evaluate(
+      `document.querySelector('[role="dialog"]').textContent.includes(${JSON.stringify(notice)})`,
+    ),
+  );
+  await screenshot(`support-${locale}.png`);
+  await press("Escape", "Escape", 27);
+  check(
+    `support closes with Escape (${locale})`,
+    await waitFor(`!document.querySelector('[role="dialog"]')`, 5000),
+  );
 }
 
 try {
@@ -268,6 +317,8 @@ try {
     await waitFor(`!document.querySelector('[role="dialog"]')`, 5000),
   );
 
+  await checkSupportPreview("en");
+
   check("language menu switches to Spanish", await chooseFromMenu("Language", "Español"));
   check(
     "spanish strings appear",
@@ -282,6 +333,8 @@ try {
     await waitFor(`document.documentElement.dataset.theme === "dark"`, 5000),
   );
   await screenshot("03-welcome-dark-es.png");
+
+  await checkSupportPreview("es");
 
   check(
     "F5 does not reload",

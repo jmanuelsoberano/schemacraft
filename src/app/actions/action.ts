@@ -37,6 +37,7 @@ export type ActionId =
   | "settings.language.en"
   | "settings.language.es"
   | "help.about"
+  | "help.reportProblem"
   | "help.openLogFolder";
 
 /**

@@ -1919,6 +1919,47 @@ keeping channel configuration outside the product and enforcing that boundary in
 direct installation while making Store preparation reviewable. Explicit runtime gates keep
 packaging success from being mistaken for compatibility or publication approval.
 
+### ADR-046: Support exports an explicit local preview and opens fixed reporting destinations
+
+The support workflow remains independent of the distribution adapters described in ADR-045.
+
+`features/support` owns an ephemeral dialog store. About and the `help.reportProblem` registry
+action open it. It reads a local preview, offers a native text-file save and separately opens
+the public bug form or existing security policy. Closing discards the preview; no project or
+preferences state is changed. A generation guard drops late reads after close or refresh, and
+a pending save cannot open a second picker or dismiss its preview.
+
+`supportBackend.ts` follows the existing IPC backend resolver. A plain browser has no fabricated
+diagnostics. The three host commands are `read_diagnostic_report`, `write_diagnostic_report` and
+`open_support_page`; blocking work stays on `run_blocking`, failures pass through `logged`, and
+`SupportErrorKind` crosses the existing typed error envelope.
+
+The host's `support.rs` reads only the log directory from `AppState`. It recognizes valid daily
+logger filenames and the panic file, ignores directories, symlinks and Windows reparse points,
+and selects at most seven regular files without recursion. Each file contributes at most
+256 KiB of its recent complete lines; truncation and unavailability are visible. Header fields
+are build facts, OS family/architecture, a numeric runtime version and UTC time. Projects,
+preferences, credentials, connection history, screenshots and arbitrary filesystem paths are
+never source inputs. This preserves ADR-041's logger boundary instead of collecting a general
+machine dump.
+
+The reviewed text is saved verbatim, atomically, through the user-selected absolute `.txt` path,
+with a separate 2 MiB export bound. Saving does not collect newer logs or open a browser.
+`SupportPage` is a closed enum resolved to fixed HTTPS destinations in Rust; only the build
+version enters the public issue-form query. No report text, log path or user identifier enters
+that URL. The user reviews and attaches files and submits the report themselves. Security
+reporting remains separate from public bug reports. No window capability, core module, project
+format or release-channel dependency is added.
+
+Tests exercise file boundaries, caps, exact-preview saving, cancellation, races and URL payloads.
+The [support guide](support.md) records the format and real-app verification scope. The public
+issue form must be checked after its template reaches the default branch; an unmerged template
+is not evidence of a working public form.
+
+Why: useful bug evidence should be easy to prepare without silently collecting project data
+or turning a local desktop tool into an upload client. Plain text makes the bounded report
+reviewable and keeps diagnostics independent of a support account or distribution channel.
+
 ## Milestones
 
 | #   | Scope                                                           | Status |

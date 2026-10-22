@@ -10,6 +10,7 @@ mod commands;
 mod error;
 mod logging;
 mod state;
+mod support;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -161,6 +162,9 @@ fn run_application(context: tauri::Context, log_directory: Option<PathBuf>) -> t
             commands::export::export_diagram,
             commands::export::cancel_export,
             commands::diagnostics::open_log_folder,
+            commands::support::read_diagnostic_report,
+            commands::support::write_diagnostic_report,
+            commands::support::open_support_page,
         ])
         .run(context)
 }

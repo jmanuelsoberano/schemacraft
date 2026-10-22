@@ -9,6 +9,8 @@ use schemacraft_core::project::{ProjectError, ProjectErrorKind};
 use serde::Serialize;
 use ts_rs::TS;
 
+use crate::support::{SupportError, SupportErrorKind};
+
 /// Why a command failed, in a shape the frontend turns into user guidance.
 ///
 /// The message names servers, logins, databases and files, so the diagnostic log records only
@@ -44,6 +46,8 @@ pub enum CommandErrorKind {
     Credential(CredentialErrorKind),
     /// An export could not be produced; the value says why.
     Export(ExportErrorKind),
+    /// A local diagnostic report could not be read or saved.
+    Support(SupportErrorKind),
     /// The job id does not belong to a running operation.
     UnknownJob,
     /// A command was called with an argument it cannot act on.
@@ -116,6 +120,15 @@ impl From<ExportError> for CommandError {
             error.log_summary(),
             CommandErrorKind::Export,
             error.to_string(),
+        )
+    }
+}
+
+impl From<SupportError> for CommandError {
+    fn from(error: SupportError) -> Self {
+        Self::with_message(
+            CommandErrorKind::Support(error.kind),
+            "the local diagnostic report could not be prepared or saved".to_owned(),
         )
     }
 }

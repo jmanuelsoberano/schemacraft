@@ -21,7 +21,10 @@
       "forget_password",
       "export_diagram",
       "cancel_export",
-      "open_log_folder"
+      "open_log_folder",
+      "read_diagnostic_report",
+      "write_diagnostic_report",
+      "open_support_page"
     ],
     "featureFolders": [
       "about",
@@ -32,7 +35,8 @@
       "inspector",
       "preferences",
       "project",
-      "schema"
+      "schema",
+      "support"
     ],
     "coreModules": [
       "credentials",
@@ -49,16 +53,17 @@
       "credentialsBackend.ts",
       "exportBackend.ts",
       "preferencesBackend.ts",
-      "projectBackend.ts"
+      "projectBackend.ts",
+      "supportBackend.ts"
     ],
-    "adrCount": 45
+    "adrCount": 46
   },
   "en": {
     "overview": {
       "title": "SchemaCraft architecture",
       "oneLiner": "A Windows desktop app that reads a SQL Server catalog, draws it as an editable ER diagram, saves it as a .scraft file and exports it to SVG, HTML, PNG and PDF.",
       "paragraphs": [
-        "SchemaCraft is a Tauri 2 app. The UI is React 19 and TypeScript running in WebView2. All disk, network and OS work is done in Rust. The Rust side has two parts: a thin host (src-tauri) that exposes 21 IPC commands, and a framework-free library (crates/schemacraft-core) that holds the real logic.",
+        "SchemaCraft is a Tauri 2 app. The UI is React 19 and TypeScript running in WebView2. All disk, network and OS work is done in Rust. The Rust side has two parts: a thin host (src-tauri) that exposes 24 IPC commands, and a framework-free library (crates/schemacraft-core) that holds the real logic.",
         "Dependencies point one way: frontend -> IPC -> host -> core -> external systems. The frontend reaches Rust and the window only through src/shared/ipc, the one folder that imports the Tauri API, and ESLint enforces the layer rules (ADR-031). Commands are thin adapters: they resolve inputs, call the core and map errors, with no domain logic, and they keep blocking work off the main thread (ADR-032). The core knows nothing about Tauri or the UI. The types that cross the boundary are written once in Rust and generated as TypeScript with ts-rs.",
         "SchemaCraft has no database of its own. SQL Server is only read, with fixed SELECT queries over sys.* views. What lasts lives in four places: .scraft files the user picks, preferences.json in %APPDATA%\\com.jmanuelsoberano.schemacraft, passwords in Windows Credential Manager, and two localStorage keys for UI conveniences. The local diagnostic log, counts and timings only, lives in %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft\\logs and is never sent anywhere (ADR-041). Everything else is memory only."
       ]
@@ -158,7 +163,7 @@
             "id": "shared-ipc",
             "name": "IPC backends and resolver",
             "path": "src/shared/ipc",
-            "responsibility": "The only folder that imports the Tauri API. One typed backend per area (connection, project, preferences, credentials, export), each with a Tauri, an unavailable and a DEV-only preview implementation picked by createBackendResolver. Every command goes through invokeCommand, which normalises rejections with toOperationError. nativeWindow.ts wraps the window (theme, title, close guard, destroy), runtime.ts tells whether the page runs in the desktop app, and appInfo.ts with useAppInfo wraps get_app_info and open_log_folder. previewAccess.ts follows the Rust access verdicts and the refresh merge for the preview backends, whose server names choose what the login sees (ADR-014).",
+            "responsibility": "The only folder that imports the Tauri API. One typed backend per area (connection, project, preferences, credentials, export, support), with Tauri and unavailable implementations and optional DEV-only previews picked by createBackendResolver. Support deliberately has no preview implementation. Every command goes through invokeCommand, which normalises rejections with toOperationError. nativeWindow.ts wraps the window (theme, title, close guard, destroy), runtime.ts tells whether the page runs in the desktop app, and appInfo.ts with useAppInfo wraps get_app_info and open_log_folder. previewAccess.ts follows the Rust access verdicts and the refresh merge for the preview backends, whose server names choose what the login sees (ADR-014).",
             "patterns": [
               "Ports and adapters",
               "Lazy resolver (ADR-014, ADR-018)",
@@ -378,6 +383,13 @@
               "Non-modal landmark, never a dialog",
               "Highlight owned by the item that set it, no extra tab stop"
             ]
+          },
+          {
+            "id": "feature-support",
+            "name": "support",
+            "path": "src/features/support",
+            "responsibility": "Ephemeral support dialog and store: preview a bounded local report, save the exact reviewed text, reveal it and separately open a public bug form or private-security guidance. Closing clears the preview; generation and busy guards reject stale reads and duplicate pickers. No project, preferences or connection access (ADR-046).",
+            "patterns": ["Ephemeral dialog store", "Explicit local export"]
           }
         ]
       },
@@ -427,7 +439,7 @@
             "id": "ipc-invoke",
             "name": "Commands (invoke)",
             "path": "src-tauri/src/main.rs",
-            "responsibility": "invokeCommand(name, args) in src/shared/ipc reaches one of the 21 commands in generate_handler!. Arguments go camelCase from TS and arrive as snake_case Rust parameters. Commands that only read memory stay synchronous and return at once (get_app_info, read_preferences, both cancel_* commands). Every other command is async, and its file, credential-store or heavy work runs on the blocking pool through run_blocking (ADR-032), so the window never freezes.",
+            "responsibility": "invokeCommand(name, args) in src/shared/ipc reaches one of the 24 commands in generate_handler!. Arguments go camelCase from TS and arrive as snake_case Rust parameters. Commands that only read memory stay synchronous and return at once (get_app_info, read_preferences, both cancel_* commands). Every other command is async, and its file, credential-store or heavy work runs on the blocking pool through run_blocking (ADR-032), so the window never freezes.",
             "patterns": [
               "Request/response over serde JSON",
               "The signature decides the thread (async or sync)"
@@ -444,7 +456,7 @@
             "id": "ipc-error",
             "name": "CommandError envelope",
             "path": "src-tauri/src/error.rs",
-            "responsibility": "{kind: {type, value}, message}. One CommandErrorKind variant and one From impl per core error, plus UnknownJob, InvalidArgument and Unexpected (a blocking task that could not be joined), which serialise as {type} with no value. Since 1.2 each From impl also keeps the error's log_summary(): the SQL Server error number and the catalog query name, in #[serde(skip)] fields that never cross the IPC. CommandError::log(command) hands them with the kind (CommandErrorKind is a ClosedKind) to diagnostics::command_failed. commands::logged calls it for every async command, and the synchronous cancel commands call it directly (ADR-041).",
+            "responsibility": "{kind: {type, value}, message}. One CommandErrorKind variant and one From impl per core error and for the host-only SupportError, plus UnknownJob, InvalidArgument and Unexpected (a blocking task that could not be joined), which serialise as {type} with no value. Since 1.2 each From impl also keeps the error's log_summary(): the SQL Server error number and the catalog query name, in #[serde(skip)] fields that never cross the IPC. CommandError::log(command) hands them with the kind (CommandErrorKind is a ClosedKind) to diagnostics::command_failed. commands::logged calls it for every async command, and the synchronous cancel commands call it directly (ADR-041).",
             "patterns": ["Classification separate from message"]
           },
           {
@@ -467,7 +479,7 @@
             "id": "host-entry",
             "name": "main.rs",
             "path": "src-tauri/src/main.rs",
-            "responsibility": "tauri::generate_context!() first, so logging::initialize opens the diagnostic log with the identifier before anything can fail, then the WebView2 check (native bilingual dialog and exit if missing; logged as startup_failed), app_started with the app and WebView2 versions, plugins dialog and opener, AppState with the log folder, the main window built by hand (optional CDP port from SCHEMACRAFT_REMOTE_DEBUGGING_PORT, also in release builds), and the 21 commands; a failed start is logged as startup_failed too.",
+            "responsibility": "tauri::generate_context!() first, so logging::initialize opens the diagnostic log with the identifier before anything can fail, then the WebView2 check (native bilingual dialog and exit if missing; logged as startup_failed), app_started with the app and WebView2 versions, plugins dialog and opener, AppState with the log folder, the main window built by hand (optional CDP port from SCHEMACRAFT_REMOTE_DEBUGGING_PORT, also in release builds), and the 24 commands; a failed start is logged as startup_failed too.",
             "patterns": ["Composition root", "Fail-fast preflight"]
           },
           {
@@ -543,6 +555,20 @@
             "path": "src-tauri/src/commands/diagnostics.rs",
             "responsibility": "Async. open_log_folder takes the folder from AppState, never from the frontend, creates it if the user deleted it and opens it with the opener plugin's Rust API (OpenerExt::open_path) on run_blocking, so no capability grows. Without a folder it fails as invalidArgument (ADR-041).",
             "patterns": ["Thin command", "Rust-side plugin API"]
+          },
+          {
+            "id": "host-support",
+            "name": "support.rs",
+            "path": "src-tauri/src/support.rs",
+            "responsibility": "Bounded local collector and atomic text writer. At most seven recognized regular daily/panic log files, nonrecursive, no symlinks or Windows reparse points; up to 256 KiB of recent complete lines per file with visible notices. Basic build/runtime header, no project/preferences/credentials or arbitrary files. Fixed SupportPage URLs, version-only public query; no network client.",
+            "patterns": ["Bounded file allowlist", "Atomic text replacement", "Fixed destinations"]
+          },
+          {
+            "id": "cmd-support",
+            "name": "commands/support.rs",
+            "path": "src-tauri/src/commands/support.rs",
+            "responsibility": "Async commands for local diagnostic read/write and opening a fixed support page, on run_blocking through logged. Source log directory comes only from AppState; saving uses the exact reviewed text. Typed SupportErrorKind; no new window capability.",
+            "patterns": ["Thin command", "run_blocking", "Typed errors"]
           }
         ]
       },
@@ -711,6 +737,13 @@
             "path": "src/shared/settings/settingsStore.ts",
             "responsibility": "Two keys: 'schemacraft.settings' (theme, language, the entities panel, the Inspector's width and the closed access notices) and 'schemacraft.connection' (the last draft: the password blank, but server, login, database, schemas, encryption and trustServerCertificate kept). Both live in the WebView2 profile under %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft. Neither holds a secret; deleting preferences.json clears neither, and clearing the WebView2 data resets both (ADR-017).",
             "patterns": ["Per-window UI conveniences only"]
+          },
+          {
+            "id": "ext-github",
+            "name": "GitHub support",
+            "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
+            "responsibility": "Public bug-report form on the default branch, with version/environment/reproduction fields, an optional manually attached reviewed file and a public-data notice. Security details use the existing private-reporting policy. The application never submits an issue.",
+            "patterns": ["Manual public reporting"]
           }
         ]
       },
@@ -1118,7 +1151,7 @@
         "id": "host-entry-to-ipc-invoke",
         "from": "host-entry",
         "to": "ipc-invoke",
-        "label": "generate_handler! (21 commands)",
+        "label": "generate_handler! (24 commands)",
         "kind": "call"
       },
       {
@@ -2121,6 +2154,76 @@
         "to": "core-diagnostics",
         "label": "export_written",
         "kind": "call"
+      },
+      {
+        "id": "action-registry-to-feature-support",
+        "from": "action-registry",
+        "to": "feature-support",
+        "label": "help.reportProblem",
+        "kind": "call"
+      },
+      {
+        "id": "app-shell-to-feature-support",
+        "from": "app-shell",
+        "to": "feature-support",
+        "label": "SupportDialog",
+        "kind": "call"
+      },
+      {
+        "id": "feature-about-to-feature-support",
+        "from": "feature-about",
+        "to": "feature-support",
+        "label": "Report a problem",
+        "kind": "call"
+      },
+      {
+        "id": "feature-support-to-shared-ipc",
+        "from": "feature-support",
+        "to": "shared-ipc",
+        "label": "supportBackend",
+        "kind": "call"
+      },
+      {
+        "id": "ipc-invoke-to-cmd-support",
+        "from": "ipc-invoke",
+        "to": "cmd-support",
+        "label": "read_diagnostic_report, write_diagnostic_report, open_support_page",
+        "kind": "ipc"
+      },
+      {
+        "id": "cmd-support-to-host-support",
+        "from": "cmd-support",
+        "to": "host-support",
+        "label": "read_report, write_report, SupportPage",
+        "kind": "call"
+      },
+      {
+        "id": "cmd-support-to-host-state",
+        "from": "cmd-support",
+        "to": "host-state",
+        "label": "log_directory",
+        "kind": "call"
+      },
+      {
+        "id": "cmd-support-to-ipc-error",
+        "from": "cmd-support",
+        "to": "ipc-error",
+        "label": "SupportErrorKind, logged",
+        "kind": "call"
+      },
+      {
+        "id": "host-support-to-ext-filesystem",
+        "from": "host-support",
+        "to": "ext-filesystem",
+        "label": "bounded log read, atomic .txt write",
+        "kind": "file"
+      },
+      {
+        "id": "cmd-support-to-ext-github",
+        "from": "cmd-support",
+        "to": "ext-github",
+        "label": "fixed browser URL; version only",
+        "kind": "call"
       }
     ],
     "dataStores": [
@@ -2195,6 +2298,14 @@
         "owner": "src-tauri/src/logging.rs, with the events of crates/schemacraft-core/src/diagnostics.rs",
         "contents": "schemacraft.<UTC date>.log, one per day, at most seven files kept, the panic file among them: the typed events only, versions, counts, timings, formats, read-only flags, sizes in KB, error kinds, SQL Server error numbers and fixed query and command names. Never a server, host, login, password, database, object name, path, SQL text, definition or error message. schemacraft-panic.log: time, version and file:line of a panic. stdout keeps the console events under SCHEMACRAFT_LOG.",
         "notes": "Local only, never sent anywhere; the about dialog shows the folder and opens it. Files are named by date and never renamed, so two instances append safely; every start and every UTC midnight first deletes the oldest files, by creation time, until six are left, then opens today's, so the panic file counts toward the seven and a second start on a day leaves six. Without the folder the console is the only output (ADR-041)."
+      },
+      {
+        "name": "Diagnostic reports",
+        "location": "User-selected .txt destination; ephemeral preview in supportStore",
+        "format": "UTF-8 text, report format 1",
+        "owner": "src-tauri/src/support.rs and features/support",
+        "contents": "UTC time, build/version, OS family/architecture, WebView2 version and up to seven bounded diagnostic files.",
+        "notes": "Explicit local save only; preview cleared on close, no automatic upload. No project, preferences, credentials, screenshots or arbitrary file collection."
       }
     ],
     "flows": [
@@ -2624,6 +2735,38 @@
             "detail": "Escape closes find first, then returns home: routine row, trigger-parent card or Objects search when absent. Closing the Inspector uses the same destination before inert."
           }
         ]
+      },
+      {
+        "id": "support",
+        "name": "Report a problem",
+        "summary": "Review/save a local text report and separately open a public issue form; no automatic upload or submission.",
+        "steps": [
+          {
+            "actor": "feature-support",
+            "action": "Open from About or the palette",
+            "detail": "The support dialog has no dependency on an open project or database connection."
+          },
+          {
+            "actor": "host-support",
+            "action": "Read recognized logs",
+            "detail": "Rust reads only its known log folder, at most seven bounded files, with visible omissions."
+          },
+          {
+            "actor": "cmd-support",
+            "action": "Review and save",
+            "detail": "The native picker chooses a .txt path; Rust atomically writes exactly the preview."
+          },
+          {
+            "actor": "cmd-support",
+            "action": "Open the reporting page",
+            "detail": "A closed enum selects the fixed GitHub bug form or security policy. Only the build version is prefilled."
+          },
+          {
+            "actor": "ext-github",
+            "action": "Submit manually",
+            "detail": "The user reviews, attaches and submits in the browser; SchemaCraft sends no diagnostic file."
+          }
+        ]
       }
     ],
     "commands": [
@@ -2730,6 +2873,21 @@
       {
         "name": "open_log_folder",
         "purpose": "Opens the folder of the diagnostic log in the file manager; the folder comes from the state, never from the frontend.",
+        "streamsEvents": false
+      },
+      {
+        "name": "read_diagnostic_report",
+        "purpose": "Read a bounded local diagnostic preview, without project or connection data.",
+        "streamsEvents": false
+      },
+      {
+        "name": "write_diagnostic_report",
+        "purpose": "Atomically write exactly the reviewed diagnostic text to a user-selected .txt destination.",
+        "streamsEvents": false
+      },
+      {
+        "name": "open_support_page",
+        "purpose": "Open a fixed bug-form or security-policy URL; never include report contents.",
         "streamsEvents": false
       }
     ],
@@ -3352,6 +3510,10 @@
         {
           "concern": "Teach the rule reader a CHECK form",
           "touches": "Add a case to crates/schemacraft-core/tests/fixtures/sqlserver/check_forms.json: as written, as stored, the columns it reads in order and the expected reading, or 'unread' with why. Run the SQL Server integration test against the local container (dev-sqlserver.ps1), which pins the stored form; add the rule.check.* keys to src/shared/i18n/messages/rules/en.ts and es.ts; teach checkReader.ts the form, leaving it unread wherever NULL, the collation, the session or a conversion could make the sentence false; run checkReader.test.ts, which reads every golden case (ADR-039)."
+        },
+        {
+          "concern": "User-controlled support evidence",
+          "touches": "features/support, supportBackend, host support commands/collector, GitHub issue form and SECURITY policy. Export and browser opening stay separate; no diagnostic content in URL queries."
         }
       ],
       "definitionOfDone": [
@@ -3679,7 +3841,7 @@
         "The page carries one manifest, at the top level of model.json and shared by both languages. CI checks it against the code with scripts/check-architecture-page.mjs (npm run docs:check).",
         "New command: add it to manifest.commands and to the commands table in both languages.",
         "New feature folder, core module or IPC backend: add it to the manifest, the layer list and the diagram edges.",
-        "New decision: add an ADR (ADR-046 is next), raise manifest.adrCount and link the ADR from the pattern or recipe it changes.",
+        "New decision: add an ADR (ADR-047 is next), raise manifest.adrCount and link the ADR from the pattern or recipe it changes.",
         "Scope change: update both PRD copies (docs/ and 02_Docs/), add a dated line to section 6, commit as docs(prd), only with the user's approval.",
         "Fixed deviation: mark it fixed in the same PR. New known deviation: add it with a severity and status open.",
         "New data store or localStorage key: add a row to the data table.",
@@ -3969,7 +4131,7 @@
       "title": "Arquitectura de SchemaCraft",
       "oneLiner": "Una app de escritorio para Windows que lee el catálogo de SQL Server, lo dibuja como un diagrama ER editable, lo guarda como archivo .scraft y lo exporta a SVG, HTML, PNG y PDF.",
       "paragraphs": [
-        "SchemaCraft es una app Tauri 2. La interfaz es React 19 y TypeScript dentro de WebView2. Todo el trabajo de disco, red y sistema operativo lo hace Rust. El lado Rust tiene dos partes: un host delgado (src-tauri) que expone 21 comandos IPC, y una biblioteca sin framework (crates/schemacraft-core) que contiene la lógica real.",
+        "SchemaCraft es una app Tauri 2. La interfaz es React 19 y TypeScript dentro de WebView2. Todo el trabajo de disco, red y sistema operativo lo hace Rust. El lado Rust tiene dos partes: un host delgado (src-tauri) que expone 24 comandos IPC, y una biblioteca sin framework (crates/schemacraft-core) que contiene la lógica real.",
         "Las dependencias van en un solo sentido: frontend -> IPC -> host -> core -> sistemas externos. El frontend llega a Rust y a la ventana solo a través de src/shared/ipc, la única carpeta que importa la API de Tauri, y ESLint hace cumplir las reglas de capas (ADR-031). Los comandos son adaptadores delgados: resuelven las entradas, llaman al core y traducen los errores, sin lógica de dominio, y mantienen el trabajo bloqueante fuera del hilo principal (ADR-032). El core no sabe nada de Tauri ni de la interfaz. Los tipos que cruzan la frontera se escriben una vez en Rust y se generan en TypeScript con ts-rs.",
         "SchemaCraft no tiene base de datos propia. SQL Server solo se lee, con consultas SELECT fijas sobre las vistas sys.*. Lo que perdura vive en cuatro lugares: archivos .scraft que elige el usuario, preferences.json en %APPDATA%\\com.jmanuelsoberano.schemacraft, contraseñas en el Administrador de credenciales de Windows y dos claves de localStorage para comodidades de la interfaz. El registro de diagnóstico local, solo conteos y tiempos, vive en %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft\\logs y nunca se envía a ninguna parte (ADR-041). Todo lo demás vive solo en memoria."
       ]
@@ -4072,7 +4234,7 @@
             "id": "shared-ipc",
             "name": "Backends IPC y resolver",
             "path": "src/shared/ipc",
-            "responsibility": "La única carpeta que importa la API de Tauri. Un backend tipado por área (connection, project, preferences, credentials, export), cada uno con implementación Tauri, unavailable y preview (solo DEV), elegidas por createBackendResolver. Todo comando pasa por invokeCommand, que normaliza los rechazos con toOperationError. nativeWindow.ts envuelve la ventana (tema, título, protección al cerrar, destroy), runtime.ts indica si la página corre en la aplicación de escritorio, y appInfo.ts con useAppInfo envuelve get_app_info y open_log_folder. previewAccess.ts sigue los veredictos de acceso de Rust y la fusión de la actualización para los backends preview, cuyos nombres de servidor eligen qué ve el inicio de sesión (ADR-014).",
+            "responsibility": "La única carpeta que importa la API de Tauri. Un backend tipado por área (connection, project, preferences, credentials, export, support), con implementaciones Tauri y unavailable y previews opcionales (solo DEV), elegidas por createBackendResolver. Soporte no tiene una implementación preview. Todo comando pasa por invokeCommand, que normaliza los rechazos con toOperationError. nativeWindow.ts envuelve la ventana (tema, título, protección al cerrar, destroy), runtime.ts indica si la página corre en la aplicación de escritorio, y appInfo.ts con useAppInfo envuelve get_app_info y open_log_folder. previewAccess.ts sigue los veredictos de acceso de Rust y la fusión de la actualización para los backends preview, cuyos nombres de servidor eligen qué ve el inicio de sesión (ADR-014).",
             "patterns": [
               "Puertos y adaptadores",
               "Resolver perezoso (ADR-014, ADR-018)",
@@ -4292,6 +4454,13 @@
               "Landmark no modal, nunca un diálogo",
               "Resaltado cuyo dueño es el elemento que lo puso, sin otra parada de tabulación"
             ]
+          },
+          {
+            "id": "feature-support",
+            "name": "support",
+            "path": "src/features/support",
+            "responsibility": "Diálogo y almacén efímeros de soporte: vista previa local limitada, guardado exacto del texto revisado, mostrar el archivo y abrir por separado el formulario público o la guía de seguridad privada. Cerrar borra la vista previa; generación y ocupación impiden lecturas obsoletas y selectores duplicados. Sin acceso al proyecto, preferencias o conexión (ADR-046).",
+            "patterns": ["Ephemeral dialog store", "Explicit local export"]
           }
         ]
       },
@@ -4341,7 +4510,7 @@
             "id": "ipc-invoke",
             "name": "Comandos (invoke)",
             "path": "src-tauri/src/main.rs",
-            "responsibility": "invokeCommand(nombre, args) en src/shared/ipc llega a uno de los 21 comandos de generate_handler!. Los argumentos salen en camelCase desde TS y llegan como parámetros snake_case en Rust. Los comandos que solo leen memoria siguen siendo síncronos y responden al instante (get_app_info, read_preferences y los dos cancel_*). Todos los demás son async, y su trabajo con archivos, con el almacén de credenciales o pesado corre en el pool bloqueante mediante run_blocking (ADR-032), así la ventana nunca se congela.",
+            "responsibility": "invokeCommand(nombre, args) en src/shared/ipc llega a uno de los 24 comandos de generate_handler!. Los argumentos salen en camelCase desde TS y llegan como parámetros snake_case en Rust. Los comandos que solo leen memoria siguen siendo síncronos y responden al instante (get_app_info, read_preferences y los dos cancel_*). Todos los demás son async, y su trabajo con archivos, con el almacén de credenciales o pesado corre en el pool bloqueante mediante run_blocking (ADR-032), así la ventana nunca se congela.",
             "patterns": [
               "Petición/respuesta sobre serde JSON",
               "La firma decide el hilo (async o síncrona)"
@@ -4358,7 +4527,7 @@
             "id": "ipc-error",
             "name": "Envoltorio CommandError",
             "path": "src-tauri/src/error.rs",
-            "responsibility": "{kind: {type, value}, message}. Una variante de CommandErrorKind y un impl From por cada error del core, más UnknownJob, InvalidArgument y Unexpected (una tarea bloqueante que no se pudo unir), que se serializan como {type} sin value. Desde 1.2 cada impl From conserva también el log_summary() del error: el número de error de SQL Server y el nombre de la consulta del catálogo, en campos #[serde(skip)] que nunca cruzan el IPC. CommandError::log(command) los entrega con la clasificación (CommandErrorKind es ClosedKind) a diagnostics::command_failed. commands::logged lo llama en cada comando asíncrono y los comandos cancel_* síncronos lo llaman directamente (ADR-041).",
+            "responsibility": "{kind: {type, value}, message}. Una variante de CommandErrorKind y un impl From por cada error del core y por SupportError del host, más UnknownJob, InvalidArgument y Unexpected (una tarea bloqueante que no se pudo unir), que se serializan como {type} sin value. Desde 1.2 cada impl From conserva también el log_summary() del error: el número de error de SQL Server y el nombre de la consulta del catálogo, en campos #[serde(skip)] que nunca cruzan el IPC. CommandError::log(command) los entrega con la clasificación (CommandErrorKind es ClosedKind) a diagnostics::command_failed. commands::logged lo llama en cada comando asíncrono y los comandos cancel_* síncronos lo llaman directamente (ADR-041).",
             "patterns": ["Clasificación separada del mensaje"]
           },
           {
@@ -4381,7 +4550,7 @@
             "id": "host-entry",
             "name": "main.rs",
             "path": "src-tauri/src/main.rs",
-            "responsibility": "Primero tauri::generate_context!(), para que logging::initialize abra el registro de diagnóstico con el identificador antes de que algo pueda fallar; luego la revisión de WebView2 (diálogo nativo bilingüe y salida si falta; queda registrada como startup_failed), app_started con las versiones de la app y de WebView2, plugins dialog y opener, AppState con la carpeta del registro, la ventana principal construida a mano (puerto CDP opcional con SCHEMACRAFT_REMOTE_DEBUGGING_PORT, también en compilaciones release) y los 21 comandos; un arranque fallido también queda registrado como startup_failed.",
+            "responsibility": "Primero tauri::generate_context!(), para que logging::initialize abra el registro de diagnóstico con el identificador antes de que algo pueda fallar; luego la revisión de WebView2 (diálogo nativo bilingüe y salida si falta; queda registrada como startup_failed), app_started con las versiones de la app y de WebView2, plugins dialog y opener, AppState con la carpeta del registro, la ventana principal construida a mano (puerto CDP opcional con SCHEMACRAFT_REMOTE_DEBUGGING_PORT, también en compilaciones release) y los 24 comandos; un arranque fallido también queda registrado como startup_failed.",
             "patterns": ["Raíz de composición", "Verificación previa que falla rápido"]
           },
           {
@@ -4460,6 +4629,20 @@
             "path": "src-tauri/src/commands/diagnostics.rs",
             "responsibility": "Async. open_log_folder toma la carpeta de AppState, nunca del frontend, la crea si el usuario la borró y la abre con la API de Rust del plugin opener (OpenerExt::open_path) en run_blocking, así ninguna capability crece. Sin carpeta falla como invalidArgument (ADR-041).",
             "patterns": ["Comando delgado", "API del plugin desde Rust"]
+          },
+          {
+            "id": "host-support",
+            "name": "support.rs",
+            "path": "src-tauri/src/support.rs",
+            "responsibility": "Recolector local limitado y escritor atómico de texto. Hasta siete archivos regulares diarios o de fallo reconocidos, sin recursión, enlaces simbólicos ni puntos de reanálisis de Windows; hasta 256 KiB de líneas completas recientes por archivo, con avisos. Cabecera básica de compilación y runtime, sin proyectos, preferencias, credenciales o archivos arbitrarios. URL fijas de SupportPage, consulta pública solo con la versión; sin cliente de red.",
+            "patterns": ["Bounded file allowlist", "Atomic text replacement", "Fixed destinations"]
+          },
+          {
+            "id": "cmd-support",
+            "name": "commands/support.rs",
+            "path": "src-tauri/src/commands/support.rs",
+            "responsibility": "Comandos asíncronos de lectura/escritura del diagnóstico local y apertura de página fija, con run_blocking y logged. La carpeta de origen viene solo de AppState; se guarda exactamente la vista previa. SupportErrorKind tipado; sin ampliar capacidades de la ventana.",
+            "patterns": ["Thin command", "run_blocking", "Typed errors"]
           }
         ]
       },
@@ -4631,6 +4814,13 @@
             "path": "src/shared/settings/settingsStore.ts",
             "responsibility": "Dos claves: 'schemacraft.settings' (tema, idioma, el panel de entidades, el ancho del Inspector y los avisos de acceso cerrados) y 'schemacraft.connection' (el último borrador: la contraseña vacía, pero servidor, inicio de sesión, base de datos, esquemas, cifrado y trustServerCertificate se conservan). Ambas viven en el perfil de WebView2 bajo %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft. Ninguna guarda secretos; borrar preferences.json no limpia ninguna, y borrar los datos de WebView2 restablece ambas (ADR-017).",
             "patterns": ["Solo comodidades de la interfaz por ventana"]
+          },
+          {
+            "id": "ext-github",
+            "name": "GitHub support",
+            "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
+            "responsibility": "Formulario público de errores en la rama predeterminada, con versión, entorno, reproducción, adjunto opcional revisado manualmente y aviso de datos públicos. Los detalles de seguridad usan la política existente de reporte privado. La aplicación nunca envía una incidencia.",
+            "patterns": ["Manual public reporting"]
           }
         ]
       },
@@ -5045,7 +5235,7 @@
         "id": "host-entry-to-ipc-invoke",
         "from": "host-entry",
         "to": "ipc-invoke",
-        "label": "generate_handler! (21 comandos)",
+        "label": "generate_handler! (24 comandos)",
         "kind": "call"
       },
       {
@@ -6048,6 +6238,76 @@
         "to": "core-diagnostics",
         "label": "export_written",
         "kind": "call"
+      },
+      {
+        "id": "action-registry-to-feature-support",
+        "from": "action-registry",
+        "to": "feature-support",
+        "label": "help.reportProblem",
+        "kind": "call"
+      },
+      {
+        "id": "app-shell-to-feature-support",
+        "from": "app-shell",
+        "to": "feature-support",
+        "label": "SupportDialog",
+        "kind": "call"
+      },
+      {
+        "id": "feature-about-to-feature-support",
+        "from": "feature-about",
+        "to": "feature-support",
+        "label": "Report a problem",
+        "kind": "call"
+      },
+      {
+        "id": "feature-support-to-shared-ipc",
+        "from": "feature-support",
+        "to": "shared-ipc",
+        "label": "supportBackend",
+        "kind": "call"
+      },
+      {
+        "id": "ipc-invoke-to-cmd-support",
+        "from": "ipc-invoke",
+        "to": "cmd-support",
+        "label": "read_diagnostic_report, write_diagnostic_report, open_support_page",
+        "kind": "ipc"
+      },
+      {
+        "id": "cmd-support-to-host-support",
+        "from": "cmd-support",
+        "to": "host-support",
+        "label": "read_report, write_report, SupportPage",
+        "kind": "call"
+      },
+      {
+        "id": "cmd-support-to-host-state",
+        "from": "cmd-support",
+        "to": "host-state",
+        "label": "log_directory",
+        "kind": "call"
+      },
+      {
+        "id": "cmd-support-to-ipc-error",
+        "from": "cmd-support",
+        "to": "ipc-error",
+        "label": "SupportErrorKind, logged",
+        "kind": "call"
+      },
+      {
+        "id": "host-support-to-ext-filesystem",
+        "from": "host-support",
+        "to": "ext-filesystem",
+        "label": "bounded log read, atomic .txt write",
+        "kind": "file"
+      },
+      {
+        "id": "cmd-support-to-ext-github",
+        "from": "cmd-support",
+        "to": "ext-github",
+        "label": "fixed browser URL; version only",
+        "kind": "call"
       }
     ],
     "dataStores": [
@@ -6122,6 +6382,14 @@
         "owner": "src-tauri/src/logging.rs, con los eventos de crates/schemacraft-core/src/diagnostics.rs",
         "contents": "schemacraft.<fecha UTC>.log, uno por día, se conservan como mucho siete archivos, el de panic entre ellos: solo los eventos tipados, versiones, conteos, tiempos, formatos, marcas de solo lectura, tamaños en KB, clasificaciones de error, números de error de SQL Server y nombres fijos de consultas y comandos. Nunca un servidor, host, inicio de sesión, contraseña, base de datos, nombre de objeto, ruta, texto SQL, definición ni mensaje de error. schemacraft-panic.log: hora, versión y archivo:línea de un panic. stdout conserva los eventos de consola según SCHEMACRAFT_LOG.",
         "notes": "Solo local, nunca se envía a ninguna parte; el diálogo Acerca de muestra la carpeta y la abre. Los archivos se nombran por fecha y nunca se renombran, así dos instancias abiertas a la vez escriben al final del mismo archivo sin estorbarse. Cada arranque y cada medianoche UTC borra primero los archivos más antiguos, por fecha de creación, hasta dejar seis, y luego abre el de hoy, de modo que el archivo de panic cuenta entre los siete y un segundo arranque en el mismo día deja seis. Sin la carpeta, la consola es la única salida (ADR-041)."
+      },
+      {
+        "name": "Informes de diagnóstico",
+        "location": "Destino .txt elegido por el usuario; vista previa efímera en supportStore",
+        "format": "Texto UTF-8, formato de informe 1",
+        "owner": "src-tauri/src/support.rs y features/support",
+        "contents": "Hora UTC, versión y compilación, familia de SO y arquitectura, versión de WebView2 y hasta siete registros limitados.",
+        "notes": "Solo guardado local explícito; la vista previa se borra al cerrar, sin carga automática. No recopila proyectos, preferencias, credenciales, capturas o archivos arbitrarios."
       }
     ],
     "flows": [
@@ -6551,6 +6819,38 @@
             "detail": "Escape cierra primero la búsqueda y luego devuelve el foco a la fila de rutina, tarjeta padre o búsqueda de Objetos si falta el destino. Cerrar el Inspector usa el mismo destino antes de inert."
           }
         ]
+      },
+      {
+        "id": "support",
+        "name": "Reportar un problema",
+        "summary": "Revisar y guardar un diagnóstico local y abrir por separado un formulario público; sin carga ni envío automáticos.",
+        "steps": [
+          {
+            "actor": "feature-support",
+            "action": "Abrir desde Acerca de o la paleta",
+            "detail": "El diálogo no depende de un proyecto abierto ni de una conexión a la base de datos."
+          },
+          {
+            "actor": "host-support",
+            "action": "Leer los registros reconocidos",
+            "detail": "Rust lee solo su carpeta conocida, como máximo siete archivos limitados, e informa de omisiones."
+          },
+          {
+            "actor": "cmd-support",
+            "action": "Revisar y guardar",
+            "detail": "El selector nativo elige un .txt; Rust escribe atómicamente el texto exacto de la vista previa."
+          },
+          {
+            "actor": "cmd-support",
+            "action": "Abrir la página de reporte",
+            "detail": "Un enum cerrado selecciona el formulario fijo de GitHub o la política de seguridad. Solo se rellena la versión."
+          },
+          {
+            "actor": "ext-github",
+            "action": "Enviar manualmente",
+            "detail": "El usuario revisa, adjunta y envía en el navegador; SchemaCraft no envía archivos de diagnóstico."
+          }
+        ]
       }
     ],
     "commands": [
@@ -6657,6 +6957,21 @@
       {
         "name": "open_log_folder",
         "purpose": "Abre la carpeta del registro de diagnóstico en el explorador de archivos; la carpeta sale del estado, nunca del frontend.",
+        "streamsEvents": false
+      },
+      {
+        "name": "read_diagnostic_report",
+        "purpose": "Leer una vista previa local limitada, sin datos del proyecto o conexión.",
+        "streamsEvents": false
+      },
+      {
+        "name": "write_diagnostic_report",
+        "purpose": "Escribir atómicamente el texto revisado en el archivo .txt elegido por el usuario.",
+        "streamsEvents": false
+      },
+      {
+        "name": "open_support_page",
+        "purpose": "Abrir la URL fija del formulario o política de seguridad, sin incluir el diagnóstico.",
         "streamsEvents": false
       }
     ],
@@ -7279,6 +7594,10 @@
         {
           "concern": "Enseñar al lector de reglas una forma de CHECK",
           "touches": "Agrega un caso a crates/schemacraft-core/tests/fixtures/sqlserver/check_forms.json: como se escribe, como se almacena, las columnas que lee en orden y la lectura esperada, o 'unread' con el motivo. Ejecuta la prueba de integración con SQL Server contra el contenedor local (dev-sqlserver.ps1), que fija la forma almacenada; agrega las claves rule.check.* a src/shared/i18n/messages/rules/en.ts y es.ts; enseña la forma a checkReader.ts, sin leerla siempre que NULL, la intercalación, la sesión o una conversión puedan volver falsa la frase; ejecuta checkReader.test.ts, que lee cada caso de referencia (ADR-039)."
+        },
+        {
+          "concern": "Evidencia de soporte controlada por el usuario",
+          "touches": "features/support, supportBackend, comandos/recolector del host, formulario de GitHub y política SECURITY. Exportar y abrir el navegador son acciones distintas; ningún diagnóstico entra en la URL."
         }
       ],
       "definitionOfDone": [
@@ -7606,7 +7925,7 @@
         "La página lleva un solo manifiesto, en el nivel superior de model.json y compartido por ambos idiomas. CI lo compara con el código con scripts/check-architecture-page.mjs (npm run docs:check).",
         "Comando nuevo: agrégalo a manifest.commands y a la tabla de comandos en ambos idiomas.",
         "Carpeta de funcionalidad, módulo del core o backend IPC nuevo: agrégalo al manifiesto, a la lista de capas y a las aristas del diagrama.",
-        "Decisión nueva: agrega un ADR (el siguiente es ADR-046), sube manifest.adrCount y enlaza el ADR desde el patrón o la receta que cambia.",
+        "Decisión nueva: agrega un ADR (el siguiente es ADR-047), sube manifest.adrCount y enlaza el ADR desde el patrón o la receta que cambia.",
         "Cambio de alcance: actualiza ambas copias del PRD (docs/ y 02_Docs/), agrega una línea fechada en la sección 6 y haz commit como docs(prd), solo con aprobación del usuario.",
         "Desviación corregida: márcala como corregida en el mismo PR. Desviación conocida nueva: agrégala con su severidad y estado open.",
         "Almacén de datos o clave de localStorage nueva: agrega una fila a la tabla de datos.",

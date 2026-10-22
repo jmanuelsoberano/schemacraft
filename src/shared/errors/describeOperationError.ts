@@ -4,6 +4,7 @@ import type {
   InspectorErrorKind,
   PreferencesErrorKind,
   ProjectErrorKind,
+  SupportErrorKind,
 } from "@/shared/contracts";
 import type { MessageKey } from "@/shared/i18n/messages/en";
 import type { Translator } from "@/shared/i18n/useI18n";
@@ -15,6 +16,7 @@ type ErrorName =
   | `preferences.${PreferencesErrorKind}`
   | `credential.${CredentialErrorKind}`
   | `export.${ExportErrorKind}`
+  | `support.${SupportErrorKind}`
   | "invalidArgument"
   | "unknownJob"
   | "ipcUnavailable"
@@ -47,6 +49,8 @@ function errorName(error: OperationError): ErrorName {
       return `credential.${error.kind.value}`;
     case "export":
       return `export.${error.kind.value}`;
+    case "support":
+      return `support.${error.kind.value}`;
     case "invalidArgument":
       return "invalidArgument";
     case "unknownJob":

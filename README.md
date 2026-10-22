@@ -111,6 +111,12 @@ The Store package is in private certification review, as described above. Privac
 bug reports can be raised through [the issue tracker](https://github.com/jmanuelsoberano/schemacraft/issues);
 issues are public, so remove confidential details before submitting them.
 
+The unreleased support workflow can prepare a local diagnostic text file for review and manual
+attachment to a public GitHub issue. It collects basic application/runtime information and up
+to seven recognized diagnostic files, without reading projects, preferences or credentials.
+Opening the issue form sends only the application version in its URL; no report text or file
+is attached automatically. See [reporting problems](#reporting-problems).
+
 ## Stack
 
 - **Core:** Rust (`crates/schemacraft-core`), `serde`, `ts-rs`, `tiberius` with a `bb8` pool for
@@ -328,6 +334,21 @@ took, and never a server, login, password, database, object name, path, SQL text
 message. It is never sent anywhere. About (F1, or the version in the status bar) shows the folder
 and opens it; read a file before you attach it to a bug report, and delete the folder, with
 SchemaCraft closed, to clear the log.
+
+## Reporting problems
+
+The following workflow is **unreleased**; published 1.2.0 offers the diagnostic folder in About.
+In a build with the support feature, choose **Report a problem** in About (F1) or the command
+palette (Ctrl+K). Review the local preview and optionally save it as a `.txt` file. The report
+contains basic application/runtime information and up to seven recognized log files; large
+files include only their recent complete lines, with a notice. It does not read projects,
+connection history, preferences or stored passwords.
+
+**Open bug report on GitHub** is a separate action. The public form requires a GitHub account
+and asks for the version, environment and reproduction steps. Attach a reviewed diagnostic file
+only if useful. Remove confidential details from your description, screenshots and attachments;
+nothing is submitted automatically. For vulnerabilities, use the private channel described in
+[SECURITY.md](SECURITY.md). See [the support guide](docs/support.md) for scope and limits.
 
 ## Logins with limited permissions
 

@@ -43,6 +43,9 @@ export type { ServerInformation } from "./generated/inspectors/ServerInformation
 export type { SqlServerAuthentication } from "./generated/inspectors/SqlServerAuthentication";
 export type { SqlServerConnectionSettings } from "./generated/inspectors/SqlServerConnectionSettings";
 export type { AppInfo } from "./generated/ipc/AppInfo";
+export type { DiagnosticReport } from "./generated/ipc/DiagnosticReport";
+export type { SupportPage } from "./generated/ipc/SupportPage";
+export type { SupportErrorKind } from "./generated/ipc/SupportErrorKind";
 export type { CommandError } from "./generated/ipc/CommandError";
 export type { CommandErrorKind } from "./generated/ipc/CommandErrorKind";
 export type { ExportEvent } from "./generated/ipc/ExportEvent";

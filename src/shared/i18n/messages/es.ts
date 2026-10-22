@@ -39,6 +39,7 @@ export const spanishMessages: MessageCatalog = {
   "action.languageEn": "Idioma: English",
   "action.languageEs": "Idioma: Español",
   "action.openLogFolder": "Abrir la carpeta del registro de diagnóstico",
+  "action.reportProblem": "Reportar un problema…",
 
   "credits.developedBy": "Desarrollado por {name}",
   "about.title": "Acerca de SchemaCraft",
@@ -54,6 +55,46 @@ export const spanishMessages: MessageCatalog = {
     "Esta sesión no escribe registro, porque no se pudo crear su carpeta. Reinicia SchemaCraft para intentarlo de nuevo.",
   "about.log.unavailable":
     "El registro lo escribe la aplicación de escritorio; esta vista previa no tiene ninguno.",
+
+  "support.title": "Reportar un problema",
+  "support.description":
+    "Revisa un diagnóstico local y abre un reporte de error si quieres compartirlo.",
+  "support.diagnostic": "1. Preparar un archivo de diagnóstico",
+  "support.contents":
+    "Incluye datos básicos de la aplicación y del entorno, y hasta siete archivos de registro locales. No recopila proyectos, preferencias ni credenciales guardadas.",
+  "support.preview": "Vista previa del diagnóstico",
+  "support.loading": "Preparando el diagnóstico…",
+  "support.logCount": "Archivos de registro incluidos: {count}",
+  "support.truncated": "Archivos con líneas antiguas omitidas: {count}.",
+  "support.unavailable": "Archivos que no se pudieron incluir: {count}.",
+  "support.noLogs":
+    "No hay registros disponibles. Puedes guardar los datos básicos o reportar el problema sin adjuntar un archivo.",
+  "support.save": "Guardar diagnóstico…",
+  "support.saving": "Guardando…",
+  "support.fileType": "Archivo de texto de diagnóstico",
+  "support.reload": "Actualizar vista previa",
+  "support.saved": "Diagnóstico guardado. Revísalo antes de adjuntarlo al reporte.",
+  "support.reveal": "Mostrar archivo guardado",
+  "support.report": "2. Describir el problema",
+  "support.publicNotice":
+    "Los reportes de GitHub son públicos y requieren una cuenta de GitHub. Describe los pasos y adjunta el archivo revisado si resulta útil. Retira la información confidencial del texto, las capturas y los archivos adjuntos. No se envía nada automáticamente.",
+  "support.openIssue": "Abrir reporte de error en GitHub",
+  "support.security": "Cómo reportar problemas de seguridad",
+  "error.support.readFailed.title": "No se pudo preparar el diagnóstico",
+  "error.support.readFailed.hint":
+    "Comprueba el acceso a la carpeta local del registro y actualiza la vista previa. Puedes reportar el problema sin adjuntar un diagnóstico.",
+  "error.support.writeFailed.title": "No se pudo guardar el diagnóstico",
+  "error.support.writeFailed.hint":
+    "Elige una carpeta donde puedas escribir e inténtalo de nuevo. La vista previa sigue disponible.",
+  "error.support.invalidDestination.title": "Elige un archivo de texto",
+  "error.support.invalidDestination.hint":
+    "Guarda el diagnóstico como archivo .txt en una carpeta local.",
+  "error.support.reportTooLarge.title": "El diagnóstico es demasiado grande",
+  "error.support.reportTooLarge.hint":
+    "Actualiza la vista previa para preparar un diagnóstico con tamaño limitado y vuelve a guardarlo.",
+  "error.support.pageOpenFailed.title": "No se pudo abrir la página de soporte",
+  "error.support.pageOpenFailed.hint":
+    "Abre github.com/jmanuelsoberano/schemacraft en tu navegador. Elige Issues para errores o Security para reportar vulnerabilidades en privado.",
 
   "export.dialog.title": "Exportar diagrama",
   "export.dialog.description":

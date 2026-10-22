@@ -6,6 +6,14 @@ All notable changes to SchemaCraft are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Report a problem from About or the command palette. Preview and save a bounded local text
+  report with application/runtime information and up to seven diagnostic files, then open the
+  public GitHub bug form separately. Projects, preferences and stored credentials are not
+  collected, and diagnostics are never uploaded automatically. Security reports use the
+  existing private-reporting guidance.
+
 ## [1.2.0] - 2026-10-19
 
 Procedures, functions, triggers and view code can be inspected, saved and refreshed with explicit

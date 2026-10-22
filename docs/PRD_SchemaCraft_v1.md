@@ -180,6 +180,24 @@ Lo que la versión 1.2 añade al alcance de las secciones 3.1 a 3.8, ya publicad
 
 ---
 
+### 3.10 Support workflow (unreleased)
+
+- **Report a problem** is available from About and the command palette, in English and Spanish
+  and both themes, without requiring an open project or a SQL connection.
+- Prepare a local, read-only preview with application version/build, OS family, architecture,
+  WebView2 version and UTC generation time, plus up to seven recognized local diagnostic files.
+  File selection is nonrecursive and excludes projects, preferences, connection history and
+  stored credentials. Large files are bounded and visibly identified as partial.
+- Save the exact preview as one readable UTF-8 `.txt` file through the native save dialog.
+  Cancellation writes nothing; errors retain the preview and explain how to retry. Empty or
+  unavailable logs do not prevent reporting a problem without an attachment.
+- Opening the public GitHub bug form is a separate explicit action. Only the application
+  version is prefilled; no diagnostic content or file is uploaded. The user decides what to
+  attach and submits the issue themselves. Security reports use the existing private channel.
+- Closing the support dialog discards its in-memory preview and does not change the project,
+  connection, preferences, credentials or release channel. This feature does not change the
+  published 1.2.0 binaries or the current Store submission.
+
 ## 4. Requisitos No Funcionales y Calidad de Código
 
 1. **Rendimiento**:

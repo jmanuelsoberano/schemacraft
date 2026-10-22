@@ -15,6 +15,7 @@ pub mod diagnostics;
 pub mod export;
 pub mod preferences;
 pub mod project;
+pub mod support;
 
 use crate::error::CommandError;
 
