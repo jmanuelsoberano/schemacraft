@@ -159,6 +159,42 @@ desktop/narrow layout, local progress persistence, reset and offline interaction
 The independent lab archive excludes generated certificates, private keys and database
 volumes. Actual transfer to a second machine remains unclaimed.
 
+### Inspector dependency spacing follow-up - 2026-10-23
+
+The known-dependency Inspector section now uses the existing 16 px horizontal spacing
+token. Only its own CSS rule changes; the Inspector container, object presentation,
+navigation and captured data are unchanged.
+
+Real Tauri checks passed 180 measurements and 1,980 assertions across table, view,
+procedure, overloaded function and trigger selections; both languages and themes;
+320/360/520 px Inspector widths; and 1,024/1,440/1,920 px viewports, including both side
+panels where the requested width fits. The dependency headings align with neighboring
+sections, its content stays inside the horizontal inset, and its action remains reachable
+by scrolling. Eight app screenshots were inspected.
+
+One separate existing issue was reproduced in the Spanish column table at the minimum
+320 px Inspector width: the body needs 327 px while its client width is 309 px. Temporarily
+removing the new dependency inset leaves those exact widths unchanged. This comes from
+the sibling column table, not the dependency section; the latter has no horizontal overflow.
+The geometry checks explicitly compare whole-body overflow with that baseline instead of
+claiming the entire Inspector is overflow-free. Widening the Inspector to 360 px avoids the
+observed case. The column-table issue remains recorded for a separate correction.
+
+All standard local gates were repeated successfully: frontend, architecture/distribution,
+Rust formatting/Clippy, two serial workspace runs, generated contracts without drift,
+live SQL Server 2019/2022 and PostgreSQL 15-18. A Windows mapped-file collision during an
+initial binding export was resolved by completing the frontend tools before repeating both
+workspace runs and the remaining native gates. The embedded preview executable itself
+passed all 22 production smoke checks. Validation-only MSIX packing/unpacking preserved
+its SHA-256, `a27e291abd2eeadb358989e41e4b193b6857c0b98272fe74b8836db29b8d4b4c`.
+This is the current local preview hash; no public release or Store package changed.
+
+Both isolated app sessions restored the original preferences and WebView profile after
+confirmed exit, with the original preference SHA-256 preserved. The closed diagnostic logs
+were scanned for synthetic password, certificate, module text, object and project-name
+sentinels. The existing development-only ResizeObserver notification appeared during the
+large graph exercise; the dependency geometry checks and embedded production smoke passed.
+
 ## Remaining acceptance before one release
 
 - Maintainer review of Spanish and the complete four-feature workflows using the prepared
