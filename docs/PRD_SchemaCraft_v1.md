@@ -180,7 +180,7 @@ Lo que la versión 1.2 añade al alcance de las secciones 3.1 a 3.8, ya publicad
 
 ---
 
-### 3.10 Support workflow (unreleased)
+### 3.10 Support workflow (1.3.0)
 
 - **Report a problem** is available from About and the command palette, in English and Spanish
   and both themes, without requiring an open project or a SQL connection.
@@ -198,7 +198,7 @@ Lo que la versión 1.2 añade al alcance de las secciones 3.1 a 3.8, ya publicad
   connection, preferences, credentials or release channel. This feature does not change the
   published 1.2.0 binaries or the current Store submission.
 
-### 3.11 Independent project comparison (unreleased)
+### 3.11 Independent project comparison (1.3.0)
 
 - Compare two explicitly selected `.scraft` captures as Reference and Compared, including files
   from different servers or databases of the same engine. Swapping sides reverses the comparison.
@@ -217,7 +217,7 @@ Lo que la versión 1.2 añade al alcance de las secciones 3.1 a 3.8, ya publicad
   limitations. Exclude module bodies, notes, paths, connection/user details, raw access probes,
   unknown extensions and names outside the included scope. No report is uploaded automatically.
 
-### 3.12 Known catalog dependencies (unreleased)
+### 3.12 Known catalog dependencies (1.3.0)
 
 - Capture known dependency references independently of module-source storage, with a separate
   option enabled by default. Record the query outcome, selected scope, source coverage,
@@ -236,7 +236,7 @@ Lo que la versión 1.2 añade al alcance de las secciones 3.1 a 3.8, ya publicad
 - Refresh successful sources and preserve earlier reference evidence when a later read cannot
   verify it. A deliberate capture exclusion is reported separately from lost visibility.
 
-### 3.13 Saved perspectives and shared notes (unreleased)
+### 3.13 Saved perspectives and shared notes (1.3.0)
 
 - Keep one General diagram and any number of named perspectives over the same captured snapshot.
   Each perspective owns its layout, visibility, collapsed state, viewport, detail level and
@@ -258,7 +258,7 @@ Lo que la versión 1.2 añade al alcance de las secciones 3.1 a 3.8, ya publicad
   notes, other descriptions, note IDs and unknown properties are excluded. Comparison and
   dependency reports do not include these notes implicitly.
 
-### 3.14 Native PostgreSQL inspection and format 4 (unreleased)
+### 3.14 Native PostgreSQL inspection and format 4 (1.3.0)
 
 - Add PostgreSQL 15, 16, 17 and 18 behind the existing inspector strategy, without changing SQL
   Server behavior. Explicitly select the engine; do not refresh one provider's project from another.
@@ -336,6 +336,11 @@ Lo que la versión 1.2 añade al alcance de las secciones 3.1 a 3.8, ya publicad
 ---
 
 ## 6. Historial de Cambios
+
+- **2026-10-23**: Maintainer acceptance of the combined candidate passed, including Spanish
+  review and all four workflows. Version 1.3.0 is assigned to requirements 3.10–3.14 without
+  changing their scope or the format-4/minimum-reader-4 boundary. Final artifact and channel
+  verification remains separate from feature acceptance.
 
 - **2026-10-23**: Added approved unreleased requirements 3.11–3.14: independent capture comparison,
   known catalog dependencies, shared-snapshot perspectives and plain-text notes, native PostgreSQL

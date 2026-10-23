@@ -3,8 +3,9 @@
 This record covers the combined implementation of PRD 3.11–3.14 and ADR-047–050 on
 `feat/schema-exploration`. All four features belong to one pull request and one future release.
 It is implementation evidence, not maintainer acceptance or authorization to publish.
-The source version remains 1.2.0 until acceptance; local preview builds are not replacements
-for the published executable, release assets, tag or Microsoft Store package.
+The accepted development preview used source version 1.2.0. The maintainer selected 1.3.0
+after acceptance; local builds do not replace the published executable, release assets, tag
+or Microsoft Store package.
 
 ## Architecture and contracts
 
@@ -224,7 +225,7 @@ Rust formatting/Clippy, two serial workspace runs, contracts without drift, live
 concurrent generated-file access. The updated embedded preview passed all 22 production
 smoke checks. Validation-only MSIX packing/unpacking preserved its executable SHA-256,
 `01d38b0e5ea25a636f18a867b8d8994dfac1e4537536d70908835d31ceffd7ab`.
-This is the current local preview hash; no published executable, version or Store package
+This is the accepted development preview hash; no published executable, version or Store package
 changed, and the validation package was neither installed nor submitted.
 
 Both app sessions restored the original preferences and WebView profile after confirmed
@@ -234,10 +235,95 @@ nonfatal ResizeObserver loop notifications appeared during the development layou
 all geometry assertions and the embedded production smoke checks passed. The matrix's
 empty CDP exception list does not claim an entirely silent development console.
 
+### Maintainer acceptance and version selection - 2026-10-23
+
+The maintainer reported that the updated acceptance candidate from `617ffbd` passed the
+Spanish review and all four feature workflows. This is maintainer-reported acceptance,
+in addition to the measured checks above. The maintainer selected version 1.3.0 for the
+combined delivery and requested a localized Store gallery with ten distinct scenes per
+language: five light and five dark. Version, release notes and final artifacts are prepared
+on the same branch and PR #14. No separate milestone release or branch is introduced.
+
+### Versioned 1.3.0 artifact preparation - 2026-10-23
+
+Package/workspace versions and both lockfiles now agree on 1.3.0. The dated CHANGELOG entry
+includes the four exploration features and the support workflow already on main. Release
+notes describe both providers for 1.3.0 while retaining the SQL Server overview for historical
+1.0-1.2 entries. The issue form accepts either engine's version/authentication without asking
+for private connection names. Project format 4/minimum reader 4 is unchanged.
+
+The standard local frontend, architecture, distribution and serial native gates passed for
+1.3.0, including both workspace runs, all live SQL Server 2019/2022 binaries, PostgreSQL 15-18
+and generated contracts without drift. A complete `npm run tauri build` produced the optimized
+release portable and current-user NSIS installer without Store identity or credentials.
+Both executable FileVersion resources report 1.3.0. The full release portable passed all 22
+production smoke checks with development hooks absent. Original preferences/profile were
+restored after confirmed exit and the preference hash matched.
+
+The actual 1.3.0 portable read historical formats 1, 2 and 3, saved new files stamped
+`SchemaCraft 1.3.0` in format 4/minimum reader 4, and reopened each document identically.
+All historical source bytes remained unchanged. The checksum-verified published 1.2.0
+portable rejected the new format-4 file with `unsupportedFormatVersion` and left its bytes
+unchanged; that isolated session also restored the original preferences/profile.
+
+Local candidate hashes, before any tag or release-workflow rebuild:
+
+| Artifact                                   | SHA-256                                                            |
+| ------------------------------------------ | ------------------------------------------------------------------ |
+| `schemacraft-v1.3.0-windows-x64.exe`       | `5f490b97111a9f7804b7195fc4606435190ba28902b1176b4acf086dd5bb127e` |
+| `schemacraft-v1.3.0-windows-x64-setup.exe` | `ad32eff5d9b4a36754a10b6310eb7c761ecd9ac710a5fe0f0de79ea80d55e811` |
+
+MakeAppx 10.0.28000.1839 packed/unpacked validation version 1.3.0.0 and preserved the portable's
+exact hash above. The validation-only MSIX hash is
+`2508f10ccace6e9242bac963b88c2e6b32c0183b9bd2b3ba13c065e9d955124a`.
+It was not installed or uploaded and cannot substitute for the Store submission package.
+Actual downloaded release assets must be verified again after the authorized main tag builds
+them; these local hashes do not predict the later workflow's output.
+
+NSIS runtime installation/uninstallation remains pending in an isolated Windows profile.
+The generated installer declares current-user mode, but its normal uninstaller also removes
+recent destinations for the application's shared identifier. A custom install directory alone
+would not isolate that shell state from the existing Store installation. No installer was run
+against the maintainer's profile, and no Store installation/update gate is claimed here.
+
+### Localized Store gallery - 2026-10-23
+
+Twenty unedited PNGs were captured from the exact optimized 1.3.0 portable identified above,
+using its embedded production frontend and six synthetic saved captures read through native
+`read_project`. Each language, en-US and es-ES, has ten distinct scenes: five light and five
+dark. The scenes cover the ERD, Inspector, routine metadata/code, comparison, source-line
+differences, dependencies, perspectives/notes, PostgreSQL, export review and optional support
+diagnostics. All twenty full-size images were opened and visually reviewed for the intended
+feature, locale/theme, legibility, control layout and privacy. No screenshot pixels, DOM
+content or styles were replaced or composited.
+
+The capture harness answered only the single-project file-picker transport with an approved
+synthetic path; native project reading, comparison and domain behavior were unchanged. The
+transport was restored after each selection. All six source snapshots and acquisition facts
+remained unchanged; only canvas presentation, named perspectives and synthetic notes were
+prepared for the scenes. The production application had no development hooks. The full run
+and targeted retakes recorded no runtime exceptions.
+
+Deterministic validation checked twenty unique file hashes, 1920×1080 PNG dimensions, file
+sizes below 50 MB, captions of at most 200 characters, ten scenes per language and the five/five
+theme balance. The offline review gallery, caption/upload order and relative-path checksums
+were generated separately; the PNGs remain the captured originals. The localized draft text
+and captions are in [the Store listing](microsoft-store-listing.md). These are prepared assets,
+not a Store upload, certification or publication result.
+
+The delivered review page loaded all twenty PNGs in isolated Edge through a loopback server.
+Language switching also worked after networking was disabled, and the 390 px layout had no
+horizontal overflow. Desktop and narrow screenshots of the review page were inspected.
+Direct file navigation was unavailable in that automation environment; the portable folder
+contains only relative local resources and a separate launch command.
+
+After confirmed application exit, the original preferences and WebView profile were restored
+and the preference SHA-256 matched. Closed logs from the versioned production, compatibility
+and gallery sessions were checked for synthetic credential, source, object, note and path
+sentinels; none appeared. Opaque original backups were not inspected.
+
 ## Remaining acceptance before one release
 
-- Maintainer review of Spanish and the complete four-feature workflows using the prepared
-  preview, then selection of the final version and dated release entry.
 - Green required checks on the final pull-request commit before merge.
 - Build and verify the final versioned portable and installer, checksums and downloaded assets;
   repeat installation, activation, state/credential behavior and uninstallation on the actual

@@ -1,21 +1,21 @@
 # SchemaCraft
 
 Desktop CASE tool for database reverse engineering and entity-relationship diagram (ERD)
-visualisation, built with Tauri 2, Rust and React. It connects to Microsoft SQL Server, extracts
-the schema, keeps it in a portable `.scraft` project so the database is never queried twice for
-the same diagram, and renders fast, interactive diagrams with high-fidelity single-page exports.
+visualisation, built with Tauri 2, Rust and React. It reads Microsoft SQL Server and PostgreSQL
+schemas into portable `.scraft` projects, explores their relationships and known dependencies,
+and renders interactive diagrams with single-page exports.
 
 ![SchemaCraft showing a sales schema at the Keys detail level](docs/images/canvas-keys-light.png)
 
 ## Features
 
-- **Reverse engineering of SQL Server.** Tables, views, columns and types, primary and foreign
-  keys, indexes and check constraints, with SQL Server or Windows Authentication over encrypted
-  connections. SQL Server 2019 and 2022 are tested; 2016 and 2017 are supported on a best-effort
-  basis, without tests.
+- **Reverse engineering of SQL Server and PostgreSQL.** Tables, views, columns and native types,
+  keys, indexes and constraints. SQL Server offers SQL login or Windows Authentication;
+  PostgreSQL offers password/SCRAM login with certificate and hostname verification by default.
+  SQL Server 2019/2022 and PostgreSQL 15–18 are tested; SQL Server 2016/2017 remain best effort.
 - **Honest with limited logins.** A login that sees only part of a database gets everything it
-  can read, with what it cannot read marked as not available, never as missing, and an access
-  report that names the cause and the one grant that would complete the schema.
+  can read, with unavailable facts distinguished from missing objects. Provider-specific access
+  reports explain observed visibility and capture limits without inventing complete coverage.
 - **Portable projects.** A `.scraft` file keeps the schema and the diagram, reopens without a
   database and refreshes from it with a reviewed diff that keeps your layout.
 - **Interactive diagrams.** Entity cards at three detail levels, views told apart from tables by
@@ -35,12 +35,13 @@ the same diagram, and renders fast, interactive diagrams with high-fidelity sing
 - **Exports.** SVG with selectable text, a self-contained interactive HTML viewer, single-page
   PDF and PNG at 1x, 2x and 4x, all drawn by one renderer with bundled fonts.
 - **Desktop quality.** English and Spanish, light and dark themes, keyboard access throughout, a
-  portable executable of about 12 MB and a per-user installer.
+  portable executable and a per-user installer.
 
-## In development: schema exploration
+## Schema exploration in 1.3.0
 
-The following features are **unreleased**, developed together for the next release. They are
-not included in the published 1.2.0 GitHub or Microsoft Store package.
+This source version includes the four features below together. Earlier 1.2.0 GitHub and Store
+packages do not include them; check the installed version in About. Preparing this branch does
+not itself publish a GitHub release or update the Store listing.
 
 - **Compare saved projects.** Choose Reference and Compared `.scraft` files, inspect confirmed
   changes and unavailable evidence, review exact source differences locally and prepare a
@@ -57,18 +58,19 @@ not included in the published 1.2.0 GitHub or Microsoft Store package.
   views, overloaded routines and trigger modes, strict TLS by default, SCRAM/password login,
   provider-specific visibility evidence and the same project/diagram workflows.
 
-| Database engine              | Published 1.2.0                       | Unreleased development support and required integration matrix                      |
+| Database engine              | Published 1.2.0                       | 1.3.0 support and required integration matrix                                       |
 | ---------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------- |
 | SQL Server 2019 / 2022       | Supported and tested                  | Regression suite on both versions, including dependencies                           |
 | SQL Server 2016 / 2017       | Best effort, not automatically tested | No additional tested-version claim                                                  |
 | PostgreSQL 15 / 16 / 17 / 18 | Not available                         | Native inspector, restricted-role, TLS, refresh and privacy suites on every version |
 
-Comparison requires the same database engine on both sides. New development builds write
+Comparison requires the same database engine on both sides. SchemaCraft 1.3.0 writes
 project format 4 with minimum reader 4; published 1.2.0 and earlier refuse these files. Keep an
 original copy when a project must remain usable in a published older version.
 The [release checklist](docs/release-checklist.md#unreleased-schema-exploration-acceptance) and
 [architecture decisions](docs/architecture.md#adr-047-independent-project-comparison-preserves-each-captures-evidence)
-define the acceptance gates and privacy boundaries. The final version is assigned after acceptance.
+define the acceptance gates and privacy boundaries. The maintainer accepted the combined
+candidate and selected version 1.3.0 on 2026-10-23; artifact and channel acceptance remain separate.
 
 ## Download
 
@@ -119,7 +121,7 @@ This program will not transfer any information to other networked systems unless
 requested by the user or the person installing or operating it.
 
 SchemaCraft has no telemetry and no update check. It connects only to the database server the user
-specifies (SQL Server in published 1.2.0; also PostgreSQL in unreleased builds), and it opens Microsoft's WebView2 download page only when the user asks. Its
+specifies (SQL Server or PostgreSQL), and it opens Microsoft's WebView2 download page only when the user asks. Its
 interface runs in the Microsoft Edge WebView2 runtime that Windows provides, whose diagnostic
 data is covered by the [Microsoft Privacy Statement](https://privacy.microsoft.com/privacystatement)
 and follows the Windows diagnostic data setting.
@@ -128,7 +130,9 @@ SchemaCraft reads database structure and, when selected, SQL module definitions 
 the user chooses. Saved `.scraft` files can contain object names, connection metadata without
 passwords, annotations and module definitions. They remain at the location the user chooses;
 the user controls whether to share them. Diagram exports can contain visible schema names and
-metadata, but exclude captured module bodies and routines.
+metadata, but exclude captured module bodies. ERD exports omit routine objects; dependency maps
+include only their selected visible object metadata. Notes are excluded until individually
+reviewed for that export.
 
 Recent connections and project paths are stored in local preferences. A password is remembered
 only at the user's request and is stored in Windows Credential Manager, separately from projects
@@ -145,7 +149,7 @@ The Store listing and packaging evidence are linked above. Privacy questions and
 bug reports can be raised through [the issue tracker](https://github.com/jmanuelsoberano/schemacraft/issues);
 issues are public, so remove confidential details before submitting them.
 
-The unreleased support workflow can prepare a local diagnostic text file for review and manual
+The 1.3.0 support workflow can prepare a local diagnostic text file for review and manual
 attachment to a public GitHub issue. It collects basic application/runtime information and up
 to seven recognized diagnostic files, without reading projects, preferences or credentials.
 Opening the issue form sends only the application version in its URL; no report text or file
@@ -154,7 +158,7 @@ is attached automatically. See [reporting problems](#reporting-problems).
 ## Stack
 
 - **Core:** Rust (`crates/schemacraft-core`), `serde`, `ts-rs`, `tiberius` with a `bb8` pool for
-  SQL Server; the unreleased native PostgreSQL inspector uses `tokio-postgres` and system TLS.
+  SQL Server; the native PostgreSQL inspector uses `tokio-postgres` and system TLS.
 - **Host:** Tauri 2 (`src-tauri`), `tracing`.
 - **Frontend:** React 19, TypeScript, Vite, React Flow, Radix primitives, Lucide icons, Zustand.
 - **Quality:** Clippy with panic-free lints, rustfmt, ESLint (type-checked), Prettier, Vitest,
@@ -271,7 +275,7 @@ counts, timings, kinds and error numbers only, with no name of the fixture, logi
 or database. Windows Authentication cannot run in the Linux container; it is validated manually
 against a Windows instance.
 
-### PostgreSQL integration tests (unreleased)
+### PostgreSQL integration tests
 
 `postgresql_integration` uses disposable PostgreSQL 15–18 instances with a synthetic
 `schemacraft_fixture` database. Set `SCHEMACRAFT_TEST_PG_HOST`, `PORT`, `USER`, `PASSWORD` and
@@ -366,7 +370,7 @@ cannot open it at all. A project saved by a newer version opens read-only when t
 it: it can be rearranged and exported, but not saved or refreshed. Data this version does not
 understand is kept as it is when a project is saved.
 
-Unreleased builds migrate those projects to format 4/minimum reader 4 on save. One snapshot
+SchemaCraft 1.3.0 migrates those projects to format 4/minimum reader 4 on save. One snapshot
 stores General, all named perspectives and shared table/column notes, including unlinked notes
 retained after observed deletion. New provider semantics require earlier applications to refuse
 the new file; the format-3 forward-read guarantee above still applies to published 1.2.0 files.
@@ -397,7 +401,7 @@ remembered passwords stay.
 The history and a reopened project use it without asking; untick the box and connect again to
 forget it, or remove the entry from the Credential Manager.
 
-Unreleased PostgreSQL connections use a separate `postgresql://<host:port>/<role>` credential
+PostgreSQL connections use a separate `postgresql://<host:port>/<role>` credential
 namespace, preserving role case. Strict certificate validation is the default; an additional
 public root PEM may be saved with the connection, but a private key or typed password may not.
 PostgreSQL access reports show native catalog/schema-USAGE evidence rather than a SQL Server
@@ -416,8 +420,8 @@ SchemaCraft closed, to clear the log.
 
 ## Reporting problems
 
-The following workflow is **unreleased**; published 1.2.0 offers the diagnostic folder in About.
-In a build with the support feature, choose **Report a problem** in About (F1) or the command
+SchemaCraft 1.3.0 includes this workflow; published 1.2.0 offers the diagnostic folder in About.
+Choose **Report a problem** in About (F1) or the command
 palette (Ctrl+K). Review the local preview and optionally save it as a `.txt` file. The report
 contains basic application/runtime information and up to seven recognized log files; large
 files include only their recent complete lines, with a notice. It does not read projects,

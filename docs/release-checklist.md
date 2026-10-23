@@ -23,67 +23,76 @@ installation, updates, data and credentials, and certification separately.
 ## Verification process
 
 How a SchemaCraft release is verified against the acceptance criteria of the PRD (section 5) and
-the scope each version adds (section 3.8 for 1.1 and 3.9 for 1.2), what CI covers and what is checked by hand
+the scope each version adds (section 3.8 for 1.1, 3.9 for 1.2 and 3.10–3.14 for 1.3), what CI covers and what is checked by hand
 before a draft release is published. The automated parts run on every pull request and push to
 `main` (`ci.yml`, sized to the change, ADR-033) and on every tag (`release.yml`).
 
 ## Unreleased schema-exploration acceptance
 
 See the [dated implementation verification](schema-exploration-verification.md) for completed
-checks, their scope and the remaining release gates. The checklist below remains open until
-the combined candidate receives maintainer and artifact acceptance.
+checks, their scope and the remaining release gates. Completed local and feature checks are
+marked below; distribution-artifact and channel acceptance remain separate. On 2026-10-23 the maintainer reported
+that the updated candidate from `617ffbd` passed the Spanish review and all four workflows,
+then selected version 1.3.0. This closes human feature acceptance, not artifact/channel gates.
 
 PRD sections 3.11–3.14 and ADR-047–050 extend the existing gates together. This section records
 required acceptance, not a claim that a release has already passed. All four features use one
-branch and pull request; the final version/tag follows maintainer acceptance. Do not rebuild,
+branch and pull request; version 1.3.0 is prepared in that same PR and its tag follows an
+authorized merge and release decision. Do not rebuild,
 replace or retag the published 1.2.0 executable, GitHub assets or Store package.
 
-- [ ] Format, lint, both TypeScript configurations, all frontend tests, generated contracts,
+- [x] Format, lint, both TypeScript configurations, all frontend tests, generated contracts,
       architecture drift/import checks, distribution checks and build pass. Run Rust formatting,
       Clippy and workspace tests sequentially; never overlap Cargo processes.
-- [ ] Run SQL Server structure, permissions, code, dependency and diagnostic-privacy regressions
+- [x] Run SQL Server structure, permissions, code, dependency and diagnostic-privacy regressions
       on both 2019 and 2022, checking the expected engine major. Run PostgreSQL native catalog,
       restricted-role, scope, refresh, dependency, TLS and privacy suites on 15, 16, 17 and 18.
       Tests use disposable synthetic databases only. Record commands/outcomes and actual versions.
-- [ ] Independent comparison: select two saved files without a live connection or open project;
+- [x] Independent comparison: select two saved files without a live connection or open project;
       swap sides, filter results, distinguish confirmed changes from every unavailable/retained
       state, inspect both diagram contexts and review literal source pages. Cancel a bounded
       source job and replace inputs while work is pending. The active project stays unchanged.
-- [ ] Save and reopen a filtered comparison HTML report offline. Check hostile identifiers and
+- [x] Save and reopen a filtered comparison HTML report offline. Check hostile identifiers and
       every privacy sentinel: no module body, annotation, path, server, database connection/user,
       raw probe or excluded object/schema name. Exact source review does not change export consent.
-- [ ] Dependencies: read both providers with source-text storage disabled, inspect incoming and
+- [x] Dependencies: read both providers with source-text storage disabled, inspect incoming and
       outgoing references, traverse cycles and self-references, and distinguish unresolved/external
       targets, failure, option-off and historical evidence. Exercise map bounds and visible
       omission notices. Export every format and open HTML offline; no external connection occurs.
-- [ ] Perspectives/notes: create, duplicate, rename, delete and switch maps; edit a shared table
+- [x] Perspectives/notes: create, duplicate, rename, delete and switch maps; edit a shared table
       note, column note and perspective description. Save/reopen offline and use undo/redo.
       Confirm switching alone is clean, layouts/visibility are independent and curated maps do
       not include newly refreshed objects automatically. Refresh while inactive maps exist.
-- [ ] Remove a synthetic note target, refresh and review the unlinked note; recreate its former
+- [x] Remove a synthetic note target, refresh and review the unlinked note; recreate its former
       name and confirm no automatic reassignment. Reassign explicitly, reject a conflicting
       target and undo deletion. A homonymous view never inherits a table or column note.
-- [ ] Export the active perspective with notes off, then with one reviewed visible note and its
+- [x] Export the active perspective with notes off, then with one reviewed visible note and its
       description. Inspect SVG, PDF, PNG and HTML: hidden/unlinked notes, unchecked text, inactive
       descriptions, stored note IDs and extension fields stay absent; hostile note text stays
       literal and long text is not clipped. Repeat export and verify consent starts off again.
-- [ ] Native PostgreSQL: test strict TLS with valid root/host, wrong root and wrong host; explicit
+- [x] Native PostgreSQL: test strict TLS with valid root/host, wrong root and wrong host; explicit
       local unverified TLS/plaintext and remote rejection; SCRAM, role/database case, provider
       history/credential separation, materialized views, native index/constraint states, overloads
       and trigger modes. No SQL Server probe, GRANT, clustering or replication fact is shown.
-- [ ] Open genuine historical format-1/2/3 files, retain extensions through format-4 save/reopen
+- [x] Open genuine historical format-1/2/3 files, retain extensions through format-4 save/reopen
       and verify new evidence is not invented. Open a new file in published 1.2.0: it refuses
       format 4 clearly because minimum reader is 4. Keep byte-identical historical source copies.
-- [ ] Exercise every new flow in the actual desktop app in both languages and themes, with
+- [x] Exercise every new flow in the actual desktop app in both languages and themes, with
       keyboard/focus, loading, empty, failure and cancellation states. Measure large comparison,
       dependency and layout cases and inspect the closed diagnostic log. Synthetic browser
       previews supplement these checks; they do not substitute for the Rust-backed application.
-- [ ] Before **each** real-app session back up
+- [x] Before **each** real-app session back up
       `%APPDATA%\\com.jmanuelsoberano.schemacraft\\preferences.json` and any WebView profile the
       session changes. After confirmed process exit, restore originals byte for byte and verify
       their hashes. Never remove user projects or stored credentials for a test.
-- [ ] Maintainer reviews Spanish and accepts all four feature flows, then the final version and
-      CHANGELOG entry are prepared. Require green PR checks before merging. Tag only the accepted
+- [x] Maintainer reviews Spanish and accepts all four feature flows; version 1.3.0 is selected.
+      The acceptance report was received on 2026-10-23 against candidate `617ffbd`.
+- [x] Prepare version 1.3.0, dated CHANGELOG/release notes and local portable/installer builds.
+      Verify Windows metadata, native version, production smoke and project compatibility.
+- [x] Capture and visually review ten distinct Store scenes per language, five light and five
+      dark, from the actual 1.3.0 application. Verify PNG dimensions, captions and checksums;
+      prepare the localized listing and offline gallery without uploading or publishing them.
+- [ ] Require green PR checks before merging. Tag only the accepted
       main commit, verify downloaded portable/installer/checksums and repeat installation,
       activation/uninstallation and channel-specific checks before publication. Record any
       explicitly accepted outstanding check as pending; do not inherit the 1.2.0 exception.
@@ -193,16 +202,13 @@ development-build sessions recorded below. Leave a box open until its stated che
 - [ ] Download the assets and check them against `SHA256SUMS.txt`.
 - [ ] Start the portable executable on a machine without SchemaCraft: the welcome screen appears.
       Without the WebView2 runtime, the dialog explains it and offers the download.
-- [ ] Connect to a production database, read the schema, lay it out, save, reopen, refresh and
-      export to PDF and HTML.
-- [ ] Open a project saved by the previous release and refresh it with the same login: the review
-      reports no schema change other than any index aligned with a partitioned table, listed as
-      changed because its key columns no longer start with the partitioning column, shows one
-      "Index and constraint state" line with a count under "Recorded for the first time" and
-      offers to update the project. Apply, save, reopen the file and check that its header says
-      `formatVersion` 3 and `minReaderVersion` 2. Open the saved file in the previous release: it
-      opens read-only, with the chip naming the version that wrote it, the diagram and the HTML
-      and PDF exports work, and Save and Refresh are not offered.
+- [ ] Connect only to authorized synthetic SQL Server and PostgreSQL fixtures, read the schema,
+      lay it out, save, reopen, refresh and export to PDF and HTML.
+- [ ] Open a copy of a project saved by 1.2.0 and refresh it against the same unchanged synthetic
+      fixture. Newly recorded families must remain distinct from confirmed schema changes.
+      Save as a new file, reopen it and check `formatVersion` 4 and `minReaderVersion` 4.
+      Published 1.2.0 must clearly refuse the new file without changing it. Keep the original
+      older file byte-identical; application rollback does not downgrade a format-4 project.
 - [ ] Connect with a login that lacks `VIEW DEFINITION` (for example a `db_datareader` member):
       the connection dialog warns before reading, the status bar shows the access chip, the
       access report opens with Ctrl+Shift+A and Copy GRANT script puts the script on the
@@ -265,10 +271,11 @@ development-build sessions recorded below. Leave a box open until its stated che
 - Only clustered and nonclustered indexes are read. A hash index of a memory-optimized table is
   not listed, nor is the primary key or unique constraint it backs, so such a table can show no
   primary key and a foreign key the hash index would make one-to-one draws a crow's foot. Reading
-  hash indexes moves to 1.3.
+  hash indexes remains deferred; version 1.3.0 does not add that SQL Server capability.
 - NOT FOR REPLICATION on `CHECK` constraints and foreign keys is not read. SQL Server never trusts
   such a rule, so it shows "not trusted". Its sentences do not say that writes by replication
-  agents skip it, and its scripted SQL omits NOT FOR REPLICATION. Reading it moves to 1.3.
+  agents skip it, and its scripted SQL omits NOT FOR REPLICATION. Reading this state remains
+  deferred; version 1.3.0 does not add that SQL Server capability.
 - Code comparison normalizes line endings, trailing spaces/tabs and empty edge lines without
   parsing SQL. The project preserves the original code, but the review is not a semantic SQL
   comparison. Database/server DDL triggers, synonyms, dependencies and descriptions are outside

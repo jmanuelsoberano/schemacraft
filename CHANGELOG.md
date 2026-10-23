@@ -6,6 +6,12 @@ All notable changes to SchemaCraft are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-23
+
+Compare captured projects, explore known dependencies, save perspectives with shared notes
+and inspect PostgreSQL alongside SQL Server. Projects save in format 4; keep original copies
+when they must remain editable with SchemaCraft 1.2.0 or earlier.
+
 ### Added
 
 - Compare two saved projects independently of the open document, with filtered before/after
@@ -33,8 +39,11 @@ All notable changes to SchemaCraft are documented here. The format follows
 - Architecture checks enforce frontend import/IPC boundaries and keep the core free of Tauri.
   CI retains both required check names and adds PostgreSQL 15–18 alongside SQL Server 2019/2022.
 
-All four exploration features are prepared together for one future release. No new version,
-tag, release asset or Store package is assigned by this unreleased entry.
+### Fixed
+
+- Toolbar actions remain visible on narrower windows by flowing into an additional row.
+- Inspector dependency details align with neighboring sections. Column headers and long native
+  badges wrap inside narrow panels without hiding names, types, defaults or nullability.
 
 ## [1.2.0] - 2026-10-19
 
@@ -249,7 +258,8 @@ First release.
 - Bilingual interface (English and Spanish), light and dark themes, keyboard access throughout.
 - Portable Windows executable and per-user installer, with a WebView2 runtime check at startup.
 
-[Unreleased]: https://github.com/jmanuelsoberano/schemacraft/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/jmanuelsoberano/schemacraft/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/jmanuelsoberano/schemacraft/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/jmanuelsoberano/schemacraft/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/jmanuelsoberano/schemacraft/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/jmanuelsoberano/schemacraft/releases/tag/v1.0.0
