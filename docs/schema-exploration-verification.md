@@ -73,6 +73,13 @@ executable SHA-256 were both
 The validation identity was not installed or submitted. The same verified executable is the
 local acceptance preview; its source-version label does not assign a new public release.
 
+The first CI run restored an old `target/store-validation` through the Rust cache and correctly
+failed the packager's existing-directory protection. CI now writes validation output under
+`RUNNER_TEMP`, separated by run ID and attempt, and uploads the report from that step's exact
+output path. Real MakeAppx validation passed with the old cached directory still present;
+the overwrite rejection and executable bytes remain unchanged. This workflow correction does
+not change the application candidate.
+
 | Area          | Evidence and scope                                                                                                                                                                                                                                                          |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | SQL Server    | Real 2022 (16.0.4305.5) and 2019 (15.0.4500.2): all four integration binaries, including dependency, restricted-login and diagnostic privacy cases. Dependency reads also work with module-text storage off.                                                                |

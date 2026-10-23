@@ -101,18 +101,22 @@ jobs:
         run: node scripts/smoke-test-release.mjs target/ci/schemacraft.exe smoke-test
 
       - name: Validate an MSIX package without Store credentials
+        id: store-validation
         if: steps.changes.outputs.code == 'true'
         shell: pwsh
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          node distribution/microsoft-store/package.mjs --validation --executable target/ci/schemacraft.exe --version $version --output-dir target/store-validation
+          # Rust's target directory is cached; packaging must always receive a fresh output.
+          $validationDirectory = Join-Path $env:RUNNER_TEMP ("schemacraft-store-validation-{0}-{1}" -f $env:GITHUB_RUN_ID, $env:GITHUB_RUN_ATTEMPT)
+          "directory=$validationDirectory" >> $env:GITHUB_OUTPUT
+          node distribution/microsoft-store/package.mjs --validation --executable target/ci/schemacraft.exe --version $version --output-dir "$validationDirectory"
           if ($LASTEXITCODE -ne 0) { throw 'MSIX packaging validation failed.' }
 
       - uses: actions/upload-artifact@v4
         if: always() && steps.changes.outputs.code == 'true'
         with:
           name: microsoft-store-validation-evidence
-          path: target/store-validation/report.json
+          path: ${{ steps.store-validation.outputs.directory }}/report.json
           if-no-files-found: warn
 
       - uses: actions/upload-artifact@v4
