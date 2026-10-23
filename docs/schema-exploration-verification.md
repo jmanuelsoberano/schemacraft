@@ -117,6 +117,48 @@ literal, and no external resource was loaded. Direct local-file navigation was u
 that test environment. Opening a copied HTML file on another computer without SchemaCraft is
 still a separate release gate; this test does not claim it passed.
 
+### Responsive toolbar follow-up - 2026-10-23
+
+The toolbar now flows into a second row when its groups no longer fit. All actions
+remain visible, long project names yield with an ellipsis, and the shell reserves
+the actual header height. The change is limited to the two shell CSS modules; action
+handlers, keyboard shortcuts, feature boundaries and the minimum window size are unchanged.
+
+Real Tauri geometry checks passed 171 measurements and 2,565 assertions: English/Spanish,
+light/dark, empty/short/long dirty/read-only projects, seven widths from 1,024 to 1,688
+CSS pixels, and both sides of the wrapping threshold. Additional checks used emulated
+device-pixel ratios of 1.25, 1.5 and 2 at 1,024 CSS pixels; these do not claim a change to
+the Windows display settings. Controls stayed inside the header without overlap or
+horizontal overflow, the canvas remained below it, and focus order and menu Escape
+restoration passed. App screenshots at 1,024 and 1,440 pixels were inspected.
+
+All local gates above were repeated successfully, including both serial Rust workspace
+runs, live SQL Server 2019/2022 and PostgreSQL 15-18. The rebuilt embedded frontend passed
+all 22 production smoke checks. Validation-only MSIX packing/unpacking preserved the new
+executable SHA-256, `783912d4ff5826e0aef11d207044a88641cb77de60ae007d4575aba2384a92b8`.
+This supersedes the earlier local preview hash; no published artifact was changed.
+
+A separate portable PostgreSQL demonstration lab was also captured through the real app
+with full CA/hostname TLS verification and its read-only login: 42 table entries, 10 views
+(including three materialized views), 20 routines, eight triggers and 140 known dependency
+edges. Saving/reopening format 4, reviewing/applying a prepared refresh and comparing the
+two saved files passed. The two confirmed changes were the optional order column and the
+view's reconstructed source; its line diff completed with 12 rows. Other incomplete
+dependency evidence stayed explicitly not comparable. Comparison preserved the open
+project. The demo was reverted and its 44,334 synthetic rows and baseline marker verified.
+
+The development server emitted two nonfatal ResizeObserver loop notifications during
+the larger graph exercise; geometry checks still passed and the production smoke run
+passed. Both closed app sessions' logs were scanned for the synthetic password, public
+certificate, object/source and column sentinels; none appeared. Original preferences and
+WebView profiles were restored after each session, with identical preference SHA-256.
+
+The external Spanish acceptance guide has 31 guided steps, expected results and optional
+exercises. All 14 PDF pages were rendered and inspected; the self-contained HTML passed
+desktop/narrow layout, local progress persistence, reset and offline interaction checks.
+The independent lab archive excludes generated certificates, private keys and database
+volumes. Actual transfer to a second machine remains unclaimed.
+
 ## Remaining acceptance before one release
 
 - Maintainer review of Spanish and the complete four-feature workflows using the prepared
