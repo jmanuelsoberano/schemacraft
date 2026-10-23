@@ -172,13 +172,14 @@ panels where the requested width fits. The dependency headings align with neighb
 sections, its content stays inside the horizontal inset, and its action remains reachable
 by scrolling. Eight app screenshots were inspected.
 
-One separate existing issue was reproduced in the Spanish column table at the minimum
+One separate existing issue was reproduced in the Spanish column table at the tested
 320 px Inspector width: the body needs 327 px while its client width is 309 px. Temporarily
 removing the new dependency inset leaves those exact widths unchanged. This comes from
 the sibling column table, not the dependency section; the latter has no horizontal overflow.
 The geometry checks explicitly compare whole-body overflow with that baseline instead of
 claiming the entire Inspector is overflow-free. Widening the Inspector to 360 px avoids the
-observed case. The column-table issue remains recorded for a separate correction.
+observed case. The column-table issue was subsequently corrected and verified in the
+following record.
 
 All standard local gates were repeated successfully: frontend, architecture/distribution,
 Rust formatting/Clippy, two serial workspace runs, generated contracts without drift,
@@ -187,13 +188,51 @@ initial binding export was resolved by completing the frontend tools before repe
 workspace runs and the remaining native gates. The embedded preview executable itself
 passed all 22 production smoke checks. Validation-only MSIX packing/unpacking preserved
 its SHA-256, `a27e291abd2eeadb358989e41e4b193b6857c0b98272fe74b8836db29b8d4b4c`.
-This is the current local preview hash; no public release or Store package changed.
+That follow-up's local preview hash is superseded below; no public release or Store
+package changed.
 
 Both isolated app sessions restored the original preferences and WebView profile after
 confirmed exit, with the original preference SHA-256 preserved. The closed diagnostic logs
 were scanned for synthetic password, certificate, module text, object and project-name
 sentinels. The existing development-only ResizeObserver notification appeared during the
 large graph exercise; the dependency geometry checks and embedded production smoke passed.
+
+### Inspector column layout follow-up - 2026-10-23
+
+The shared column table now assigns bounded space to the name, type and nullability
+columns. Headers wrap, and column badges use a wrapping group below the name; long native
+identity labels no longer determine the table's minimum width. The change is confined to
+`ColumnsTable` and its scoped CSS. Other badges, captured facts and feature boundaries are
+unchanged. Names, types, defaults and native notes remain complete without ellipsis,
+clipping or smaller text. Tables, views and table-valued function returns share this layout.
+
+The original Spanish `audit.events` case now measures 309 px body scroll width and 309 px
+client width at a 320 px Inspector width, replacing the previous 327/309 px overflow.
+Real Tauri checks passed 252 measurements and 3,528 assertions across 28 cases: native
+PostgreSQL table/view/function-return captures, SQL Server 2019/2022 table captures and
+presentation stress cases; English/Spanish and light/dark; 320/360/520 px Inspectors and
+1,024/1,440/1,920 px viewports. Both side panels were included where the requested width
+fits. Cell text and controls stayed within their own columns, all expected values and
+unavailable/not-recorded default explanations remained present, and rule highlighting
+kept its tint and accent. Ten screenshots were inspected. The stress rows are in-memory
+presentation clones, not evidence of valid database definitions. Layout checks read saved
+synthetic captures through native IPC and did not write databases or project files.
+
+All standard local gates passed again: 936 frontend tests, architecture/distribution guards,
+Rust formatting/Clippy, two serial workspace runs, contracts without drift, live SQL Server
+2019/2022 and PostgreSQL 15-18. Frontend tools finished before the native checks to avoid
+concurrent generated-file access. The updated embedded preview passed all 22 production
+smoke checks. Validation-only MSIX packing/unpacking preserved its executable SHA-256,
+`01d38b0e5ea25a636f18a867b8d8994dfac1e4537536d70908835d31ceffd7ab`.
+This is the current local preview hash; no published executable, version or Store package
+changed, and the validation package was neither installed nor submitted.
+
+Both app sessions restored the original preferences and WebView profile after confirmed
+exit, with identical preference SHA-256. Closed test logs contained none of the checked
+synthetic password, certificate, module-text, object or project-name sentinels. Four
+nonfatal ResizeObserver loop notifications appeared during the development layout matrix;
+all geometry assertions and the embedded production smoke checks passed. The matrix's
+empty CDP exception list does not claim an entirely silent development console.
 
 ## Remaining acceptance before one release
 

@@ -213,7 +213,7 @@ interface ColumnsTableProps {
 export function ColumnsTable({ section, entityKey, onShowAccessReport }: ColumnsTableProps) {
   const ruleColumns = useCanvasUiStore((state) => state.ruleHighlight?.columns.get(entityKey));
   return (
-    <table className={styles.table}>
+    <table className={classNames(styles.table, styles.columnsTable)}>
       <thead>
         <tr>
           <th scope="col">{section.headers.name}</th>
@@ -229,9 +229,13 @@ export function ColumnsTable({ section, entityKey, onShowAccessReport }: Columns
           >
             <td className={styles.nameCell}>
               <span className={styles.mono}>{column.name}</span>
-              {column.badges.map((badge) => (
-                <Badge key={badge.kind} badge={badge} />
-              ))}
+              {column.badges.length === 0 ? null : (
+                <div className={styles.columnBadges}>
+                  {column.badges.map((badge) => (
+                    <Badge key={badge.kind} badge={badge} />
+                  ))}
+                </div>
+              )}
             </td>
             <td className={styles.typeCell}>
               <span className={styles.mono}>{column.type}</span>
