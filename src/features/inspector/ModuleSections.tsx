@@ -56,6 +56,14 @@ export function ModuleSection({
             <p className={styles.note}>{section.emptyText}</p>
           )}
           {section.note === null ? null : <p className={styles.footnote}>{section.note}</p>}
+          {section.tracking === undefined ? null : (
+            <p className={styles.footnote}>
+              <strong>
+                {section.tracking.title}: {section.tracking.label}.
+              </strong>{" "}
+              {section.tracking.explanation}
+            </p>
+          )}
         </>
       ) : section.kind === "returns" ? (
         <>

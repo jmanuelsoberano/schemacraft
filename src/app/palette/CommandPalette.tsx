@@ -15,6 +15,7 @@ import type { AppActions } from "@/app/actions/useAppActions";
 import { setHidden } from "@/features/canvas/canvasActions";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { useProjectStore } from "@/features/project/projectStore";
+import { activeCanvas } from "@/features/perspectives/perspectiveState";
 import {
   displayIdentifier,
   entityKey,
@@ -136,7 +137,8 @@ function PaletteSearch({ actions, onDone }: PaletteSearchProps) {
       if ("ref" in result.object) {
         selectModule(result.object.ref, { focus: true });
       } else {
-        const nodes = useProjectStore.getState().project?.content.canvas.nodes ?? [];
+        const project = useProjectStore.getState().project;
+        const nodes = project === null ? [] : activeCanvas(project.content).nodes;
         if (nodes.some((node) => node.isHidden && entityKey(node.name) === result.object.key)) {
           setHidden([result.object.key], false);
         }

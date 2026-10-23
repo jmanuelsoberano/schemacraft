@@ -10,10 +10,14 @@ mod code_carry_over;
 mod column;
 mod data_type;
 mod definition;
+mod dependencies;
+mod dependency_comparison;
 mod foreign_key;
 mod identifiers;
 mod index;
+mod postgresql;
 mod programmability;
+mod provider;
 mod snapshot;
 mod table;
 mod view;
@@ -26,16 +30,28 @@ pub use carry_over::{CarriedFact, SnapshotFact};
 pub use column::Column;
 pub use data_type::{SqlDataType, TypeLength};
 pub use definition::Definition;
+pub use dependencies::{
+    DependencyEdge, DependencyKind, DependencyLimitation, DependencyObjectRef,
+    DependencyReferenceStatus, DependencySnapshot, DependencySource, DependencyTarget,
+    RoutineDependencyTracking,
+};
+pub(crate) use dependency_comparison::{compare_dependency_edges, unidentified_dependency_targets};
 pub use foreign_key::{
     ForeignKey, ForeignKeyColumnPair, ForeignKeyToInvisibleTable, ReferentialAction,
 };
 pub use identifiers::QualifiedName;
 pub use index::{CheckConstraint, Index, IndexKind, PrimaryKey};
+pub use postgresql::{
+    PostgreSqlAccessEvidence, PostgreSqlSchemaAccess, PostgresqlColumn, PostgresqlConstraint,
+    PostgresqlIndex, PostgresqlMetadata, PostgresqlRoutine, PostgresqlTable, PostgresqlTrigger,
+    PostgresqlView,
+};
 pub use programmability::{
     CaptureState, CarriedCode, CarriedPart, CodeCapture, CodeObjectRef, DmlEvent, FiringOrder,
     ModuleBody, NotReadReason, Parameter, Programmability, Routine, RoutineKind, Trigger,
     TriggerEvent, TriggerTiming, ViewModule,
 };
+pub use provider::DatabaseProvider;
 pub use snapshot::SchemaSnapshot;
 pub use table::Table;
 pub use view::View;

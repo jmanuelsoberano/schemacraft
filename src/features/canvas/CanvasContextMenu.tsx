@@ -12,6 +12,7 @@ import type { LucideIcon } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 
 import { useProjectStore } from "@/features/project/projectStore";
+import { activeCanvas } from "@/features/perspectives/perspectiveState";
 import { qualifiedNameLabel } from "@/features/schema/entities";
 import type { MessageKey } from "@/shared/i18n/messages/en";
 import { useI18n } from "@/shared/i18n/useI18n";
@@ -70,7 +71,9 @@ export function CanvasContextMenu({ showAll }: CanvasContextMenuProps) {
   const closeContextMenu = useCanvasUiStore((state) => state.closeContextMenu);
   const focusEntity = useCanvasUiStore((state) => state.focusEntity);
   const openInspector = useCanvasUiStore((state) => state.openInspector);
-  const canvas = useProjectStore((state) => state.project?.content.canvas ?? null);
+  const canvas = useProjectStore((state) =>
+    state.project === null ? null : activeCanvas(state.project.content),
+  );
 
   const key = menu?.key ?? null;
   const nodeState = key !== null && canvas !== null ? nodeStateFor(canvas, key) : undefined;

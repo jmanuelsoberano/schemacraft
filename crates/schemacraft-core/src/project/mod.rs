@@ -14,12 +14,17 @@ mod document;
 mod error;
 mod file;
 mod migrations;
+mod perspectives;
 
 pub use canvas::{CanvasState, DetailLevel, LayoutKind, NodeState, Point, Viewport};
-pub use connection::{SavedConnection, SavedSqlServerAuthentication, SavedSqlServerConnection};
+pub use connection::{
+    SavedConnection, SavedPostgreSqlConnection, SavedSqlServerAuthentication,
+    SavedSqlServerConnection,
+};
 pub use document::{FORMAT_VERSION, MIN_READER_VERSION, OpenedProject, Project, ProjectContent};
 pub use error::{ProjectError, ProjectErrorKind};
 pub use file::{read_project, write_project};
+pub use perspectives::{NoteTarget, ProjectAnnotations, ProjectNote, SavedPerspective};
 
 /// File extension of project files, without the dot.
 pub const PROJECT_FILE_EXTENSION: &str = "scraft";

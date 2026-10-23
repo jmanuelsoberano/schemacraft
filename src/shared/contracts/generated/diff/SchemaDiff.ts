@@ -6,6 +6,7 @@ import type { CodeDiff } from "./CodeDiff";
 import type { DiffSummary } from "./DiffSummary";
 import type { ForeignKeyChange } from "./ForeignKeyChange";
 import type { ForeignKeyToInvisibleTableChange } from "./ForeignKeyToInvisibleTableChange";
+import type { RefreshMetadataDiff } from "./RefreshMetadataDiff";
 import type { TableChange } from "./TableChange";
 import type { ViewChange } from "./ViewChange";
 
@@ -14,6 +15,10 @@ import type { ViewChange } from "./ViewChange";
  * check.
  */
 export type SchemaDiff = { 
+/**
+ * Independently captured dependency evidence and native engine properties.
+ */
+metadata?: RefreshMetadataDiff, 
 /**
  * Changes and visibility of procedures, functions, triggers and view code.
  */

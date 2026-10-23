@@ -4,6 +4,7 @@ import type { AccessCoverage } from "./AccessCoverage";
 import type { AccessLevel } from "./AccessLevel";
 import type { AccessProbe } from "./AccessProbe";
 import type { CaptureScope } from "./CaptureScope";
+import type { PostgreSqlAccessEvidence } from "./PostgreSqlAccessEvidence";
 
 /**
  * What a capture could see, frozen when it was made: the probe facts, the scope they were
@@ -11,9 +12,13 @@ import type { CaptureScope } from "./CaptureScope";
  */
 export type AccessProfile = { 
 /**
- * Raw permission facts.
+ * SQL Server permission facts; absent for another provider, never emulated.
  */
-probe: AccessProbe, 
+probe?: AccessProbe, 
+/**
+ * Native PostgreSQL catalog observations; absent for SQL Server and legacy captures.
+ */
+postgresql?: PostgreSqlAccessEvidence, 
 /**
  * Part of the database the verdicts cover.
  */

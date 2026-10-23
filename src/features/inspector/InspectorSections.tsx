@@ -111,6 +111,7 @@ function SectionBody({ section, entityKey, onShowAccessReport }: SectionProps) {
     case "primaryKey":
     case "indexes":
     case "checks":
+    case "nativeConstraints":
       return <ConstraintList section={section} onShowAccessReport={onShowAccessReport} />;
     case "references":
     case "referencedBy":
@@ -179,6 +180,11 @@ function TriggerList({ section }: { section: TriggersSectionView }) {
             </p>
           ))}
           {trigger.hint === null ? null : <p className={styles.hint}>{trigger.hint}</p>}
+          {trigger.nativeNotes?.map((note) => (
+            <p key={note} className={styles.note}>
+              {note}
+            </p>
+          ))}
           <button
             type="button"
             className={styles.why}
@@ -229,6 +235,11 @@ export function ColumnsTable({ section, entityKey, onShowAccessReport }: Columns
             </td>
             <td className={styles.typeCell}>
               <span className={styles.mono}>{column.type}</span>
+              {column.nativeNotes?.map((note) => (
+                <div key={note} className={styles.subLine}>
+                  {note}
+                </div>
+              ))}
               {column.defaultValue === null ? null : (
                 <div className={styles.subLine}>
                   <Value value={column.defaultValue} onShowAccessReport={onShowAccessReport} />
@@ -275,7 +286,7 @@ function ConstraintList({ section, onShowAccessReport }: ConstraintListProps) {
           // text the capture could not read keeps its marked words under what is still known.
           const { expression } = item;
           const hint = expression?.state === "notChecked" ? expression.hint : null;
-          const footer =
+          const stateFooter =
             hint !== null ? (
               <div className={styles.hint}>{hint}</div>
             ) : expression !== null &&
@@ -285,12 +296,35 @@ function ConstraintList({ section, onShowAccessReport }: ConstraintListProps) {
               </div>
             ) : null;
           return (
-            <RuleItem key={item.name} rule={item.rule} head={head} link={null} footer={footer} />
+            <RuleItem
+              key={item.name}
+              rule={item.rule}
+              head={head}
+              link={null}
+              footer={
+                <>
+                  {item.include === null ? null : (
+                    <div className={styles.subLine}>{item.include}</div>
+                  )}
+                  {item.nativeNotes?.map((note) => (
+                    <div key={note} className={styles.subLine}>
+                      {note}
+                    </div>
+                  ))}
+                  {stateFooter}
+                </>
+              }
+            />
           );
         }
         return (
           <li key={item.name} className={styles.item}>
             <div className={styles.itemHead}>{head}</div>
+            {item.nativeNotes?.map((note) => (
+              <div key={note} className={styles.subLine}>
+                {note}
+              </div>
+            ))}
             {item.include === null ? null : (
               <div className={classNames(styles.subLine, styles.mono, styles.secondary)}>
                 {item.include}
@@ -356,6 +390,11 @@ function RelationList({ section, onShowAccessReport }: RelationListProps) {
                   onShowAccessReport={onShowAccessReport}
                 />
                 {item.hint === null ? null : <div className={styles.hint}>{item.hint}</div>}
+                {item.nativeNotes?.map((note) => (
+                  <div key={note} className={styles.subLine}>
+                    {note}
+                  </div>
+                ))}
               </>
             }
           >

@@ -5,4 +5,4 @@
  * concurrently, so they may complete in any order; only the module texts are read after the
  * procedures, functions and triggers they belong to.
  */
-export type InspectionStage = "connecting" | "checkingAccess" | "readingObjects" | "readingColumns" | "readingIndexes" | "readingForeignKeys" | "readingConstraints" | "readingProgrammability" | "readingModuleDefinitions" | "assembling" | "completed";
+export type InspectionStage = "connecting" | "checkingAccess" | "readingObjects" | "readingColumns" | "readingIndexes" | "readingForeignKeys" | "readingConstraints" | "readingProgrammability" | "readingModuleDefinitions" | "readingDependencies" | "assembling" | "completed";

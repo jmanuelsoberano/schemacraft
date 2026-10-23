@@ -73,6 +73,13 @@ pub fn read_project(path: &Path) -> Result<OpenedProject, ProjectError> {
             not_a_project(error.to_string())
         }
     })?;
+    project.content.validate().map_err(|details| {
+        if is_read_only {
+            unsupported()
+        } else {
+            not_a_project(details.to_string())
+        }
+    })?;
     diagnostics::project_opened(found, is_read_only, bytes.len(), started.elapsed());
     Ok(OpenedProject {
         project,
@@ -84,6 +91,13 @@ pub fn read_project(path: &Path) -> Result<OpenedProject, ProjectError> {
 /// recorded in the diagnostic log by its format, size and writing time.
 pub fn write_project(path: &Path, project: &Project) -> Result<(), ProjectError> {
     let started = Instant::now();
+    project
+        .content
+        .validate()
+        .map_err(|details| ProjectError::Write {
+            path: display(path),
+            details: details.to_string(),
+        })?;
     let bytes = write_json_atomically(path, project).map_err(|error| ProjectError::Write {
         path: display(path),
         details: error.to_string(),
@@ -154,8 +168,50 @@ mod tests {
         assert!(!opened.is_read_only);
         assert!(!directory.path().join("northwind.scraft.tmp").exists());
         let text = fs::read_to_string(&path).unwrap();
-        assert!(text.starts_with("{\n  \"formatVersion\": 3,\n  \"minReaderVersion\": 2,"));
+        assert!(text.starts_with("{\n  \"formatVersion\": 4,\n  \"minReaderVersion\": 4,"));
         assert!(text.ends_with("}\n"));
+    }
+
+    #[test]
+    fn maps_and_authored_notes_round_trip_and_invalid_edits_cannot_replace_a_file() {
+        use crate::model::UnknownFields;
+        use crate::project::{NoteTarget, ProjectNote, SavedPerspective};
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("documented.scraft");
+        let mut content = sample_project_content();
+        content.perspectives.push(SavedPerspective {
+            id: "sales".into(),
+            name: "Sales".into(),
+            description: Some("Start with orders".into()),
+            canvas: content.canvas.clone(),
+            unknown: UnknownFields::new(),
+        });
+        content.active_perspective_id = Some("sales".into());
+        let mut note = ProjectNote {
+            id: "note-1".into(),
+            target: NoteTarget::Table {
+                table: QualifiedName::new("sales", "Orders"),
+            },
+            text: "User text <script> stays literal".into(),
+            is_linked: true,
+            unknown: UnknownFields::new(),
+        };
+        note.unknown.insert("futureNoteKey".into(), json!("kept"));
+        content.annotations.notes.push(note);
+        let project = Project::from_content(content, "SchemaCraft");
+        write_project(&path, &project).unwrap();
+        assert_eq!(read_project(&path).unwrap().project, project);
+        let bytes = fs::read(&path).unwrap();
+        let mut invalid = project;
+        invalid.content.perspectives[0].name = " ".into();
+        assert!(write_project(&path, &invalid).is_err());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        invalid.content.perspectives[0].name = "Sales".into();
+        let mut duplicate = invalid.content.annotations.notes[0].clone();
+        duplicate.id = "note-2".into();
+        invalid.content.annotations.notes.push(duplicate);
+        assert!(write_project(&path, &invalid).is_err());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
     }
 
     #[test]
@@ -321,10 +377,10 @@ mod tests {
     }
 
     #[test]
-    fn a_format_four_file_with_a_minimum_reader_of_two_opens_read_only() {
+    fn a_newer_compatible_file_opens_read_only() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("from-1.3.scraft");
-        let mut document = newer_document(4, Some(2));
+        let mut document = newer_document(FORMAT_VERSION + 1, Some(MIN_READER_VERSION));
         document["snapshot"]["programmability"] =
             serde_json::to_value(sample_programmability()).unwrap();
         document["snapshot"]["programmability"]["synonyms"] = json!([{ "name": "dbo.Clients" }]);
@@ -335,14 +391,14 @@ mod tests {
         let opened = read_project(&path).unwrap();
 
         assert!(opened.is_read_only);
-        assert_eq!(opened.project.format_version, 4);
+        assert_eq!(opened.project.format_version, FORMAT_VERSION + 1);
         let programmability = opened.project.content.snapshot.programmability.unwrap();
         assert_eq!(programmability.routines, sample_programmability().routines);
         assert!(programmability.unknown.contains_key("synonyms"));
     }
 
     #[test]
-    fn upgrades_a_format_one_file_and_saves_it_as_format_three() {
+    fn upgrades_a_format_one_file_and_saves_it_as_the_current_format() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("legacy.scraft");
         fs::write(&path, FORMAT_1_PROJECT).unwrap();
@@ -371,7 +427,7 @@ mod tests {
         let resaved = Project::from_content(opened.project.content, "SchemaCraft 1.2.0");
         write_project(&path, &resaved).unwrap();
         let text = fs::read_to_string(&path).unwrap();
-        assert!(text.starts_with("{\n  \"formatVersion\": 3,\n  \"minReaderVersion\": 2,"));
+        assert!(text.starts_with("{\n  \"formatVersion\": 4,\n  \"minReaderVersion\": 4,"));
         let reopened = read_project(&path).unwrap();
         assert_eq!(reopened.project, resaved);
     }
@@ -385,7 +441,7 @@ mod tests {
         let opened = read_project(&path).unwrap();
 
         assert!(!opened.is_read_only);
-        assert_eq!(opened.project.format_version, 3);
+        assert_eq!(opened.project.format_version, FORMAT_VERSION);
         assert_eq!(opened.project.saved_with, "SchemaCraft 1.1.0");
         let content = &opened.project.content;
         // The options 1.1 saved, and the code options it did not know, on as decided for 1.2.
@@ -400,7 +456,12 @@ mod tests {
         assert_eq!(access.coverage.objects, Completeness::Partial);
         assert_eq!(access.coverage.definitions, Completeness::NotAvailable);
         assert_eq!(
-            access.probe.database_user.as_deref(),
+            access
+                .probe
+                .as_ref()
+                .expect("SQL Server probe")
+                .database_user
+                .as_deref(),
             Some("schemacraft_two_tables")
         );
         assert_eq!(access.counts.foreign_keys_to_invisible_tables, 2);
@@ -432,7 +493,14 @@ mod tests {
         assert_eq!(snapshot.programmability, None);
         assert_eq!(access.coverage.programmability, None);
         assert_eq!(access.coverage.module_definitions, None);
-        assert_eq!(access.probe.execute_denials, None);
+        assert_eq!(
+            access
+                .probe
+                .as_ref()
+                .expect("SQL Server probe")
+                .execute_denials,
+            None
+        );
         assert!(!access.scope.include_programmability);
         for table in &snapshot.tables {
             assert_eq!(
@@ -472,7 +540,7 @@ mod tests {
     }
 
     #[test]
-    fn the_format_two_fixture_saves_as_format_three_with_only_the_header_and_the_options_new() {
+    fn the_format_two_fixture_saves_with_only_the_header_provider_and_options_new() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("saved-by-1.1.scraft");
         fs::write(&path, FORMAT_2_PROJECT).unwrap();
@@ -482,21 +550,28 @@ mod tests {
         write_project(&path, &resaved).unwrap();
 
         let text = fs::read_to_string(&path).unwrap();
-        assert!(text.starts_with("{\n  \"formatVersion\": 3,\n  \"minReaderVersion\": 2,"));
+        assert!(text.starts_with("{\n  \"formatVersion\": 4,\n  \"minReaderVersion\": 4,"));
         let reopened = read_project(&path).unwrap();
         assert!(!reopened.is_read_only);
         assert_eq!(reopened.project, resaved);
 
-        // Every fact of the 1.1 file is written back as it was. The only new keys are the two
-        // inspection options, always written; the header says who saved it.
+        // Every fact of the 1.1 file is written back as it was. Only explicitly asserted
+        // default inspection choices and the SQL Server provider are new, beside the header.
         let original: Value = serde_json::from_str(FORMAT_2_PROJECT).unwrap();
         let mut written: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(written["inspection"]["includeProgrammability"], true);
         assert_eq!(written["inspection"]["includeModuleDefinitions"], true);
+        assert_eq!(written["inspection"]["includeDependencies"], true);
+        assert_eq!(written["snapshot"]["provider"], "sqlServer");
         let inspection = written["inspection"].as_object_mut().unwrap();
         inspection.remove("includeProgrammability");
         inspection.remove("includeModuleDefinitions");
-        for header in ["formatVersion", "savedAt", "savedWith"] {
+        inspection.remove("includeDependencies");
+        written["snapshot"]
+            .as_object_mut()
+            .unwrap()
+            .remove("provider");
+        for header in ["formatVersion", "minReaderVersion", "savedAt", "savedWith"] {
             written[header] = original[header].clone();
         }
         assert_eq!(written, original);

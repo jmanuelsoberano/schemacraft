@@ -19,6 +19,16 @@ export function noticeSignature(
   if (access === undefined) {
     return null;
   }
+  if (connection.provider === "postgreSql")
+    return JSON.stringify([
+      connection.provider,
+      connection.host.trim().toLowerCase(),
+      connection.port ?? 5432,
+      connection.database ?? snapshot.databaseName,
+      access.level,
+      access.coverage.objects,
+      access.coverage.definitions,
+    ]);
   const instance = connection.instance?.trim().toLowerCase() ?? "";
   return JSON.stringify([
     connection.host.trim().toLowerCase(),

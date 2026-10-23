@@ -44,9 +44,22 @@ export function Dialog({
   };
 
   const contentRef = useRef<HTMLDivElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
   const focusInitialElement = (event: Event) => {
     event.preventDefault();
+    const ownerDocument = contentRef.current?.ownerDocument;
+    const opener = ownerDocument?.activeElement;
+    openerRef.current =
+      opener instanceof HTMLElement && opener !== ownerDocument?.body ? opener : null;
     (initialFocusRef?.current ?? contentRef.current)?.focus();
+  };
+  const restoreOpenerFocus = (event: Event) => {
+    // These controlled dialogs have no Radix Trigger. Each scope restores its own opener,
+    // including a button in a parent dialog; a removed menu item has no global substitute.
+    event.preventDefault();
+    const opener = openerRef.current;
+    openerRef.current = null;
+    if (opener?.isConnected) opener.focus({ preventScroll: true });
   };
 
   return (
@@ -62,6 +75,7 @@ export function Dialog({
           onPointerDownOutside={preventWhenLocked}
           onInteractOutside={preventWhenLocked}
           onOpenAutoFocus={focusInitialElement}
+          onCloseAutoFocus={restoreOpenerFocus}
           aria-describedby={description ? undefined : ""}
         >
           <header className={styles.header}>

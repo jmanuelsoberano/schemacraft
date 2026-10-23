@@ -2,6 +2,7 @@ import type { ELK } from "elkjs/lib/elk-api";
 
 import { useProjectStore } from "@/features/project/projectStore";
 import { entityKey } from "@/features/schema/entities";
+import { activeCanvas } from "@/features/perspectives/perspectiveState";
 
 import { withCollapsed, withHidden, withLayout, withOnlyVisible } from "./canvasState";
 import { useCanvasUiStore } from "./canvasUiStore";
@@ -33,7 +34,8 @@ export async function applyLayout(request: LayoutRequest): Promise<void> {
   if (project === null || ui.isLayoutRunning) {
     return;
   }
-  const { snapshot, canvas } = project.content;
+  const { snapshot } = project.content;
+  const canvas = activeCanvas(project.content);
   const entities = describeEntities(snapshot);
   const visible = visibleEntityKeys(entities, canvas.nodes);
   const collapsed = new Set(
@@ -53,6 +55,13 @@ export async function applyLayout(request: LayoutRequest): Promise<void> {
   ui.setLastLayout(request);
   try {
     const result = await runLayout(request, input, elk);
+    const current = useProjectStore.getState().project;
+    if (
+      current?.loadToken !== project.loadToken ||
+      current.content.snapshot !== snapshot ||
+      activeCanvas(current.content) !== canvas
+    )
+      return;
     updateCanvas((current) => withLayout(current, result, request.kind));
     useCanvasUiStore.getState().requestFit();
   } finally {
@@ -71,7 +80,8 @@ export async function layoutFreshProject(): Promise<void> {
   if (project === null) {
     return;
   }
-  const { snapshot, canvas } = project.content;
+  const { snapshot } = project.content;
+  const canvas = activeCanvas(project.content);
   const entities = describeEntities(snapshot);
   const visible = visibleEntityKeys(entities, canvas.nodes);
   const positions = new Map(canvas.nodes.map((node) => [entityKey(node.name), node.position]));
@@ -84,6 +94,13 @@ export async function layoutFreshProject(): Promise<void> {
     positions,
   );
   const result = await runLayout({ kind: "layered", direction: "down" }, input, elk);
+  const current = useProjectStore.getState().project;
+  if (
+    current?.loadToken !== project.loadToken ||
+    current.content.snapshot !== snapshot ||
+    activeCanvas(current.content) !== canvas
+  )
+    return;
   useProjectStore.getState().updateCanvas((current) => withLayout(current, result, "layered"), {
     undoable: false,
     dirty: false,

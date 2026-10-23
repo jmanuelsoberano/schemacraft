@@ -16,10 +16,10 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "contracts": "cargo test --workspace --quiet export_bindings",
+    "contracts": "cargo test --workspace --quiet export_bindings -- --test-threads=1",
     "contracts:check": "npm run contracts && git diff --exit-code -- src/shared/contracts/generated",
     "docs:serve": "vite serve docs --port 4321 --strictPort",
-    "docs:check": "node scripts/check-architecture-page.mjs",
+    "docs:check": "node --test scripts/architecture-boundaries.test.mjs scripts/ci-changes.test.mjs && node scripts/check-architecture-page.mjs",
     "distribution:check": "node scripts/check-distribution.mjs",
     "distribution:test": "node --test scripts/check-distribution.test.mjs distribution/microsoft-store/package.test.mjs"
   },

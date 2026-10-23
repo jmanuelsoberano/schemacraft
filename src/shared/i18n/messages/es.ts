@@ -1,13 +1,21 @@
 import type { MessageCatalog } from "./en";
 import { spanishRuleMessages } from "./rules/es";
+import { spanishExplorationMessages } from "./exploration/es";
+import { spanishComparisonMessages } from "./exploration/comparison-es";
+import { spanishPostgresqlMessages } from "./exploration/postgresql-es";
+import { spanishNativeMessages } from "./native/es";
 
 export const spanishMessages: MessageCatalog = {
+  ...spanishExplorationMessages,
+  ...spanishComparisonMessages,
+  ...spanishPostgresqlMessages,
+  ...spanishNativeMessages,
   "app.name": "SchemaCraft",
-  "app.tagline": "Ingeniería inversa de esquemas SQL Server en diagramas vivos.",
+  "app.tagline": "Explora esquemas SQL Server y PostgreSQL como diagramas vivos.",
 
   "project.untitled": "Proyecto sin título",
 
-  "action.connect": "Conectar a SQL Server",
+  "action.connect": "Conectar a una base de datos",
   "action.openProject": "Abrir proyecto",
   "action.saveProject": "Guardar proyecto",
   "action.refreshFromDatabase": "Actualizar desde la base de datos",
@@ -260,8 +268,8 @@ export const spanishMessages: MessageCatalog = {
 
   "welcome.title": "Te damos la bienvenida a SchemaCraft",
   "welcome.description":
-    "Conéctate a Microsoft SQL Server, extrae el esquema y explóralo como un diagrama entidad-relación interactivo.",
-  "welcome.connect": "Conectar a SQL Server",
+    "Conéctate a SQL Server o PostgreSQL, lee el esquema y explóralo como un diagrama entidad-relación interactivo.",
+  "welcome.connect": "Conectar a una base de datos",
   "welcome.openProject": "Abrir proyecto .scraft",
 
   "canvas.node.collapse": "Contraer",
@@ -295,7 +303,7 @@ export const spanishMessages: MessageCatalog = {
   "statusBar.versionUnavailable": "versión no disponible",
   "statusBar.devBuild": "dev",
 
-  "connection.dialog.title": "Conectar a SQL Server",
+  "connection.dialog.title": "Conectar a una base de datos",
   "connection.dialog.description":
     "Acceso de solo lectura al catálogo. La contraseña se mantiene en memoria y nunca se guarda.",
   "connection.section.server": "Servidor",

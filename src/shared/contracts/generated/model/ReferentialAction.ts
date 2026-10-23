@@ -3,4 +3,4 @@
 /**
  * Action applied to referencing rows when the referenced key is deleted or updated.
  */
-export type ReferentialAction = "noAction" | "cascade" | "setNull" | "setDefault";
+export type ReferentialAction = "restrict" | "noAction" | "cascade" | "setNull" | "setDefault";

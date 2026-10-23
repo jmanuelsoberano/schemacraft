@@ -76,6 +76,9 @@ pub(crate) fn sample_project_content() -> ProjectContent {
             ],
             ..CanvasState::default()
         },
+        perspectives: Vec::new(),
+        annotations: super::ProjectAnnotations::default(),
+        active_perspective_id: None,
         unknown: UnknownFields::new(),
     }
 }

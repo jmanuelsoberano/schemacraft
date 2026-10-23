@@ -299,6 +299,7 @@ class Viewer {
         },
         background: false,
         measureText: this.measure,
+        noteLines: this.data.noteLines,
       },
     );
     this.diagramSize = { width: rendered.width, height: rendered.height };
@@ -645,6 +646,7 @@ class Viewer {
       case "primaryKey":
       case "indexes":
       case "checks":
+      case "nativeConstraints":
         return this.constraintList(section);
       case "references":
       case "referencedBy":
@@ -659,6 +661,8 @@ class Viewer {
   private columnsTable(section: ColumnsSectionView): HTMLElement {
     const rows = section.items.map((column) => {
       const details = h("td", {}, h("span", { class: "sc-mono" }, column.type));
+      for (const note of column.nativeNotes ?? [])
+        details.append(h("div", { class: "sc-value" }, note));
       if (column.defaultValue !== null) {
         details.append(valueElement(column.defaultValue));
       }
@@ -713,6 +717,7 @@ class Viewer {
             "li",
             {},
             head,
+            ...(item.nativeNotes ?? []).map((note) => h("div", { class: "sc-value" }, note)),
             item.include === null ? null : h("div", { class: "sc-value sc-mono" }, item.include),
             item.expression === null ? null : valueElement(item.expression),
           );
@@ -730,6 +735,8 @@ class Viewer {
           "li",
           { class: "sc-rule" },
           head,
+          item.include === null ? null : h("div", { class: "sc-value sc-mono" }, item.include),
+          ...(item.nativeNotes ?? []).map((note) => h("div", { class: "sc-value" }, note)),
           ruleBody(item.rule, null),
           hint === null ? missing : h("div", { class: "sc-hint" }, hint),
           ruleSql(item.rule, this.t),
@@ -766,6 +773,7 @@ class Viewer {
           { class: "sc-rule" },
           h("div", { class: "sc-mono" }, item.name, ...item.badges.map(badgeElement)),
           h("div", { class: "sc-muted sc-mono" }, item.columns.join(", ")),
+          ...(item.nativeNotes ?? []).map((note) => h("div", { class: "sc-value" }, note)),
           ruleBody(item.rule, link),
           this.targetElement(item.target),
           item.hint === null ? null : h("div", { class: "sc-hint" }, item.hint),

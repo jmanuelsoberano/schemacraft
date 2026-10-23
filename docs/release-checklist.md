@@ -27,6 +27,67 @@ the scope each version adds (section 3.8 for 1.1 and 3.9 for 1.2), what CI cover
 before a draft release is published. The automated parts run on every pull request and push to
 `main` (`ci.yml`, sized to the change, ADR-033) and on every tag (`release.yml`).
 
+## Unreleased schema-exploration acceptance
+
+See the [dated implementation verification](schema-exploration-verification.md) for completed
+checks, their scope and the remaining release gates. The checklist below remains open until
+the combined candidate receives maintainer and artifact acceptance.
+
+PRD sections 3.11–3.14 and ADR-047–050 extend the existing gates together. This section records
+required acceptance, not a claim that a release has already passed. All four features use one
+branch and pull request; the final version/tag follows maintainer acceptance. Do not rebuild,
+replace or retag the published 1.2.0 executable, GitHub assets or Store package.
+
+- [ ] Format, lint, both TypeScript configurations, all frontend tests, generated contracts,
+      architecture drift/import checks, distribution checks and build pass. Run Rust formatting,
+      Clippy and workspace tests sequentially; never overlap Cargo processes.
+- [ ] Run SQL Server structure, permissions, code, dependency and diagnostic-privacy regressions
+      on both 2019 and 2022, checking the expected engine major. Run PostgreSQL native catalog,
+      restricted-role, scope, refresh, dependency, TLS and privacy suites on 15, 16, 17 and 18.
+      Tests use disposable synthetic databases only. Record commands/outcomes and actual versions.
+- [ ] Independent comparison: select two saved files without a live connection or open project;
+      swap sides, filter results, distinguish confirmed changes from every unavailable/retained
+      state, inspect both diagram contexts and review literal source pages. Cancel a bounded
+      source job and replace inputs while work is pending. The active project stays unchanged.
+- [ ] Save and reopen a filtered comparison HTML report offline. Check hostile identifiers and
+      every privacy sentinel: no module body, annotation, path, server, database connection/user,
+      raw probe or excluded object/schema name. Exact source review does not change export consent.
+- [ ] Dependencies: read both providers with source-text storage disabled, inspect incoming and
+      outgoing references, traverse cycles and self-references, and distinguish unresolved/external
+      targets, failure, option-off and historical evidence. Exercise map bounds and visible
+      omission notices. Export every format and open HTML offline; no external connection occurs.
+- [ ] Perspectives/notes: create, duplicate, rename, delete and switch maps; edit a shared table
+      note, column note and perspective description. Save/reopen offline and use undo/redo.
+      Confirm switching alone is clean, layouts/visibility are independent and curated maps do
+      not include newly refreshed objects automatically. Refresh while inactive maps exist.
+- [ ] Remove a synthetic note target, refresh and review the unlinked note; recreate its former
+      name and confirm no automatic reassignment. Reassign explicitly, reject a conflicting
+      target and undo deletion. A homonymous view never inherits a table or column note.
+- [ ] Export the active perspective with notes off, then with one reviewed visible note and its
+      description. Inspect SVG, PDF, PNG and HTML: hidden/unlinked notes, unchecked text, inactive
+      descriptions, stored note IDs and extension fields stay absent; hostile note text stays
+      literal and long text is not clipped. Repeat export and verify consent starts off again.
+- [ ] Native PostgreSQL: test strict TLS with valid root/host, wrong root and wrong host; explicit
+      local unverified TLS/plaintext and remote rejection; SCRAM, role/database case, provider
+      history/credential separation, materialized views, native index/constraint states, overloads
+      and trigger modes. No SQL Server probe, GRANT, clustering or replication fact is shown.
+- [ ] Open genuine historical format-1/2/3 files, retain extensions through format-4 save/reopen
+      and verify new evidence is not invented. Open a new file in published 1.2.0: it refuses
+      format 4 clearly because minimum reader is 4. Keep byte-identical historical source copies.
+- [ ] Exercise every new flow in the actual desktop app in both languages and themes, with
+      keyboard/focus, loading, empty, failure and cancellation states. Measure large comparison,
+      dependency and layout cases and inspect the closed diagnostic log. Synthetic browser
+      previews supplement these checks; they do not substitute for the Rust-backed application.
+- [ ] Before **each** real-app session back up
+      `%APPDATA%\\com.jmanuelsoberano.schemacraft\\preferences.json` and any WebView profile the
+      session changes. After confirmed process exit, restore originals byte for byte and verify
+      their hashes. Never remove user projects or stored credentials for a test.
+- [ ] Maintainer reviews Spanish and accepts all four feature flows, then the final version and
+      CHANGELOG entry are prepared. Require green PR checks before merging. Tag only the accepted
+      main commit, verify downloaded portable/installer/checksums and repeat installation,
+      activation/uninstallation and channel-specific checks before publication. Record any
+      explicitly accepted outstanding check as pending; do not inherit the 1.2.0 exception.
+
 ## Release 1.2 preparation
 
 The feature checks and dated local release verification below are complete. On 2026-10-19 the

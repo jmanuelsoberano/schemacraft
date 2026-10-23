@@ -1,6 +1,6 @@
 //! Code comparison and its IPC-only review contract.
 
-use std::borrow::Cow;
+pub use crate::source_text::comparable_text;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -347,11 +347,13 @@ fn vouched_for(snapshot: &SchemaSnapshot, code: &Programmability, object: &CodeO
         return false;
     }
     match object {
-        CodeObjectRef::Routine { name } => snapshot.access.as_ref().is_none_or(|access| {
-            access.scope.include_programmability
-                && access.scope.includes_schema(&name.schema)
-                && access.lists_every_programmable_object_in(&name.schema)
-        }),
+        CodeObjectRef::Routine { name } | CodeObjectRef::RoutineOverload { name, .. } => {
+            snapshot.access.as_ref().is_none_or(|access| {
+                access.scope.include_programmability
+                    && access.scope.includes_schema(&name.schema)
+                    && access.lists_every_programmable_object_in(&name.schema)
+            })
+        }
         CodeObjectRef::Trigger { parent, .. } => {
             let in_scope = snapshot.access.as_ref().is_none_or(|access| {
                 access.scope.include_programmability
@@ -372,33 +374,6 @@ fn vouched_for(snapshot: &SchemaSnapshot, code: &Programmability, object: &CodeO
                 }
         }
         CodeObjectRef::View { .. } | CodeObjectRef::Unknown => false,
-    }
-}
-
-/// The text of `text` as the comparison sees it: line ends made LF, spaces and tabs at the end of
-/// each line trimmed, and blank lines before and after the code dropped. Scripts that re-create a
-/// module with other line ends or trailing blanks change nothing.
-pub fn comparable_text(text: &str) -> Cow<'_, str> {
-    let needs_work = text.contains('\r')
-        || text.starts_with('\n')
-        || text.ends_with(['\n', ' ', '\t'])
-        || text.contains(" \n")
-        || text.contains("\t\n");
-    if !needs_work {
-        return Cow::Borrowed(text);
-    }
-    let unified = text.replace("\r\n", "\n").replace('\r', "\n");
-    let lines: Vec<&str> = unified
-        .split('\n')
-        .map(|line| line.trim_end_matches([' ', '\t']))
-        .collect();
-    let first = lines.iter().position(|line| !line.is_empty());
-    let last = lines.iter().rposition(|line| !line.is_empty());
-    match (first, last) {
-        (Some(first), Some(last)) => {
-            Cow::Owned(lines.get(first..=last).unwrap_or_default().join("\n"))
-        }
-        _ => Cow::Owned(String::new()),
     }
 }
 
@@ -428,9 +403,10 @@ fn became_readable(before: &Definition, after: &Definition) -> bool {
 }
 
 /// The language of a body, when this version knows it.
-fn language(body: &ModuleBody) -> Option<&'static str> {
+fn language(body: &ModuleBody) -> Option<&str> {
     match body {
         ModuleBody::Sql { .. } => Some("sql"),
+        ModuleBody::PostgreSql { name, .. } => Some(name),
         ModuleBody::Clr => Some("clr"),
         ModuleBody::Unknown => None,
     }

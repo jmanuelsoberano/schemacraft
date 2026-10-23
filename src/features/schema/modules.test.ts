@@ -59,4 +59,30 @@ describe("module identities and list metadata", () => {
       findModule(snapshot, { kind: "routine", name: { schema: "sales", name: "usp_PlaceOrder" } }),
     ).toBeNull();
   });
+
+  it("shows different native overload signatures even when names and parameter counts match", () => {
+    const snapshot = previewSnapshot("Synthetic");
+    const prototype = snapshot.programmability?.routines[0];
+    if (prototype === undefined || snapshot.programmability === undefined)
+      throw new Error("routine fixture");
+    snapshot.programmability.routines = [
+      {
+        ...prototype,
+        name: { schema: "sales", name: "total" },
+        identityArguments: [{ schema: "pg_catalog", name: "int4" }],
+      },
+      {
+        ...prototype,
+        name: { schema: "sales", name: "total" },
+        identityArguments: [{ schema: "pg_catalog", name: "uuid" }],
+      },
+    ];
+    const items = listModules(snapshot).filter((item) => item.kind !== "trigger");
+    expect(items.map((item) => item.name)).toEqual([
+      "total(pg_catalog.int4)",
+      "total(pg_catalog.uuid)",
+    ]);
+    expect(new Set(items.map((item) => item.key)).size).toBe(2);
+    for (const item of items) expect(findModule(snapshot, item.ref)).not.toBeNull();
+  });
 });

@@ -78,6 +78,9 @@ pub(crate) fn schema_reader_profile(schemas: &[&str], counts: AccessCounts) -> A
 /// `snapshot` with `profile` as its access profile.
 pub(crate) fn with_access(snapshot: SchemaSnapshot, profile: AccessProfile) -> SchemaSnapshot {
     SchemaSnapshot {
+        provider: crate::model::DatabaseProvider::SqlServer,
+        postgresql: None,
+        dependencies: None,
         access: Some(profile),
         ..snapshot
     }
@@ -193,6 +196,9 @@ pub(crate) fn sample_snapshot() -> SchemaSnapshot {
     };
 
     let snapshot = SchemaSnapshot {
+        provider: crate::model::DatabaseProvider::SqlServer,
+        postgresql: None,
+        dependencies: None,
         database_name: "Northwind".to_string(),
         server_version: Some("Microsoft SQL Server 2022 (RTM) - 16.0.1000.6".to_string()),
         extracted_at: Utc
@@ -225,6 +231,9 @@ pub(crate) fn reader_snapshot() -> SchemaSnapshot {
     }
 
     let snapshot = SchemaSnapshot {
+        provider: crate::model::DatabaseProvider::SqlServer,
+        postgresql: None,
+        dependencies: None,
         extracted_at: sample.extracted_at + Duration::days(1),
         access: None,
         tables,
@@ -259,6 +268,7 @@ fn parameter(name: &str, ordinal_position: u32, data_type: SqlDataType) -> Param
 fn sample_routines() -> Vec<Routine> {
     vec![
         Routine {
+            identity_arguments: None,
             name: QualifiedName::new("sales", "usp_PlaceOrder"),
             kind: RoutineKind::Procedure,
             body: ModuleBody::Sql {
@@ -277,6 +287,7 @@ fn sample_routines() -> Vec<Routine> {
             columns: vec![],
         },
         Routine {
+            identity_arguments: None,
             name: QualifiedName::new("sales", "usp_ExportOrders"),
             kind: RoutineKind::Procedure,
             body: ModuleBody::Clr,
@@ -285,6 +296,7 @@ fn sample_routines() -> Vec<Routine> {
             columns: vec![],
         },
         Routine {
+            identity_arguments: None,
             name: QualifiedName::new("dbo", "fn_CustomerName"),
             kind: RoutineKind::ScalarFunction,
             body: ModuleBody::Sql {
@@ -295,6 +307,7 @@ fn sample_routines() -> Vec<Routine> {
             columns: vec![],
         },
         Routine {
+            identity_arguments: None,
             name: QualifiedName::new("sales", "tvf_OrdersOf"),
             kind: RoutineKind::InlineTableFunction,
             body: ModuleBody::Sql {
@@ -454,7 +467,9 @@ pub(crate) fn code_snapshot() -> SchemaSnapshot {
         access.scope.include_module_definitions = true;
         access.coverage.programmability = Some(Completeness::Complete);
         access.coverage.module_definitions = Some(Completeness::Complete);
-        access.probe.execute_denials = Some(0);
+        if let Some(probe) = &mut access.probe {
+            probe.execute_denials = Some(0);
+        }
     }
     snapshot
 }
@@ -550,8 +565,9 @@ fn fully_populated_from(base: SchemaSnapshot, extra_check: &Definition) -> Schem
     });
 
     let counts = AccessCounts::of(&snapshot);
-    if let Some(profile) = snapshot.access.take() {
-        let mut probe = profile.probe;
+    if let Some(profile) = snapshot.access.take()
+        && let Some(mut probe) = profile.probe
+    {
         probe.execute_denials = Some(1);
         for schema in &mut probe.schemas {
             schema.has_visible_programmability = true;

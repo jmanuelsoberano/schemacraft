@@ -4,6 +4,9 @@ import type {
   ModuleBody,
   NotReadReason,
   Parameter,
+  PostgresqlRoutine,
+  PostgresqlTrigger,
+  PostgresqlView,
   Programmability,
   QualifiedName,
   SchemaSnapshot,
@@ -12,12 +15,13 @@ import type {
 
 import { formatDataType } from "./dataType";
 import { entityKey } from "./entities";
-import { findModule, moduleKey, routineModuleKind } from "./modules";
+import { findModule, moduleKey, routineDisplayName, routineModuleKind } from "./modules";
 import type { ModuleKind, ModuleRef } from "./modules";
 import type { DetailsScope } from "./objectDetails";
 
 /** Desktop-only facts: SQL text never enters the shared HTML detail model. */
 export interface ModuleDefinitionFacts {
+  native?: { language: string | null; view?: PostgresqlView };
   status: "readable" | "notVisible" | "encrypted" | "clr" | "notRecorded" | "notRead";
   text: string | null;
   /** Kept states, as well as kept text, can be unverified after a failed read. */
@@ -34,12 +38,23 @@ export interface ModuleParentFacts {
 }
 
 export type ModuleSection =
-  | { kind: "parameters"; items: readonly Parameter[]; hasSqlDefaultsNote: boolean }
+  | {
+      kind: "parameters";
+      items: readonly Parameter[];
+      hasSqlDefaultsNote: boolean;
+      native?: PostgresqlRoutine;
+      isPostgreSql?: boolean;
+    }
   | { kind: "returns"; scalarType: string | null; columns: readonly Column[] | null }
-  | { kind: "runs"; trigger: Trigger; parent: ModuleParentFacts }
+  | {
+      kind: "runs";
+      trigger: Trigger & { provider?: "postgreSql"; native?: PostgresqlTrigger };
+      parent: ModuleParentFacts;
+    }
   | { kind: "definition"; definition: ModuleDefinitionFacts };
 
 export interface ModuleDetails {
+  signature?: string;
   key: string;
   kind: ModuleKind;
   name: QualifiedName;
@@ -57,6 +72,16 @@ function sameCodeObject(left: CodeObjectRef, right: CodeObjectRef): boolean {
       return right.kind === "view" && sameName(left.name, right.name);
     case "routine":
       return right.kind === "routine" && sameName(left.name, right.name);
+    case "routineOverload":
+      return (
+        right.kind === "routineOverload" &&
+        sameName(left.name, right.name) &&
+        left.argumentTypes.length === right.argumentTypes.length &&
+        left.argumentTypes.every((type, index) => {
+          const other = right.argumentTypes[index];
+          return other !== undefined && sameName(type, other);
+        })
+      );
     case "trigger":
       return (
         right.kind === "trigger" && sameName(left.parent, right.parent) && left.name === right.name
@@ -134,12 +159,33 @@ export function describeModuleDetails(
       kind: "trigger",
       name: { schema: trigger.parent.schema, name: trigger.name },
       sections: [
-        { kind: "runs", trigger, parent: parentFacts(snapshot, trigger.parent, scope) },
-        { kind: "definition", definition: describeDefinition(code, ref, trigger.body) },
+        {
+          kind: "runs",
+          trigger: {
+            ...trigger,
+            ...(snapshot.provider === "postgreSql"
+              ? {
+                  provider: "postgreSql" as const,
+                  native: snapshot.postgresql?.triggers.find((item) =>
+                    sameCodeObject(item.object, ref),
+                  ),
+                }
+              : {}),
+          },
+          parent: parentFacts(snapshot, trigger.parent, scope),
+        },
+        {
+          kind: "definition",
+          definition: {
+            ...describeDefinition(code, ref, trigger.body),
+            ...(snapshot.provider === "postgreSql" ? { native: { language: null } } : {}),
+          },
+        },
       ],
     };
   }
   const { routine } = record;
+  const native = snapshot.postgresql?.routines.find((item) => sameCodeObject(item.object, ref));
   const kind = routineModuleKind(routine.kind);
   const sections: ModuleSection[] = [
     {
@@ -148,20 +194,42 @@ export function describeModuleDetails(
         (left, right) => left.ordinalPosition - right.ordinalPosition,
       ),
       hasSqlDefaultsNote: routine.body.language === "sql",
+      ...(snapshot.provider === "postgreSql" ? { isPostgreSql: true } : {}),
+      ...(native === undefined ? {} : { native }),
     },
   ];
   if (kind === "function") {
     const table = routine.kind === "tableFunction" || routine.kind === "inlineTableFunction";
     sections.push({
       kind: "returns",
-      scalarType: routine.returns === null ? null : formatDataType(routine.returns),
-      columns: table
-        ? [...routine.columns].sort((left, right) => left.ordinalPosition - right.ordinalPosition)
-        : null,
+      scalarType:
+        native?.result ?? (routine.returns === null ? null : formatDataType(routine.returns)),
+      columns:
+        table && (native === undefined || routine.columns.length > 0)
+          ? [...routine.columns].sort((left, right) => left.ordinalPosition - right.ordinalPosition)
+          : null,
     });
   }
-  sections.push({ kind: "definition", definition: describeDefinition(code, ref, routine.body) });
-  return { ...base, kind, name: routine.name, sections };
+  sections.push({
+    kind: "definition",
+    definition: {
+      ...describeDefinition(code, ref, routine.body),
+      ...(routine.body.language === "postgreSql"
+        ? { native: { language: routine.body.name } }
+        : {}),
+    },
+  });
+  return {
+    ...base,
+    kind,
+    name: routine.name,
+    sections,
+    ...(routine.identityArguments === undefined
+      ? {}
+      : {
+          signature: routineDisplayName(routine),
+        }),
+  };
 }
 
 /** Appended only by the desktop Inspector, even for a project that predates code capture. */
@@ -180,6 +248,14 @@ export function describeViewDefinition(
   );
   return {
     ...facts,
+    ...(snapshot.provider === "postgreSql"
+      ? {
+          native: {
+            language: null,
+            view: snapshot.postgresql?.views.find((item) => sameName(item.name, view.name)),
+          },
+        }
+      : {}),
     viewSettings:
       module === undefined
         ? null

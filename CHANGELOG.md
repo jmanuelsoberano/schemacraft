@@ -8,11 +8,33 @@ All notable changes to SchemaCraft are documented here. The format follows
 
 ### Added
 
+- Compare two saved projects independently of the open document, with filtered before/after
+  facts, diagram context, paged literal code differences and an HTML report without module bodies.
+- Explore known catalog dependencies in a separate object map and Inspector lists. Export the
+  visible map as SVG, PNG, single-page PDF or self-contained interactive HTML. Coverage and
+  unresolved or retained evidence remain explicit; this is not complete runtime impact analysis.
+- Save named diagram perspectives over one captured schema, with independent placement and
+  visibility, shared table/column notes, descriptions and undo/redo. Export notes only after an
+  explicit review for that export; refresh never silently reassigns an unlinked note.
+- Native PostgreSQL 15–18 connections, verified TLS and custom certificate authorities, catalog
+  capture, overloaded routines, trigger modes, native metadata, refresh and known dependencies.
+  PostgreSQL definitions are labeled as reconstructed; routine body coverage is explicit.
 - Report a problem from About or the command palette. Preview and save a bounded local text
   report with application/runtime information and up to seven diagnostic files, then open the
   public GitHub bug form separately. Projects, preferences and stored credentials are not
   collected, and diagnostics are never uploaded automatically. Security reports use the
   existing private-reporting guidance.
+
+### Changed
+
+- New saves use project format 4 and require reader 4. Existing formats 1–3 migrate in memory;
+  published SchemaCraft 1.2.0 refuses new files safely. Provider facts and supported extension
+  fields survive round trips; unknown extension fields stay out of exports.
+- Architecture checks enforce frontend import/IPC boundaries and keep the core free of Tauri.
+  CI retains both required check names and adds PostgreSQL 15–18 alongside SQL Server 2019/2022.
+
+All four exploration features are prepared together for one future release. No new version,
+tag, release asset or Store package is assigned by this unreleased entry.
 
 ## [1.2.0] - 2026-10-19
 

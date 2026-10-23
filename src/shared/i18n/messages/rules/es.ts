@@ -6,6 +6,8 @@ import type { RuleMessageCatalog } from "./en";
  * adjectives about a column go through "valor" or are invariable ("igual", "mayor").
  */
 export const spanishRuleMessages: RuleMessageCatalog = {
+  "rule.fk.native.delete": "ON DELETE {action}",
+  "rule.fk.native.update": "ON UPDATE {action}",
   "rule.check.eq": "{column} debe ser igual a {value}",
   "rule.check.ne": "{column} debe ser diferente de {value}",
   "rule.check.gt": "{column} debe ser mayor que {value}",

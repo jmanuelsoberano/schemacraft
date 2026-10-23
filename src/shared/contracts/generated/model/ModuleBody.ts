@@ -4,7 +4,15 @@ import type { Definition } from "./Definition";
 /**
  * What a module is written in, with its text when it is T-SQL.
  */
-export type ModuleBody = { "language": "sql", 
+export type ModuleBody = { "language": "postgreSql", 
+/**
+ * Native language, e.g. sql or plpgsql.
+ */
+name: string, 
+/**
+ * Reconstructed CREATE statement or the reason it is unavailable.
+ */
+definition: Definition, } | { "language": "sql", 
 /**
  * Its text as stored by the database, or why the text is missing.
  */

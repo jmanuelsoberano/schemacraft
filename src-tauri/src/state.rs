@@ -130,6 +130,8 @@ pub struct AppState {
     pub inspection_jobs: Jobs,
     /// Running exports.
     pub export_jobs: Jobs,
+    /// Running literal source comparisons.
+    pub comparison_jobs: Jobs,
     /// Connection history and recent projects.
     pub preferences: PreferencesStore,
     /// Remembered passwords, kept by the operating system.
@@ -145,6 +147,7 @@ impl AppState {
         Self {
             inspection_jobs: Jobs::new("inspection"),
             export_jobs: Jobs::new("export"),
+            comparison_jobs: Jobs::new("comparison"),
             preferences: PreferencesStore::load(preferences_path),
             credentials: Box::new(SystemCredentialStore),
             log_directory,

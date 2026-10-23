@@ -683,3 +683,49 @@ describe("fitText", () => {
     expect(fitText("Orders", 1, font, estimateTextWidth)).toBe(ELLIPSIS);
   });
 });
+
+describe("reviewed annotation text", () => {
+  it("keeps normal words intact and preserves explicit paragraph breaks in the drawn notes", () => {
+    const prose = "A reviewed explanation stays readable across exported diagrams. ".repeat(20);
+    const noteLines = [`${prose}\r\n\r\nLast explicit paragraph\rEnd`];
+    const rendered = renderDiagramSvg(
+      { snapshot, canvas },
+      { detailLevel: "keys", theme: "light", labels, noteLines },
+    );
+    const measured = measureDiagram({ snapshot, canvas }, "keys", { noteLines });
+    const lines = [
+      ...rendered.svg.matchAll(/<text class="sc-footnote"[^>]*>([^<]*)<\/text>/gu),
+    ].map((match) => match[1] ?? "");
+    expect(lines.slice(0, -3).join("")).toBe(prose);
+    for (const line of lines.slice(0, -3)) expect(line).toMatch(/\s$/u);
+    expect(lines.slice(-3)).toEqual([" ", "Last explicit paragraph", "End"]);
+    expect({ width: rendered.width, height: rendered.height }).toMatchObject({
+      width: measured.width,
+      height: measured.height,
+    });
+  });
+
+  it("wraps without clipping and escapes markup using the same measured extent", () => {
+    const noteLines = [
+      "A reviewed description",
+      "</script><svg onload=evil()> & notes",
+      "X".repeat(1800),
+      "Last line",
+    ];
+    const options = { detailLevel: "keys" as const, theme: "light" as const, labels, noteLines };
+    const rendered = renderDiagramSvg({ snapshot, canvas }, options);
+    const measured = measureDiagram({ snapshot, canvas }, "keys", { noteLines });
+    const baseline = measureDiagram({ snapshot, canvas }, "keys");
+    expect(rendered.width).toBe(measured.width);
+    expect(rendered.height).toBe(measured.height);
+    expect(rendered.height).toBeGreaterThan(baseline.height);
+    expect(rendered.svg).toContain("&lt;/script&gt;&lt;svg onload=evil()&gt; &amp; notes");
+    expect(rendered.svg).not.toContain("<svg onload");
+    expect(rendered.svg).toContain("Last line");
+    expect(rendered.width).toBeLessThan(baseline.width + 700);
+    const lastBaseline = [
+      ...rendered.svg.matchAll(/class="sc-footnote" x="[^"]+" y="([^"]+)"/gu),
+    ].at(-1)?.[1];
+    expect(Number(lastBaseline)).toBeLessThan(rendered.height);
+  });
+});

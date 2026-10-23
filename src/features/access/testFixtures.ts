@@ -28,7 +28,7 @@ export function profile(
   coverage: { objects: Completeness; definitions: Completeness },
   probe: Partial<AccessProbe> = {},
   scope: readonly string[] = [],
-): AccessProfile {
+): AccessProfile & { probe: AccessProbe } {
   return {
     probe: {
       canReadDefinitions: true,

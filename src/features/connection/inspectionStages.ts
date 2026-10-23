@@ -16,12 +16,14 @@ export const DISPLAYED_STAGES: readonly DisplayedStage[] = [
   "readingConstraints",
   "readingProgrammability",
   "readingModuleDefinitions",
+  "readingDependencies",
   "assembling",
 ];
 
 /** Optional stages exist only when this read requested them. */
 export function displayedStages(options: InspectionOptions): readonly DisplayedStage[] {
   return DISPLAYED_STAGES.filter((stage) => {
+    if (stage === "readingDependencies") return options.includeDependencies !== false;
     if (stage === "readingProgrammability") return options.includeProgrammability;
     if (stage === "readingModuleDefinitions")
       return options.includeProgrammability && options.includeModuleDefinitions;
@@ -38,6 +40,7 @@ const CATALOG_STAGES: readonly InspectionStage[] = [
   "readingConstraints",
   "readingProgrammability",
   "readingModuleDefinitions",
+  "readingDependencies",
 ];
 
 export type StageStatus = "pending" | "active" | "done";
@@ -69,6 +72,7 @@ export function stageStatus(progress: StageProgress, stage: InspectionStage): St
     case "readingConstraints":
     case "readingProgrammability":
     case "readingModuleDefinitions":
+    case "readingDependencies":
       if (reported(stage)) return "done";
       return reported("connecting") || catalogStarted ? "active" : "pending";
   }

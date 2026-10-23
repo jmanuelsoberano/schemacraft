@@ -21,6 +21,7 @@ import type { KeyboardEvent, ReactNode } from "react";
 
 import { ProjectNotice } from "@/features/project/ProjectNotice";
 import { useProjectStore } from "@/features/project/projectStore";
+import { activeCanvas, activePerspective } from "@/features/perspectives/perspectiveState";
 import { emptySchemaReason } from "@/features/schema/coverage";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { EmptyState } from "@/shared/ui/EmptyState";
@@ -151,9 +152,11 @@ interface FlowCanvasProps {
  */
 function FlowCanvas({ onFlowInit }: FlowCanvasProps) {
   const snapshot = useProjectStore((state) => state.project?.content.snapshot ?? null);
-  const nodeStates = useProjectStore((state) => state.project?.content.canvas.nodes ?? null);
-  const savedDetailLevel = useProjectStore(
-    (state) => state.project?.content.canvas.detailLevel ?? "keys",
+  const nodeStates = useProjectStore((state) =>
+    state.project === null ? null : activeCanvas(state.project.content).nodes,
+  );
+  const savedDetailLevel = useProjectStore((state) =>
+    state.project === null ? "keys" : activeCanvas(state.project.content).detailLevel,
   );
   const loadToken = useProjectStore((state) => state.project?.loadToken ?? 0);
   const updateCanvas = useProjectStore((state) => state.updateCanvas);
@@ -225,11 +228,12 @@ function FlowCanvas({ onFlowInit }: FlowCanvasProps) {
       if (instance === null || project === null) {
         return;
       }
-      const { viewport, layout } = project.content.canvas;
+      const { viewport, layout } = activeCanvas(project.content);
       const isFresh =
         project.path === null &&
         project.savedAt === null &&
         !project.isDirty &&
+        activePerspective(project.content) === undefined &&
         layout === "manual";
       if (isFresh) {
         void layoutFreshProject();

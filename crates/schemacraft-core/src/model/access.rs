@@ -11,7 +11,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use super::{Definition, Programmability, SchemaSnapshot};
+use super::{CaptureState, Definition, PostgreSqlAccessEvidence, Programmability, SchemaSnapshot};
 
 /// Permission facts about the login in one database, as the server reports them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -291,8 +291,14 @@ impl CaptureScope {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "model/")]
 pub struct AccessProfile {
-    /// Raw permission facts.
-    pub probe: AccessProbe,
+    /// SQL Server permission facts; absent for another provider, never emulated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub probe: Option<AccessProbe>,
+    /// Native PostgreSQL catalog observations; absent for SQL Server and legacy captures.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub postgresql: Option<PostgreSqlAccessEvidence>,
     /// Part of the database the verdicts cover.
     pub scope: CaptureScope,
     /// Overall verdict.
@@ -369,7 +375,8 @@ impl AccessProfile {
             && scope.include_module_definitions)
             .then_some(module_definitions);
         Self {
-            probe,
+            probe: Some(probe),
+            postgresql: None,
             scope,
             level,
             coverage,
@@ -382,7 +389,14 @@ impl AccessProfile {
     /// makes the answer `false`. A schema the probe does not list counts as fully visible only
     /// when the login can read the whole database, because then it does not exist.
     pub fn lists_every_object_in(&self, schema: &str) -> bool {
-        lists_every_object_in(&self.probe, schema)
+        self.postgresql.as_ref().map_or_else(
+            || {
+                self.probe
+                    .as_ref()
+                    .is_some_and(|probe| lists_every_object_in(probe, schema))
+            },
+            |native| native.object_catalog_read && self.scope.includes_schema(schema),
+        )
     }
 
     /// Whether the login sees every procedure and function of `schema`, so one missing from the
@@ -395,7 +409,69 @@ impl AccessProfile {
     /// counts as fully visible only when the login holds `VIEW DEFINITION` on the database.
     /// `tests/sqlserver_permissions.rs` pins each of these on SQL Server 2019 and 2022.
     pub fn lists_every_programmable_object_in(&self, schema: &str) -> bool {
-        lists_every_programmable_object_in(&self.probe, schema)
+        self.postgresql.as_ref().map_or_else(
+            || {
+                self.probe
+                    .as_ref()
+                    .is_some_and(|probe| lists_every_programmable_object_in(probe, schema))
+            },
+            |native| native.programmability_catalog_read && self.scope.includes_schema(schema),
+        )
+    }
+
+    /// Judge PostgreSQL catalog observations without inventing SQL Server permission facts.
+    /// Metadata queries deliberately read native catalogs rather than privilege-filtered
+    /// information_schema views. Their successful read establishes catalog completeness,
+    /// not permission to read table data or execute routines.
+    pub fn from_postgresql(
+        evidence: PostgreSqlAccessEvidence,
+        scope: CaptureScope,
+        counts: AccessCounts,
+        has_objects: bool,
+    ) -> Self {
+        let objects = if evidence.object_catalog_read {
+            Completeness::Complete
+        } else {
+            Completeness::NotAvailable
+        };
+        let definitions = if evidence.object_catalog_read {
+            Completeness::Complete
+        } else {
+            Completeness::NotAvailable
+        };
+        let level = if !evidence.object_catalog_read {
+            AccessLevel::NothingVisible
+        } else if has_objects {
+            AccessLevel::Full
+        } else {
+            AccessLevel::Empty
+        };
+        let coverage = AccessCoverage {
+            objects,
+            definitions,
+            programmability: scope.include_programmability.then_some(
+                if evidence.programmability_catalog_read {
+                    Completeness::Complete
+                } else {
+                    Completeness::NotAvailable
+                },
+            ),
+            module_definitions: scope.include_module_definitions.then_some(
+                if evidence.definitions == CaptureState::Read {
+                    Completeness::Complete
+                } else {
+                    Completeness::NotAvailable
+                },
+            ),
+        };
+        Self {
+            probe: None,
+            postgresql: Some(evidence),
+            scope,
+            level,
+            coverage,
+            counts,
+        }
     }
 }
 
@@ -1206,6 +1282,9 @@ mod tests {
     #[test]
     fn counts_module_texts_apart_from_check_and_default_texts() {
         let snapshot = crate::model::SchemaSnapshot {
+            provider: crate::model::DatabaseProvider::SqlServer,
+            postgresql: None,
+            dependencies: None,
             programmability: Some(sample_programmability()),
             ..sample_snapshot()
         };
@@ -1275,9 +1354,9 @@ mod tests {
 
         // Recorded, they are written and read back.
         let mut recorded = profile;
-        recorded.probe.execute_denials = Some(2);
-        recorded.probe.schemas[0].has_visible_programmability = true;
-        recorded.probe.schemas[0].is_execute_denied = true;
+        recorded.probe.as_mut().unwrap().execute_denials = Some(2);
+        recorded.probe.as_mut().unwrap().schemas[0].has_visible_programmability = true;
+        recorded.probe.as_mut().unwrap().schemas[0].is_execute_denied = true;
         recorded.coverage.programmability = Some(Completeness::Partial);
         recorded.coverage.module_definitions = Some(Completeness::NotAvailable);
         recorded.counts.module_definitions = 4;

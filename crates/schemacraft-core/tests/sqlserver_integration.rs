@@ -206,12 +206,29 @@ async fn lists_databases_and_schemas() {
     assert_eq!(access.level, AccessLevel::Full);
     assert_eq!(access.coverage.objects, Completeness::Complete);
     assert_eq!(access.coverage.definitions, Completeness::Complete);
-    assert_eq!(access.probe.explicit_denials, Some(0));
-    assert_eq!(access.probe.database_user.as_deref(), Some("dbo"));
+    assert_eq!(
+        access
+            .probe
+            .as_ref()
+            .expect("SQL Server probe")
+            .explicit_denials,
+        Some(0)
+    );
+    assert_eq!(
+        access
+            .probe
+            .as_ref()
+            .expect("SQL Server probe")
+            .database_user
+            .as_deref(),
+        Some("dbo")
+    );
     // The empty schema is still judged: an object there would have been visible.
     assert!(
         access
             .probe
+            .as_ref()
+            .expect("SQL Server probe")
             .schemas
             .iter()
             .any(|schema| schema.name == "staging" && !schema.has_visible_objects)

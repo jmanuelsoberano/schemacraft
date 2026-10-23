@@ -1111,7 +1111,17 @@ export function readCheckConstraint(
   constraint: CheckConstraint,
   columns: readonly Column[],
   table: QualifiedName,
+  provider: "sqlServer" | "postgreSql" = "sqlServer",
 ): CheckReading {
+  if (provider === "postgreSql") {
+    const text = definitionText(constraint.expression);
+    return text === null
+      ? {
+          status: isUnknownDefinition(constraint.expression) ? "notRecorded" : "notAvailable",
+          rules: [],
+        }
+      : { status: "unread", rules: [], columns: [], sql: text };
+  }
   const state: RuleState = {
     rule: "check",
     table,

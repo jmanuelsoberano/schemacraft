@@ -5,6 +5,13 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { focusInspectedHome } from "@/features/canvas/canvasFocus";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { useProjectStore } from "@/features/project/projectStore";
+import { activeCanvas } from "@/features/perspectives/perspectiveState";
+import { ObjectNotes } from "@/features/perspectives/ObjectNotes";
+import { DependencySection } from "@/features/dependencies/DependencySection";
+import {
+  dependencyObjectForEntity,
+  dependencyObjectForModule,
+} from "@/features/dependencies/dependencySelection";
 import { displayIdentifier } from "@/features/schema/entities";
 import { describeModuleDetails } from "@/features/schema/moduleDetails";
 import { presentModuleDetails } from "@/features/schema/moduleDetailsView";
@@ -52,7 +59,9 @@ export function InspectorPanel({
   const translator = useI18n();
   const { t, tCount } = translator;
   const snapshot = useProjectStore((state) => state.project?.content.snapshot ?? null);
-  const nodes = useProjectStore((state) => state.project?.content.canvas.nodes ?? null);
+  const nodes = useProjectStore((state) =>
+    state.project === null ? null : activeCanvas(state.project.content).nodes,
+  );
   const inspection = useProjectStore((state) => state.project?.content.inspection ?? null);
   const selectedKeys = useCanvasUiStore((state) => state.selectedKeys);
   const selectedModule = useCanvasUiStore((state) => state.selectedModule);
@@ -139,6 +148,9 @@ export function InspectorPanel({
               <span className={styles.summary}>{view.summary}</span>
               {view.notice === null ? null : <p className={styles.notice}>{view.notice}</p>}
             </header>
+            {view.kind === "table" ? (
+              <ObjectNotes key={view.key} table={{ schema: view.schema, name: view.name }} />
+            ) : null}
             {/* Keyed by the entity too, so another table's rules get items of their own. */}
             {view.sections.map((section) => (
               <InspectorSection
@@ -148,6 +160,12 @@ export function InspectorPanel({
                 onShowAccessReport={onShowAccessReport}
               />
             ))}
+            {snapshot === null || key === null ? null : (
+              <DependencySection
+                snapshot={snapshot}
+                object={dependencyObjectForEntity(snapshot, key)}
+              />
+            )}
           </>
         ) : moduleView !== null ? (
           <>
@@ -169,6 +187,12 @@ export function InspectorPanel({
                 onShowAccessReport={onShowAccessReport}
               />
             ))}
+            {snapshot === null || target.kind !== "module" ? null : (
+              <DependencySection
+                snapshot={snapshot}
+                object={dependencyObjectForModule(target.ref)}
+              />
+            )}
           </>
         ) : target.kind === "multiple" ? (
           <EmptyState

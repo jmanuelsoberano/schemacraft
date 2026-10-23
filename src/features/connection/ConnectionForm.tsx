@@ -18,10 +18,11 @@ import { TextField } from "@/shared/ui/TextField";
 import { AccessCheckNotice } from "./AccessCheckNotice";
 import { describeSavedConnection, savedConnectionKey } from "./fromSavedConnection";
 import styles from "./ConnectionForm.module.css";
-import type { AuthenticationMode } from "./connectionDraft";
+import type { AuthenticationMode, ConnectionDraft } from "./connectionDraft";
 import { useConnectionStore } from "./connectionStore";
 import { describeOperationError } from "@/shared/errors/describeOperationError";
 import { toggleSchema } from "./schemaSelection";
+import { PostgreSqlFields } from "./PostgreSqlFields";
 
 interface ConnectionFormProps {
   serverFieldRef: RefObject<HTMLInputElement | null>;
@@ -155,108 +156,151 @@ export function ConnectionForm({ serverFieldRef, passwordFieldRef }: ConnectionF
 
       <section className={styles.section}>
         <h3 className={styles.sectionTitle}>{t("connection.section.server")}</h3>
-        <TextField
-          ref={serverFieldRef}
-          label={t("connection.field.server")}
-          placeholder={t("connection.field.server.placeholder")}
-          hint={t("connection.field.server.hint")}
-          error={serverError}
-          value={draft.server}
-          onChange={(event) => {
-            updateDraft({ server: event.target.value });
+        <Select<ConnectionDraft["provider"]>
+          label={t("connection.provider")}
+          value={draft.provider}
+          options={[
+            { value: "sqlServer", label: t("connection.provider.sqlServer") },
+            { value: "postgreSql", label: t("connection.provider.postgreSql") },
+          ]}
+          placeholder={t("connection.provider")}
+          disabled={isBusy || mode === "refresh"}
+          onValueChange={(provider) => {
+            updateDraft({ provider });
           }}
-          autoComplete="off"
-          spellCheck={false}
-          disabled={isBusy}
         />
-        <div className={styles.field}>
-          <span className={styles.fieldLabel}>{t("connection.field.authentication")}</span>
-          <SegmentedControl
-            ariaLabel={t("connection.field.authentication")}
-            value={draft.authenticationMode}
-            options={authenticationOptions}
-            onValueChange={(authenticationMode) => {
-              updateDraft({ authenticationMode });
-            }}
+        {draft.provider === "postgreSql" ? (
+          <PostgreSqlFields
+            draft={draft}
+            updateDraft={updateDraft}
             disabled={isBusy}
+            validation={validation}
+            passwordHint={passwordHint}
+            serverFieldRef={serverFieldRef}
+            passwordFieldRef={passwordFieldRef}
           />
-        </div>
-        {draft.authenticationMode === "sqlLogin" ? (
+        ) : (
           <>
-            <div className={styles.row}>
-              <TextField
-                label={t("connection.field.username")}
-                error={usernameError}
-                value={draft.username}
-                onChange={(event) => {
-                  updateDraft({ username: event.target.value });
+            <TextField
+              ref={serverFieldRef}
+              label={t("connection.field.server")}
+              placeholder={t("connection.field.server.placeholder")}
+              hint={t("connection.field.server.hint")}
+              error={serverError}
+              value={draft.server}
+              onChange={(event) => {
+                updateDraft({ server: event.target.value });
+              }}
+              autoComplete="off"
+              spellCheck={false}
+              disabled={isBusy}
+            />
+            <div className={styles.field}>
+              <span className={styles.fieldLabel}>{t("connection.field.authentication")}</span>
+              <SegmentedControl
+                ariaLabel={t("connection.field.authentication")}
+                value={draft.authenticationMode}
+                options={authenticationOptions}
+                onValueChange={(authenticationMode) => {
+                  updateDraft({ authenticationMode });
                 }}
-                autoComplete="username"
-                spellCheck={false}
-                disabled={isBusy}
-              />
-              <TextField
-                ref={passwordFieldRef}
-                label={t("connection.field.password")}
-                type="password"
-                hint={passwordHint}
-                value={draft.password}
-                onChange={(event) => {
-                  updateDraft({ password: event.target.value });
-                }}
-                autoComplete="current-password"
                 disabled={isBusy}
               />
             </div>
-            <Checkbox
-              label={t("connection.field.rememberPassword")}
-              description={t("connection.field.rememberPassword.description")}
-              checked={draft.rememberPassword}
-              disabled={isBusy}
-              onCheckedChange={(rememberPassword) => {
-                updateDraft({ rememberPassword });
-              }}
-            />
+            {draft.authenticationMode === "sqlLogin" ? (
+              <>
+                <div className={styles.row}>
+                  <TextField
+                    label={t("connection.field.username")}
+                    error={usernameError}
+                    value={draft.username}
+                    onChange={(event) => {
+                      updateDraft({ username: event.target.value });
+                    }}
+                    autoComplete="username"
+                    spellCheck={false}
+                    disabled={isBusy}
+                  />
+                  <TextField
+                    ref={passwordFieldRef}
+                    label={t("connection.field.password")}
+                    type="password"
+                    hint={passwordHint}
+                    value={draft.password}
+                    onChange={(event) => {
+                      updateDraft({ password: event.target.value });
+                    }}
+                    autoComplete="current-password"
+                    disabled={isBusy}
+                  />
+                </div>
+                <Checkbox
+                  label={t("connection.field.rememberPassword")}
+                  description={t("connection.field.rememberPassword.description")}
+                  checked={draft.rememberPassword}
+                  disabled={isBusy}
+                  onCheckedChange={(rememberPassword) => {
+                    updateDraft({ rememberPassword });
+                  }}
+                />
+              </>
+            ) : null}
+            <div className={styles.row}>
+              <Select
+                label={t("connection.field.encryption")}
+                value={draft.encryption}
+                options={encryptionOptions}
+                placeholder={t("connection.field.encryption")}
+                disabled={isBusy}
+                onValueChange={(encryption) => {
+                  updateDraft({ encryption });
+                }}
+              />
+              <div className={styles.checkboxCell}>
+                <Checkbox
+                  label={t("connection.field.trustCertificate")}
+                  description={t("connection.field.trustCertificate.description")}
+                  checked={draft.trustServerCertificate}
+                  disabled={isBusy}
+                  onCheckedChange={(trustServerCertificate) => {
+                    updateDraft({ trustServerCertificate });
+                  }}
+                />
+              </div>
+            </div>
           </>
-        ) : null}
-        <div className={styles.row}>
-          <Select
-            label={t("connection.field.encryption")}
-            value={draft.encryption}
-            options={encryptionOptions}
-            placeholder={t("connection.field.encryption")}
-            disabled={isBusy}
-            onValueChange={(encryption) => {
-              updateDraft({ encryption });
-            }}
-          />
-          <div className={styles.checkboxCell}>
-            <Checkbox
-              label={t("connection.field.trustCertificate")}
-              description={t("connection.field.trustCertificate.description")}
-              checked={draft.trustServerCertificate}
-              disabled={isBusy}
-              onCheckedChange={(trustServerCertificate) => {
-                updateDraft({ trustServerCertificate });
-              }}
-            />
-          </div>
-        </div>
+        )}
       </section>
 
       <section className={styles.section}>
         <h3 className={styles.sectionTitle}>{t("connection.section.database")}</h3>
-        <Select
-          label={t("connection.field.database")}
-          value={draft.database ?? undefined}
-          options={databaseOptions}
-          placeholder={t("connection.field.database.placeholder")}
-          hint={tested === null ? t("connection.field.database.hint") : undefined}
-          disabled={tested === null || isBusy}
-          onValueChange={(database) => {
-            void selectDatabase(database);
-          }}
-        />
+        {draft.provider === "postgreSql" ? (
+          <TextField
+            label={t("connection.field.database")}
+            value={draft.database ?? ""}
+            hint={t("connection.postgresql.database.hint")}
+            disabled={isBusy}
+            onChange={(event) => {
+              updateDraft({
+                database: event.currentTarget.value === "" ? null : event.currentTarget.value,
+              });
+            }}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        ) : (
+          <Select
+            label={t("connection.field.database")}
+            value={draft.database ?? undefined}
+            options={databaseOptions}
+            placeholder={t("connection.field.database.placeholder")}
+            hint={tested === null ? t("connection.field.database.hint") : undefined}
+            disabled={tested === null || isBusy}
+            onValueChange={(database) => {
+              void selectDatabase(database);
+            }}
+          />
+        )}
         {tested !== null && draft.database !== null ? (
           <fieldset className={styles.schemas}>
             <legend className={styles.fieldLabel}>{t("connection.field.schemas")}</legend>
@@ -324,6 +368,15 @@ export function ConnectionForm({ serverFieldRef, passwordFieldRef }: ConnectionF
             updateDraft({ includeModuleDefinitions });
           }}
         />
+        <Checkbox
+          label={t("connection.field.includeDependencies")}
+          description={t("connection.field.includeDependencies.description")}
+          checked={draft.includeDependencies}
+          disabled={isBusy}
+          onCheckedChange={(includeDependencies) => {
+            updateDraft({ includeDependencies });
+          }}
+        />
         {predictedAccess !== null &&
         draft.database !== null &&
         phase !== "loadingSchemas" &&
@@ -353,7 +406,8 @@ export function ConnectionForm({ serverFieldRef, passwordFieldRef }: ConnectionF
       {failure !== null
         ? (() => {
             const presentation = describeOperationError(failure.error, translator, {
-              usesIntegratedAuthentication: draft.authenticationMode === "integrated",
+              usesIntegratedAuthentication:
+                draft.provider === "sqlServer" && draft.authenticationMode === "integrated",
             });
             return (
               <Alert
@@ -361,7 +415,7 @@ export function ConnectionForm({ serverFieldRef, passwordFieldRef }: ConnectionF
                 title={presentation.title}
                 detail={presentation.detail}
                 action={
-                  presentation.offersCertificateTrust ? (
+                  presentation.offersCertificateTrust && draft.provider === "sqlServer" ? (
                     <Button
                       variant="primary"
                       leadingIcon={ShieldCheck}

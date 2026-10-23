@@ -1,5 +1,8 @@
 # Microsoft Store preparation
 
+The dated observations below are the historical preparation record for the original 1.2.0
+submission, not a live availability report. Later feature work must not alter that package.
+
 Status observed on **2026-10-22**: the first private submission was received by Microsoft and
 entered preprocessing in the certification workflow. The Individual account and product identity
 are verified, and the uploaded MSIX passed initial portal validation. Approval for `runFullTrust`,
@@ -12,9 +15,9 @@ took effect on 2026-10-22. See the [policy history](https://learn.microsoft.com/
 
 ## Scope and distribution contract
 
-Complete Store preparation in the single `feat/microsoft-store` branch and its pull request.
-Keep unresolved account, packaging and acceptance work in that same change until the maintainer
-can review its outcome. Support/reporting features remain separate work.
+The original Store preparation used the single `feat/microsoft-store` branch and its pull
+request; support/reporting was a separate change. Future releases keep the independent
+distribution contract below and repeat the applicable runtime acceptance gates.
 
 The Store package is an additional distribution output:
 

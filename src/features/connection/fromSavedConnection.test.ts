@@ -58,9 +58,15 @@ describe("savedConnectionToDraft", () => {
       database: "Shop",
       login: "app",
     });
-    expect(savedConnectionKey(saved)).toBe("localhost\\sqlexpress|shop|app");
+    expect(JSON.parse(savedConnectionKey(saved))).toEqual([
+      "sqlServer",
+      "localhost\\sqlexpress",
+      "shop",
+      "sqlLogin",
+      "app",
+    ]);
     expect(savedConnectionKey({ ...saved, authentication: { mode: "integrated" } })).toBe(
-      "localhost\\sqlexpress|shop|<windows>",
+      JSON.stringify(["sqlServer", "localhost\\sqlexpress", "shop", "integrated", null]),
     );
   });
 

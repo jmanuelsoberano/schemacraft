@@ -48,6 +48,14 @@ import { focusEntitiesSearch } from "@/features/canvas/entitiesSearch";
 import { useConnectionStore } from "@/features/connection/connectionStore";
 import { useExportStore } from "@/features/export/exportStore";
 import { useProjectStore } from "@/features/project/projectStore";
+import { activeCanvas } from "@/features/perspectives/perspectiveState";
+import { usePerspectiveUiStore } from "@/features/perspectives/perspectiveUiStore";
+import { useComparisonStore } from "@/features/comparison/comparisonStore";
+import { useDependencyStore } from "@/features/dependencies/dependencyStore";
+import {
+  dependencyObjectForEntity,
+  dependencyObjectForModule,
+} from "@/features/dependencies/dependencySelection";
 import { usePaletteStore } from "@/app/palette/paletteStore";
 import { useAppInfo } from "@/shared/ipc/useAppInfo";
 import { useSettingsStore } from "@/shared/settings/settingsStore";
@@ -83,8 +91,10 @@ export function useAppActions(): AppActions {
   const openAccessReport = useAccessReportStore((state) => state.open);
   const canUndo = useProjectStore((state) => state.history.past.length > 0);
   const canRedo = useProjectStore((state) => state.history.future.length > 0);
-  const hasHidden = useProjectStore(
-    (state) => state.project?.content.canvas.nodes.some((node) => node.isHidden) ?? false,
+  const hasHidden = useProjectStore((state) =>
+    state.project === null
+      ? false
+      : activeCanvas(state.project.content).nodes.some((node) => node.isHidden),
   );
   const undo = useProjectStore((state) => state.undo);
   const redo = useProjectStore((state) => state.redo);
@@ -108,6 +118,44 @@ export function useAppActions(): AppActions {
         ? "action.unavailable.readOnly"
         : "action.unavailable.noProject";
     const byId: ActionsById = {
+      "project.compareProjects": {
+        id: "project.compareProjects",
+        labelKey: "action.compareProjects",
+        icon: GitFork,
+        isAvailable: true,
+        run: () => {
+          useComparisonStore.getState().open();
+        },
+      },
+      "view.dependencies": {
+        id: "view.dependencies",
+        labelKey: "action.dependencies",
+        icon: Network,
+        isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
+        run: () => {
+          const project = useProjectStore.getState().project;
+          const selection = useCanvasUiStore.getState();
+          if (project === null) return;
+          const root =
+            selection.selectedModule !== null
+              ? dependencyObjectForModule(selection.selectedModule)
+              : selection.selectedKeys.length === 1 && selection.selectedKeys[0] !== undefined
+                ? dependencyObjectForEntity(project.content.snapshot, selection.selectedKeys[0])
+                : null;
+          useDependencyStore.getState().open(root ?? undefined);
+        },
+      },
+      "view.perspectives": {
+        id: "view.perspectives",
+        labelKey: "action.perspectives",
+        icon: Layers,
+        isAvailable: hasProject,
+        unavailableReason: hasProject ? undefined : "action.unavailable.noProject",
+        run: () => {
+          usePerspectiveUiStore.getState().open();
+        },
+      },
       "project.connect": {
         id: "project.connect",
         labelKey: "action.connect",

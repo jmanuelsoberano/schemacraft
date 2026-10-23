@@ -31,12 +31,14 @@ import { OperationError } from "./operationError";
 import { nameKey, observedAccess, predictedAccess } from "./previewAccess";
 import { moduleDefinitions, previewProgrammability, withCodeCoverage } from "./previewCode";
 import type { PreviewCodeFailure } from "./previewCode";
+import { previewPostgreSqlSnapshot } from "./previewPostgreSql";
 
 const EVERYTHING: InspectionOptions = {
   schemas: [],
   includeViews: true,
   includeProgrammability: true,
   includeModuleDefinitions: true,
+  includeDependencies: true,
 };
 
 const STAGES: readonly InspectionStage[] = [
@@ -49,6 +51,7 @@ const STAGES: readonly InspectionStage[] = [
   "readingConstraints",
   "readingProgrammability",
   "readingModuleDefinitions",
+  "readingDependencies",
   "assembling",
   "completed",
 ];
@@ -71,7 +74,12 @@ function failureFor(settings: ConnectionSettings): OperationError | null {
   if (host.includes("auth-fail")) {
     return inspectorError("authenticationFailed", "Login failed for user 'app'.");
   }
-  if (host.includes("cert-fail") && !settings.trustServerCertificate) {
+  if (
+    host.includes("cert-fail") &&
+    (settings.provider === "postgreSql"
+      ? settings.encryption === "verifyFull"
+      : !settings.trustServerCertificate)
+  ) {
     return inspectorError(
       "untrustedCertificate",
       "The certificate chain was issued by an authority that is not trusted.",
@@ -540,6 +548,8 @@ function stageCount(stage: InspectionStage, snapshot: SchemaSnapshot): number | 
         : moduleDefinitions(snapshot.programmability).filter(
             (definition) => definition.status === "readable",
           ).length;
+    case "readingDependencies":
+      return snapshot.dependencies?.edges.length ?? 0;
     case "completed":
       return snapshot.tables.length;
   }
@@ -552,6 +562,14 @@ export const previewConnectionBackend: ConnectionBackend = {
     if (failure) {
       throw failure;
     }
+    if (settings.provider === "postgreSql")
+      return {
+        product: "PostgreSQL (simulated browser preview)",
+        productVersion: "18.0",
+        edition: "PostgreSQL",
+        serverName: settings.host,
+        databaseName: settings.database ?? "postgres",
+      };
     return {
       product: "Microsoft SQL Server 2022 (RTM) - 16.0.1000.6 (preview)",
       productVersion: "16.0.1000.6",
@@ -561,8 +579,12 @@ export const previewConnectionBackend: ConnectionBackend = {
     };
   },
 
-  async listDatabases(): Promise<string[]> {
+  async listDatabases(settings): Promise<string[]> {
     await wait(300);
+    if (settings.provider === "postgreSql")
+      return [
+        ...new Set([settings.database ?? "SchemaCraftPostgreSqlDemo", "SchemaCraftPostgreSqlDemo"]),
+      ];
     return [
       "AdventureWorks2022",
       "Northwind",
@@ -574,6 +596,15 @@ export const previewConnectionBackend: ConnectionBackend = {
 
   async describeDatabase(settings): Promise<DatabaseDescription> {
     await wait(300);
+    if (settings.provider === "postgreSql") {
+      const access = previewPostgreSqlSnapshot(settings.database ?? "SchemaCraftPostgreSqlDemo", {
+        ...EVERYTHING,
+        includeDependencies: true,
+      }).access;
+      if (access === undefined)
+        throw inspectorError("queryFailed", "The synthetic access fixture is unavailable.");
+      return { schemas: ["public"], programmabilityOnlySchemas: [], access };
+    }
     const probe = probeOf(LOGINS[previewAccessFor(settings)]);
     return {
       schemas: probe.schemas
@@ -606,20 +637,24 @@ export const previewConnectionBackend: ConnectionBackend = {
       throw failure;
     }
 
-    const snapshot = previewSnapshot(
-      settings.database ?? "Northwind",
-      previewAccessFor(settings),
-      options,
-      settings.host.includes("code-timeout")
-        ? "timeout"
-        : settings.host.includes("code-fail")
-          ? "objects"
-          : settings.host.includes("deny-modules")
-            ? "definitions"
-            : undefined,
-    );
+    const snapshot =
+      settings.provider === "postgreSql"
+        ? previewPostgreSqlSnapshot(settings.database ?? "SchemaCraftPostgreSqlDemo", options)
+        : previewSnapshot(
+            settings.database ?? "Northwind",
+            previewAccessFor(settings),
+            options,
+            settings.host.includes("code-timeout")
+              ? "timeout"
+              : settings.host.includes("code-fail")
+                ? "objects"
+                : settings.host.includes("deny-modules")
+                  ? "definitions"
+                  : undefined,
+          );
     for (const stage of STAGES) {
       if (stage === "readingProgrammability" && !options.includeProgrammability) continue;
+      if (stage === "readingDependencies" && options.includeDependencies === false) continue;
       if (
         stage === "readingModuleDefinitions" &&
         (!options.includeProgrammability || !options.includeModuleDefinitions)

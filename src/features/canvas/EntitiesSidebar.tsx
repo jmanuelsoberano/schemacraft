@@ -16,6 +16,7 @@ import { memo, useDeferredValue, useEffect, useId, useMemo, useRef, useState } f
 import type { ReactNode } from "react";
 
 import { useProjectStore } from "@/features/project/projectStore";
+import { activeCanvas } from "@/features/perspectives/perspectiveState";
 import {
   emptySchemaReason,
   listsEveryObject,
@@ -24,6 +25,7 @@ import {
 import { entityKey, qualifiedNameLabel } from "@/features/schema/entities";
 import type { EntityListItem } from "@/features/schema/entities";
 import { moduleKey } from "@/features/schema/modules";
+import { presentRoutineDependencyTracking } from "@/features/schema/routineDependencyTracking";
 import {
   OBJECT_PAGE_SIZE,
   OBJECT_SEARCH_LIMIT,
@@ -118,7 +120,9 @@ export function EntitiesSidebar({ notice }: EntitiesSidebarProps) {
   const { t, locale } = useI18n();
   const snapshot = useProjectStore((state) => state.project?.content.snapshot ?? null);
   const inspection = useProjectStore((state) => state.project?.content.inspection ?? null);
-  const nodeStates = useProjectStore((state) => state.project?.content.canvas.nodes ?? null);
+  const nodeStates = useProjectStore((state) =>
+    state.project === null ? null : activeCanvas(state.project.content).nodes,
+  );
   const selectedKeys = useCanvasUiStore((state) => state.selectedKeys);
   const selectedModule = useCanvasUiStore((state) => state.selectedModule);
   const [query, setQuery] = useState("");
@@ -577,7 +581,12 @@ interface RoutineRowProps {
 
 /** A routine is inspected, never hidden on the diagram or offered an entity context menu. */
 export function RoutineRow({ routine, isSelected, index }: RoutineRowProps) {
-  const { t, tCount } = useI18n();
+  const translator = useI18n();
+  const { t, tCount } = translator;
+  const tracking =
+    routine.routineBodyTracking === undefined
+      ? null
+      : presentRoutineDependencyTracking(routine.routineBodyTracking, translator);
   const selectModule = useCanvasUiStore((state) => state.selectModule);
   const Icon = routine.kind === "function" ? SquareFunction : ScrollText;
   const name = qualifiedNameLabel(routine.ref.name);
@@ -602,6 +611,15 @@ export function RoutineRow({ routine, isSelected, index }: RoutineRowProps) {
         <span className={styles.entityColumns} title={parameters} aria-label={parameters}>
           {routine.parameterCount}
         </span>
+        {tracking === null ? null : (
+          <span
+            className={styles.trackingMark}
+            title={`${tracking.title}: ${tracking.label}. ${tracking.explanation}`}
+            aria-label={`${tracking.title}: ${tracking.label}. ${tracking.explanation}`}
+          >
+            {tracking.label}
+          </span>
+        )}
         {routine.isEncrypted ? (
           <Lock className={styles.entityIcon} aria-label={t("objects.encrypted")}>
             <title>{t("objects.encrypted")}</title>

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::credentials::CredentialKey;
+use crate::inspectors::postgresql::{PostgreSqlEncryptionMode, format_target as postgresql_target};
 use crate::inspectors::sqlserver::{EncryptionMode, format_target};
 
 /// A connection as recorded in a project file or in the history: everything but the password.
@@ -11,6 +12,8 @@ use crate::inspectors::sqlserver::{EncryptionMode, format_target};
 pub enum SavedConnection {
     /// Microsoft SQL Server.
     SqlServer(SavedSqlServerConnection),
+    /// PostgreSQL connection without its password.
+    PostgreSql(SavedPostgreSqlConnection),
 }
 
 impl SavedConnection {
@@ -18,6 +21,7 @@ impl SavedConnection {
     pub fn display_target(&self) -> String {
         match self {
             Self::SqlServer(connection) => connection.display_target(),
+            Self::PostgreSql(connection) => connection.display_target(),
         }
     }
 
@@ -25,6 +29,7 @@ impl SavedConnection {
     pub fn database(&self) -> Option<&str> {
         match self {
             Self::SqlServer(connection) => connection.database.as_deref(),
+            Self::PostgreSql(connection) => connection.database.as_deref(),
         }
     }
 
@@ -32,6 +37,10 @@ impl SavedConnection {
     pub fn credential_key(&self) -> Option<CredentialKey> {
         match self {
             Self::SqlServer(connection) => connection.credential_key(),
+            Self::PostgreSql(connection) => Some(CredentialKey::postgresql_login(
+                &connection.display_target(),
+                &connection.username,
+            )),
         }
     }
 
@@ -40,7 +49,47 @@ impl SavedConnection {
     pub fn same_endpoint_as(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::SqlServer(left), Self::SqlServer(right)) => left.same_endpoint_as(right),
+            (Self::PostgreSql(left), Self::PostgreSql(right)) => left.same_endpoint_as(right),
+            _ => false,
         }
+    }
+}
+
+/// PostgreSQL connection persisted without password or private keys.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "project/")]
+pub struct SavedPostgreSqlConnection {
+    /// Host name or IP address.
+    pub host: String,
+    /// TCP port, absent means 5432.
+    #[serde(default)]
+    pub port: Option<u16>,
+    /// Database name, preserving PostgreSQL case.
+    #[serde(default)]
+    pub database: Option<String>,
+    /// Role name, preserving PostgreSQL case.
+    pub username: String,
+    /// Explicit transport policy.
+    #[serde(default)]
+    pub encryption: PostgreSqlEncryptionMode,
+    /// Additional public root CA in PEM format, never a private key.
+    #[serde(default)]
+    pub root_certificate: Option<String>,
+}
+
+impl SavedPostgreSqlConnection {
+    /// Canonical server endpoint.
+    pub fn display_target(&self) -> String {
+        postgresql_target(&self.host, self.port)
+    }
+
+    /// Transport choices do not change identity; database and role case do.
+    pub fn same_endpoint_as(&self, other: &Self) -> bool {
+        self.display_target()
+            .eq_ignore_ascii_case(&other.display_target())
+            && self.database == other.database
+            && self.username == other.username
     }
 }
 
@@ -128,7 +177,12 @@ fn folded(value: Option<&str>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::panic
+    )]
 
     use super::{SavedConnection, SavedSqlServerAuthentication, SavedSqlServerConnection};
     use crate::inspectors::sqlserver::EncryptionMode;
@@ -150,7 +204,10 @@ mod tests {
     #[test]
     fn identity_ignores_case_and_transport_options() {
         let connection = sql_login("localhost", "Northwind", "app");
-        let SavedConnection::SqlServer(mut other) = sql_login("LOCALHOST", "northwind", "APP");
+        let SavedConnection::SqlServer(mut other) = sql_login("LOCALHOST", "northwind", "APP")
+        else {
+            panic!("SQL Server fixture");
+        };
         other.encryption = EncryptionMode::Optional;
         other.trust_server_certificate = false;
 

@@ -192,6 +192,9 @@ fn project_with(snapshot: SchemaSnapshot) -> ProjectContent {
         })
         .collect();
     ProjectContent {
+        perspectives: Vec::new(),
+        annotations: schemacraft_core::project::ProjectAnnotations::default(),
+        active_perspective_id: None,
         connection: SavedConnection::SqlServer(SavedSqlServerConnection {
             host: "localhost".to_string(),
             instance: None,
@@ -246,12 +249,24 @@ fn without_index_and_constraint_state(snapshot: &mut serde_json::Map<String, Val
 /// Removes every new code fact from the historical representation. The version-2 reader wrote
 /// none of them, even when a current capture was used to construct the fixture.
 fn without_code(document: &mut serde_json::Map<String, Value>) {
+    for key in ["perspectives", "annotations", "activePerspectiveId"] {
+        document.remove(key);
+    }
+    if let Some(inspection) = document
+        .get_mut("inspection")
+        .and_then(Value::as_object_mut)
+    {
+        inspection.remove("includeDependencies");
+    }
     let snapshot = document
         .get_mut("snapshot")
         .unwrap()
         .as_object_mut()
         .unwrap();
     snapshot.remove("programmability");
+    for key in ["provider", "postgresql", "dependencies"] {
+        snapshot.remove(key);
+    }
     if let Some(access) = snapshot.get_mut("access").and_then(Value::as_object_mut) {
         for (section, keys) in [
             ("coverage", vec!["programmability", "moduleDefinitions"]),
@@ -505,7 +520,12 @@ async fn describe_database_classifies_every_login() {
         );
         assert_eq!(description.schemas, expected.schemas, "{}", expected.login);
         assert_eq!(
-            access.probe.database_user.as_deref(),
+            access
+                .probe
+                .as_ref()
+                .expect("SQL Server probe")
+                .database_user
+                .as_deref(),
             Some(expected.login),
             "{}",
             expected.login
@@ -518,7 +538,11 @@ async fn a_schema_denial_is_counted_even_where_select_is_granted() {
     let Some(server) = test_server() else { return };
 
     for login in [VIEW_DEFINITION_DENIED_AUDIT, READER_DENIED_AUDIT] {
-        let probe = describe(&server, login, DATABASE).await.access.probe;
+        let probe = describe(&server, login, DATABASE)
+            .await
+            .access
+            .probe
+            .expect("SQL Server probe");
         assert_eq!(probe.explicit_denials, Some(1), "{login}: {probe:?}");
         let audit = probe
             .schemas
@@ -535,6 +559,8 @@ async fn a_schema_denial_is_counted_even_where_select_is_granted() {
         reader
             .access
             .probe
+            .as_ref()
+            .expect("SQL Server probe")
             .schemas
             .iter()
             .any(|schema| schema.name == "audit" && schema.can_read_data)
@@ -570,7 +596,11 @@ async fn denials_are_unknown_only_where_view_security_definition_hides_them() {
             );
         }
         for (name, denials) in [(VIEW_DEFINITION, 0), (VIEW_DEFINITION_DENIED_AUDIT, 1)] {
-            let probe = describe(&server, name, DATABASE).await.access.probe;
+            let probe = describe(&server, name, DATABASE)
+                .await
+                .access
+                .probe
+                .expect("SQL Server probe");
             assert_eq!(probe.explicit_denials, Some(denials), "{name}: {probe:?}");
         }
         return;
@@ -611,16 +641,45 @@ async fn denials_are_unknown_only_where_view_security_definition_hides_them() {
     let description = describe(&server, VIEW_DEFINITION_DENIED_SECURITY, DATABASE).await;
     assert_eq!(description.schemas, ["audit", "dbo", "sales"]);
     let access = description.access;
-    assert_eq!(access.probe.explicit_denials, None, "{access:?}");
-    assert!(access.probe.can_read_definitions, "{access:?}");
-    assert!(!access.probe.can_read_data, "{access:?}");
     assert_eq!(
-        access.probe.database_user.as_deref(),
+        access
+            .probe
+            .as_ref()
+            .expect("SQL Server probe")
+            .explicit_denials,
+        None,
+        "{access:?}"
+    );
+    assert!(
+        access
+            .probe
+            .as_ref()
+            .expect("SQL Server probe")
+            .can_read_definitions,
+        "{access:?}"
+    );
+    assert!(
+        !access
+            .probe
+            .as_ref()
+            .expect("SQL Server probe")
+            .can_read_data,
+        "{access:?}"
+    );
+    assert_eq!(
+        access
+            .probe
+            .as_ref()
+            .expect("SQL Server probe")
+            .database_user
+            .as_deref(),
         Some(VIEW_DEFINITION_DENIED_SECURITY),
         "{access:?}"
     );
     let schemas: Vec<(&str, bool, bool, bool, bool)> = access
         .probe
+        .as_ref()
+        .expect("SQL Server probe")
         .schemas
         .iter()
         .map(|schema| {
@@ -662,7 +721,14 @@ async fn denials_are_unknown_only_where_view_security_definition_hides_them() {
         assert!(owner.vouches_for_absence_of(&dropped), "{schema}");
     }
     let captured = snapshot.access.as_ref().unwrap();
-    assert_eq!(captured.probe.explicit_denials, None);
+    assert_eq!(
+        captured
+            .probe
+            .as_ref()
+            .expect("SQL Server probe")
+            .explicit_denials,
+        None
+    );
     assert_eq!(
         (
             captured.level,
@@ -687,10 +753,32 @@ async fn a_denial_to_public_never_reaches_dbo() {
             panic!("{} describes {PUBLIC_DENY_DATABASE}: {error}", server.user)
         });
     let access = &description.access;
-    assert_eq!(access.probe.database_user.as_deref(), Some("dbo"));
-    assert_eq!(access.probe.explicit_denials, Some(0), "{access:?}");
+    assert_eq!(
+        access
+            .probe
+            .as_ref()
+            .expect("SQL Server probe")
+            .database_user
+            .as_deref(),
+        Some("dbo")
+    );
+    assert_eq!(
+        access
+            .probe
+            .as_ref()
+            .expect("SQL Server probe")
+            .explicit_denials,
+        Some(0),
+        "{access:?}"
+    );
     assert!(
-        access.probe.schemas.iter().all(|schema| !schema.is_denied),
+        access
+            .probe
+            .as_ref()
+            .expect("SQL Server probe")
+            .schemas
+            .iter()
+            .all(|schema| !schema.is_denied),
         "{access:?}"
     );
     assert_eq!(access.level, AccessLevel::Full, "{access:?}");
@@ -718,10 +806,20 @@ async fn a_denial_to_public_never_reaches_dbo() {
 
     // The same denials reach a db_datareader member through public.
     let reader = describe(&server, READER, PUBLIC_DENY_DATABASE).await.access;
-    assert_eq!(reader.probe.explicit_denials, Some(2), "{reader:?}");
+    assert_eq!(
+        reader
+            .probe
+            .as_ref()
+            .expect("SQL Server probe")
+            .explicit_denials,
+        Some(2),
+        "{reader:?}"
+    );
     assert!(
         reader
             .probe
+            .as_ref()
+            .expect("SQL Server probe")
             .schemas
             .iter()
             .any(|schema| schema.name == "hr" && schema.is_denied),
@@ -738,7 +836,15 @@ async fn a_column_denial_hides_no_object() {
     let Some(server) = test_server() else { return };
 
     let description = describe(&server, READER_DENIED_COLUMN, DATABASE).await;
-    assert_eq!(description.access.probe.explicit_denials, Some(0));
+    assert_eq!(
+        description
+            .access
+            .probe
+            .as_ref()
+            .expect("SQL Server probe")
+            .explicit_denials,
+        Some(0)
+    );
     assert_eq!(description.access.coverage.objects, Completeness::Complete);
 
     let snapshot = inspect_as(&server, READER_DENIED_COLUMN, DATABASE).await;
@@ -970,9 +1076,15 @@ async fn refresh_with_a_stronger_login_changes_nothing() {
     assert_eq!(diff.now_available, []);
     assert!(diff.access_changed);
 
-    // Another login that sees everything has nothing to report at all.
+    // Full structural/code visibility does not grant SELECT on the dependency catalog.
     let view_definition = inspect_as(&server, VIEW_DEFINITION, DATABASE).await;
-    assert!(SchemaDiff::between(&owner, &view_definition).is_up_to_date());
+    let diff = SchemaDiff::between(&owner, &view_definition);
+    assert!(diff.is_empty(), "{diff:?}");
+    assert!(!diff.is_up_to_date());
+    assert_eq!(
+        diff.metadata.dependencies.read_failure,
+        Some(NotReadReason::PermissionDenied)
+    );
 }
 
 #[tokio::test]
@@ -1061,10 +1173,21 @@ async fn a_1_1_project_refreshed_with_the_same_login_records_the_state_without_c
 
         let refreshed = project_with(upgraded).with_refreshed_snapshot(fresh.clone());
         assert_eq!(refreshed.snapshot, fresh, "{login}");
-        assert!(
-            SchemaDiff::between(&refreshed.snapshot, &fresh).is_up_to_date(),
-            "{login}"
-        );
+        let repeated = SchemaDiff::between(&refreshed.snapshot, &fresh);
+        assert!(repeated.is_empty(), "{login}: {repeated:?}");
+        if login == OWNER {
+            assert!(repeated.is_up_to_date(), "{login}: {repeated:?}");
+        } else {
+            assert_eq!(
+                repeated.metadata.dependencies.read_failure,
+                Some(NotReadReason::PermissionDenied),
+                "{login}: {repeated:?}"
+            );
+            assert!(
+                !repeated.is_up_to_date(),
+                "{login}: a denied optional read remains reviewable"
+            );
+        }
     }
 
     // The owner's capture: six keys, five CHECKs, two indexes and four foreign keys.
@@ -1149,8 +1272,23 @@ async fn nothing_visible_is_reported_as_such() {
 
     let description = describe(&server, CONNECT_ONLY, DATABASE).await;
     assert_eq!(description.access.level, AccessLevel::NothingVisible);
-    assert_eq!(description.access.probe.explicit_denials, Some(0));
-    assert!(!description.access.probe.sees_objects);
+    assert_eq!(
+        description
+            .access
+            .probe
+            .as_ref()
+            .expect("SQL Server probe")
+            .explicit_denials,
+        Some(0)
+    );
+    assert!(
+        !description
+            .access
+            .probe
+            .as_ref()
+            .expect("SQL Server probe")
+            .sees_objects
+    );
 
     let snapshot = inspect_as(&server, CONNECT_ONLY, DATABASE).await;
     assert_eq!(snapshot.tables, []);
@@ -1462,8 +1600,22 @@ async fn execute_denied_with_view_definition_does_not_hide_code_on_either_engine
     let owner = inspect_as(&server, OWNER, DATABASE).await;
     let denied = inspect_as(&server, VIEW_DEFINITION_DENIED_EXECUTE, DATABASE).await;
     let profile = denied.access.as_ref().unwrap();
-    assert_eq!(profile.probe.execute_denials, Some(1));
-    assert_eq!(profile.probe.explicit_denials, Some(0));
+    assert_eq!(
+        profile
+            .probe
+            .as_ref()
+            .expect("SQL Server probe")
+            .execute_denials,
+        Some(1)
+    );
+    assert_eq!(
+        profile
+            .probe
+            .as_ref()
+            .expect("SQL Server probe")
+            .explicit_denials,
+        Some(0)
+    );
     assert_eq!(profile.level, AccessLevel::Full);
     assert_eq!(
         profile.coverage.programmability,
@@ -1474,7 +1626,14 @@ async fn execute_denied_with_view_definition_does_not_hide_code_on_either_engine
         Some(Completeness::Complete)
     );
     assert_eq!(denied.programmability, owner.programmability);
-    assert!(SchemaDiff::between(&owner, &denied).is_up_to_date());
+    let diff = SchemaDiff::between(&owner, &denied);
+    assert!(diff.is_empty(), "{diff:?}");
+    assert!(diff.code.is_empty());
+    assert_eq!(
+        diff.metadata.dependencies.read_failure,
+        Some(NotReadReason::PermissionDenied)
+    );
+    assert!(!diff.is_up_to_date());
     let identity = as_login(&server, VIEW_DEFINITION_DENIED_EXECUTE, &PASSWORD);
     assert_eq!(
         integer(

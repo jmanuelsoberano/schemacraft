@@ -23,6 +23,34 @@ export function estimateTextWidth(text: string, font: TextFont): number {
   return text.length * perGlyph * font.size;
 }
 
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/** Wraps one source line at whitespace where possible, preserving every literal character. */
+export function wrapTextLine(text: string, maxWidth: number, font: TextFont): string[] {
+  const characters = Array.from(graphemes.segment(text), (item) => item.segment);
+  if (characters.length === 0) return [""];
+  const widths = characters.map((character) => estimateTextWidth(character, font));
+  const lines: string[] = [];
+  let start = 0;
+  while (start < characters.length) {
+    let end = start;
+    let width = 0;
+    let whitespaceEnd = start;
+    while (end < characters.length) {
+      const nextWidth = widths[end] ?? 0;
+      if (end > start && width + nextWidth > maxWidth) break;
+      width += nextWidth;
+      if (/\s/u.test(characters[end] ?? "")) whitespaceEnd = end + 1;
+      end += 1;
+    }
+    // Prefer a complete word; a long token falls back to complete grapheme clusters.
+    const boundary = end < characters.length && whitespaceEnd > start ? whitespaceEnd : end;
+    lines.push(characters.slice(start, boundary).join(""));
+    start = boundary;
+  }
+  return lines;
+}
+
 function cssFont(font: TextFont): string {
   const family = font.family === "mono" ? MONO_FONT_STACK : SANS_FONT_STACK;
   return `${font.weight} ${font.size}px ${family}`;

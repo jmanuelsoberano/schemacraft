@@ -26,6 +26,11 @@ precision: number | null,
  */
 scale: number | null, 
 /**
+ * Native declaration, including arrays and schema-qualified custom types. When present,
+ * it is authoritative for display and is never converted into SQL Server syntax.
+ */
+nativeDeclaration?: string, 
+/**
  * Name of the user-defined alias type the column was declared with, e.g. `dbo.Money2`,
  * when it is not a system type. `name` always holds the underlying system type.
  */

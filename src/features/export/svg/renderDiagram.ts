@@ -58,6 +58,7 @@ import {
   escapeXml,
   estimateTextWidth,
   fitText,
+  wrapTextLine,
 } from "./text";
 import type { TextFont, TextMeasurer } from "./text";
 
@@ -101,10 +102,15 @@ export interface RenderOptions {
   footnote?: string;
   /** Static exports explain trigger badges and any unverified trigger metadata below the drawing. */
   triggerNotes?: { legend: string; notRead: string; notChecked: string };
+  /** Reviewed user text only; the caller projects notes before invoking the renderer. */
+  noteLines?: readonly string[];
 }
 
 /** What sizes the document besides the diagram, as {@link renderDiagramSvg} will draw it. */
-export type MeasureOptions = Pick<RenderOptions, "padding" | "footnote" | "triggerNotes">;
+export type MeasureOptions = Pick<
+  RenderOptions,
+  "padding" | "footnote" | "triggerNotes" | "noteLines"
+>;
 
 export interface DiagramExtent {
   /** Width in CSS pixels, padding included. */
@@ -195,6 +201,7 @@ function layoutDiagram(
   padding: number,
   footnote: string | undefined,
   triggerNotes: RenderOptions["triggerNotes"],
+  noteLines: RenderOptions["noteLines"],
 ): Layout {
   const entities = describeEntities(input.snapshot);
   const states = nodeStatesByKey(input.canvas.nodes);
@@ -259,6 +266,14 @@ function layoutDiagram(
       notes.push(triggerNotes.notChecked);
     }
   }
+  // Wrap author text without truncating it or producing an arbitrarily wide page. The same
+  // estimated widths are used by sizing and rendering, including long unbroken identifiers.
+  const noteWidth = Math.max(600, width - padding * 2);
+  for (const text of noteLines ?? []) {
+    for (const paragraph of text.replaceAll("\r\n", "\n").replaceAll("\r", "\n").split("\n")) {
+      notes.push(...wrapTextLine(paragraph, noteWidth, FOOTNOTE_FONT).map((line) => line || " "));
+    }
+  }
   const footnotes: PlacedFootnote[] = [];
   for (const [index, note] of notes.filter((text) => text !== "").entries()) {
     const top = maxY - minY + padding + FOOTNOTE_GAP + index * FOOTNOTE_LINE_HEIGHT;
@@ -297,6 +312,7 @@ export function measureDiagram(
     options.padding ?? DEFAULT_PADDING,
     options.footnote,
     options.triggerNotes,
+    options.noteLines,
   ).extent;
 }
 
@@ -528,6 +544,7 @@ function renderRelation(
   foreignKey: ForeignKey,
   placedByKey: ReadonlyMap<string, PlacedEntity>,
   tables: ReadonlyMap<string, Table>,
+  snapshot: SchemaSnapshot,
 ): string {
   const sourceKey = entityKey(foreignKey.referencingTable);
   const targetKey = entityKey(foreignKey.referencedTable);
@@ -544,7 +561,7 @@ function renderRelation(
     targetOffsetY,
     sourceKey === targetKey,
   );
-  const ends = relationEnds(tables.get(sourceKey), foreignKey);
+  const ends = relationEnds(tables.get(sourceKey), foreignKey, snapshot);
   const classes = ["sc-relation", foreignKey.isEnabled ? "" : "sc-relation-disabled"]
     .filter((name) => name !== "")
     .join(" ");
@@ -570,6 +587,7 @@ export function renderDiagramSvg(input: DiagramInput, options: RenderOptions): R
     padding,
     options.footnote,
     options.triggerNotes,
+    options.noteLines,
   );
   const hasTriggers = placed.some((item) => item.entity.triggers !== null);
   const placedByKey = new Map(placed.map((item) => [item.entity.key, item]));
@@ -593,7 +611,7 @@ export function renderDiagramSvg(input: DiagramInput, options: RenderOptions): R
   parts.push('<g class="sc-relations">');
   const tables = tablesByKey(input.snapshot);
   for (const foreignKey of relations) {
-    parts.push(renderRelation(foreignKey, placedByKey, tables));
+    parts.push(renderRelation(foreignKey, placedByKey, tables, input.snapshot));
   }
   parts.push("</g>");
   parts.push('<g class="sc-entities">');

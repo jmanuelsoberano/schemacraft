@@ -31,6 +31,14 @@
   grid-column: 2;
 }
 
+.mapSwitcher {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 5;
+  max-width: min(320px, calc(100% - 24px));
+}
+
 .inspector {
   position: relative;
   grid-row: 2;

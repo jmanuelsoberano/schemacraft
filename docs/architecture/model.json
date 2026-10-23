@@ -8,6 +8,9 @@
       "inspect_database",
       "cancel_inspection",
       "read_project",
+      "compare_project_snapshots",
+      "compare_project_source",
+      "cancel_project_comparison",
       "write_project",
       "compute_schema_diff",
       "refresh_project_content",
@@ -30,15 +33,19 @@
       "about",
       "access",
       "canvas",
+      "comparison",
       "connection",
+      "dependencies",
       "export",
       "inspector",
+      "perspectives",
       "preferences",
       "project",
       "schema",
       "support"
     ],
     "coreModules": [
+      "comparison",
       "credentials",
       "diagnostics",
       "diff",
@@ -49,6 +56,7 @@
       "project"
     ],
     "ipcBackends": [
+      "comparisonBackend.ts",
       "connectionBackend.ts",
       "credentialsBackend.ts",
       "exportBackend.ts",
@@ -56,16 +64,77 @@
       "projectBackend.ts",
       "supportBackend.ts"
     ],
-    "adrCount": 46
+    "adrCount": 50,
+    "featureComponents": {
+      "about": "feature-about",
+      "access": "feature-access",
+      "canvas": "feature-canvas",
+      "comparison": "feature-comparison",
+      "connection": "feature-connection",
+      "dependencies": "feature-dependencies",
+      "export": "feature-export",
+      "inspector": "feature-inspector",
+      "perspectives": "feature-perspectives",
+      "preferences": "feature-preferences",
+      "project": "feature-project",
+      "schema": "feature-schema",
+      "support": "feature-support"
+    },
+    "coreComponents": {
+      "comparison": "core-comparison",
+      "credentials": "core-credentials",
+      "diagnostics": "core-diagnostics",
+      "diff": "core-diff",
+      "export": "core-export",
+      "inspectors": "core-inspectors",
+      "model": "core-model",
+      "preferences": "core-preferences",
+      "project": "core-project"
+    },
+    "ipcCallers": {
+      "appInfo.ts": ["get_app_info", "open_log_folder"],
+      "comparisonBackend.ts": [
+        "cancel_project_comparison",
+        "compare_project_snapshots",
+        "compare_project_source"
+      ],
+      "connectionBackend.ts": [
+        "cancel_inspection",
+        "describe_database",
+        "inspect_database",
+        "list_databases",
+        "test_connection"
+      ],
+      "credentialsBackend.ts": ["forget_password", "has_stored_password", "remember_password"],
+      "exportBackend.ts": ["cancel_export", "export_diagram"],
+      "preferencesBackend.ts": [
+        "forget_connection",
+        "forget_project",
+        "read_preferences",
+        "remember_connection",
+        "remember_project"
+      ],
+      "projectBackend.ts": [
+        "compute_schema_diff",
+        "read_project",
+        "refresh_project_content",
+        "write_project"
+      ],
+      "supportBackend.ts": [
+        "open_support_page",
+        "read_diagnostic_report",
+        "write_diagnostic_report"
+      ]
+    }
   },
   "en": {
     "overview": {
       "title": "SchemaCraft architecture",
-      "oneLiner": "A Windows desktop app that reads a SQL Server catalog, draws it as an editable ER diagram, saves it as a .scraft file and exports it to SVG, HTML, PNG and PDF.",
+      "oneLiner": "A Windows desktop app for SQL Server and native PostgreSQL catalog inspection, portable offline projects, independent capture comparison, known references and saved perspectives. New exploration features are unreleased.",
       "paragraphs": [
-        "SchemaCraft is a Tauri 2 app. The UI is React 19 and TypeScript running in WebView2. All disk, network and OS work is done in Rust. The Rust side has two parts: a thin host (src-tauri) that exposes 24 IPC commands, and a framework-free library (crates/schemacraft-core) that holds the real logic.",
+        "React and TypeScript run in WebView2. A thin Tauri host exposes 27 IPC commands; the framework-free Rust core owns inspection, persistence, refresh, independent comparison and rendering. The published 1.2.0 binaries remain unchanged.",
         "Dependencies point one way: frontend -> IPC -> host -> core -> external systems. The frontend reaches Rust and the window only through src/shared/ipc, the one folder that imports the Tauri API, and ESLint enforces the layer rules (ADR-031). Commands are thin adapters: they resolve inputs, call the core and map errors, with no domain logic, and they keep blocking work off the main thread (ADR-032). The core knows nothing about Tauri or the UI. The types that cross the boundary are written once in Rust and generated as TypeScript with ts-rs.",
-        "SchemaCraft has no database of its own. SQL Server is only read, with fixed SELECT queries over sys.* views. What lasts lives in four places: .scraft files the user picks, preferences.json in %APPDATA%\\com.jmanuelsoberano.schemacraft, passwords in Windows Credential Manager, and two localStorage keys for UI conveniences. The local diagnostic log, counts and timings only, lives in %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft\\logs and is never sent anywhere (ADR-041). Everything else is memory only."
+        "There is no application database. SQL Server and PostgreSQL catalogs are read only, with no application-row reads or routine execution. Projects, local preferences, opted-in OS credentials and UI conveniences remain local; the typed diagnostic log excludes private names, paths, source and messages. Comparison/dependency state is transient unless explicitly exported; maps and notes belong to the project."
       ]
     },
     "layers": [
@@ -114,7 +183,7 @@
             "id": "action-registry",
             "name": "Action registry and shortcuts",
             "path": "src/app/actions",
-            "responsibility": "33 AppActions (id, labelKey, icon, shortcut, isAvailable, unavailableReason, run) built in useAppActions.ts. A disabled action says why in its tooltip: no project, a layout running, nothing hidden, nothing to undo or redo, or a read-only project (Save, Save as and Refresh). view.accessReport (Ctrl+Shift+A) opens the Access report whenever a project is open. Since 1.1 the detail levels (view.detailCompact, view.detailKeys and view.detailFull on Ctrl+1, Ctrl+2 and Ctrl+3), the themes (settings.theme.*) and the languages (settings.language.*) are actions too, run by the top bar, and view.toggleInspector (Ctrl+I) opens or closes the Inspector with focus; the per-entity gestures and Enter on a card stay outside the registry on purpose (ADR-008). Since 1.2 help.openLogFolder opens the folder of the diagnostic log from the palette, without a shortcut, and is unavailable when the session writes no log. useKeyboardShortcuts.ts routes keys in the capture phase; the first match wins. useAppActions.test.ts builds the registry as the shell does and fails when two actions share a shortcut or one takes a browser key that is not on the claimed list. The toolbar, the menus, the welcome screen and the command palette all read this registry. The shared codeViewerKeyboard helper identifies keys owned by the read-only source before the capture listener runs global actions or browser guards. Module selection is an argument-taking gesture, not a new AppAction (ADR-044).",
+            "responsibility": "AppActions (id, labelKey, icon, shortcut, isAvailable, unavailableReason, run) built in useAppActions.ts. A disabled action says why in its tooltip: no project, a layout running, nothing hidden, nothing to undo or redo, or a read-only project (Save, Save as and Refresh). view.accessReport (Ctrl+Shift+A) opens the Access report whenever a project is open. Since 1.1 the detail levels (view.detailCompact, view.detailKeys and view.detailFull on Ctrl+1, Ctrl+2 and Ctrl+3), the themes (settings.theme.*) and the languages (settings.language.*) are actions too, run by the top bar, and view.toggleInspector (Ctrl+I) opens or closes the Inspector with focus; the per-entity gestures and Enter on a card stay outside the registry on purpose (ADR-008). Since 1.2 help.openLogFolder opens the folder of the diagnostic log from the palette, without a shortcut, and is unavailable when the session writes no log. useKeyboardShortcuts.ts routes keys in the capture phase; the first match wins. useAppActions.test.ts builds the registry as the shell does and fails when two actions share a shortcut or one takes a browser key that is not on the claimed list. The toolbar, the menus, the welcome screen and the command palette all read this registry. The shared codeViewerKeyboard helper identifies keys owned by the read-only source before the capture listener runs global actions or browser guards. Module selection is an argument-taking gesture, not a new AppAction (ADR-044).",
             "patterns": ["Command / single registry (ADR-008)", "Platform-neutral mod key"]
           },
           {
@@ -163,7 +232,7 @@
             "id": "shared-ipc",
             "name": "IPC backends and resolver",
             "path": "src/shared/ipc",
-            "responsibility": "The only folder that imports the Tauri API. One typed backend per area (connection, project, preferences, credentials, export, support), with Tauri and unavailable implementations and optional DEV-only previews picked by createBackendResolver. Support deliberately has no preview implementation. Every command goes through invokeCommand, which normalises rejections with toOperationError. nativeWindow.ts wraps the window (theme, title, close guard, destroy), runtime.ts tells whether the page runs in the desktop app, and appInfo.ts with useAppInfo wraps get_app_info and open_log_folder. previewAccess.ts follows the Rust access verdicts and the refresh merge for the preview backends, whose server names choose what the login sees (ADR-014).",
+            "responsibility": "The only Tauri-API boundary. Typed connection, project, comparison, credentials, preferences, export and support backend resolvers plus native dialogs/window wrappers; dev preview implementations are explicit simulations, never native-inspector evidence.",
             "patterns": [
               "Ports and adapters",
               "Lazy resolver (ADR-014, ADR-018)",
@@ -211,6 +280,13 @@
             "path": "src/shared/brand",
             "responsibility": "Logo.tsx and credits.ts (DEVELOPER_NAME 'Manuel Soberano', REPOSITORY_URL), used by the shell, the welcome screen and About.",
             "patterns": ["Constants module"]
+          },
+          {
+            "id": "shared-connection-identities",
+            "name": "Provider-qualified identities",
+            "path": "src/shared/connections",
+            "responsibility": "Pure history and credential identities, preserving PostgreSQL role/database case and separating engine namespaces; no feature-store import.",
+            "patterns": ["Explicit evidence and privacy boundary"]
           }
         ]
       },
@@ -225,7 +301,7 @@
             "id": "feature-connection",
             "name": "connection",
             "path": "src/features/connection",
-            "responsibility": "Connection dialog: form, recent connections, test, database and schema pick, inspection with progress and cancel, refresh with diff review, remembered passwords, and the 'Trust the certificate and retry' remedy. Choosing a database calls describeDatabase: the schemas to offer and the predicted access, which AccessCheckNotice shows at the end of the database section (a danger notice, with 'Read schema' disabled, when the login sees nothing). A read that finds nothing visible is blocked (blockedInspection) and creates no project. A review is up to date only when the diff says so: isUpToDate and hasObjectChanges are computed in Rust and reviewChanges.ts only reads them. ReviewChangesPanel also lists keys to invisible tables, not-checked facts with the date they were read, facts now available and, since 1.2, one counted line for each family of facts recorded for the first time, such as the state of the indexes and constraints of a project saved before 1.2; it marks a disabled, filtered or untrusted index or constraint as the Inspector does. connectionStore.ts is a phase machine (idle, testing, loadingSchemas, inspecting, reviewing, applying) and never refreshes a read-only project. fromSavedConnection.ts turns a saved connection back into a draft, live settings, a description and a history key, naming the server with formatTarget, the mirror of Rust format_target (ADR-011). The draft persists in localStorage 'schemacraft.connection' without the password; mergePersistedConnection restores it field by field, so a draft stored before 1.2 gets the code options' defaults. ADR-043 adds two default-on code switches, code-only schemas while objects are requested, separate access-report rows, code progress and grouped review changes. Retesting the same connection/database preserves selected schemas. Code read failures are listed even without saved code; explicit exclusions have counted capture lines.",
+            "responsibility": "Provider-aware draft, separate SQL Server and PostgreSQL controls, test/describe/capture/refresh review. SQL instance/integrated login behavior stays independent from PostgreSQL TCP/IPv6, case-preserved role/database and strict TLS/public roots. Provider-qualified history/credentials and request ownership guards prevent stale responses or secrets entering persistence.",
             "patterns": [
               "Store as controller",
               "Phase + failure instead of booleans",
@@ -236,7 +312,7 @@
             "id": "feature-project",
             "name": "project",
             "path": "src/features/project",
-            "responsibility": "The open project: open, save, save as, undo and redo, unsaved-changes guard. projectStore.ts is the Memento caretaker (HISTORY_LIMIT 100) and runs ensurePlaced on every open, inspection and refresh. Opening reads an OpenedProject: a read-only project (a newer format, ADR-035) can be rearranged but is never marked unsaved and never saved, and savedWith names its writer. contentOf keeps the unknown root keys and drops the header keys. savedConnection.ts turns connection settings into the SavedConnection a project records, so project never imports connection. The window title and the close guard live in useProjectWindow.",
+            "responsibility": "Open/save/refresh and active-map workspace authority. Undo mementos include maps/descriptions/notes, never snapshots or secrets; focused text edits coalesce, refresh clears history. Document identity and edit revisions protect asynchronous completion; switching maps alone stays clean. General preserves its legacy canvas key (ADR-049).",
             "patterns": [
               "Memento caretaker (ADR-021)",
               "Guarded action (pendingDiscard)",
@@ -354,7 +430,7 @@
             "id": "feature-access",
             "name": "access",
             "path": "src/features/access",
-            "responsibility": "Graded disclosure of partial access (ADR-034). accessCause.ts orders the causes (nothing visible for lack of a grant or behind a possible DENY, an empty database, explicit DENYs, denials the login cannot see, no VIEW DEFINITION on the database or on some schemas, objects that may be missing) and says whether a GRANT helps; grantScript.ts writes the least-privilege GRANT VIEW DEFINITION script with comments in the user's language and the SQL Server 2022 disclosure; accessNotice.ts decides when the chip and the bar show and signs a notice by endpoint, database and verdicts. AccessChip (status bar), AccessBar (dismissible, above the entities list) and AccessReportDialog (view.accessReport, Ctrl+Shift+A) read snapshot.access of the open project; accessReportStore holds the dialog's open flag. CopyScriptButton copies the script; SchemaCraft never runs it. AccessCheckNotice lives in features/connection and uses these pure helpers, so the dependency points one way. Code coverage is reported separately from the table-access level, with encrypted, omitted, not-visible and failed capture states. The connection notice warns when requested module texts may not be readable. No code verdict changes the chip, bar or export note (ADR-043).",
+            "responsibility": "Honest access notices/report. SQL Server retains its probe, DENY causes and conditional copy-only GRANT. PostgreSQL records native catalog/read outcomes and schema USAGE, with no fabricated SQL permission facts or scripts. Closing notices affects only per-provider UI convenience.",
             "patterns": [
               "Graded disclosure",
               "Pure rules, thin components",
@@ -365,7 +441,7 @@
             "id": "feature-schema",
             "name": "schema",
             "path": "src/features/schema",
-            "responsibility": "Pure helpers over SchemaSnapshot: formatDataType and describeColumn (dataType.ts), which prints 'DEFAULT (not available)' or '(default not recorded)' instead of dropping a default it cannot read; the one home of entity identity (entities.ts): EntityKind, ENTITY_KINDS, entityKey, listEntities, groupEntities (schemas, then Tables and Views sections), filterEntityGroups, countEntities and entityListShape; definitionText, isUnknownDefinition, isEncryptedDefinition and withoutText (definition.ts), the readers of table-expression and module Definition states; withoutText builds a text-free copy for what leaves the application; objectsCoverage, definitionsCoverage, listsEveryObject, emptySchemaReason and the export-safe AccessSummary, whose coverage is rebuilt from the objects and texts so the coverage of code never travels (coverage.ts); quoteIdentifier (sqlIdentifiers.ts); foreignKeyId (entities.ts), the id of a key's relationship on the canvas, in the SVG and in the details; objectDetails.ts (describeObjectDetails: the facts of one table or view with how far the capture vouches for each, FactText and ListCompleteness, each CHECK's reading and each key's explanation) and objectDetailsView.ts (presentObjectDetails: the same as translated text, DetailsView, with a RuleView per CHECK and key and the notes of each section), the view-model the Inspector and the viewer's detail panel share (ADR-038). rules/ holds the readable rules (ADR-039): checkTokens.ts (tokenizeCheck), checkParser.ts (parseCheck, recursive descent with T-SQL precedence) and checkReader.ts (readCheckConstraint over the stored text: a closed set of forms read all or nothing, as a CheckReading that is read, unread, notAvailable or notRecorded); foreignKeyReader.ts (foreignKeyOptionality, foreignKeyChildCardinality and, since 1.2, foreignKeyChildCardinalityReading, which also names the disabled and filtered indexes behind a key, explainForeignKey and explainForeignKeyToInvisibleTable, foreignKeyExplanations cached per snapshot in a WeakMap, ExplanationScope and foreignKeyDefinitionSql, which adds an untrusted key WITH NOCHECK); and ruleText.ts (RuleNode trees of message keys with typed arguments; enabledRules and, since 1.2, stateRules, which puts the rules of a constraint SQL Server does not trust after the sentence that says so, under a heading that names the columns whose change SQL Server checks, a key's sentences about the referenced table after it; and formatRuleText, which turns them into text, column, table and code parts). The golden forms of crates/schemacraft-core/tests/fixtures/sqlserver/check_forms.json drive checkReader.test.ts. No store, no React. A leaf: ESLint lets it import only shared/ (contracts and i18n) and itself, so every feature and the viewer bundle can import it (ADR-037). Since 1.2 modules.ts owns ModuleRef, moduleKey, findModule and listModules; objects.ts groups and pages entities and routines without reading SQL bodies. moduleDetails.ts reads desktop-only module facts and view definitions; moduleDetailsView.ts presents Parameters, Returns, Runs and Definition with module.* messages excluded from HTML. Definition states, kept dates and prior-login visibility remain distinct; table-function returns omit internal DEFAULT expressions (ADR-044). triggerDetails.ts centralizes trigger-list completeness, sorting and firing facts. Entity details now include Triggers after CHECK constraints and view Definition last. DetailsScope.definitions distinguishes app included from file excluded. The shared view Definition section contains settings and presentation only; desktop ModuleDetailsView retains source separately. triggerDetailsView.ts shares event presentation between entity Triggers and module Runs (ADR-038).",
+            "responsibility": "Leaf among features: structured entity/module identities, provider-qualified coverage, native metadata, shared object/module details and conservative readable rules. Imports only shared/ and itself. Unsupported PostgreSQL expressions remain SQL instead of false SQL Server interpretations; every canvas/export surface uses the same native relationship facts.",
             "patterns": [
               "Leaf module, enforced by lint, safe for the viewer bundle",
               "Interpreter over a closed grammar with conservative fallback (ADR-039)",
@@ -390,6 +466,34 @@
             "path": "src/features/support",
             "responsibility": "Ephemeral support dialog and store: preview a bounded local report, save the exact reviewed text, reveal it and separately open a public bug form or private-security guidance. Closing clears the preview; generation and busy guards reject stale reads and duplicate pickers. No project, preferences or connection access (ADR-046).",
             "patterns": ["Ephemeral dialog store", "Explicit local export"]
+          },
+          {
+            "id": "feature-comparison",
+            "name": "Independent comparison",
+            "path": "src/features/comparison",
+            "responsibility": "Transient Reference/Compared inputs, evidence filters, local bounded source review and reviewed HTML report; no active-project mutation (ADR-047).",
+            "patterns": ["Explicit evidence and privacy boundary"]
+          },
+          {
+            "id": "feature-dependencies",
+            "name": "Known dependency map",
+            "path": "src/features/dependencies",
+            "responsibility": "Incoming/outgoing catalog evidence, separate directed bounded graph, transient positions and closed SVG/PNG/PDF/HTML export (ADR-048).",
+            "patterns": ["Explicit evidence and privacy boundary"]
+          },
+          {
+            "id": "feature-perspectives",
+            "name": "Perspectives and notes",
+            "path": "src/features/perspectives",
+            "responsibility": "General and named independent CanvasState values over one snapshot, shared plain-text table/column notes, orphan reassignment and reviewed annotation projection (ADR-049).",
+            "patterns": ["Explicit evidence and privacy boundary"]
+          },
+          {
+            "id": "postgresql-connection",
+            "name": "Native PostgreSQL connection",
+            "path": "src/features/connection/PostgreSqlFields.tsx, src/features/connection/postgreSqlAddress.ts",
+            "responsibility": "Provider-specific TCP/IPv6 and role fields, strict TLS/public root, explicit local-only exceptions, no SQL Server authentication controls (ADR-050).",
+            "patterns": ["Explicit evidence and privacy boundary"]
           }
         ]
       },
@@ -432,14 +536,14 @@
             "id": "contracts",
             "name": "Generated contracts",
             "path": "src/shared/contracts/generated",
-            "responsibility": "TypeScript generated from Rust types by ts-rs into model/, inspectors/, diff/, project/, preferences/, credentials/, export/ and ipc/. src/shared/contracts/index.ts re-exports them. Committed, never edited by hand; CI fails on drift.",
+            "responsibility": "Rust-generated ts-rs contracts under model/, inspectors/, diff/, comparison/, project/ and the existing infrastructure families. New provider, dependency, perspective and note types have one source of truth; generated files are committed and checked.",
             "patterns": ["Single source of truth (ADR-003)"]
           },
           {
             "id": "ipc-invoke",
             "name": "Commands (invoke)",
             "path": "src-tauri/src/main.rs",
-            "responsibility": "invokeCommand(name, args) in src/shared/ipc reaches one of the 24 commands in generate_handler!. Arguments go camelCase from TS and arrive as snake_case Rust parameters. Commands that only read memory stay synchronous and return at once (get_app_info, read_preferences, both cancel_* commands). Every other command is async, and its file, credential-store or heavy work runs on the blocking pool through run_blocking (ADR-032), so the window never freezes.",
+            "responsibility": "invokeCommand maps literal calls from the checked ipcCallers manifest to 27 registered host commands. IPC keeps camelCase arguments, generated contracts and typed error envelopes.",
             "patterns": [
               "Request/response over serde JSON",
               "The signature decides the thread (async or sync)"
@@ -448,8 +552,8 @@
           {
             "id": "ipc-channel",
             "name": "Event channels",
-            "path": "src-tauri/src/commands/connection.rs, src-tauri/src/commands/export.rs",
-            "responsibility": "Channel<InspectionEvent> and Channel<ExportEvent>. First event Started{jobId}, then Progress. Serialised as {event, data}.",
+            "path": "src-tauri/src/commands/connection.rs, src-tauri/src/commands/export.rs, src-tauri/src/commands/comparison.rs",
+            "responsibility": "Ordered inspection/export progress channels and a started-job channel for bounded source comparison; cancellation IDs belong to their own job registries. Late results are still checked by frontend revisions.",
             "patterns": ["Ordered progress channel (ADR-013)"]
           },
           {
@@ -569,6 +673,13 @@
             "path": "src-tauri/src/commands/support.rs",
             "responsibility": "Async commands for local diagnostic read/write and opening a fixed support page, on run_blocking through logged. Source log directory comes only from AppState; saving uses the exact reviewed text. Typed SupportErrorKind; no new window capability.",
             "patterns": ["Thin command", "run_blocking", "Typed errors"]
+          },
+          {
+            "id": "cmd-comparison",
+            "name": "Comparison commands",
+            "path": "src-tauri/src/commands/comparison.rs",
+            "responsibility": "Thin blocking snapshot comparison and cancellable bounded source-line adapters, no persistence or database connection (ADR-047).",
+            "patterns": ["Explicit evidence and privacy boundary"]
           }
         ]
       },
@@ -607,7 +718,7 @@
             "id": "core-inspectors",
             "name": "inspectors",
             "path": "crates/schemacraft-core/src/inspectors",
-            "responsibility": "DatabaseInspector trait (test_connection, list_databases, describe_database, inspect), create_inspector factory, ConnectionSettings, InspectionOptions (schemas and views, and includeProgrammability and includeModuleDefinitions, on by default through serde, so refreshing a project saved before 1.2 reads and saves code), DatabaseDescription, ProgressReporter with the CheckingAccess stage, and InspectorError with 13 variants, whose log_summary() keeps the kind, the SQL Server error number and the query name for the diagnostic log. inspect can be cancelled at any point, connecting included.",
+            "responsibility": "DatabaseInspector strategy and create_inspector provider dispatch for SQL Server and PostgreSQL; typed settings, progress, options and failures. Native inspectors own catalogs/access semantics and operation-scoped sessions. Optional code and dependency families preserve honest independent outcomes.",
             "patterns": [
               "Strategy (PRD 4.3)",
               "Factory",
@@ -642,7 +753,7 @@
             "id": "core-project",
             "name": "project",
             "path": "crates/schemacraft-core/src/project",
-            "responsibility": ".scraft document (FORMAT_VERSION 3, MIN_READER_VERSION 2), read and written by file.rs with the fs helpers, which logs project_opened and project_saved (format, KB, ms). A newer file opens read-only when its minReaderVersion allows it and is refused otherwise; an older one is upgraded by migrations.rs on the raw JSON (format_2_to_3 rewrites the header only); unknown keys at the root, the snapshot, its programmability, the canvas and each node are kept (ADR-035). Format 3 adds only keys 1.1 keeps or ignores and changes no meaning, so 1.1 opens it read-only, which forward_read.rs tests; fixtures/format-2.scraft was written by the 1.1.0 core (ADR-042). ProjectContent (with_refreshed_snapshot applies the carry-over merge), SavedConnection without password, CanvasState (the Memento) with normalisation and retaining_entities_of.",
+            "responsibility": "Atomic .scraft format 4/minimum reader 4 persistence. Header-first historical migrations, safe newer-reader refusal, saved provider connections, one shared snapshot, General and named CanvasState maps, shared notes with orphan retention. Validation and normalization preserve known facts and supported unknown-key containers (ADR-035, ADR-049).",
             "patterns": [
               "Memento",
               "Header + flattened content",
@@ -668,7 +779,7 @@
             "id": "core-credentials",
             "name": "credentials",
             "path": "crates/schemacraft-core/src/credentials",
-            "responsibility": "CredentialStore trait with SystemCredentialStore (keyring, Windows Credential Manager, service 'SchemaCraft') and InMemoryCredentialStore for tests.",
+            "responsibility": "CredentialStore strategy with OS/SystemCredentialStore and memory implementation. Provider-qualified secret keys separate SQL Server from PostgreSQL, preserve native role case and never return a password through IPC. Resolve secrets immediately before connecting.",
             "patterns": ["Strategy", "cfg(windows)", "OS store for secrets (ADR-019)"]
           },
           {
@@ -688,6 +799,34 @@
             "path": "crates/schemacraft-core/src/diagnostics.rs",
             "responsibility": "The only emitter of the target schemacraft-diagnostics (TARGET), whose hyphen no module path has, from the module the file layer checks as well (MODULE), one function per event whose parameters are integers, booleans, durations, &'static str and ClosedKind values: app_started, startup_failed, catalog_query, inspection_completed (counts, access level, ms per stage), project_opened, project_saved, export_written and command_failed (command, kind, SQL Server error number, query). ErrorSummary is what log_summary() returns: kind, error number and query name, never the message. Depends on model alone; the other modules mark their kinds with the ClosedKind marker trait. A source scan test fails when another file names the target or imports TARGET under another name (ADR-041).",
             "patterns": ["Allowlist of typed events", "Marker trait for closed kinds"]
+          },
+          {
+            "id": "core-comparison",
+            "name": "Independent capture comparison",
+            "path": "crates/schemacraft-core/src/comparison",
+            "responsibility": "Pure typed evidence comparison and work-bounded literal source-line pages, independent of refresh carry-over (ADR-047).",
+            "patterns": ["Explicit evidence and privacy boundary"]
+          },
+          {
+            "id": "core-dependencies",
+            "name": "Catalog dependency family",
+            "path": "crates/schemacraft-core/src/model/dependencies.rs",
+            "responsibility": "Structured endpoints, native catalog-reference kinds, scope, query outcome, source coverage, observation dates and limitations (ADR-048).",
+            "patterns": ["Explicit evidence and privacy boundary"]
+          },
+          {
+            "id": "core-perspectives",
+            "name": "Perspective persistence",
+            "path": "crates/schemacraft-core/src/project/perspectives.rs",
+            "responsibility": "Named maps, shared typed table/column notes, orphan retention, validation and unknown-field preservation; format 4/minimum reader 4 (ADR-049).",
+            "patterns": ["Explicit evidence and privacy boundary"]
+          },
+          {
+            "id": "core-postgresql",
+            "name": "PostgreSQL inspector",
+            "path": "crates/schemacraft-core/src/inspectors/postgresql",
+            "responsibility": "Native PostgreSQL 15–18 typed catalogs, strict TLS and read-only operation sessions, native access evidence and provider semantics (ADR-050).",
+            "patterns": ["Explicit evidence and privacy boundary"]
           }
         ]
       },
@@ -744,6 +883,13 @@
             "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
             "responsibility": "Public bug-report form on the default branch, with version/environment/reproduction fields, an optional manually attached reviewed file and a public-data notice. Security details use the existing private-reporting policy. The application never submits an issue.",
             "patterns": ["Manual public reporting"]
+          },
+          {
+            "id": "ext-postgresql",
+            "name": "PostgreSQL catalogs",
+            "path": "crates/schemacraft-core/src/inspectors/postgresql/catalog.rs",
+            "responsibility": "pg_catalog and information_schema observations only; never application data or routine execution.",
+            "patterns": ["Explicit evidence and privacy boundary"]
           }
         ]
       },
@@ -768,7 +914,7 @@
             "id": "ci",
             "name": "CI workflow",
             "path": ".github/workflows/ci.yml",
-            "responsibility": "On every pull request each job first runs scripts/ci-changes.sh. Windows job: the CHANGELOG entry of the package.json version (release-notes.mjs), prettier, eslint, tsc, vitest and npm run docs:check always; when code changed, also cargo fmt, clippy -D warnings, cargo test, the contracts check, tauri build --no-bundle with the ci profile, WebView2 when the runner lacks it and the smoke test, uploading the exe and the screenshots. Linux job, when the core changed: the SQL Server integration tests, sqlserver_integration, sqlserver_permissions and diagnostics_privacy, against two services, mssql/server:2022-latest on port 1433 and 2019-latest on 1434, in one step per server that names the major version it must report (SCHEMACRAFT_TEST_MSSQL_MAJOR, 16 and 15); the 2019 step runs after a 2022 failure too, and SCHEMACRAFT_TEST_REQUIRE_SERVER=1 makes a missing server fail the tests instead of skipping them. Two services in the one job rather than a matrix keep the name of the required check. Pushes to main run everything and keep the cache warm (ADR-033).",
+            "responsibility": "On every pull request each job first runs scripts/ci-changes.sh. Both required check names stay unchanged: Lint, test and build (Windows) and SQL Server integration tests (Linux). The Windows job always checks the current version CHANGELOG entry, frontend format/lint/types/tests, architecture and distribution guards. Code changes also run sequential Rust gates, generated-contract checks, the ci-profile portable build, WebView2 setup when needed, real executable smoke tests and Store-package validation. The Linux job runs sqlserver_integration, sqlserver_permissions, diagnostics_privacy and sqlserver_code sequentially on SQL Server 2022 and 2019, with required-server and expected-major checks; the second version still runs after a first-version failure. That same job then starts the dedicated PostgreSQL fixtures and runs native/restricted-role/TLS/privacy integration sequentially on PostgreSQL 15, 16, 17 and 18 with required-server/TLS and expected-major checks. Core changes, Cargo manifests/toolchain, the CI definition, dev/postgresql/**, scripts/ci-changes* and scripts/dev-sqlserver.ps1 require the complete integration job, including Markdown under the fixture directory. Pushes to main run everything (ADR-033).",
             "patterns": ["Required checks", "Change-based filtering that fails closed"]
           },
           {
@@ -821,7 +967,7 @@
             "id": "integration-tests",
             "name": "SQL Server integration tests",
             "path": "crates/schemacraft-core/tests",
-            "responsibility": "sqlserver_integration.rs creates databases from fixtures/sqlserver/fixture.sql, changes.sql and stress_200_tables.sql, then checks connection errors (the untrusted certificate included), describe_database, inspection, progress, cancellation and refresh against a real server. It also builds SchemaCraftCheckForms from fixtures/sqlserver/check_forms.json (72 golden CHECK forms, which the rule reader's vitest suite reads too) and rule_facts.sql, asserts every stored form, column list and enabled state against the engine, and pins on scratch tables the CHECK and foreign key behaviour the rule sentences rest on (ADR-039), since 1.2 with the index and constraint state: a disabled unique constraint, a filtered unique index and an enabled one without a filter, a key added WITH NOCHECK and a CHECK enabled again without checking, which still check a write of the columns they read, a key and a CHECK NOT FOR REPLICATION, never trusted, and a table partitioned by a column its aligned index gets on its own; SchemaCraftClusteredFacts pins that disabling a clustered primary key keeps the key of its table disabled until the index is rebuilt. It also builds SchemaCraftCode from fixtures/sqlserver/code.sql (views WITH CHECK OPTION, indexed and encrypted; triggers on a table and a view, ordered, disabled, NOT FOR REPLICATION and encrypted; procedures and functions of every T-SQL kind, no CLR module; a code-only schema; a database DDL trigger) and runs the capability probe as sa on SchemaCraftFixture, SchemaCraftCheckForms and SchemaCraftCode: the output contract of tests/common (one result set, nvarchar, nvarchar, bigint, every pair in PROBE_METRICS), no failed section and the counts each fixture defines; a run while another connection holds a schema lock, in which every failed section returns only error 1222; and a static check that the script is one read-only batch, that every CATCH returns only ERROR_NUMBER(), that every label is a literal or comes from a fixed VALUES list and that it calls none of the functions that return a name, an error message or a definition, such as OBJECT_NAME, ERROR_MESSAGE or OBJECT_DEFINITION (ADR-040). sqlserver_permissions.rs seeds permissions.sql (the fixture schema, an empty database and a database with denials made to public) and creates nine low-privilege logins with permission_logins.sql (db_owner, db_datareader, VIEW DEFINITION only, reader plus a schema's VIEW DEFINITION, two tables, CONNECT only, two schema-DENY variants and a column DENY) with a password made up for the run, plus, only on SQL Server 2022 and later, a tenth with permission_logins_2022.sql (VIEW DEFINITION with VIEW SECURITY DEFINITION denied), then checks every access verdict, hidden text and refresh rule, and that a denial to public never reaches dbo. On 2019 HAS_PERMS_BY_NAME answers NULL for VIEW SECURITY DEFINITION and denials stay countable; on 2022 the tenth login sees no denial, not even its own, nor its own database user, so its denials are unknown (ADR-034). It also runs the capability probe as sa and as the owner, reader, VIEW DEFINITION, sales-texts and connect-only logins, and the tenth on 2022, and pins what each one counts, such as no procedure and no readable text for db_datareader, and its VIEW SECURITY DEFINITION answer, -1 for every login on 2019. diagnostics_privacy.rs captures every event on the diagnostics target at every level, while it reads SchemaCraftPermissions as sa and as the db_datareader login, logs in with a wrong password, opens a database the login has no user in and reads as the login of fixtures/sqlserver/diagnostics_logins.sql, which may not read sys.check_constraints; it fails on any fixture name or readable expression from an sa read, the server's name, a login, the host, a password, a database or a fragment of the server's messages, and checks the counts, kinds and error numbers 18456, 4060 and 229 (ADR-041). tests/common holds the shared helpers. The stress test must read 200 tables within 5 s (STRESS_BUDGET; the product target is 3 s) and prints its time with the server version. connects_to_the_expected_major_version, in each binary, checks that the server reports the major version SCHEMACRAFT_TEST_MSSQL_MAJOR names, so a step cannot test the wrong server; CI runs the three binaries against SQL Server 2019 and 2022, and check_forms.json and rule_facts.sql hold on both unchanged. Every test that needs the server is skipped when SCHEMACRAFT_TEST_MSSQL_HOST is not set, unless SCHEMACRAFT_TEST_REQUIRE_SERVER, which CI sets, makes it fail; the static check of the probe runs in every cargo test.",
+            "responsibility": "sqlserver_integration.rs creates databases from fixtures/sqlserver/fixture.sql, changes.sql and stress_200_tables.sql, then checks connection errors (the untrusted certificate included), describe_database, inspection, progress, cancellation and refresh against a real server. It also builds SchemaCraftCheckForms from fixtures/sqlserver/check_forms.json (72 golden CHECK forms, which the rule reader's vitest suite reads too) and rule_facts.sql, asserts every stored form, column list and enabled state against the engine, and pins on scratch tables the CHECK and foreign key behaviour the rule sentences rest on (ADR-039), since 1.2 with the index and constraint state: a disabled unique constraint, a filtered unique index and an enabled one without a filter, a key added WITH NOCHECK and a CHECK enabled again without checking, which still check a write of the columns they read, a key and a CHECK NOT FOR REPLICATION, never trusted, and a table partitioned by a column its aligned index gets on its own; SchemaCraftClusteredFacts pins that disabling a clustered primary key keeps the key of its table disabled until the index is rebuilt. It also builds SchemaCraftCode from fixtures/sqlserver/code.sql (views WITH CHECK OPTION, indexed and encrypted; triggers on a table and a view, ordered, disabled, NOT FOR REPLICATION and encrypted; procedures and functions of every T-SQL kind, no CLR module; a code-only schema; a database DDL trigger) and runs the capability probe as sa on SchemaCraftFixture, SchemaCraftCheckForms and SchemaCraftCode: the output contract of tests/common (one result set, nvarchar, nvarchar, bigint, every pair in PROBE_METRICS), no failed section and the counts each fixture defines; a run while another connection holds a schema lock, in which every failed section returns only error 1222; and a static check that the script is one read-only batch, that every CATCH returns only ERROR_NUMBER(), that every label is a literal or comes from a fixed VALUES list and that it calls none of the functions that return a name, an error message or a definition, such as OBJECT_NAME, ERROR_MESSAGE or OBJECT_DEFINITION (ADR-040). sqlserver_permissions.rs seeds permissions.sql (the fixture schema, an empty database and a database with denials made to public) and creates nine low-privilege logins with permission_logins.sql (db_owner, db_datareader, VIEW DEFINITION only, reader plus a schema's VIEW DEFINITION, two tables, CONNECT only, two schema-DENY variants and a column DENY) with a password made up for the run, plus, only on SQL Server 2022 and later, a tenth with permission_logins_2022.sql (VIEW DEFINITION with VIEW SECURITY DEFINITION denied), then checks every access verdict, hidden text and refresh rule, and that a denial to public never reaches dbo. On 2019 HAS_PERMS_BY_NAME answers NULL for VIEW SECURITY DEFINITION and denials stay countable; on 2022 the tenth login sees no denial, not even its own, nor its own database user, so its denials are unknown (ADR-034). It also runs the capability probe as sa and as the owner, reader, VIEW DEFINITION, sales-texts and connect-only logins, and the tenth on 2022, and pins what each one counts, such as no procedure and no readable text for db_datareader, and its VIEW SECURITY DEFINITION answer, -1 for every login on 2019. diagnostics_privacy.rs captures every event on the diagnostics target at every level, while it reads SchemaCraftPermissions as sa and as the db_datareader login, logs in with a wrong password, opens a database the login has no user in and reads as the login of fixtures/sqlserver/diagnostics_logins.sql, which may not read sys.check_constraints; it fails on any fixture name or readable expression from an sa read, the server's name, a login, the host, a password, a database or a fragment of the server's messages, and checks the counts, kinds and error numbers 18456, 4060 and 229 (ADR-041). tests/common holds the shared helpers. The stress test must read 200 tables within 5 s (STRESS_BUDGET; the product target is 3 s) and prints its time with the server version. connects_to_the_expected_major_version, in each binary, checks that the server reports the major version SCHEMACRAFT_TEST_MSSQL_MAJOR names, so a step cannot test the wrong server; CI runs all four SQL Server binaries (sqlserver_integration, sqlserver_permissions, diagnostics_privacy and sqlserver_code) against SQL Server 2019 and 2022, and check_forms.json and rule_facts.sql hold on both unchanged. Every test that needs the server is skipped when SCHEMACRAFT_TEST_MSSQL_HOST is not set, unless SCHEMACRAFT_TEST_REQUIRE_SERVER, which CI sets, makes it fail; the static check of the probe runs in every cargo test. sqlserver_code.rs covers programmable-object visibility, options, retained definitions, dotted identities, parameter/return/trigger facts and independently captured known dependencies, including source-text storage disabled, scope, optional failure and explicit exclusion.",
             "patterns": [
               "Gated by environment variables",
               "Performance budget as a test",
@@ -848,6 +994,13 @@
             "path": "Cargo.toml, rust-toolchain.toml",
             "responsibility": "rust-toolchain.toml pins Rust 1.99.0 with rustfmt and clippy. [workspace.lints] forbids unsafe code, denies unwrap, expect, panic, todo, unimplemented and dbg_macro, and warns on missing_docs and clippy pedantic. [profile.release] sets lto, codegen-units 1, opt-level 3, panic = 'abort' and strip. With panic = 'abort' a panic ends the process at once, with no unwinding.",
             "patterns": ["Pinned toolchain", "Lints as policy", "Size-oriented release build"]
+          },
+          {
+            "id": "dev-postgresql",
+            "name": "PostgreSQL native/TLS fixtures",
+            "path": "dev/postgresql",
+            "responsibility": "Pinned PostgreSQL 15–18 Compose services and ephemeral local certificates; sequential native/restricted/TLS matrix, isolated from unrelated containers.",
+            "patterns": ["Disposable synthetic evidence"]
           }
         ]
       }
@@ -2224,16 +2377,219 @@
         "to": "ext-github",
         "label": "fixed browser URL; version only",
         "kind": "call"
+      },
+      {
+        "id": "app-shell-to-feature-comparison",
+        "from": "app-shell",
+        "to": "feature-comparison",
+        "label": "mounts comparison dialog",
+        "kind": "call"
+      },
+      {
+        "id": "app-shell-to-feature-dependencies",
+        "from": "app-shell",
+        "to": "feature-dependencies",
+        "label": "mounts dependency dialog",
+        "kind": "call"
+      },
+      {
+        "id": "app-shell-to-feature-perspectives",
+        "from": "app-shell",
+        "to": "feature-perspectives",
+        "label": "mounts management dialog and compact map switcher",
+        "kind": "call"
+      },
+      {
+        "id": "action-registry-to-feature-comparison",
+        "from": "action-registry",
+        "to": "feature-comparison",
+        "label": "opens immutable comparison",
+        "kind": "call"
+      },
+      {
+        "id": "action-registry-to-feature-dependencies",
+        "from": "action-registry",
+        "to": "feature-dependencies",
+        "label": "opens known-reference map",
+        "kind": "call"
+      },
+      {
+        "id": "action-registry-to-feature-perspectives",
+        "from": "action-registry",
+        "to": "feature-perspectives",
+        "label": "opens perspective management",
+        "kind": "call"
+      },
+      {
+        "id": "feature-inspector-to-feature-dependencies",
+        "from": "feature-inspector",
+        "to": "feature-dependencies",
+        "label": "stored incoming/outgoing references",
+        "kind": "call"
+      },
+      {
+        "id": "feature-inspector-to-feature-perspectives",
+        "from": "feature-inspector",
+        "to": "feature-perspectives",
+        "label": "shared table/column note editor",
+        "kind": "call"
+      },
+      {
+        "id": "feature-project-to-feature-perspectives",
+        "from": "feature-project",
+        "to": "feature-perspectives",
+        "label": "pure active-map/workspace/reconciliation helpers",
+        "kind": "call"
+      },
+      {
+        "id": "feature-perspectives-to-feature-project",
+        "from": "feature-perspectives",
+        "to": "feature-project",
+        "label": "undoable map and note commands",
+        "kind": "call"
+      },
+      {
+        "id": "feature-canvas-to-feature-perspectives",
+        "from": "feature-canvas",
+        "to": "feature-perspectives",
+        "label": "active canvas selection",
+        "kind": "call"
+      },
+      {
+        "id": "feature-export-to-feature-perspectives",
+        "from": "feature-export",
+        "to": "feature-perspectives",
+        "label": "reviewed visible note projection",
+        "kind": "call"
+      },
+      {
+        "id": "feature-comparison-to-feature-schema",
+        "from": "feature-comparison",
+        "to": "feature-schema",
+        "label": "structured fact presentation",
+        "kind": "call"
+      },
+      {
+        "id": "feature-comparison-to-feature-export",
+        "from": "feature-comparison",
+        "to": "feature-export",
+        "label": "context diagrams and escaped report helpers",
+        "kind": "call"
+      },
+      {
+        "id": "feature-comparison-to-shared-ipc",
+        "from": "feature-comparison",
+        "to": "shared-ipc",
+        "label": "comparison/project/export backends",
+        "kind": "call"
+      },
+      {
+        "id": "feature-dependencies-to-feature-schema",
+        "from": "feature-dependencies",
+        "to": "feature-schema",
+        "label": "object labels and identities",
+        "kind": "call"
+      },
+      {
+        "id": "feature-dependencies-to-feature-export",
+        "from": "feature-dependencies",
+        "to": "feature-export",
+        "label": "palette and SVG/HTML escaping",
+        "kind": "call"
+      },
+      {
+        "id": "feature-dependencies-to-shared-ipc",
+        "from": "feature-dependencies",
+        "to": "shared-ipc",
+        "label": "explicit map export",
+        "kind": "call"
+      },
+      {
+        "id": "shared-ipc-to-shared-connection-identities",
+        "from": "shared-ipc",
+        "to": "shared-connection-identities",
+        "label": "history/credential preview keys",
+        "kind": "call"
+      },
+      {
+        "id": "ipc-invoke-to-cmd-comparison",
+        "from": "ipc-invoke",
+        "to": "cmd-comparison",
+        "label": "three comparison commands",
+        "kind": "call"
+      },
+      {
+        "id": "cmd-comparison-to-core-comparison",
+        "from": "cmd-comparison",
+        "to": "core-comparison",
+        "label": "immutable snapshots and source pages",
+        "kind": "call"
+      },
+      {
+        "id": "core-inspectors-to-core-postgresql",
+        "from": "core-inspectors",
+        "to": "core-postgresql",
+        "label": "provider-selected strategy",
+        "kind": "call"
+      },
+      {
+        "id": "core-postgresql-to-core-model",
+        "from": "core-postgresql",
+        "to": "core-model",
+        "label": "native facts and coverage",
+        "kind": "call"
+      },
+      {
+        "id": "core-postgresql-to-core-dependencies",
+        "from": "core-postgresql",
+        "to": "core-dependencies",
+        "label": "pg_depend and trigger-function evidence",
+        "kind": "call"
+      },
+      {
+        "id": "core-postgresql-to-ext-postgresql",
+        "from": "core-postgresql",
+        "to": "ext-postgresql",
+        "label": "parameterized read-only catalogs",
+        "kind": "call"
+      },
+      {
+        "id": "core-sqlserver-to-core-dependencies",
+        "from": "core-sqlserver",
+        "to": "core-dependencies",
+        "label": "catalog expression references",
+        "kind": "call"
+      },
+      {
+        "id": "core-project-to-core-perspectives",
+        "from": "core-project",
+        "to": "core-perspectives",
+        "label": "validate/normalize/reconcile every map and note",
+        "kind": "call"
+      },
+      {
+        "id": "core-comparison-to-core-model",
+        "from": "core-comparison",
+        "to": "core-model",
+        "label": "immutable provider-qualified observations",
+        "kind": "call"
+      },
+      {
+        "id": "integration-tests-to-dev-postgresql",
+        "from": "integration-tests",
+        "to": "dev-postgresql",
+        "label": "native 15–18 and strict TLS matrix",
+        "kind": "call"
       }
     ],
     "dataStores": [
       {
         "name": ".scraft project file",
         "location": "Any path the user picks in the Save dialog",
-        "format": "Pretty JSON, camelCase, trailing newline, formatVersion 3 with minReaderVersion 2",
+        "format": "Pretty JSON, camelCase; unreleased formatVersion 4 / minReaderVersion 4",
         "owner": "Rust core: crates/schemacraft-core/src/project",
-        "contents": "Header (formatVersion, minReaderVersion, savedAt, savedWith) plus the connection without password (trustServerCertificate included), inspection options, the schema snapshot with its access profile (the permission facts, the database user name and the verdicts), the facts kept from earlier reads and, since 1.2, the code of views, procedures, functions and triggers under snapshot.programmability, which is business logic and never reaches an export, and canvas state (detail level, layout, viewport, node positions, collapsed and hidden flags).",
-        "notes": "Written atomically. A format 1 or 2 file (SchemaCraft 1.0 or 1.1) is upgraded in memory by migrations.rs and saved as format 3, which 1.0 cannot open and 1.1 opens read-only, without the code. A newer file opens read-only when its minReaderVersion is 3 or less and is refused otherwise. Unknown keys at the root, the snapshot, its programmability, the canvas and each node are kept and written back. The database user name stays in the file and never reaches an export. Saving the same content twice gives the same bytes apart from savedAt (and savedWith after an upgrade); nodes are sorted by qualified name."
+        "contents": "Connection metadata without secrets; inspection scope; provider-qualified snapshot with access, native facts, code and dependencies; General canvas, named maps/descriptions and shared linked/unlinked plain-text table/column notes.",
+        "notes": "Atomic validated writes. Formats 1–3 migrate on save; legacy provider defaults to SQL Server without inventing observations. Old readers refuse minimum 4. Unknown extension containers survive. Sharing a project shares its code, identifiers and notes."
       },
       {
         "name": "preferences.json",
@@ -2248,8 +2604,8 @@
         "location": "Windows Credential Manager, generic credential '<sqlserver://server/login>.SchemaCraft'",
         "format": "OS secret (CRED_PERSIST_ENTERPRISE)",
         "owner": "Rust: crates/schemacraft-core/src/credentials",
-        "contents": "SQL login passwords the user chose to remember.",
-        "notes": "Only Rust reads them, right before connecting, and no command returns them. The server part of the name is the lower-cased display target (host,1433 or host\\instance). They roam with roaming profiles."
+        "contents": "Opted-in SQL Server or PostgreSQL passwords, never returned by IPC.",
+        "notes": "Provider-qualified sqlserver:// and postgresql:// namespaces. PostgreSQL role case is exact. Saved connections, preferences and project files never contain the password."
       },
       {
         "name": "localStorage 'schemacraft.settings'",
@@ -2264,24 +2620,24 @@
         "location": "Same WebView2 profile",
         "format": "JSON, zustand persist version 1",
         "owner": "Frontend: src/features/connection/connectionStore.ts",
-        "contents": "The last connection draft: server, authentication mode, login, remember-password flags, database, schemas, includeViews, includeProgrammability, includeModuleDefinitions, encryption and trustServerCertificate.",
-        "notes": "partialize forces the password to ''; everything else stays after the app closes, so a trustServerCertificate = true chosen once is still set in the next session. Deleting preferences.json clears the history but not this draft; clearing the WebView2 data empties the form. ADR-017 and the README list both keys."
+        "contents": "Whitelisted last draft fields, provider, endpoint, role/database, scope, capture options, transport choices and optional public root PEM; password always blank.",
+        "notes": "Read and write filtering rejects persisted passwords, unknown fields and private-key PEM. Strict PostgreSQL validation is default; unsafe exceptions are explicit/local-only. Clearing preferences does not clear the WebView profile."
       },
       {
         "name": "Export files",
         "location": "Any path the user picks",
         "format": "SVG, HTML, PNG or PDF",
         "owner": "TypeScript builds the document (src/features/export); Rust writes it (crates/schemacraft-core/src/export)",
-        "contents": "The visible diagram. HTML embeds the visible data as JSON plus the viewer code and the viewer's message subset in the export language. A partial capture adds a one-line note: a footnote in SVG, PDF and PNG, a header line in HTML.",
-        "notes": "Written atomically. HTML drops hidden tables, the connection, the server version, the access probe and the database user, and unknown keys; of the access profile it embeds only the level and the coverage, and of the facts kept from an earlier read only those of the objects and keys on the diagram, with their read dates, apart from the snapshot, so the detail panel can date them without naming a hidden table. Tables, texts and keys kept from an earlier read are drawn like any other object on the diagram."
+        "contents": "Active perspective only for ERD exports, with description/individual visible linked notes only after per-export review. Separate comparison report and dependency-map outputs use their own closed projections.",
+        "notes": "No raw snapshot, module body, credentials, probe, hidden/unlinked notes or unknown extensions. Comparison reports also omit annotations and paths; dependency maps omit external server/database fields. Export bounds include reviewed captions."
       },
       {
         "name": "Session memory (not saved)",
         "location": "Frontend stores and Rust AppState",
         "format": "In memory",
         "owner": "projectStore, connectionStore, canvasUiStore, src-tauri/src/state.rs",
-        "contents": "Undo history (100), liveSettings with the typed password (sent again on each refresh), running jobs, dialog phases, selection, zoom and whether the Inspector is open. Module selection and its node-deselection request are transient too.",
-        "notes": "Lost on close. The unsaved-changes guard and the close guard protect the canvas."
+        "contents": "100 workspace undo steps, live connection secrets, selection/dialog state, independent comparison inputs/source pages/previews, bounded dependency graph positions and job revisions.",
+        "notes": "Not saved automatically. Map viewports belong to their canvases; active map choice is opportunistic. Closing comparison/support clears previews. Refresh clears workspace undo; late asynchronous results cannot replace newer state."
       },
       {
         "name": "SQL Server catalog",
@@ -2306,6 +2662,14 @@
         "owner": "src-tauri/src/support.rs and features/support",
         "contents": "UTC time, build/version, OS family/architecture, WebView2 version and up to seven bounded diagnostic files.",
         "notes": "Explicit local save only; preview cleared on close, no automatic upload. No project, preferences, credentials, screenshots or arbitrary file collection."
+      },
+      {
+        "name": "PostgreSQL catalogs",
+        "location": "Explicitly chosen server/database",
+        "format": "pg_catalog / information_schema",
+        "owner": "PostgreSqlInspector",
+        "contents": "Native structural and optional programmable/dependency catalog facts with native visibility evidence.",
+        "notes": "Read-only operation-scoped sessions, strict TLS by default; no application rows, routine execution or automatic external target follow."
       }
     ],
     "flows": [
@@ -2458,7 +2822,7 @@
           {
             "actor": "cmd-project + core project",
             "action": "Stamps and writes",
-            "detail": "Project::from_content sets formatVersion 3, minReaderVersion 2, savedAt (now) and savedWith, drops header keys found in the content and normalises the canvas (nodes sorted by name); unknown keys are written back. write_json_atomically writes <file name>.tmp, e.g. northwind.scraft.tmp, then renames it."
+            "detail": "Project::from_content sets formatVersion 4, minReaderVersion 4, savedAt (now) and savedWith, drops header keys found in the content and normalises the canvas (nodes sorted by name); unknown keys are written back. write_json_atomically writes <file name>.tmp, e.g. northwind.scraft.tmp, then renames it."
           },
           {
             "actor": "projectStore",
@@ -2473,7 +2837,7 @@
           {
             "actor": "core project/file.rs",
             "action": "Reads with a version gate",
-            "detail": "Parses the JSON once and reads formatVersion and minReaderVersion first: a minReaderVersion above 3 is refused, a newer formatVersion opens read-only, formats 1 and 2 are upgraded by migrations.rs; then the typed parse, which keeps unknown keys. A newer file that does not parse is UnsupportedFormatVersion. Errors: NotFound, Read, NotAProject, UnsupportedFormatVersion. Returns OpenedProject."
+            "detail": "Parses the JSON once and reads formatVersion and minReaderVersion first: a minReaderVersion above 4 is refused; a newer formatVersion opens read-only only when its minimum reader permits it. Formats 1, 2 and 3 migrate in memory to format 4 through migrations.rs, without inventing observations; then the typed parse preserves supported unknown fields. An unreadable newer compatible file is UnsupportedFormatVersion. Errors: NotFound, Read, NotAProject, UnsupportedFormatVersion. Returns OpenedProject."
           },
           {
             "actor": "projectStore",
@@ -2767,6 +3131,94 @@
             "detail": "The user reviews, attaches and submits in the browser; SchemaCraft sends no diagnostic file."
           }
         ]
+      },
+      {
+        "id": "compare-projects",
+        "name": "Compare independent saved captures",
+        "summary": "No connection or active-project mutation.",
+        "steps": [
+          {
+            "actor": "feature-comparison",
+            "action": "Choose Reference and Compared",
+            "detail": "Read compatible .scraft files independently through projectBackend."
+          },
+          {
+            "actor": "core-comparison",
+            "action": "Compare observation evidence",
+            "detail": "Same provider, structured identity, proved absence and separate limits."
+          },
+          {
+            "actor": "feature-comparison",
+            "action": "Review source locally and preview report",
+            "detail": "Bounded cancellable source pages do not authorize source export; save only the filtered closed report."
+          }
+        ]
+      },
+      {
+        "id": "explore-dependencies",
+        "name": "Explore known catalog references",
+        "summary": "A separate directed map, never an ERD foreign key.",
+        "steps": [
+          {
+            "actor": "core-inspectors",
+            "action": "Capture optional native references",
+            "detail": "Independent of source storage; retain source coverage and read dates."
+          },
+          {
+            "actor": "feature-dependencies",
+            "action": "Traverse a bounded selection",
+            "detail": "Incoming/outgoing/both, cycles and unresolved targets with explicit omissions."
+          },
+          {
+            "actor": "feature-dependencies",
+            "action": "Review and export projected graph",
+            "detail": "SVG/PNG/PDF/HTML omit raw external server/database identifiers and module bodies."
+          }
+        ]
+      },
+      {
+        "id": "manage-perspectives",
+        "name": "Manage maps and shared notes",
+        "summary": "One snapshot, independent layouts and reviewed sharing.",
+        "steps": [
+          {
+            "actor": "feature-perspectives",
+            "action": "Create or switch a named map",
+            "detail": "Switching alone stays clean; edits enter workspace history."
+          },
+          {
+            "actor": "feature-project",
+            "action": "Save and refresh every map",
+            "detail": "General shows new objects, curated maps keep them hidden; observed note-target deletion archives text."
+          },
+          {
+            "actor": "feature-export",
+            "action": "Check individual notes for this export",
+            "detail": "Default off each time; include only reviewed visible linked notes and optional description."
+          }
+        ]
+      },
+      {
+        "id": "connect-postgresql",
+        "name": "Inspect native PostgreSQL",
+        "summary": "Provider-specific identity, TLS and facts.",
+        "steps": [
+          {
+            "actor": "postgresql-connection",
+            "action": "Select engine, endpoint and strict TLS",
+            "detail": "Case-preserved role/database, public root only; local exceptions explicit."
+          },
+          {
+            "actor": "core-postgresql",
+            "action": "Read bounded native catalogs",
+            "detail": "Read-only operation session and optional family outcomes, no application rows or calls."
+          },
+          {
+            "actor": "feature-schema",
+            "action": "Present native semantics consistently",
+            "detail": "Native types, overloads, index/constraint states and access evidence; no invented SQL Server facts."
+          }
+        ]
       }
     ],
     "commands": [
@@ -2888,6 +3340,21 @@
       {
         "name": "open_support_page",
         "purpose": "Open a fixed bug-form or security-policy URL; never include report contents.",
+        "streamsEvents": false
+      },
+      {
+        "name": "compare_project_snapshots",
+        "purpose": "Compare independent same-provider captures without refreshing or writing a project.",
+        "streamsEvents": false
+      },
+      {
+        "name": "compare_project_source",
+        "purpose": "Compute a bounded literal source page; started channel supplies a cancellable job ID.",
+        "streamsEvents": true
+      },
+      {
+        "name": "cancel_project_comparison",
+        "purpose": "Cancel an in-flight bounded source comparison.",
         "streamsEvents": false
       }
     ],
@@ -3066,6 +3533,11 @@
         "name": "Independent optional capture outcomes",
         "where": "crates/schemacraft-core/src/inspectors/sqlserver/programmability.rs, crates/schemacraft-core/src/model/code_carry_over.rs, crates/schemacraft-core/src/diff/code.rs",
         "why": "Code failures are capture facts instead of table-inspection errors; a shared merge preserves saved facts and dates, and the review separates changes from failed observations (ADR-043)."
+      },
+      {
+        "name": "Evidence-qualified exploration (ADR-047–050)",
+        "where": "comparison, dependencies, perspectives, native PostgreSQL",
+        "why": "Separate immutable comparison, catalog coverage, editable workspace and native semantics while preserving privacy and distribution independence."
       }
     ],
     "recipes": {
@@ -3333,11 +3805,11 @@
         },
         {
           "kind": "New diagram state saved in .scraft",
-          "example": "A colour or note per table that survives save, undo and refresh.",
+          "example": "A new per-map visual preference; shared object notes already have a separate model in project/perspectives.rs.",
           "steps": [
             {
               "layer": "core",
-              "step": "Add the field to NodeState or CanvasState with #[serde(default)]; check normalized() and retaining_entities_of; test defaults and a round trip that is byte-stable apart from savedAt. Older versions keep it as an unknown key; raise FORMAT_VERSION only if it depends on content they could change (ADR-035).",
+              "step": "Place the field in the smallest owning map/workspace value with serde defaults. Audit all-map normalization, refresh reconciliation, unknown fields and old-reader compatibility; not every annotation belongs to NodeState.",
               "files": [
                 "crates/schemacraft-core/src/project/canvas.rs",
                 "crates/schemacraft-core/src/project/document.rs"
@@ -3350,7 +3822,7 @@
             },
             {
               "layer": "Frontend",
-              "step": "A pure with<Thing>() and a command through updateCanvas. Update the NodeState literals in canvasState.ts (ensurePlaced) and refreshPlacement.ts, and defaultCanvasState in projectStore.ts. Show it on the canvas, in renderDiagram.ts (a token in tokens.css plus its palette.ts entry, which tokens.test.ts checks) and in the viewer.",
+              "step": "Pure transform through the activeCanvas/withActiveCanvas workspace authority; include the correct memento, stale-job revision checks and explicit per-export consent/projection. Avoid direct content.canvas reads outside General ownership.",
               "files": [
                 "src/features/canvas/canvasState.ts",
                 "src/features/canvas/canvasActions.ts",
@@ -3408,31 +3880,45 @@
         },
         {
           "kind": "New database engine",
-          "example": "PostgreSQL.",
+          "example": "Another relational engine, using the implemented native PostgreSQL strategy as the second-provider reference.",
           "steps": [
             {
               "layer": "core",
-              "step": "A new module under inspectors/ implementing DatabaseInspector, and a ConnectionSettings variant (inspectors/settings.rs) matched in create_inspector (inspectors/mod.rs).",
+              "step": "Implement native catalogs, transport and access evidence behind DatabaseInspector/create_inspector. Do not convert native semantics into false SQL Server flags; add typed provider metadata and conservative readers.",
               "files": [
                 "crates/schemacraft-core/src/inspectors/mod.rs",
-                "crates/schemacraft-core/src/inspectors/settings.rs"
+                "crates/schemacraft-core/src/model",
+                "crates/schemacraft-core/src/inspectors/postgresql"
               ]
             },
             {
-              "layer": "core persistence",
-              "step": "A SavedConnection variant and a CredentialKey constructor. Today project/connection.rs imports SQL Server types; the inspectors doc lists every such part.",
+              "layer": "Persistence and identity",
+              "step": "Provider-qualified saved connections, snapshot provider, history and credential namespace; audit closed enums and old-reader minimum before writing new files.",
               "files": [
                 "crates/schemacraft-core/src/project/connection.rs",
-                "crates/schemacraft-core/src/credentials/mod.rs"
+                "crates/schemacraft-core/src/project/document.rs",
+                "crates/schemacraft-core/src/credentials/mod.rs",
+                "src/shared/connections"
               ]
             },
             {
               "layer": "frontend",
-              "step": "Draft, form and conversions that hard-code provider 'sqlServer', plus i18n keys.",
+              "step": "Separate native connection fields; keep schema view-models leaf-only, active-map routing, local comparison/dependency semantics and explicit export inventories. Add bilingual provider-aware remedies.",
               "files": [
-                "src/features/project/savedConnection.ts",
-                "src/features/connection/fromSavedConnection.ts",
-                "src/features/connection/connectionDraft.ts"
+                "src/features/connection",
+                "src/features/schema",
+                "src/features/comparison",
+                "src/features/dependencies",
+                "src/features/export/html/viewerData.ts"
+              ]
+            },
+            {
+              "layer": "Evidence",
+              "step": "Run version-specific native/restricted/TLS fixtures and real-app acceptance in every theme/language; retain all existing engine/distribution checks. Never infer native behavior from browser preview.",
+              "files": [
+                "dev/postgresql",
+                "crates/schemacraft-core/tests/postgresql_integration.rs",
+                "docs/release-checklist.md"
               ]
             }
           ]
@@ -3453,11 +3939,11 @@
         },
         {
           "concern": "Undo and unsaved changes",
-          "touches": "Only CanvasState is undoable, through projectStore.updateCanvas; transient state (the selection, the Inspector's open state, the rule it highlights) goes in canvasUiStore. The window title shows '•' and closing asks first (useProjectWindow)."
+          "touches": "Workspace mementos include General, maps, notes and descriptions; no snapshot or secret. Focus coalesces text; refresh clears history. Active-map selection alone stays clean. Document/map/revision guards reject late work (ADR-049)."
         },
         {
           "concern": ".scraft versioning",
-          "touches": "FORMAT_VERSION 3 and MIN_READER_VERSION 2; upgrades on the raw JSON in migrations.rs; newer files open read-only; unknown keys kept at the root, the snapshot, its programmability, the canvas and each node. When to raise each number is in ADR-035; what format 3 added and why 1.1 still reads it, in ADR-042."
+          "touches": "Unreleased FORMAT_VERSION 4 / MIN_READER_VERSION 4, historical migrations/defaults and explicit old-reader refusal. Native providers and map/note semantics cannot be silently interpreted by 1.2.0. Historical format-3/reader-2 behavior remains documented in ADR-042."
         },
         {
           "concern": "Refresh diff",
@@ -3521,13 +4007,13 @@
         "npm run format:check, lint, typecheck, test and docs:check pass.",
         "cargo fmt --check, clippy -D warnings and cargo test --workspace pass; no unwrap, expect or panic in production code.",
         "Contracts regenerated and committed.",
-        "Unit tests beside new pure modules; catalog or diff changes have SQL Server integration tests.",
-        "Older .scraft files still open, and newer ones open read-only (ADR-035).",
+        "Unit tests beside new pure modules; catalog or diff changes have native integration tests for every affected provider and declared major: SQL Server 2019/2022 and PostgreSQL 15–18.",
+        "Older .scraft files still open; newer compatible files open read-only and an incompatible minimum reader is safely refused (ADR-035, ADR-049).",
         "Data features checked with a login that sees part of the schema: 'not available' instead of empty, nothing called absent.",
         "en.ts and es.ts complete.",
         "UX definition of done: action with tooltip and shortcut, loading/empty/error states, both themes, both languages, keyboard only, WCAG AA.",
         "Export parity checked and no private data leaks into HTML.",
-        "Verified in the browser preview and in the desktop app; data features against a real SQL Server.",
+        "Verified in the browser preview and in the desktop app; data features against real servers of every affected provider. A preview is not native-inspector evidence.",
         "CI green on the PR: Windows job and Linux integration job.",
         "Docs updated in the same PR: ADRs, architecture.md layout, ux-principles.md, README, CHANGELOG, this page's model.",
         "Branch from main, Conventional Commits, merge commit through a PR, never auto-merge."
@@ -3841,7 +4327,7 @@
         "The page carries one manifest, at the top level of model.json and shared by both languages. CI checks it against the code with scripts/check-architecture-page.mjs (npm run docs:check).",
         "New command: add it to manifest.commands and to the commands table in both languages.",
         "New feature folder, core module or IPC backend: add it to the manifest, the layer list and the diagram edges.",
-        "New decision: add an ADR (ADR-047 is next), raise manifest.adrCount and link the ADR from the pattern or recipe it changes.",
+        "New decision: add an ADR (ADR-051 is next), raise manifest.adrCount and link the ADR from the pattern or recipe it changes.",
         "Scope change: update both PRD copies (docs/ and 02_Docs/), add a dated line to section 6, commit as docs(prd), only with the user's approval.",
         "Fixed deviation: mark it fixed in the same PR. New known deviation: add it with a severity and status open.",
         "New data store or localStorage key: add a row to the data table.",
@@ -3859,7 +4345,8 @@
           "ipcBackends: the files in src/shared/ipc that end in Backend.ts and do not start with preview.",
           "adrCount: the number of '### ADR-' headings in docs/architecture.md.",
           "Lists are compared as sets. Every component path must exist, every edge must point at known components, and English and Spanish must list the same layer, component, flow and edge ids in the same order.",
-          "It prints every missing or stale name and exits non-zero. The Windows CI job and the release workflow run it with the frontend gates."
+          "It prints every missing or stale name and exits non-zero. The Windows CI job and the release workflow run it with the frontend gates.",
+          "featureComponents/coreComponents map every real folder/module to an existing architecture component. ipcCallers pins every parsed literal invokeCommand call and requires a registered host target. AST import checks cover alias, relative, re-export and dynamic paths; core Cargo dependencies may not include Tauri."
         ]
       }
     },
@@ -4129,11 +4616,11 @@
   "es": {
     "overview": {
       "title": "Arquitectura de SchemaCraft",
-      "oneLiner": "Una app de escritorio para Windows que lee el catálogo de SQL Server, lo dibuja como un diagrama ER editable, lo guarda como archivo .scraft y lo exporta a SVG, HTML, PNG y PDF.",
+      "oneLiner": "Aplicación Windows para inspección de catálogos SQL Server y PostgreSQL nativo, proyectos locales, comparación independiente, referencias conocidas y perspectivas. Las nuevas funciones aún no se han publicado.",
       "paragraphs": [
-        "SchemaCraft es una app Tauri 2. La interfaz es React 19 y TypeScript dentro de WebView2. Todo el trabajo de disco, red y sistema operativo lo hace Rust. El lado Rust tiene dos partes: un host delgado (src-tauri) que expone 24 comandos IPC, y una biblioteca sin framework (crates/schemacraft-core) que contiene la lógica real.",
+        "React y TypeScript se ejecutan en WebView2. Un host Tauri delgado expone 27 comandos IPC; el núcleo Rust sin framework controla inspección, persistencia, actualización, comparación y renderizado. Los binarios 1.2.0 publicados no cambian.",
         "Las dependencias van en un solo sentido: frontend -> IPC -> host -> core -> sistemas externos. El frontend llega a Rust y a la ventana solo a través de src/shared/ipc, la única carpeta que importa la API de Tauri, y ESLint hace cumplir las reglas de capas (ADR-031). Los comandos son adaptadores delgados: resuelven las entradas, llaman al core y traducen los errores, sin lógica de dominio, y mantienen el trabajo bloqueante fuera del hilo principal (ADR-032). El core no sabe nada de Tauri ni de la interfaz. Los tipos que cruzan la frontera se escriben una vez en Rust y se generan en TypeScript con ts-rs.",
-        "SchemaCraft no tiene base de datos propia. SQL Server solo se lee, con consultas SELECT fijas sobre las vistas sys.*. Lo que perdura vive en cuatro lugares: archivos .scraft que elige el usuario, preferences.json en %APPDATA%\\com.jmanuelsoberano.schemacraft, contraseñas en el Administrador de credenciales de Windows y dos claves de localStorage para comodidades de la interfaz. El registro de diagnóstico local, solo conteos y tiempos, vive en %LOCALAPPDATA%\\com.jmanuelsoberano.schemacraft\\logs y nunca se envía a ninguna parte (ADR-041). Todo lo demás vive solo en memoria."
+        "No hay base propia. Los catálogos SQL Server y PostgreSQL se leen sin consultar filas de aplicación ni ejecutar rutinas. Proyectos, preferencias, credenciales optativas del SO y ajustes quedan locales; el registro tipado excluye nombres privados, rutas, código y mensajes. Comparación/dependencias son transitorias salvo exportación explícita; mapas y notas pertenecen al proyecto."
       ]
     },
     "layers": [
@@ -4182,7 +4669,7 @@
             "id": "action-registry",
             "name": "Registro de acciones y atajos",
             "path": "src/app/actions",
-            "responsibility": "33 AppActions (id, labelKey, icono, atajo, isAvailable, unavailableReason, run) construidas en useAppActions.ts. Una acción deshabilitada dice por qué en su tooltip: no hay proyecto, se está calculando una disposición, no hay nada oculto, nada que deshacer o rehacer, o el proyecto es de solo lectura (Guardar, Guardar como y Actualizar). view.accessReport (Ctrl+Shift+A) abre el informe de acceso siempre que hay un proyecto abierto. Desde 1.1 los niveles de detalle (view.detailCompact, view.detailKeys y view.detailFull con Ctrl+1, Ctrl+2 y Ctrl+3), los temas (settings.theme.*) y los idiomas (settings.language.*) también son acciones, que ejecuta la barra superior, y view.toggleInspector (Ctrl+I) abre o cierra el Inspector con foco; los gestos por entidad y Enter sobre una tarjeta quedan fuera del registro a propósito (ADR-008). Desde 1.2 help.openLogFolder abre la carpeta del registro de diagnóstico desde la paleta, sin atajo, y no está disponible cuando la sesión no escribe ninguno. useKeyboardShortcuts.ts dirige las teclas en fase de captura; gana la primera coincidencia. useAppActions.test.ts arma el registro como lo hace el shell y falla si dos acciones comparten atajo o una toma una tecla del navegador que no está en la lista declarada. La barra superior, los menús, la pantalla de bienvenida y la paleta de comandos leen este registro. El helper compartido codeViewerKeyboard identifica las teclas del código de solo lectura antes de que el listener de captura ejecute acciones globales o protecciones del navegador. Seleccionar un módulo es un gesto con argumento, no una AppAction nueva (ADR-044).",
+            "responsibility": "AppActions (id, labelKey, icono, atajo, isAvailable, unavailableReason, run) construidas en useAppActions.ts. Una acción deshabilitada dice por qué en su tooltip: no hay proyecto, se está calculando una disposición, no hay nada oculto, nada que deshacer o rehacer, o el proyecto es de solo lectura (Guardar, Guardar como y Actualizar). view.accessReport (Ctrl+Shift+A) abre el informe de acceso siempre que hay un proyecto abierto. Desde 1.1 los niveles de detalle (view.detailCompact, view.detailKeys y view.detailFull con Ctrl+1, Ctrl+2 y Ctrl+3), los temas (settings.theme.*) y los idiomas (settings.language.*) también son acciones, que ejecuta la barra superior, y view.toggleInspector (Ctrl+I) abre o cierra el Inspector con foco; los gestos por entidad y Enter sobre una tarjeta quedan fuera del registro a propósito (ADR-008). Desde 1.2 help.openLogFolder abre la carpeta del registro de diagnóstico desde la paleta, sin atajo, y no está disponible cuando la sesión no escribe ninguno. useKeyboardShortcuts.ts dirige las teclas en fase de captura; gana la primera coincidencia. useAppActions.test.ts arma el registro como lo hace el shell y falla si dos acciones comparten atajo o una toma una tecla del navegador que no está en la lista declarada. La barra superior, los menús, la pantalla de bienvenida y la paleta de comandos leen este registro. El helper compartido codeViewerKeyboard identifica las teclas del código de solo lectura antes de que el listener de captura ejecute acciones globales o protecciones del navegador. Seleccionar un módulo es un gesto con argumento, no una AppAction nueva (ADR-044).",
             "patterns": [
               "Command / registro único (ADR-008)",
               "Tecla mod independiente de plataforma"
@@ -4234,7 +4721,7 @@
             "id": "shared-ipc",
             "name": "Backends IPC y resolver",
             "path": "src/shared/ipc",
-            "responsibility": "La única carpeta que importa la API de Tauri. Un backend tipado por área (connection, project, preferences, credentials, export, support), con implementaciones Tauri y unavailable y previews opcionales (solo DEV), elegidas por createBackendResolver. Soporte no tiene una implementación preview. Todo comando pasa por invokeCommand, que normaliza los rechazos con toOperationError. nativeWindow.ts envuelve la ventana (tema, título, protección al cerrar, destroy), runtime.ts indica si la página corre en la aplicación de escritorio, y appInfo.ts con useAppInfo envuelve get_app_info y open_log_folder. previewAccess.ts sigue los veredictos de acceso de Rust y la fusión de la actualización para los backends preview, cuyos nombres de servidor eligen qué ve el inicio de sesión (ADR-014).",
+            "responsibility": "Único límite de API Tauri. Resolvers tipados de conexión/proyecto/comparación/credenciales/preferencias/exportación/soporte y diálogos/ventana; simulaciones dev explícitas, nunca evidencia del inspector real.",
             "patterns": [
               "Puertos y adaptadores",
               "Resolver perezoso (ADR-014, ADR-018)",
@@ -4282,6 +4769,13 @@
             "path": "src/shared/brand",
             "responsibility": "Logo.tsx y credits.ts (DEVELOPER_NAME 'Manuel Soberano', REPOSITORY_URL), que usan el shell, la pantalla de bienvenida y Acerca de.",
             "patterns": ["Módulo de constantes"]
+          },
+          {
+            "id": "shared-connection-identities",
+            "name": "Identidades por proveedor",
+            "path": "src/shared/connections",
+            "responsibility": "Identidades puras de historial y credenciales; conserva mayúsculas de rol/base PostgreSQL y separa motores, sin importar stores de funcionalidades.",
+            "patterns": ["Límite explícito de evidencia y privacidad"]
           }
         ]
       },
@@ -4296,7 +4790,7 @@
             "id": "feature-connection",
             "name": "connection",
             "path": "src/features/connection",
-            "responsibility": "Diálogo de conexión: formulario, conexiones recientes, prueba, elección de base de datos y esquemas, inspección con progreso y cancelación, actualización con revisión de diferencias, contraseñas recordadas y el remedio 'Confiar en el certificado y reintentar'. Al elegir una base de datos llama a describeDatabase: los esquemas que se ofrecen y el acceso previsto, que AccessCheckNotice muestra al final de la sección de base de datos (un aviso de peligro, con 'Leer esquema' deshabilitado, cuando el inicio de sesión no ve nada). Una lectura que no encuentra nada visible se bloquea (blockedInspection) y no crea proyecto. Una revisión está al día solo cuando el diff lo dice: isUpToDate y hasObjectChanges se calculan en Rust y reviewChanges.ts solo los lee. ReviewChangesPanel también lista las llaves hacia tablas no visibles, los hechos no comprobados con la fecha en que se leyeron, los hechos ahora disponibles y, desde la 1.2, una línea con su conteo por cada clase de hechos que se registra por primera vez, como el estado de los índices y las restricciones de un proyecto guardado antes de la 1.2; marca un índice o una restricción deshabilitados, filtrados o no confiables como lo hace el Inspector. connectionStore.ts es una máquina de fases (idle, testing, loadingSchemas, inspecting, reviewing, applying) y nunca actualiza un proyecto de solo lectura. fromSavedConnection.ts convierte una conexión guardada en borrador, ajustes vivos, descripción y clave del historial, y nombra el servidor con formatTarget, el espejo de format_target de Rust (ADR-011). El borrador persiste en localStorage 'schemacraft.connection' sin la contraseña; mergePersistedConnection lo restaura campo por campo, así un borrador guardado antes de la 1.2 recibe los valores por defecto de las opciones de código. ADR-043 añade dos opciones de código activadas por defecto, esquemas con solo código mientras se piden objetos, filas separadas en el informe de acceso, progreso y cambios de código agrupados. Volver a probar la misma conexión/base conserva los esquemas elegidos. Los fallos de lectura aparecen aunque no hubiera código guardado; las exclusiones explícitas tienen líneas de captura con conteos.",
+            "responsibility": "Formulario por proveedor con controles separados SQL Server/PostgreSQL y prueba/describe/captura/revisión. Instancias/autenticación integrada SQL siguen independientes de TCP/IPv6, rol/base sensibles a mayúsculas y TLS/raíces PostgreSQL. Historial/credenciales por motor y guardas de solicitudes evitan respuestas antiguas y secretos persistidos.",
             "patterns": [
               "Store como controlador",
               "Fase + fallo en vez de booleanos",
@@ -4307,7 +4801,7 @@
             "id": "feature-project",
             "name": "project",
             "path": "src/features/project",
-            "responsibility": "El proyecto abierto: abrir, guardar, guardar como, deshacer y rehacer, aviso de cambios sin guardar. projectStore.ts es el caretaker del Memento (HISTORY_LIMIT 100) y aplica ensurePlaced en cada apertura, inspección y actualización. Abrir lee un OpenedProject: un proyecto de solo lectura (un formato más nuevo, ADR-035) se puede reorganizar, pero nunca se marca con cambios sin guardar ni se guarda, y savedWith nombra a quien lo escribió. contentOf conserva las claves desconocidas de la raíz y quita las del encabezado. savedConnection.ts convierte los ajustes de conexión en la SavedConnection que registra un proyecto, así project nunca importa connection. El título de la ventana y la protección al cerrar viven en useProjectWindow.",
+            "responsibility": "Autoridad de abrir/guardar/actualizar y espacio del mapa activo. Deshacer incluye mapas/descripciones/notas, nunca snapshots ni secretos; la escritura se agrupa por foco y actualizar limpia el historial. Identidad/revisión protegen respuestas asíncronas; cambiar mapa no ensucia. General conserva canvas (ADR-049).",
             "patterns": [
               "Caretaker del Memento (ADR-021)",
               "Acción protegida (pendingDiscard)",
@@ -4425,7 +4919,7 @@
             "id": "feature-access",
             "name": "access",
             "path": "src/features/access",
-            "responsibility": "Divulgación graduada del acceso parcial (ADR-034). accessCause.ts ordena las causas (nada visible por falta de permiso o tras un posible DENY, una base de datos vacía, DENY explícitos, denegaciones que el inicio de sesión no puede ver, sin VIEW DEFINITION en la base de datos o en algunos esquemas, objetos que pueden faltar) y dice si un GRANT ayuda; grantScript.ts escribe el script de mínimo privilegio GRANT VIEW DEFINITION con comentarios en el idioma del usuario y el aviso de SQL Server 2022; accessNotice.ts decide cuándo aparecen el chip y la barra y firma cada aviso por servidor, base de datos y veredictos. AccessChip (barra de estado), AccessBar (descartable, sobre la lista de entidades) y AccessReportDialog (view.accessReport, Ctrl+Shift+A) leen snapshot.access del proyecto abierto; accessReportStore guarda la bandera de apertura del diálogo. CopyScriptButton copia el script; SchemaCraft nunca lo ejecuta. AccessCheckNotice vive en features/connection y usa estos helpers puros, así la dependencia va en un solo sentido. La cobertura de código se informa aparte del nivel de acceso a tablas, con estados cifrado, omitido, no visible y lectura fallida. El aviso de conexión indica cuándo los textos de módulos solicitados pueden ser ilegibles. Ningún veredicto de código cambia el chip, la barra o la nota de exportación (ADR-043).",
+            "responsibility": "Avisos/informe honestos. SQL Server conserva probe, causas DENY y GRANT solo para copiar cuando sirve. PostgreSQL registra resultados nativos y USAGE de esquema, sin permisos ni scripts SQL inventados. Cerrar avisos solo afecta comodidad por proveedor.",
             "patterns": [
               "Divulgación graduada",
               "Reglas puras, componentes delgados",
@@ -4436,7 +4930,7 @@
             "id": "feature-schema",
             "name": "schema",
             "path": "src/features/schema",
-            "responsibility": "Helpers puros sobre SchemaSnapshot: formatDataType y describeColumn (dataType.ts), que escribe 'DEFAULT (no disponible)' o '(valor por defecto no registrado)' en vez de omitir un valor por defecto que no puede leer; el único hogar de la identidad de las entidades (entities.ts): EntityKind, ENTITY_KINDS, entityKey, listEntities, groupEntities (esquemas y, dentro, secciones Tablas y Vistas), filterEntityGroups, countEntities y entityListShape; definitionText, isUnknownDefinition, isEncryptedDefinition y withoutText (definition.ts), los lectores de los estados Definition de expresiones de tablas y de módulos; withoutText construye una copia sin texto para lo que sale de la aplicación; objectsCoverage, definitionsCoverage, listsEveryObject, emptySchemaReason y el AccessSummary que se puede exportar, cuya cobertura se reconstruye desde los objetos y los textos para que la cobertura del código nunca viaje (coverage.ts); quoteIdentifier (sqlIdentifiers.ts); foreignKeyId (entities.ts), el id de la relación de una llave en el lienzo, en el SVG y en los detalles; objectDetails.ts (describeObjectDetails: los hechos de una tabla o vista con cuánto respalda la lectura cada uno, FactText y ListCompleteness, la lectura de cada CHECK y la explicación de cada llave) y objectDetailsView.ts (presentObjectDetails: lo mismo como texto traducido, DetailsView, con un RuleView por CHECK y por llave y las notas de cada sección), el modelo que comparten el Inspector y el panel de detalle del visor (ADR-038). rules/ tiene las reglas legibles (ADR-039): checkTokens.ts (tokenizeCheck), checkParser.ts (parseCheck, descenso recursivo con la precedencia de T-SQL) y checkReader.ts (readCheckConstraint sobre el texto almacenado: un conjunto cerrado de formas que se lee todo o nada, como un CheckReading read, unread, notAvailable o notRecorded); foreignKeyReader.ts (foreignKeyOptionality, foreignKeyChildCardinality y, desde la 1.2, foreignKeyChildCardinalityReading, que además nombra los índices deshabilitados y filtrados detrás de una llave, explainForeignKey y explainForeignKeyToInvisibleTable, foreignKeyExplanations en caché por snapshot en un WeakMap, ExplanationScope y foreignKeyDefinitionSql, que agrega WITH NOCHECK a una llave no confiable); y ruleText.ts (árboles de RuleNode con claves de mensaje y argumentos tipados; enabledRules y, desde la 1.2, stateRules, que pone las reglas de una restricción que SQL Server marca como no confiable tras la frase que lo dice, bajo un encabezado que nombra las columnas cuyo cambio comprueba SQL Server, y después las frases de una llave sobre la tabla referenciada; y formatRuleText, que los convierte en partes de texto, columna, tabla y código). Las formas de referencia de crates/schemacraft-core/tests/fixtures/sqlserver/check_forms.json alimentan checkReader.test.ts. Sin store ni React. Es una hoja: ESLint solo le deja importar shared/ (contracts e i18n) y a sí mismo, así cualquier funcionalidad y el bundle del visor pueden importarlo (ADR-037). Desde la 1.2 modules.ts define ModuleRef, moduleKey, findModule y listModules; objects.ts agrupa y pagina entidades y rutinas sin leer cuerpos SQL. moduleDetails.ts lee hechos de módulos y definiciones de vistas solo para escritorio; moduleDetailsView.ts presenta Parámetros, Devuelve, Se ejecuta y Definición con mensajes module.* excluidos del HTML. Distingue los estados, fechas conservadas y visibilidad del inicio de sesión anterior; las columnas devueltas por funciones omiten los DEFAULT internos (ADR-044). triggerDetails.ts centraliza la integridad de la lista, el orden y los hechos de ejecución de desencadenadores. Los detalles incluyen Desencadenadores después de CHECK y Definición al final de las vistas. DetailsScope.definitions distingue included en la app de excluded en el archivo. La sección compartida Definición de vista contiene opciones y presentación; ModuleDetailsView conserva el código por separado para escritorio. triggerDetailsView.ts comparte la presentación de eventos entre Desencadenadores de entidades y Runs de módulos (ADR-038).",
+            "responsibility": "Hoja entre funcionalidades: identidades estructuradas, cobertura por motor, metadatos nativos, detalles compartidos y reglas conservadoras. Importa solo shared/ y a sí misma. Expresiones PostgreSQL no entendidas quedan en SQL y las superficies comparten hechos relacionales nativos.",
             "patterns": [
               "Módulo hoja, exigido por lint, seguro para el bundle del visor",
               "Intérprete de una gramática cerrada con alternativa conservadora (ADR-039)",
@@ -4461,6 +4955,34 @@
             "path": "src/features/support",
             "responsibility": "Diálogo y almacén efímeros de soporte: vista previa local limitada, guardado exacto del texto revisado, mostrar el archivo y abrir por separado el formulario público o la guía de seguridad privada. Cerrar borra la vista previa; generación y ocupación impiden lecturas obsoletas y selectores duplicados. Sin acceso al proyecto, preferencias o conexión (ADR-046).",
             "patterns": ["Ephemeral dialog store", "Explicit local export"]
+          },
+          {
+            "id": "feature-comparison",
+            "name": "Comparación independiente",
+            "path": "src/features/comparison",
+            "responsibility": "Entradas Referencia/Comparado y filtros transitorios, revisión local de código acotada e informe HTML revisado; no modifica el proyecto activo (ADR-047).",
+            "patterns": ["Límite explícito de evidencia y privacidad"]
+          },
+          {
+            "id": "feature-dependencies",
+            "name": "Mapa de dependencias conocidas",
+            "path": "src/features/dependencies",
+            "responsibility": "Evidencia de catálogo entrante/saliente, grafo dirigido y acotado aparte, posiciones transitorias y exportación cerrada SVG/PNG/PDF/HTML (ADR-048).",
+            "patterns": ["Límite explícito de evidencia y privacidad"]
+          },
+          {
+            "id": "feature-perspectives",
+            "name": "Perspectivas y notas",
+            "path": "src/features/perspectives",
+            "responsibility": "General y CanvasState independientes sobre un snapshot, notas de texto compartidas de tablas/columnas, reasignación de notas sin vínculo y proyección revisada (ADR-049).",
+            "patterns": ["Límite explícito de evidencia y privacidad"]
+          },
+          {
+            "id": "postgresql-connection",
+            "name": "Conexión PostgreSQL nativa",
+            "path": "src/features/connection/PostgreSqlFields.tsx, src/features/connection/postgreSqlAddress.ts",
+            "responsibility": "TCP/IPv6 y rol propios del proveedor, TLS estricto/raíz pública y excepciones locales explícitas, sin controles de autenticación de SQL Server (ADR-050).",
+            "patterns": ["Límite explícito de evidencia y privacidad"]
           }
         ]
       },
@@ -4503,14 +5025,14 @@
             "id": "contracts",
             "name": "Contratos generados",
             "path": "src/shared/contracts/generated",
-            "responsibility": "TypeScript generado desde tipos Rust por ts-rs en model/, inspectors/, diff/, project/, preferences/, credentials/, export/ e ipc/. src/shared/contracts/index.ts los reexporta. Se versiona y nunca se edita a mano; CI falla si hay diferencias.",
+            "responsibility": "Contratos ts-rs generados de Rust bajo model/, inspectors/, diff/, comparison/, project/ y familias existentes. Nuevos tipos de motor/dependencias/perspectivas/notas tienen una sola fuente; se versionan y verifican.",
             "patterns": ["Fuente única de verdad (ADR-003)"]
           },
           {
             "id": "ipc-invoke",
             "name": "Comandos (invoke)",
             "path": "src-tauri/src/main.rs",
-            "responsibility": "invokeCommand(nombre, args) en src/shared/ipc llega a uno de los 24 comandos de generate_handler!. Los argumentos salen en camelCase desde TS y llegan como parámetros snake_case en Rust. Los comandos que solo leen memoria siguen siendo síncronos y responden al instante (get_app_info, read_preferences y los dos cancel_*). Todos los demás son async, y su trabajo con archivos, con el almacén de credenciales o pesado corre en el pool bloqueante mediante run_blocking (ADR-032), así la ventana nunca se congela.",
+            "responsibility": "invokeCommand conecta llamadas literales del manifiesto ipcCallers comprobado con 27 comandos registrados. Mantiene argumentos camelCase, contratos generados y errores tipados.",
             "patterns": [
               "Petición/respuesta sobre serde JSON",
               "La firma decide el hilo (async o síncrona)"
@@ -4519,8 +5041,8 @@
           {
             "id": "ipc-channel",
             "name": "Canales de eventos",
-            "path": "src-tauri/src/commands/connection.rs, src-tauri/src/commands/export.rs",
-            "responsibility": "Channel<InspectionEvent> y Channel<ExportEvent>. Primer evento Started{jobId}, luego Progress. Se serializan como {event, data}.",
+            "path": "src-tauri/src/commands/connection.rs, src-tauri/src/commands/export.rs, src-tauri/src/commands/comparison.rs",
+            "responsibility": "Canales ordenados de inspección/exportación e ID inicial de comparación de código; cada cancelación usa su registro de trabajos. Las revisiones del frontend rechazan respuestas tardías.",
             "patterns": ["Canal de progreso ordenado (ADR-013)"]
           },
           {
@@ -4643,6 +5165,13 @@
             "path": "src-tauri/src/commands/support.rs",
             "responsibility": "Comandos asíncronos de lectura/escritura del diagnóstico local y apertura de página fija, con run_blocking y logged. La carpeta de origen viene solo de AppState; se guarda exactamente la vista previa. SupportErrorKind tipado; sin ampliar capacidades de la ventana.",
             "patterns": ["Thin command", "run_blocking", "Typed errors"]
+          },
+          {
+            "id": "cmd-comparison",
+            "name": "Comandos de comparación",
+            "path": "src-tauri/src/commands/comparison.rs",
+            "responsibility": "Adaptadores delgados de comparación bloqueante y líneas de código acotadas/cancelables; sin persistencia ni conexión (ADR-047).",
+            "patterns": ["Límite explícito de evidencia y privacidad"]
           }
         ]
       },
@@ -4681,7 +5210,7 @@
             "id": "core-inspectors",
             "name": "inspectors",
             "path": "crates/schemacraft-core/src/inspectors",
-            "responsibility": "Trait DatabaseInspector (test_connection, list_databases, describe_database, inspect), fábrica create_inspector, ConnectionSettings, InspectionOptions (esquemas y vistas, e includeProgrammability e includeModuleDefinitions, activadas por defecto con serde, así que al actualizar un proyecto guardado antes de la 1.2 se lee y se guarda el código), DatabaseDescription, ProgressReporter con la etapa CheckingAccess e InspectorError con 13 variantes, cuyo log_summary() conserva la clasificación, el número de error de SQL Server y el nombre de la consulta para el registro de diagnóstico. inspect se puede cancelar en cualquier momento, también al conectar.",
+            "responsibility": "Estrategia DatabaseInspector y selección create_inspector para SQL Server/PostgreSQL; ajustes, progreso, opciones y fallos tipados. Inspectores nativos controlan catálogos/acceso y sesiones por operación. Código/dependencias opcionales mantienen resultados independientes honestos.",
             "patterns": [
               "Strategy (PRD 4.3)",
               "Factory",
@@ -4716,7 +5245,7 @@
             "id": "core-project",
             "name": "project",
             "path": "crates/schemacraft-core/src/project",
-            "responsibility": "Documento .scraft (FORMAT_VERSION 3, MIN_READER_VERSION 2), que file.rs lee y escribe con los helpers de fs, y que registra project_opened y project_saved (formato, KB, ms). Un archivo más nuevo se abre en solo lectura si su minReaderVersion lo permite y se rechaza si no; uno más viejo se actualiza con migrations.rs sobre el JSON crudo (format_2_to_3 solo reescribe el encabezado); las claves desconocidas de la raíz, el snapshot, su programmability, el lienzo y cada nodo se conservan (ADR-035). El formato 3 solo añade claves que la 1.1 conserva o ignora y no cambia ningún significado, así la 1.1 lo abre en solo lectura, lo que prueba forward_read.rs; fixtures/format-2.scraft lo escribió el núcleo de la 1.1.0 (ADR-042). ProjectContent (with_refreshed_snapshot aplica la fusión de lo conservado), SavedConnection sin contraseña, CanvasState (el Memento) con normalización y retaining_entities_of.",
+            "responsibility": "Persistencia atómica .scraft formato 4/lector mínimo 4. Migraciones históricas por encabezado, rechazo seguro de lector anterior, conexiones por motor, snapshot compartido, General y mapas CanvasState, notas compartidas conservadas sin vínculo. Validación y normalización conservan hechos y contenedores extensibles (ADR-035, ADR-049).",
             "patterns": [
               "Memento",
               "Encabezado + contenido aplanado",
@@ -4742,7 +5271,7 @@
             "id": "core-credentials",
             "name": "credentials",
             "path": "crates/schemacraft-core/src/credentials",
-            "responsibility": "Trait CredentialStore con SystemCredentialStore (keyring, Administrador de credenciales de Windows, servicio 'SchemaCraft') e InMemoryCredentialStore para pruebas.",
+            "responsibility": "Estrategia CredentialStore con SO/SystemCredentialStore y memoria. Claves por motor separan SQL Server/PostgreSQL, conservan rol nativo y nunca devuelven contraseña por IPC. Resolver justo antes de conectar.",
             "patterns": ["Strategy", "cfg(windows)", "Almacén del SO para secretos (ADR-019)"]
           },
           {
@@ -4765,6 +5294,34 @@
               "Lista cerrada de eventos tipados",
               "Trait marcador para clasificaciones cerradas"
             ]
+          },
+          {
+            "id": "core-comparison",
+            "name": "Comparación independiente de capturas",
+            "path": "crates/schemacraft-core/src/comparison",
+            "responsibility": "Comparación tipada de evidencia y páginas literales con trabajo acotado, independiente de la conservación de hechos de actualización (ADR-047).",
+            "patterns": ["Límite explícito de evidencia y privacidad"]
+          },
+          {
+            "id": "core-dependencies",
+            "name": "Familia de dependencias de catálogo",
+            "path": "crates/schemacraft-core/src/model/dependencies.rs",
+            "responsibility": "Extremos estructurados, tipos de referencia nativos, alcance, resultado de lectura, cobertura por origen, fechas y límites (ADR-048).",
+            "patterns": ["Límite explícito de evidencia y privacidad"]
+          },
+          {
+            "id": "core-perspectives",
+            "name": "Persistencia de perspectivas",
+            "path": "crates/schemacraft-core/src/project/perspectives.rs",
+            "responsibility": "Mapas con nombre, notas tipadas compartidas de tablas/columnas, conservación sin vínculo, validación y campos desconocidos; formato 4/lector mínimo 4 (ADR-049).",
+            "patterns": ["Límite explícito de evidencia y privacidad"]
+          },
+          {
+            "id": "core-postgresql",
+            "name": "Inspector PostgreSQL",
+            "path": "crates/schemacraft-core/src/inspectors/postgresql",
+            "responsibility": "Catálogos tipados nativos PostgreSQL 15–18, TLS estricto y sesiones de lectura por operación, evidencia de acceso y semántica propias (ADR-050).",
+            "patterns": ["Límite explícito de evidencia y privacidad"]
           }
         ]
       },
@@ -4821,6 +5378,13 @@
             "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
             "responsibility": "Formulario público de errores en la rama predeterminada, con versión, entorno, reproducción, adjunto opcional revisado manualmente y aviso de datos públicos. Los detalles de seguridad usan la política existente de reporte privado. La aplicación nunca envía una incidencia.",
             "patterns": ["Manual public reporting"]
+          },
+          {
+            "id": "ext-postgresql",
+            "name": "Catálogos PostgreSQL",
+            "path": "crates/schemacraft-core/src/inspectors/postgresql/catalog.rs",
+            "responsibility": "Solo observaciones de pg_catalog e information_schema; nunca datos de aplicación ni ejecución de rutinas.",
+            "patterns": ["Límite explícito de evidencia y privacidad"]
           }
         ]
       },
@@ -4845,7 +5409,7 @@
             "id": "ci",
             "name": "Workflow de CI",
             "path": ".github/workflows/ci.yml",
-            "responsibility": "En cada pull request, cada job corre primero scripts/ci-changes.sh. Job de Windows: la entrada de CHANGELOG de la versión de package.json (release-notes.mjs), prettier, eslint, tsc, vitest y npm run docs:check siempre; si cambió código, además cargo fmt, clippy -D warnings, cargo test, la revisión de contratos, tauri build --no-bundle con el perfil ci, WebView2 si el runner no lo tiene y la prueba de humo, y sube el exe y las capturas. Job de Linux, si cambió el core: las pruebas de integración con SQL Server, sqlserver_integration, sqlserver_permissions y diagnostics_privacy, contra dos servicios, mssql/server:2022-latest en el puerto 1433 y 2019-latest en el 1434, en un paso por servidor que nombra la versión principal que debe informar el servidor (SCHEMACRAFT_TEST_MSSQL_MAJOR, 16 y 15); el paso de 2019 corre también tras un fallo en 2022, y con SCHEMACRAFT_TEST_REQUIRE_SERVER=1 un servidor ausente hace fallar las pruebas en vez de omitirlas. Dos servicios en el mismo job en lugar de una matriz conservan el nombre del check obligatorio. Los push a main corren todo y mantienen la caché caliente (ADR-033).",
+            "responsibility": "En cada pull request, cada job corre primero scripts/ci-changes.sh. Los nombres de los dos checks obligatorios se conservan: Lint, test and build (Windows) y SQL Server integration tests (Linux). El job de Windows siempre revisa la entrada CHANGELOG de la versión actual, formato/lint/tipos/pruebas del frontend y las guardas de arquitectura y distribución. Los cambios de código también ejecutan secuencialmente los controles Rust, contratos generados, build portable con perfil ci, instalación de WebView2 si falta, prueba de humo del ejecutable real y validación del paquete Store. El job de Linux corre sqlserver_integration, sqlserver_permissions, diagnostics_privacy y sqlserver_code secuencialmente en SQL Server 2022 y 2019, con controles de servidor requerido y versión principal; la segunda versión corre incluso si falla la primera. Ese mismo job inicia después los fixtures PostgreSQL dedicados y corre integración nativa/permisos restringidos/TLS/privacidad secuencialmente en PostgreSQL 15, 16, 17 y 18, exigiendo servidor/TLS y la versión principal esperada. Cambios del core, manifiestos Cargo/toolchain, definición CI, dev/postgresql/**, scripts/ci-changes* y scripts/dev-sqlserver.ps1 exigen el job de integración completo, incluido Markdown del directorio de fixtures. Los push a main corren todo (ADR-033).",
             "patterns": ["Checks obligatorios", "Filtrado según el cambio, que falla cerrado"]
           },
           {
@@ -4898,7 +5462,7 @@
             "id": "integration-tests",
             "name": "Pruebas de integración con SQL Server",
             "path": "crates/schemacraft-core/tests",
-            "responsibility": "sqlserver_integration.rs crea bases de datos a partir de fixtures/sqlserver/fixture.sql, changes.sql y stress_200_tables.sql y luego prueba contra un servidor real los errores de conexión (incluido el certificado no confiable), describe_database, la inspección, el progreso, la cancelación y la actualización. También crea SchemaCraftCheckForms a partir de fixtures/sqlserver/check_forms.json (72 formas CHECK de referencia, que también lee la suite vitest del lector de reglas) y rule_facts.sql, comprueba contra el motor cada forma almacenada, lista de columnas y estado de habilitación, y fija sobre tablas auxiliares el comportamiento de CHECK y llaves foráneas en que se apoyan las frases de las reglas (ADR-039), desde la 1.2 con el estado de índices y restricciones: una restricción única deshabilitada, un índice único filtrado y uno habilitado sin filtro, una llave agregada WITH NOCHECK y un CHECK habilitado de nuevo sin comprobar, que siguen comprobando una escritura de las columnas que leen, una llave y un CHECK NOT FOR REPLICATION, nunca confiables, y una tabla particionada por una columna que su índice alineado recibe por su cuenta; SchemaCraftClusteredFacts fija que deshabilitar una clave primaria agrupada deja deshabilitada la llave de su tabla hasta que se reconstruye el índice. También crea SchemaCraftCode a partir de fixtures/sqlserver/code.sql (vistas WITH CHECK OPTION, indexadas y cifradas; desencadenadores sobre una tabla y una vista, ordenados, deshabilitados, NOT FOR REPLICATION y cifrados; procedimientos y funciones T-SQL de cada clase, sin módulos CLR; un esquema solo con código; un desencadenador DDL de base de datos) y ejecuta el sondeo de capacidades como sa sobre SchemaCraftFixture, SchemaCraftCheckForms y SchemaCraftCode: el contrato de salida de tests/common (un conjunto de resultados, nvarchar, nvarchar, bigint, cada par en PROBE_METRICS), ninguna sección fallida y los conteos que define cada base de prueba; una corrida mientras otra conexión retiene un bloqueo de esquema, en la que cada sección fallida devuelve solo el error 1222; y una revisión estática de que el script es un solo lote de solo lectura, de que cada CATCH devuelve solo ERROR_NUMBER(), de que cada etiqueta es un literal o sale de una lista VALUES fija y de que no llama a ninguna de las funciones que devuelven un nombre, un mensaje de error o una definición, como OBJECT_NAME, ERROR_MESSAGE u OBJECT_DEFINITION (ADR-040). sqlserver_permissions.rs siembra permissions.sql (el esquema de prueba, una base de datos vacía y una con DENY hechos a public) y crea con permission_logins.sql nueve inicios de sesión con pocos permisos (db_owner, db_datareader, solo VIEW DEFINITION, lector más el VIEW DEFINITION de un esquema, dos tablas, solo CONNECT, dos variantes de DENY sobre un esquema y un DENY sobre una columna) con una contraseña inventada para la corrida, más, solo en SQL Server 2022 y posteriores, un décimo con permission_logins_2022.sql (VIEW DEFINITION con VIEW SECURITY DEFINITION denegado), y luego revisa cada veredicto de acceso, cada texto no visible y cada regla de la actualización, y que un DENY a public nunca alcanza a dbo. En 2019 HAS_PERMS_BY_NAME responde NULL para VIEW SECURITY DEFINITION y las denegaciones se pueden contar; en 2022 el décimo inicio de sesión no ve ninguna denegación, ni siquiera la suya, ni su propio usuario de la base de datos, así que sus denegaciones son desconocidas (ADR-034). También ejecuta el sondeo de capacidades como sa y como los inicios de sesión db_owner, db_datareader, solo VIEW DEFINITION, lector más el VIEW DEFINITION de un esquema y solo CONNECT, y el décimo en 2022, y fija lo que cuenta cada uno, como ningún procedimiento y ningún texto legible para db_datareader, y su respuesta para VIEW SECURITY DEFINITION, -1 para todos en 2019. diagnostics_privacy.rs captura cada evento del target de diagnóstico en todos los niveles, mientras lee SchemaCraftPermissions como sa y como el inicio de sesión db_datareader, entra con una contraseña equivocada, abre una base de datos en la que el inicio de sesión no tiene usuario y lee como el inicio de sesión de fixtures/sqlserver/diagnostics_logins.sql, que no puede leer sys.check_constraints; falla ante cualquier nombre o expresión legible de la base de prueba leída como sa, el nombre del servidor, un inicio de sesión, el host, una contraseña, una base de datos o un fragmento de los mensajes del servidor, y revisa los conteos, las clasificaciones y los números de error 18456, 4060 y 229 (ADR-041). tests/common tiene los helpers compartidos. La prueba de carga debe leer 200 tablas en menos de 5 s (STRESS_BUDGET; la meta del producto es 3 s) e imprime su tiempo con la versión del servidor. connects_to_the_expected_major_version, en cada binario, comprueba que el servidor informa la versión principal que nombra SCHEMACRAFT_TEST_MSSQL_MAJOR, así un paso no puede probar el servidor equivocado; la CI corre los tres binarios contra SQL Server 2019 y 2022, y check_forms.json y rule_facts.sql valen sin cambios en los dos. Las pruebas que necesitan el servidor se omiten si SCHEMACRAFT_TEST_MSSQL_HOST no está definida, salvo que SCHEMACRAFT_TEST_REQUIRE_SERVER, que define la CI, las haga fallar; la revisión estática del sondeo corre en todo cargo test.",
+            "responsibility": "sqlserver_integration.rs crea bases de datos a partir de fixtures/sqlserver/fixture.sql, changes.sql y stress_200_tables.sql y luego prueba contra un servidor real los errores de conexión (incluido el certificado no confiable), describe_database, la inspección, el progreso, la cancelación y la actualización. También crea SchemaCraftCheckForms a partir de fixtures/sqlserver/check_forms.json (72 formas CHECK de referencia, que también lee la suite vitest del lector de reglas) y rule_facts.sql, comprueba contra el motor cada forma almacenada, lista de columnas y estado de habilitación, y fija sobre tablas auxiliares el comportamiento de CHECK y llaves foráneas en que se apoyan las frases de las reglas (ADR-039), desde la 1.2 con el estado de índices y restricciones: una restricción única deshabilitada, un índice único filtrado y uno habilitado sin filtro, una llave agregada WITH NOCHECK y un CHECK habilitado de nuevo sin comprobar, que siguen comprobando una escritura de las columnas que leen, una llave y un CHECK NOT FOR REPLICATION, nunca confiables, y una tabla particionada por una columna que su índice alineado recibe por su cuenta; SchemaCraftClusteredFacts fija que deshabilitar una clave primaria agrupada deja deshabilitada la llave de su tabla hasta que se reconstruye el índice. También crea SchemaCraftCode a partir de fixtures/sqlserver/code.sql (vistas WITH CHECK OPTION, indexadas y cifradas; desencadenadores sobre una tabla y una vista, ordenados, deshabilitados, NOT FOR REPLICATION y cifrados; procedimientos y funciones T-SQL de cada clase, sin módulos CLR; un esquema solo con código; un desencadenador DDL de base de datos) y ejecuta el sondeo de capacidades como sa sobre SchemaCraftFixture, SchemaCraftCheckForms y SchemaCraftCode: el contrato de salida de tests/common (un conjunto de resultados, nvarchar, nvarchar, bigint, cada par en PROBE_METRICS), ninguna sección fallida y los conteos que define cada base de prueba; una corrida mientras otra conexión retiene un bloqueo de esquema, en la que cada sección fallida devuelve solo el error 1222; y una revisión estática de que el script es un solo lote de solo lectura, de que cada CATCH devuelve solo ERROR_NUMBER(), de que cada etiqueta es un literal o sale de una lista VALUES fija y de que no llama a ninguna de las funciones que devuelven un nombre, un mensaje de error o una definición, como OBJECT_NAME, ERROR_MESSAGE u OBJECT_DEFINITION (ADR-040). sqlserver_permissions.rs siembra permissions.sql (el esquema de prueba, una base de datos vacía y una con DENY hechos a public) y crea con permission_logins.sql nueve inicios de sesión con pocos permisos (db_owner, db_datareader, solo VIEW DEFINITION, lector más el VIEW DEFINITION de un esquema, dos tablas, solo CONNECT, dos variantes de DENY sobre un esquema y un DENY sobre una columna) con una contraseña inventada para la corrida, más, solo en SQL Server 2022 y posteriores, un décimo con permission_logins_2022.sql (VIEW DEFINITION con VIEW SECURITY DEFINITION denegado), y luego revisa cada veredicto de acceso, cada texto no visible y cada regla de la actualización, y que un DENY a public nunca alcanza a dbo. En 2019 HAS_PERMS_BY_NAME responde NULL para VIEW SECURITY DEFINITION y las denegaciones se pueden contar; en 2022 el décimo inicio de sesión no ve ninguna denegación, ni siquiera la suya, ni su propio usuario de la base de datos, así que sus denegaciones son desconocidas (ADR-034). También ejecuta el sondeo de capacidades como sa y como los inicios de sesión db_owner, db_datareader, solo VIEW DEFINITION, lector más el VIEW DEFINITION de un esquema y solo CONNECT, y el décimo en 2022, y fija lo que cuenta cada uno, como ningún procedimiento y ningún texto legible para db_datareader, y su respuesta para VIEW SECURITY DEFINITION, -1 para todos en 2019. diagnostics_privacy.rs captura cada evento del target de diagnóstico en todos los niveles, mientras lee SchemaCraftPermissions como sa y como el inicio de sesión db_datareader, entra con una contraseña equivocada, abre una base de datos en la que el inicio de sesión no tiene usuario y lee como el inicio de sesión de fixtures/sqlserver/diagnostics_logins.sql, que no puede leer sys.check_constraints; falla ante cualquier nombre o expresión legible de la base de prueba leída como sa, el nombre del servidor, un inicio de sesión, el host, una contraseña, una base de datos o un fragmento de los mensajes del servidor, y revisa los conteos, las clasificaciones y los números de error 18456, 4060 y 229 (ADR-041). tests/common tiene los helpers compartidos. La prueba de carga debe leer 200 tablas en menos de 5 s (STRESS_BUDGET; la meta del producto es 3 s) e imprime su tiempo con la versión del servidor. connects_to_the_expected_major_version, en cada binario, comprueba que el servidor informa la versión principal que nombra SCHEMACRAFT_TEST_MSSQL_MAJOR, así un paso no puede probar el servidor equivocado; la CI corre los cuatro binarios SQL Server (sqlserver_integration, sqlserver_permissions, diagnostics_privacy y sqlserver_code) contra SQL Server 2019 y 2022, y check_forms.json y rule_facts.sql valen sin cambios en los dos. Las pruebas que necesitan el servidor se omiten si SCHEMACRAFT_TEST_MSSQL_HOST no está definida, salvo que SCHEMACRAFT_TEST_REQUIRE_SERVER, que define la CI, las haga fallar; la revisión estática del sondeo corre en todo cargo test. sqlserver_code.rs cubre visibilidad de objetos programables, opciones, definiciones conservadas, identidades con puntos, parámetros/retornos/desencadenadores y dependencias conocidas capturadas por separado, incluso con el guardado de código desactivado, filtros, fallos opcionales y exclusión explícita.",
             "patterns": [
               "Controladas por variables de entorno",
               "Presupuesto de rendimiento como prueba",
@@ -4932,6 +5496,13 @@
               "Lints como política",
               "Compilación release orientada al tamaño"
             ]
+          },
+          {
+            "id": "dev-postgresql",
+            "name": "Fixtures PostgreSQL nativos/TLS",
+            "path": "dev/postgresql",
+            "responsibility": "Servicios Compose PostgreSQL 15–18 fijados y certificados locales efímeros; matriz nativa/restringida/TLS secuencial y aislada de contenedores ajenos.",
+            "patterns": ["Evidencia sintética desechable"]
           }
         ]
       }
@@ -6308,16 +6879,219 @@
         "to": "ext-github",
         "label": "fixed browser URL; version only",
         "kind": "call"
+      },
+      {
+        "id": "app-shell-to-feature-comparison",
+        "from": "app-shell",
+        "to": "feature-comparison",
+        "label": "monta diálogo de comparación",
+        "kind": "call"
+      },
+      {
+        "id": "app-shell-to-feature-dependencies",
+        "from": "app-shell",
+        "to": "feature-dependencies",
+        "label": "monta diálogo de dependencias",
+        "kind": "call"
+      },
+      {
+        "id": "app-shell-to-feature-perspectives",
+        "from": "app-shell",
+        "to": "feature-perspectives",
+        "label": "monta gestión y selector de mapa",
+        "kind": "call"
+      },
+      {
+        "id": "action-registry-to-feature-comparison",
+        "from": "action-registry",
+        "to": "feature-comparison",
+        "label": "abre comparación inmutable",
+        "kind": "call"
+      },
+      {
+        "id": "action-registry-to-feature-dependencies",
+        "from": "action-registry",
+        "to": "feature-dependencies",
+        "label": "abre mapa de referencias conocidas",
+        "kind": "call"
+      },
+      {
+        "id": "action-registry-to-feature-perspectives",
+        "from": "action-registry",
+        "to": "feature-perspectives",
+        "label": "abre gestión de perspectivas",
+        "kind": "call"
+      },
+      {
+        "id": "feature-inspector-to-feature-dependencies",
+        "from": "feature-inspector",
+        "to": "feature-dependencies",
+        "label": "referencias guardadas entrantes/salientes",
+        "kind": "call"
+      },
+      {
+        "id": "feature-inspector-to-feature-perspectives",
+        "from": "feature-inspector",
+        "to": "feature-perspectives",
+        "label": "editor de notas compartidas",
+        "kind": "call"
+      },
+      {
+        "id": "feature-project-to-feature-perspectives",
+        "from": "feature-project",
+        "to": "feature-perspectives",
+        "label": "funciones puras de mapa activo/espacio/reconciliación",
+        "kind": "call"
+      },
+      {
+        "id": "feature-perspectives-to-feature-project",
+        "from": "feature-perspectives",
+        "to": "feature-project",
+        "label": "comandos de mapas y notas con deshacer",
+        "kind": "call"
+      },
+      {
+        "id": "feature-canvas-to-feature-perspectives",
+        "from": "feature-canvas",
+        "to": "feature-perspectives",
+        "label": "selección del lienzo activo",
+        "kind": "call"
+      },
+      {
+        "id": "feature-export-to-feature-perspectives",
+        "from": "feature-export",
+        "to": "feature-perspectives",
+        "label": "proyección revisada de notas visibles",
+        "kind": "call"
+      },
+      {
+        "id": "feature-comparison-to-feature-schema",
+        "from": "feature-comparison",
+        "to": "feature-schema",
+        "label": "presentación de hechos estructurados",
+        "kind": "call"
+      },
+      {
+        "id": "feature-comparison-to-feature-export",
+        "from": "feature-comparison",
+        "to": "feature-export",
+        "label": "diagramas de contexto y escape de informe",
+        "kind": "call"
+      },
+      {
+        "id": "feature-comparison-to-shared-ipc",
+        "from": "feature-comparison",
+        "to": "shared-ipc",
+        "label": "backends de comparación/proyecto/exportación",
+        "kind": "call"
+      },
+      {
+        "id": "feature-dependencies-to-feature-schema",
+        "from": "feature-dependencies",
+        "to": "feature-schema",
+        "label": "etiquetas e identidades de objetos",
+        "kind": "call"
+      },
+      {
+        "id": "feature-dependencies-to-feature-export",
+        "from": "feature-dependencies",
+        "to": "feature-export",
+        "label": "paleta y escape SVG/HTML",
+        "kind": "call"
+      },
+      {
+        "id": "feature-dependencies-to-shared-ipc",
+        "from": "feature-dependencies",
+        "to": "shared-ipc",
+        "label": "exportación explícita del mapa",
+        "kind": "call"
+      },
+      {
+        "id": "shared-ipc-to-shared-connection-identities",
+        "from": "shared-ipc",
+        "to": "shared-connection-identities",
+        "label": "claves de historial/credenciales simuladas",
+        "kind": "call"
+      },
+      {
+        "id": "ipc-invoke-to-cmd-comparison",
+        "from": "ipc-invoke",
+        "to": "cmd-comparison",
+        "label": "tres comandos de comparación",
+        "kind": "call"
+      },
+      {
+        "id": "cmd-comparison-to-core-comparison",
+        "from": "cmd-comparison",
+        "to": "core-comparison",
+        "label": "snapshots inmutables y páginas de código",
+        "kind": "call"
+      },
+      {
+        "id": "core-inspectors-to-core-postgresql",
+        "from": "core-inspectors",
+        "to": "core-postgresql",
+        "label": "estrategia elegida por proveedor",
+        "kind": "call"
+      },
+      {
+        "id": "core-postgresql-to-core-model",
+        "from": "core-postgresql",
+        "to": "core-model",
+        "label": "hechos y cobertura nativos",
+        "kind": "call"
+      },
+      {
+        "id": "core-postgresql-to-core-dependencies",
+        "from": "core-postgresql",
+        "to": "core-dependencies",
+        "label": "evidencia pg_depend y función de trigger",
+        "kind": "call"
+      },
+      {
+        "id": "core-postgresql-to-ext-postgresql",
+        "from": "core-postgresql",
+        "to": "ext-postgresql",
+        "label": "catálogos de lectura parametrizados",
+        "kind": "call"
+      },
+      {
+        "id": "core-sqlserver-to-core-dependencies",
+        "from": "core-sqlserver",
+        "to": "core-dependencies",
+        "label": "referencias de expresiones de catálogo",
+        "kind": "call"
+      },
+      {
+        "id": "core-project-to-core-perspectives",
+        "from": "core-project",
+        "to": "core-perspectives",
+        "label": "valida/normaliza/reconcilia mapas y notas",
+        "kind": "call"
+      },
+      {
+        "id": "core-comparison-to-core-model",
+        "from": "core-comparison",
+        "to": "core-model",
+        "label": "observaciones inmutables por proveedor",
+        "kind": "call"
+      },
+      {
+        "id": "integration-tests-to-dev-postgresql",
+        "from": "integration-tests",
+        "to": "dev-postgresql",
+        "label": "matriz nativa 15–18 y TLS estricto",
+        "kind": "call"
       }
     ],
     "dataStores": [
       {
         "name": "Archivo de proyecto .scraft",
         "location": "Cualquier ruta que el usuario elija en el diálogo Guardar",
-        "format": "JSON con sangría, camelCase, salto de línea final, formatVersion 3 con minReaderVersion 2",
+        "format": "JSON legible, camelCase; formato 4 / lector mínimo 4 aún no publicado",
         "owner": "Core en Rust: crates/schemacraft-core/src/project",
-        "contents": "Encabezado (formatVersion, minReaderVersion, savedAt, savedWith) más la conexión sin contraseña (con trustServerCertificate), opciones de inspección, el snapshot del esquema con su perfil de acceso (los hechos de permisos, el nombre del usuario de base de datos y los veredictos), los hechos conservados de lecturas anteriores y, desde la 1.2, el código de vistas, procedimientos, funciones y desencadenadores en snapshot.programmability, que es lógica de negocio y nunca llega a una exportación, y el estado del lienzo (nivel de detalle, distribución, viewport, posiciones, banderas de colapsado y oculto).",
-        "notes": "Se escribe de forma atómica. Un archivo de formato 1 o 2 (SchemaCraft 1.0 o 1.1) se actualiza en memoria con migrations.rs y se guarda como formato 3, que la 1.0 no puede abrir y la 1.1 abre en solo lectura, sin el código. Un archivo más nuevo se abre en solo lectura si su minReaderVersion es 3 o menor y se rechaza si no. Las claves desconocidas de la raíz, el snapshot, su programmability, el lienzo y cada nodo se conservan y se vuelven a escribir. El nombre del usuario de base de datos se queda en el archivo y nunca llega a una exportación. Guardar dos veces el mismo contenido da los mismos bytes salvo savedAt (y savedWith tras una actualización de la app); los nodos se ordenan por nombre calificado."
+        "contents": "Metadatos sin secretos, alcance, snapshot por proveedor con acceso/hechos nativos/código/dependencias; lienzo General, mapas/descripciones y notas de tablas/columnas vinculadas o no.",
+        "notes": "Escritura atómica validada. Formatos 1–3 migran al guardar; motor legado SQL Server sin inventar observaciones. Lectores anteriores rechazan mínimo 4. Se conservan extensiones. Compartir proyecto comparte código, identificadores y notas."
       },
       {
         "name": "preferences.json",
@@ -6332,8 +7106,8 @@
         "location": "Administrador de credenciales de Windows, credencial genérica '<sqlserver://servidor/usuario>.SchemaCraft'",
         "format": "Secreto del SO (CRED_PERSIST_ENTERPRISE)",
         "owner": "Rust: crates/schemacraft-core/src/credentials",
-        "contents": "Contraseñas de inicios de sesión SQL que el usuario decidió recordar.",
-        "notes": "Solo Rust las lee, justo antes de conectar, y ningún comando las devuelve. La parte del servidor en el nombre es el destino mostrado en minúsculas (host,1433 o host\\instancia). Viajan con los perfiles móviles."
+        "contents": "Contraseñas SQL Server/PostgreSQL recordadas por elección, nunca devueltas por IPC.",
+        "notes": "Espacios sqlserver:// y postgresql:// por motor. Se conserva rol PostgreSQL exacto. Conexiones, preferencias y proyectos nunca contienen contraseña."
       },
       {
         "name": "localStorage 'schemacraft.settings'",
@@ -6348,24 +7122,24 @@
         "location": "El mismo perfil de WebView2",
         "format": "JSON, zustand persist versión 1",
         "owner": "Frontend: src/features/connection/connectionStore.ts",
-        "contents": "El último borrador de conexión: servidor, modo de autenticación, inicio de sesión, banderas de recordar contraseña, base de datos, esquemas, includeViews, includeProgrammability, includeModuleDefinitions, cifrado y trustServerCertificate.",
-        "notes": "partialize fuerza la contraseña a ''; todo lo demás queda al cerrar la app, así que un trustServerCertificate = true elegido una vez sigue activo en la siguiente sesión. Borrar preferences.json limpia el historial pero no este borrador; borrar los datos de WebView2 vacía el formulario. ADR-017 y el README listan ambas claves."
+        "contents": "Campos permitidos del último formulario, motor, destino, rol/base, alcance, opciones, transporte y raíz PEM pública opcional; contraseña vacía.",
+        "notes": "Filtrado de lectura/escritura rechaza contraseñas, campos desconocidos y claves PEM privadas. PostgreSQL estricto por defecto; excepciones explícitas/locales. Borrar preferencias no borra WebView."
       },
       {
         "name": "Archivos exportados",
         "location": "Cualquier ruta que el usuario elija",
         "format": "SVG, HTML, PNG o PDF",
         "owner": "TypeScript arma el documento (src/features/export); Rust lo escribe (crates/schemacraft-core/src/export)",
-        "contents": "El diagrama visible. El HTML incrusta los datos visibles como JSON más el código del visor y el subconjunto de mensajes del visor en el idioma de la exportación. Una lectura parcial agrega una nota de una línea: al pie en SVG, PDF y PNG, bajo el encabezado en HTML.",
-        "notes": "Se escriben de forma atómica. El HTML omite tablas ocultas, la conexión, la versión del servidor, el sondeo de acceso y el usuario de base de datos, y las claves desconocidas; del perfil de acceso solo incrusta el nivel y la cobertura, y de los hechos conservados de una lectura anterior solo los de los objetos y las llaves del diagrama, con sus fechas de lectura, aparte del snapshot, así el panel de detalle puede fecharlos sin nombrar una tabla oculta. Las tablas, textos y llaves conservados de una lectura anterior se dibujan como cualquier otro objeto del diagrama."
+        "contents": "Solo perspectiva activa en ERD y descripción/notas visibles vinculadas solo tras revisión por exportación. Comparación/dependencias usan proyecciones cerradas propias.",
+        "notes": "Sin snapshot crudo, cuerpos, credenciales, probe, notas ocultas/sin vínculo ni extensiones. Comparación omite notas/rutas; dependencias omiten servidor/base externa. Límites incluyen leyendas revisadas."
       },
       {
         "name": "Memoria de la sesión (no se guarda)",
         "location": "Stores del frontend y AppState de Rust",
         "format": "En memoria",
         "owner": "projectStore, connectionStore, canvasUiStore, src-tauri/src/state.rs",
-        "contents": "Historial de deshacer (100), liveSettings con la contraseña tecleada (se envía de nuevo en cada actualización), trabajos en curso, fases de diálogos, selección, zoom y si el Inspector está abierto. La selección de módulos y su petición de deselección de nodos también son transitorias.",
-        "notes": "Se pierde al cerrar. El aviso de cambios sin guardar y la protección al cerrar la ventana protegen el lienzo."
+        "contents": "100 pasos de deshacer del espacio, secretos en vivo, selección/diálogos, entradas/páginas/vistas previas de comparación, posiciones acotadas de dependencias y revisiones.",
+        "notes": "Sin guardado automático. Encuadres pertenecen a cada mapa; selección activa oportunista. Cerrar comparación/soporte limpia vista previa. Actualizar limpia deshacer; respuestas tardías no reemplazan estado nuevo."
       },
       {
         "name": "Catálogo de SQL Server",
@@ -6390,6 +7164,14 @@
         "owner": "src-tauri/src/support.rs y features/support",
         "contents": "Hora UTC, versión y compilación, familia de SO y arquitectura, versión de WebView2 y hasta siete registros limitados.",
         "notes": "Solo guardado local explícito; la vista previa se borra al cerrar, sin carga automática. No recopila proyectos, preferencias, credenciales, capturas o archivos arbitrarios."
+      },
+      {
+        "name": "PostgreSQL catalogs",
+        "location": "Servidor/base elegidos explícitamente",
+        "format": "pg_catalog / information_schema",
+        "owner": "PostgreSqlInspector",
+        "contents": "Hechos estructurales nativos y código/dependencias opcionales con evidencia de visibilidad.",
+        "notes": "Sesiones de lectura por operación, TLS estricto por defecto; sin filas de aplicación, ejecución ni seguimiento externo automático."
       }
     ],
     "flows": [
@@ -6542,7 +7324,7 @@
           {
             "actor": "cmd-project + core project",
             "action": "Registra la fecha y escribe",
-            "detail": "Project::from_content fija formatVersion 3, minReaderVersion 2, savedAt (ahora) y savedWith, quita las claves de encabezado que encuentre en el contenido y normaliza el lienzo (nodos ordenados por nombre); las claves desconocidas se vuelven a escribir. write_json_atomically escribe <nombre de archivo>.tmp, por ejemplo northwind.scraft.tmp, y luego lo renombra."
+            "detail": "Project::from_content fija formatVersion 4, minReaderVersion 4, savedAt (ahora) y savedWith, quita las claves de encabezado que encuentre en el contenido y normaliza el lienzo (nodos ordenados por nombre); las claves desconocidas se vuelven a escribir. write_json_atomically escribe <nombre de archivo>.tmp, por ejemplo northwind.scraft.tmp, y luego lo renombra."
           },
           {
             "actor": "projectStore",
@@ -6557,7 +7339,7 @@
           {
             "actor": "core project/file.rs",
             "action": "Lee con control de versión",
-            "detail": "Lee el JSON una vez y primero formatVersion y minReaderVersion: un minReaderVersion mayor que 3 se rechaza, un formatVersion más nuevo se abre en solo lectura y los formatos 1 y 2 se actualizan con migrations.rs; luego viene la lectura tipada, que conserva las claves desconocidas. Un archivo más nuevo que no se puede leer es UnsupportedFormatVersion. Errores: NotFound, Read, NotAProject, UnsupportedFormatVersion. Devuelve OpenedProject."
+            "detail": "Lee el JSON una vez y primero formatVersion y minReaderVersion: un minReaderVersion mayor que 4 se rechaza; un formatVersion más nuevo abre en solo lectura únicamente si lo permite su lector mínimo. Los formatos 1, 2 y 3 migran en memoria al formato 4 mediante migrations.rs, sin inventar observaciones; después la lectura tipada conserva los campos desconocidos admitidos. Un archivo compatible más nuevo que no se puede leer es UnsupportedFormatVersion. Errores: NotFound, Read, NotAProject, UnsupportedFormatVersion. Devuelve OpenedProject."
           },
           {
             "actor": "projectStore",
@@ -6851,6 +7633,94 @@
             "detail": "El usuario revisa, adjunta y envía en el navegador; SchemaCraft no envía archivos de diagnóstico."
           }
         ]
+      },
+      {
+        "id": "compare-projects",
+        "name": "Comparar capturas guardadas",
+        "summary": "Sin conexión ni modificación del proyecto activo.",
+        "steps": [
+          {
+            "actor": "feature-comparison",
+            "action": "Elegir Referencia y Comparado",
+            "detail": "Leer archivos compatibles independientemente con projectBackend."
+          },
+          {
+            "actor": "core-comparison",
+            "action": "Comparar evidencia",
+            "detail": "Mismo motor, identidad estructurada, ausencia probada y límites aparte."
+          },
+          {
+            "actor": "feature-comparison",
+            "action": "Revisar código local y vista previa",
+            "detail": "Páginas acotadas/cancelables no autorizan exportar código; guardar informe filtrado cerrado."
+          }
+        ]
+      },
+      {
+        "id": "explore-dependencies",
+        "name": "Explorar referencias conocidas",
+        "summary": "Mapa dirigido aparte; nunca una llave ERD.",
+        "steps": [
+          {
+            "actor": "core-inspectors",
+            "action": "Capturar referencias nativas opcionales",
+            "detail": "Independientes del texto; conservar cobertura y fechas por origen."
+          },
+          {
+            "actor": "feature-dependencies",
+            "action": "Recorrer selección acotada",
+            "detail": "Entrante/saliente/ambas, ciclos y destinos sin resolver con omisiones explícitas."
+          },
+          {
+            "actor": "feature-dependencies",
+            "action": "Revisar y exportar proyección",
+            "detail": "SVG/PNG/PDF/HTML omiten identificadores externos de servidor/base y cuerpos."
+          }
+        ]
+      },
+      {
+        "id": "manage-perspectives",
+        "name": "Gestionar mapas y notas",
+        "summary": "Un snapshot, disposiciones independientes y compartición revisada.",
+        "steps": [
+          {
+            "actor": "feature-perspectives",
+            "action": "Crear o cambiar mapa",
+            "detail": "Cambiar solo no ensucia; editar entra al historial."
+          },
+          {
+            "actor": "feature-project",
+            "action": "Guardar y actualizar mapas",
+            "detail": "General muestra nuevos objetos; curados los ocultan; eliminar destino archiva texto."
+          },
+          {
+            "actor": "feature-export",
+            "action": "Marcar notas para esta exportación",
+            "detail": "Empieza apagado siempre; solo notas visibles vinculadas revisadas y descripción opcional."
+          }
+        ]
+      },
+      {
+        "id": "connect-postgresql",
+        "name": "Inspeccionar PostgreSQL nativo",
+        "summary": "Identidad, TLS y hechos por proveedor.",
+        "steps": [
+          {
+            "actor": "postgresql-connection",
+            "action": "Elegir motor/destino/TLS estricto",
+            "detail": "Rol/base exactos, solo raíz pública; excepciones locales explícitas."
+          },
+          {
+            "actor": "core-postgresql",
+            "action": "Leer catálogos nativos acotados",
+            "detail": "Sesión de lectura por operación y resultados opcionales, sin filas ni llamadas."
+          },
+          {
+            "actor": "feature-schema",
+            "action": "Presentar semántica nativa",
+            "detail": "Tipos, sobrecargas, estados/acceso nativos; sin hechos SQL Server inventados."
+          }
+        ]
       }
     ],
     "commands": [
@@ -6972,6 +7842,21 @@
       {
         "name": "open_support_page",
         "purpose": "Abrir la URL fija del formulario o política de seguridad, sin incluir el diagnóstico.",
+        "streamsEvents": false
+      },
+      {
+        "name": "compare_project_snapshots",
+        "purpose": "Compara capturas independientes del mismo motor sin actualizar ni guardar un proyecto.",
+        "streamsEvents": false
+      },
+      {
+        "name": "compare_project_source",
+        "purpose": "Calcula una página literal acotada; el canal inicial entrega un ID cancelable.",
+        "streamsEvents": true
+      },
+      {
+        "name": "cancel_project_comparison",
+        "purpose": "Cancela una comparación de código en curso.",
         "streamsEvents": false
       }
     ],
@@ -7150,6 +8035,11 @@
         "name": "Resultados independientes de captura opcional",
         "where": "crates/schemacraft-core/src/inspectors/sqlserver/programmability.rs, crates/schemacraft-core/src/model/code_carry_over.rs, crates/schemacraft-core/src/diff/code.rs",
         "why": "Los fallos de código son hechos de captura en vez de errores de inspección de tablas; una fusión compartida conserva los hechos guardados y sus fechas, y la revisión distingue cambios de observaciones fallidas (ADR-043)."
+      },
+      {
+        "name": "Exploración con evidencia (ADR-047–050)",
+        "where": "comparación, dependencias, perspectivas y PostgreSQL nativo",
+        "why": "Separa comparación inmutable, cobertura de catálogo, espacio editable y semántica nativa, con privacidad y distribución independiente."
       }
     ],
     "recipes": {
@@ -7417,11 +8307,11 @@
         },
         {
           "kind": "Nuevo estado del diagrama guardado en .scraft",
-          "example": "Un color o una nota por tabla que sobreviva a guardar, deshacer y actualizar.",
+          "example": "Una preferencia visual por mapa; las notas compartidas ya tienen modelo aparte en project/perspectives.rs.",
           "steps": [
             {
               "layer": "core",
-              "step": "Agrega el campo a NodeState o CanvasState con #[serde(default)]; revisa normalized() y retaining_entities_of; prueba los valores por defecto y una ida y vuelta estable byte a byte salvo savedAt. Las versiones anteriores lo conservan como clave desconocida; sube FORMAT_VERSION solo si depende de contenido que ellas podrían cambiar (ADR-035).",
+              "step": "Ubicar campo en valor de mapa/espacio que lo posee con defaults serde. Revisar normalización de mapas, actualización, extensiones y lector anterior; no toda nota pertenece a NodeState.",
               "files": [
                 "crates/schemacraft-core/src/project/canvas.rs",
                 "crates/schemacraft-core/src/project/document.rs"
@@ -7434,7 +8324,7 @@
             },
             {
               "layer": "Frontend",
-              "step": "Un with<Algo>() puro y un comando vía updateCanvas. Actualiza los literales de NodeState en canvasState.ts (ensurePlaced) y refreshPlacement.ts, y defaultCanvasState en projectStore.ts. Muéstralo en el lienzo, en renderDiagram.ts (un token en tokens.css más su entrada en palette.ts, que tokens.test.ts revisa) y en el visor.",
+              "step": "Transformación pura mediante activeCanvas/withActiveCanvas; incluir memento correcto, revisiones de trabajos y consentimiento/proyección de exportación. Evitar leer content.canvas salvo propietario de General.",
               "files": [
                 "src/features/canvas/canvasState.ts",
                 "src/features/canvas/canvasActions.ts",
@@ -7492,31 +8382,45 @@
         },
         {
           "kind": "Nuevo motor de base de datos",
-          "example": "PostgreSQL.",
+          "example": "Otro motor relacional, usando la estrategia PostgreSQL nativa como referencia del segundo proveedor.",
           "steps": [
             {
               "layer": "core",
-              "step": "Un módulo nuevo bajo inspectors/ que implemente DatabaseInspector y una variante de ConnectionSettings (inspectors/settings.rs) en el match de create_inspector (inspectors/mod.rs).",
+              "step": "Implementar catálogos, transporte y evidencia nativos detrás de DatabaseInspector/create_inspector. No convertir semántica en banderas SQL Server falsas; añadir tipos propios y lectores conservadores.",
               "files": [
                 "crates/schemacraft-core/src/inspectors/mod.rs",
-                "crates/schemacraft-core/src/inspectors/settings.rs"
+                "crates/schemacraft-core/src/model",
+                "crates/schemacraft-core/src/inspectors/postgresql"
               ]
             },
             {
-              "layer": "core persistencia",
-              "step": "Una variante de SavedConnection y un constructor de CredentialKey. Hoy project/connection.rs importa tipos de SQL Server; el doc de inspectors enumera cada una de esas partes.",
+              "layer": "Persistencia e identidad",
+              "step": "Conexiones guardadas, proveedor del snapshot, historial y credenciales por motor; revisar enums y lector mínimo antes de escribir.",
               "files": [
                 "crates/schemacraft-core/src/project/connection.rs",
-                "crates/schemacraft-core/src/credentials/mod.rs"
+                "crates/schemacraft-core/src/project/document.rs",
+                "crates/schemacraft-core/src/credentials/mod.rs",
+                "src/shared/connections"
               ]
             },
             {
               "layer": "frontend",
-              "step": "Borrador, formulario y conversiones que fijan provider 'sqlServer', más claves i18n.",
+              "step": "Separar campos nativos; mantener modelos schema hoja, mapa activo, comparación/dependencias locales e inventarios de exportación explícitos. Añadir remedios bilingües por motor.",
               "files": [
-                "src/features/project/savedConnection.ts",
-                "src/features/connection/fromSavedConnection.ts",
-                "src/features/connection/connectionDraft.ts"
+                "src/features/connection",
+                "src/features/schema",
+                "src/features/comparison",
+                "src/features/dependencies",
+                "src/features/export/html/viewerData.ts"
+              ]
+            },
+            {
+              "layer": "Evidencia",
+              "step": "Ejecutar fixtures nativos/restringidos/TLS por versión y aceptación real en idiomas/temas; conservar regresión de motores/distribución. La simulación no prueba el motor.",
+              "files": [
+                "dev/postgresql",
+                "crates/schemacraft-core/tests/postgresql_integration.rs",
+                "docs/release-checklist.md"
               ]
             }
           ]
@@ -7537,11 +8441,11 @@
         },
         {
           "concern": "Deshacer y cambios sin guardar",
-          "touches": "Solo CanvasState se puede deshacer, vía projectStore.updateCanvas; el estado transitorio (la selección, si el Inspector está abierto, la regla que resalta) va en canvasUiStore. El título de la ventana muestra '•' y cerrar pregunta antes (useProjectWindow)."
+          "touches": "Mementos incluyen General, mapas/notas/descripciones, sin snapshot ni secreto. Texto agrupado por foco; actualizar limpia historial. Cambiar mapa no ensucia. Guardas de documento/mapa/revisión rechazan trabajo tardío (ADR-049)."
         },
         {
           "concern": "Versionado de .scraft",
-          "touches": "FORMAT_VERSION 3 y MIN_READER_VERSION 2; actualizaciones sobre el JSON crudo en migrations.rs; los archivos más nuevos se abren en solo lectura; las claves desconocidas se conservan en la raíz, el snapshot, su programmability, el lienzo y cada nodo. Cuándo subir cada número está en ADR-035; qué añadió el formato 3 y por qué la 1.1 todavía lo lee, en ADR-042."
+          "touches": "Formato/lector mínimo 4 aún no publicado, migraciones y rechazo seguro de lector anterior. Motores y mapas/notas no pueden interpretarse silenciosamente con 1.2.0. ADR-042 conserva historia formato 3/lector 2."
         },
         {
           "concern": "Diferencias al actualizar",
@@ -7605,13 +8509,13 @@
         "Pasan npm run format:check, lint, typecheck, test y docs:check.",
         "Pasan cargo fmt --check, clippy -D warnings y cargo test --workspace; sin unwrap, expect ni panic en código de producción.",
         "Contratos regenerados y en el commit.",
-        "Pruebas unitarias junto a cada módulo puro nuevo; cambios de catálogo o diff con pruebas de integración en SQL Server.",
-        "Los .scraft viejos siguen abriendo, y los más nuevos se abren en solo lectura (ADR-035).",
+        "Pruebas unitarias junto a cada módulo puro nuevo; cambios de catálogo o diff con integración nativa para cada proveedor afectado y versión principal declarada: SQL Server 2019/2022 y PostgreSQL 15–18.",
+        "Los .scraft viejos siguen abriendo; los más nuevos compatibles abren en solo lectura y un lector mínimo incompatible se rechaza de forma segura (ADR-035, ADR-049).",
         "Funcionalidades de datos revisadas con un inicio de sesión que ve parte del esquema: 'no disponible' en vez de vacío y nada dado por inexistente.",
         "en.ts y es.ts completos.",
         "Definición de terminado de UX: acción con tooltip y atajo, estados de carga, vacío y error, ambos temas, ambos idiomas, solo teclado, WCAG AA.",
         "Paridad de exportación revisada y sin fuga de datos privados al HTML.",
-        "Verificado en el preview del navegador y en la app de escritorio; las funcionalidades de datos, contra un SQL Server real.",
+        "Verificado en el preview del navegador y en la app de escritorio; funcionalidades de datos contra servidores reales de cada proveedor afectado. El preview no demuestra la inspección nativa.",
         "CI en verde en el PR: job de Windows y job de integración en Linux.",
         "Documentación actualizada en el mismo PR: ADRs, la sección Layout de architecture.md, ux-principles.md, README, CHANGELOG y el modelo de esta página.",
         "Rama desde main, Conventional Commits, merge commit por PR, nunca auto-merge."
@@ -7925,7 +8829,7 @@
         "La página lleva un solo manifiesto, en el nivel superior de model.json y compartido por ambos idiomas. CI lo compara con el código con scripts/check-architecture-page.mjs (npm run docs:check).",
         "Comando nuevo: agrégalo a manifest.commands y a la tabla de comandos en ambos idiomas.",
         "Carpeta de funcionalidad, módulo del core o backend IPC nuevo: agrégalo al manifiesto, a la lista de capas y a las aristas del diagrama.",
-        "Decisión nueva: agrega un ADR (el siguiente es ADR-047), sube manifest.adrCount y enlaza el ADR desde el patrón o la receta que cambia.",
+        "Decisión nueva: agrega un ADR (el siguiente es ADR-051), sube manifest.adrCount y enlaza el ADR desde el patrón o la receta que cambia.",
         "Cambio de alcance: actualiza ambas copias del PRD (docs/ y 02_Docs/), agrega una línea fechada en la sección 6 y haz commit como docs(prd), solo con aprobación del usuario.",
         "Desviación corregida: márcala como corregida en el mismo PR. Desviación conocida nueva: agrégala con su severidad y estado open.",
         "Almacén de datos o clave de localStorage nueva: agrega una fila a la tabla de datos.",
@@ -7943,7 +8847,8 @@
           "ipcBackends: los archivos de src/shared/ipc que terminan en Backend.ts y no empiezan con preview.",
           "adrCount: el número de encabezados '### ADR-' en docs/architecture.md.",
           "Las listas se comparan como conjuntos. Cada ruta de componente debe existir, cada arista debe apuntar a componentes conocidos, e inglés y español deben listar los mismos ids de capas, componentes, flujos y aristas en el mismo orden.",
-          "Imprime cada nombre faltante o sobrante y sale con código distinto de cero. El job de Windows de CI y el workflow de release lo corren junto con los controles del frontend."
+          "Imprime cada nombre faltante o sobrante y sale con código distinto de cero. El job de Windows de CI y el workflow de release lo corren junto con los controles del frontend.",
+          "featureComponents/coreComponents vinculan cada carpeta/módulo con un componente. ipcCallers fija llamadas literales invokeCommand y exige registro host. Análisis AST cubre alias, relativas, reexportaciones y dinámicas; core Cargo no admite Tauri."
         ]
       }
     },

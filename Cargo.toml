@@ -19,6 +19,8 @@ chrono = { version = "0.4", features = ["serde"] }
 # Stream module definitions without buffering a second copy of the result set.
 futures-util = { version = "0.3", default-features = false }
 keyring = { version = "3", features = ["windows-native"] }
+native-tls = "0.2"
+postgres-native-tls = "0.5"
 # resvg, usvg and svg2pdf must agree on one usvg: svg2pdf 0.13 is built against usvg 0.45.
 resvg = { version = "0.45", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
 usvg = { version = "0.45", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
@@ -31,6 +33,7 @@ thiserror = "2.0"
 tiberius = { version = "0.13", features = ["sql-browser-tokio"] }
 tokio = { version = "1.53", features = ["rt-multi-thread", "net", "time", "macros", "sync"] }
 tokio-util = { version = "0.7", features = ["compat"] }
+tokio-postgres = "0.7"
 # ts-rs prints a pseudo-warning on every build for serde keys it does not model, such as the
 # `#[serde(other)]` fallback of `model::Definition`; the contracts check guards the output.
 ts-rs = { version = "12.0", features = ["serde-compat", "chrono-impl", "no-serde-warnings"] }

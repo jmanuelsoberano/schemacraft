@@ -8,6 +8,7 @@
 //! in the frontend. The architecture page keeps the full recipe.
 
 mod error;
+pub mod postgresql;
 mod progress;
 mod settings;
 pub mod sqlserver;
@@ -62,5 +63,8 @@ pub fn create_inspector(
         ConnectionSettings::SqlServer(sql_server_settings) => Ok(Box::new(
             sqlserver::SqlServerInspector::new(sql_server_settings)?,
         )),
+        ConnectionSettings::PostgreSql(settings) => {
+            Ok(Box::new(postgresql::PostgreSqlInspector::new(settings)?))
+        }
     }
 }

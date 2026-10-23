@@ -21,7 +21,8 @@ else
       *) code=true ;;
     esac
     case "$file" in
-      crates/* | Cargo.toml | Cargo.lock | rust-toolchain.toml | .github/workflows/ci.yml | scripts/ci-changes.sh)
+      crates/* | dev/postgresql/* | Cargo.toml | Cargo.lock | rust-toolchain.toml | .github/workflows/ci.yml | scripts/ci-changes* | scripts/dev-sqlserver.ps1)
+        code=true
         core=true
         ;;
     esac

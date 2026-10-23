@@ -9,6 +9,7 @@
 //! message (ADR-041).
 
 pub mod app_info;
+pub mod comparison;
 pub mod connection;
 pub mod credentials;
 pub mod diagnostics;

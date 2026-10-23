@@ -9,6 +9,8 @@ import type { ModuleKind } from "./modules";
 import type { BadgeView, ColumnsSectionView } from "./objectDetailsView";
 import { presentTriggerBadges, presentTriggerEvents, triggerRunNotes } from "./triggerDetailsView";
 import type { TriggerEventView } from "./triggerDetailsView";
+import { presentRoutineDependencyTracking } from "./routineDependencyTracking";
+import type { RoutineTrackingView } from "./routineDependencyTracking";
 
 /** Module-only words stay in the desktop; trigger metadata words also serve entity details. */
 export type ModuleTranslator = CatalogTranslator<
@@ -34,6 +36,7 @@ export interface ParametersSectionView {
   items: readonly { name: string; type: string; badges: readonly string[] }[];
   emptyText: string | null;
   note: string | null;
+  tracking?: RoutineTrackingView;
 }
 
 export interface ReturnsSectionView {
@@ -84,20 +87,41 @@ export function presentModuleDefinition(
   const explanation = keptInvisible
     ? t("module.definition.keptNotVisible.body")
     : facts.status === "readable"
-      ? null
+      ? facts.native === undefined
+        ? null
+        : t("module.native.reconstructed")
       : facts.status === "notRead"
-        ? t(
-            facts.reason === "optionOff"
-              ? "module.definition.optionOff"
-              : facts.reason === "timedOut"
-                ? "module.definition.timedOut"
-                : "module.definition.readFailed",
-          )
+        ? facts.reason === "permissionDenied"
+          ? t("module.native.permissionDenied")
+          : t(
+              facts.reason === "optionOff"
+                ? "module.definition.optionOff"
+                : facts.reason === "timedOut"
+                  ? "module.definition.timedOut"
+                  : "module.definition.readFailed",
+            )
         : t(`module.definition.${facts.status}.body`);
   const badges = [];
-  if (facts.viewSettings?.hasCheckOption)
+  if (facts.native?.language !== null && facts.native?.language !== undefined)
+    badges.push({
+      label: t("module.native.language", { language: facts.native.language }),
+      hint: t("module.native.reconstructed"),
+    });
+  if (facts.native?.view?.isMaterialized === true)
+    badges.push({
+      label: t("module.native.materializedView"),
+      hint: t("module.native.populated", {
+        value: t(facts.native.view.isPopulated ? "module.value.yes" : "module.value.no"),
+      }),
+    });
+  if (facts.native?.view !== undefined && facts.native.view.checkOption !== "none")
+    badges.push({
+      label: t("module.native.checkOption", { mode: facts.native.view.checkOption.toUpperCase() }),
+      hint: t("module.view.checkOption"),
+    });
+  if (facts.native === undefined && facts.viewSettings?.hasCheckOption)
     badges.push({ label: "WITH CHECK OPTION", hint: t("module.view.checkOption") });
-  if (facts.viewSettings?.isIndexed)
+  if (facts.native === undefined && facts.viewSettings?.isIndexed)
     badges.push({ label: t("module.view.indexed"), hint: t("module.view.indexedHint") });
   return {
     kind: "definition",
@@ -109,27 +133,55 @@ export function presentModuleDefinition(
     explanation,
     text: facts.text,
     notice,
-    canExplainAccess: facts.status === "notVisible",
+    canExplainAccess: facts.status === "notVisible" && facts.native === undefined,
     badges,
   };
 }
 
 function parametersView(
   section: Extract<ModuleSection, { kind: "parameters" }>,
-  { t }: ModuleTranslator,
+  translator: ModuleTranslator,
 ): ParametersSectionView {
+  const { t } = translator;
   return {
     kind: "parameters",
     title: t("module.section.parameters"),
     headers: { name: t("module.column.name"), type: t("module.column.type") },
-    items: section.items.map((item) => ({
-      name: item.name,
+    items: section.items.map((item, index) => ({
+      name: item.name || `$${item.ordinalPosition}`,
       type: formatDataType(item.dataType),
-      badges: [...(item.isOutput ? ["OUTPUT"] : []), ...(item.isReadOnly ? ["READONLY"] : [])],
+      badges:
+        section.native === undefined
+          ? [...(item.isOutput ? ["OUTPUT"] : []), ...(item.isReadOnly ? ["READONLY"] : [])]
+          : [parameterMode(section.native.argumentModes[index] ?? "i")],
     })),
     emptyText: section.items.length === 0 ? t("module.parameters.empty") : null,
-    note: section.hasSqlDefaultsNote ? t("module.parameters.defaults") : null,
+    note:
+      section.native !== undefined
+        ? t("module.native.parameters")
+        : section.hasSqlDefaultsNote
+          ? t("module.parameters.defaults")
+          : null,
+    ...(section.isPostgreSql === true || section.native !== undefined
+      ? {
+          tracking: presentRoutineDependencyTracking(
+            section.native?.routineBodyTracking,
+            translator,
+          ),
+        }
+      : {}),
   };
+}
+
+function parameterMode(mode: string): string {
+  const names: Readonly<Record<string, string>> = {
+    i: "IN",
+    o: "OUT",
+    b: "INOUT",
+    v: "VARIADIC",
+    t: "TABLE",
+  };
+  return names[mode] ?? "UNKNOWN";
 }
 
 function returnsView(
@@ -214,7 +266,7 @@ export function presentModuleDetails(
     kind: details.kind,
     kindLabel: translator.t(`module.kind.${details.kind}`),
     schema: details.name.schema,
-    name: details.name.name,
+    name: details.signature ?? details.name.name,
     notice:
       details.notCheckedSince === null
         ? null

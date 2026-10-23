@@ -66,7 +66,7 @@ export function triggerReadAt(
 
 /** Timing first, then enabled state, then the exact name; never imply a global firing order. */
 export function triggersOf(snapshot: SchemaSnapshot, parent: QualifiedName): Trigger[] {
-  const timing = { insteadOf: 0, after: 1, unknown: 2 };
+  const timing = { insteadOf: 0, before: 1, after: 2, unknown: 3 };
   return (snapshot.programmability?.triggers ?? [])
     .filter((trigger) => sameName(trigger.parent, parent))
     .sort(

@@ -6,11 +6,18 @@ import type {
 } from "@/shared/contracts";
 
 import { formatTarget, parseServerAddress } from "./serverAddress";
+import {
+  formatPostgreSqlTarget,
+  isLocalPostgreSqlHost,
+  parsePostgreSqlAddress,
+} from "./postgreSqlAddress";
+import type { PostgreSqlEncryptionMode } from "@/shared/contracts/generated/inspectors/PostgreSqlEncryptionMode";
 
 export type AuthenticationMode = "integrated" | "sqlLogin";
 
 /** What the user types in the connection dialog. Persisted without the password. */
 export interface ConnectionDraft {
+  provider: "sqlServer" | "postgreSql";
   server: string;
   authenticationMode: AuthenticationMode;
   username: string;
@@ -27,13 +34,18 @@ export interface ConnectionDraft {
   includeProgrammability: boolean;
   /** Save the code of views, procedures, functions and triggers in the project. */
   includeModuleDefinitions: boolean;
+  /** Read known catalog references without requiring module source storage. */
+  includeDependencies: boolean;
   encryption: EncryptionMode;
   trustServerCertificate: boolean;
+  postgreSqlEncryption: PostgreSqlEncryptionMode;
+  rootCertificate: string;
 }
 
 export const DEFAULT_CONNECT_TIMEOUT_SECONDS = 15;
 
 export const emptyConnectionDraft: ConnectionDraft = {
+  provider: "sqlServer",
   server: "",
   authenticationMode: "integrated",
   username: "",
@@ -45,12 +57,18 @@ export const emptyConnectionDraft: ConnectionDraft = {
   includeViews: true,
   includeProgrammability: true,
   includeModuleDefinitions: true,
+  includeDependencies: true,
   encryption: "mandatory",
   trustServerCertificate: false,
+  postgreSqlEncryption: "verifyFull",
+  rootCertificate: "",
 };
 
 export type DraftValidationError =
-  { field: "server"; reason: "empty" | "invalidPort" } | { field: "username"; reason: "empty" };
+  | { field: "server"; reason: "empty" | "invalidPort" | "invalidAddress" }
+  | { field: "username"; reason: "empty" }
+  | { field: "postgreSqlEncryption"; reason: "localOnly" }
+  | { field: "rootCertificate"; reason: "notPublicCertificate" };
 
 export type DraftToSettings =
   | {
@@ -66,6 +84,36 @@ export function draftToSettings(
   draft: ConnectionDraft,
   database: string | null = draft.database,
 ): DraftToSettings {
+  if (draft.provider === "postgreSql") {
+    const parsed = parsePostgreSqlAddress(draft.server);
+    if (!parsed.ok) return { ok: false, error: { field: "server", reason: parsed.reason } };
+    if (draft.username.trim() === "")
+      return { ok: false, error: { field: "username", reason: "empty" } };
+    if (
+      draft.postgreSqlEncryption !== "verifyFull" &&
+      !isLocalPostgreSqlHost(parsed.address.host)
+    ) {
+      return { ok: false, error: { field: "postgreSqlEncryption", reason: "localOnly" } };
+    }
+    if (draft.rootCertificate.includes("PRIVATE KEY")) {
+      return { ok: false, error: { field: "rootCertificate", reason: "notPublicCertificate" } };
+    }
+    return {
+      ok: true,
+      target: formatPostgreSqlTarget(parsed.address),
+      settings: {
+        provider: "postgreSql",
+        host: parsed.address.host,
+        port: parsed.address.port,
+        database,
+        username: draft.username,
+        password: passwordSource(draft),
+        encryption: draft.postgreSqlEncryption,
+        rootCertificate: draft.rootCertificate.trim() === "" ? null : draft.rootCertificate,
+        connectTimeoutSeconds: DEFAULT_CONNECT_TIMEOUT_SECONDS,
+      },
+    };
+  }
   const parsed = parseServerAddress(draft.server);
   if (!parsed.ok) {
     return { ok: false, error: { field: "server", reason: parsed.reason } };
@@ -107,5 +155,6 @@ export function draftToInspectionOptions(draft: ConnectionDraft): InspectionOpti
     includeViews: draft.includeViews,
     includeProgrammability: draft.includeProgrammability,
     includeModuleDefinitions: draft.includeModuleDefinitions,
+    includeDependencies: draft.includeDependencies,
   };
 }
