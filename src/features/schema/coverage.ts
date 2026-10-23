@@ -61,7 +61,13 @@ export function moduleDefinitionsCoverage(snapshot: SchemaSnapshot): FactCoverag
 
 /** Why a routines list cannot vouch for absences, without treating a failed read as permissions. */
 export type RoutinesListNotice =
-  "partial" | "notRecorded" | "optionOff" | "queryFailed" | "timedOut" | "unknown";
+  | "partial"
+  | "notRecorded"
+  | "optionOff"
+  | "queryFailed"
+  | "timedOut"
+  | "permissionDenied"
+  | "unknown";
 
 export function routinesListNotice(snapshot: SchemaSnapshot): RoutinesListNotice | null {
   const capture = snapshot.programmability?.capture.objects;

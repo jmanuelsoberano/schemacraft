@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AccessProfile, CaptureState, SchemaSnapshot } from "@/shared/contracts";
-import { accessCauses, codeCaptureCause, codeGrantHelps } from "./accessCause";
+import { accessCauses, codeCaptureCause, codeGrantHelps, grantHelps } from "./accessCause";
 import { personas, translatorFor } from "./testFixtures";
 
 function capture(state: CaptureState): SchemaSnapshot & { access: AccessProfile } {
@@ -35,6 +35,7 @@ describe("code access explanations", () => {
     expect(accessCauses(snapshot.access)).toEqual([]);
     expect(codeCaptureCause(snapshot, "objects", translatorFor("en"))).toContain("VIEW DEFINITION");
     expect(codeGrantHelps(snapshot)).toBe(true);
+    if (snapshot.access.probe === undefined) throw new Error("SQL Server probe expected");
     snapshot.access.probe.executeDenials = 1;
     expect(codeCaptureCause(snapshot, "objects", translatorFor("en"))).toContain("EXECUTE denial");
     expect(codeGrantHelps(snapshot)).toBe(false);
@@ -60,5 +61,35 @@ describe("code access explanations", () => {
     snapshot.access.counts.moduleDefinitionsEncrypted = 1;
     expect(codeCaptureCause(snapshot, "definitions", translatorFor("en"))).toBeNull();
     expect(codeGrantHelps(snapshot)).toBe(false);
+  });
+
+  it("never diagnoses PostgreSQL catalog evidence as a SQL Server grant or denial", () => {
+    const snapshot = capture({ status: "read" });
+    snapshot.provider = "postgreSql";
+    delete snapshot.access.probe;
+    snapshot.access.postgresql = {
+      objectCatalogRead: true,
+      programmabilityCatalogRead: true,
+      definitions: { status: "read" },
+      schemas: [
+        {
+          name: "public",
+          hasUsage: false,
+          hasVisibleObjects: true,
+          hasVisibleProgrammability: true,
+        },
+      ],
+    };
+    snapshot.access.level = "partial";
+    expect(accessCauses(snapshot.access)).toEqual([{ kind: "nativeVisibility" }]);
+    expect(grantHelps(snapshot.access)).toBe(false);
+    expect(codeGrantHelps(snapshot)).toBe(false);
+    for (const locale of ["en", "es"] as const) {
+      for (const family of ["objects", "definitions"] as const) {
+        const text = codeCaptureCause(snapshot, family, translatorFor(locale));
+        expect(text).toContain("USAGE");
+        expect(text).not.toMatch(/VIEW DEFINITION|EXECUTE|DENY|GRANT/u);
+      }
+    }
   });
 });

@@ -57,6 +57,7 @@ const typeLengths: EveryVariant<TypeLength, "kind"> = {
 };
 
 const integer = {
+  nativeDeclaration: "integer",
   name: "int",
   length: typeLengths.fixed,
   precision: 10,
@@ -180,6 +181,7 @@ const captures: EveryVariant<CaptureState, "status"> = {
 };
 
 const bodies: EveryVariant<ModuleBody, "language"> = {
+  postgreSql: { language: "postgreSql", name: "plpgsql", definition: definitions.readable },
   sql: { language: "sql", definition: definitions.readable },
   clr: { language: "clr" },
   unknown: { language: "unknown" },
@@ -242,6 +244,7 @@ const COLUMN_KEYS = [
   "dataType.precision",
   "dataType.scale",
   "dataType.userDefinedTypeName",
+  "dataType.nativeDeclaration",
   "defaultExpression",
   "defaultExpression.status",
   "defaultExpression.text",
@@ -378,6 +381,7 @@ describe("the module metadata an HTML export carries", () => {
         "triggers[].isNotForReplication",
         "triggers[].body",
         "triggers[].body.language",
+        "triggers[].body.name",
         "triggers[].body.definition",
         "triggers[].body.definition.status",
         "views",

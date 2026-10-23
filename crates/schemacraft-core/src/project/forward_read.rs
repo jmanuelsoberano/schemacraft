@@ -97,8 +97,9 @@ fn without_new_facts(mut snapshot: SchemaSnapshot) -> SchemaSnapshot {
     for key in &mut snapshot.foreign_keys_to_invisible_tables {
         key.is_trusted = None;
     }
-    if let Some(profile) = snapshot.access.take() {
-        let mut probe = profile.probe;
+    if let Some(profile) = snapshot.access.take()
+        && let Some(mut probe) = profile.probe
+    {
         probe.execute_denials = None;
         for schema in &mut probe.schemas {
             schema.has_visible_programmability = false;
@@ -143,13 +144,13 @@ fn fully_populated_snapshots() -> [(&'static str, SchemaSnapshot); 2] {
 }
 
 #[test]
-fn the_header_lets_1_1_open_the_file_read_only() {
+fn the_current_header_requires_a_reader_that_understands_engine_and_annotation_semantics() {
     let project = full_project_of(fully_populated_snapshot());
-    assert_eq!(project["formatVersion"], 3);
-    assert_eq!(project["minReaderVersion"], 2);
-    // 1.1 knows format 2: a newer format opens read-only when the minimum reader is not above it.
-    assert_eq!(FORMAT_VERSION, 3);
-    assert_eq!(MIN_READER_VERSION, 2);
+    assert_eq!(project["formatVersion"], 4);
+    assert_eq!(project["minReaderVersion"], 4);
+    // Versions 1.1 and 1.2 know formats 2 and 3 respectively, so both refuse format 4 safely.
+    assert_eq!(FORMAT_VERSION, 4);
+    assert_eq!(MIN_READER_VERSION, 4);
 }
 
 #[test]

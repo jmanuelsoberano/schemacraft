@@ -308,6 +308,15 @@
   font-size: var(--text-xs);
 }
 
+.trackingMark {
+  max-width: 88px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
 .showMore {
   margin: var(--space-1) var(--space-4) var(--space-2);
   padding: var(--space-1) 0;

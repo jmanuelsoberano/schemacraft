@@ -4,7 +4,15 @@ import type { QualifiedName } from "./QualifiedName";
 /**
  * The identity of a code object, the same for comparing captures and for keeping it.
  */
-export type CodeObjectRef = { "kind": "view", 
+export type CodeObjectRef = { "kind": "routineOverload", 
+/**
+ * Schema and routine name.
+ */
+name: QualifiedName, 
+/**
+ * Qualified input argument type identities.
+ */
+argumentTypes: Array<QualifiedName>, } | { "kind": "view", 
 /**
  * The view.
  */

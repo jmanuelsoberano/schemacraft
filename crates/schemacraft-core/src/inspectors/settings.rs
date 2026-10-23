@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use super::InspectorError;
+use super::postgresql::PostgreSqlConnectionSettings;
 use super::sqlserver::SqlServerConnectionSettings;
 use crate::credentials::{CredentialKey, CredentialStore};
 use crate::model::{AccessProbe, AccessProfile, CaptureScope, SchemaAccess};
@@ -16,6 +17,8 @@ use crate::model::{AccessProbe, AccessProfile, CaptureScope, SchemaAccess};
 pub enum ConnectionSettings {
     /// Microsoft SQL Server.
     SqlServer(SqlServerConnectionSettings),
+    /// PostgreSQL, using its native authentication and transport policy.
+    PostgreSql(PostgreSqlConnectionSettings),
 }
 
 impl ConnectionSettings {
@@ -23,6 +26,7 @@ impl ConnectionSettings {
     pub fn credential_key(&self) -> Option<CredentialKey> {
         match self {
             Self::SqlServer(settings) => settings.credential_key(),
+            Self::PostgreSql(settings) => Some(settings.credential_key()),
         }
     }
 
@@ -35,6 +39,9 @@ impl ConnectionSettings {
             Self::SqlServer(settings) => {
                 Ok(Self::SqlServer(settings.resolve_stored_password(store)?))
             }
+            Self::PostgreSql(settings) => {
+                Ok(Self::PostgreSql(settings.resolve_stored_password(store)?))
+            }
         }
     }
 }
@@ -43,7 +50,13 @@ impl ConnectionSettings {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "inspectors/")]
+// Independent catalog or capture flags retain their native meanings.
+#[allow(clippy::struct_excessive_bools)]
 pub struct InspectionOptions {
+    /// Read catalog dependency references independently of storing module definitions.
+    #[serde(default = "included_by_default")]
+    #[ts(as = "Option<bool>", optional)]
+    pub include_dependencies: bool,
     /// Schemas to include; empty means every user schema.
     #[serde(default)]
     pub schemas: Vec<String>,
@@ -68,6 +81,7 @@ fn included_by_default() -> bool {
 impl Default for InspectionOptions {
     fn default() -> Self {
         Self {
+            include_dependencies: true,
             schemas: Vec::new(),
             include_views: included_by_default(),
             include_programmability: included_by_default(),
@@ -167,6 +181,7 @@ pub struct ServerInformation {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
     use super::{DatabaseDescription, InspectionOptions};
     use crate::model::{AccessLevel, AccessProbe, CaptureScope, Completeness, SchemaAccess};
 
@@ -203,7 +218,16 @@ mod tests {
             Vec::<String>::new()
         );
         assert_eq!(description.access.level, AccessLevel::Partial);
-        assert_eq!(description.access.probe.schemas.len(), 3);
+        assert_eq!(
+            description
+                .access
+                .probe
+                .as_ref()
+                .expect("SQL Server probe")
+                .schemas
+                .len(),
+            3
+        );
     }
 
     #[test]
@@ -284,6 +308,8 @@ mod tests {
             description
                 .access
                 .probe
+                .as_ref()
+                .expect("SQL Server probe")
                 .schemas
                 .iter()
                 .any(|schema| schema.has_visible_programmability)

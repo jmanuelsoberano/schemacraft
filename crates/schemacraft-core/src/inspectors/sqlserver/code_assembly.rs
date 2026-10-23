@@ -184,6 +184,7 @@ fn routines(code_rows: &CodeRows, options: &InspectionOptions, texts: &mut Texts
                 })
                 .map(|row| parameter_type(row));
             Routine {
+                identity_arguments: None,
                 name: QualifiedName::new(&object.schema_name, &object.object_name),
                 kind,
                 body,
@@ -698,6 +699,7 @@ mod tests {
             .iter()
             .map(|routine| {
                 let language = match routine.body {
+                    ModuleBody::PostgreSql { .. } => "postgresql",
                     ModuleBody::Sql { .. } => "sql",
                     ModuleBody::Clr => "clr",
                     ModuleBody::Unknown => "unknown",

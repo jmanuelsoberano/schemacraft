@@ -9,7 +9,10 @@ import type {
   CaptureState,
   CarriedFact,
   DetailLevel,
+  Definition,
   ModuleBody,
+  PostgresqlMetadata,
+  QualifiedName,
   Programmability,
   SchemaSnapshot,
 } from "@/shared/contracts";
@@ -39,6 +42,8 @@ export interface ViewerData {
   carriedOver: CarriedFact[];
   /** The application's words the viewer says, in the language of the export. */
   messages: ViewerMessages;
+  /** Only reviewed projected note text; no global note map or stable note identities. */
+  noteLines?: string[];
 }
 
 /** Id of the `<script type="application/json">` element that carries the data. */
@@ -76,6 +81,8 @@ function captureWithoutExtensions(capture: CaptureState): CaptureState {
 /** A module's implementation and missing-text state, never its body or unknown extensions. */
 function bodyWithoutText(body: ModuleBody): ModuleBody {
   switch (body.language) {
+    case "postgreSql":
+      return { language: "postgreSql", name: body.name, definition: withoutText(body.definition) };
     case "sql":
       return { language: "sql", definition: withoutText(body.definition) };
     case "clr":
@@ -150,6 +157,120 @@ function visibleProgrammability(
   };
 }
 
+/** Explicit native allowlist: no routine source, access evidence, dependencies or extensions. */
+function visiblePostgresql(
+  native: PostgresqlMetadata,
+  visible: ReadonlySet<string>,
+  keys: ReadonlySet<string>,
+  code: Programmability | undefined,
+): PostgresqlMetadata {
+  const name = (value: QualifiedName): QualifiedName => ({
+    schema: value.schema,
+    name: value.name,
+  });
+  const definition = (value: Definition): Definition => {
+    switch (value.status) {
+      case "readable":
+        return { status: "readable", text: value.text };
+      case "encrypted":
+        return { status: "encrypted" };
+      case "notVisible":
+        return { status: "notVisible" };
+      case "notRecorded":
+        return { status: "notRecorded" };
+      case "unknown":
+      default:
+        return { status: "unknown" };
+    }
+  };
+  return {
+    tables: native.tables
+      .filter((item) => visible.has(entityKey(item.name)))
+      .map((item) => ({ name: name(item.name), kind: item.kind })),
+    columns: native.columns
+      .filter((item) => visible.has(entityKey(item.object)))
+      .map((item) => ({
+        object: name(item.object),
+        name: item.name,
+        typeName: name(item.typeName),
+        typeKind: item.typeKind,
+        identityGeneration: item.identityGeneration,
+        generation: item.generation,
+        generationExpression:
+          item.generationExpression === null ? null : definition(item.generationExpression),
+      })),
+    views: native.views
+      .filter((item) => visible.has(entityKey(item.name)))
+      .map((item) => ({
+        name: name(item.name),
+        isMaterialized: item.isMaterialized,
+        isPopulated: item.isPopulated,
+        checkOption: item.checkOption,
+      })),
+    indexes: native.indexes
+      .filter((item) => visible.has(entityKey(item.table)))
+      .map((item) => ({
+        table: name(item.table),
+        name: name(item.name),
+        method: item.method,
+        definition: definition(item.definition),
+        keyTerms: [...item.keyTerms],
+        keyColumns: [...item.keyColumns],
+        includedColumns: [...item.includedColumns],
+        predicate: item.predicate === null ? null : definition(item.predicate),
+        isUnique: item.isUnique,
+        isValid: item.isValid,
+        isReady: item.isReady,
+        isLive: item.isLive,
+        nullsNotDistinct: item.nullsNotDistinct,
+        wasClustered: item.wasClustered,
+        constraint: item.constraint,
+      })),
+    constraints: native.constraints
+      .filter(
+        (item) =>
+          visible.has(entityKey(item.table)) &&
+          (item.kind !== "foreignKey" || keys.has(exportedKeyId(entityKey(item.table), item.name))),
+      )
+      .map((item) => ({
+        table: name(item.table),
+        name: item.name,
+        kind: item.kind,
+        definition: definition(item.definition),
+        isValidated: item.isValidated,
+        isEnforced: item.isEnforced,
+        isDeferrable: item.isDeferrable,
+        isInitiallyDeferred: item.isInitiallyDeferred,
+        matchType: item.matchType,
+        deleteSetColumns: [...item.deleteSetColumns],
+      })),
+    routines: [],
+    triggers: native.triggers.flatMap((item) => {
+      const ref = item.object;
+      if (
+        ref.kind !== "trigger" ||
+        !code?.triggers.some(
+          (trigger) =>
+            entityKey(trigger.parent) === entityKey(ref.parent) && trigger.name === ref.name,
+        )
+      )
+        return [];
+      return [
+        {
+          object: { kind: "trigger" as const, parent: name(ref.parent), name: ref.name },
+          function: null,
+          level: item.level,
+          enabledMode: item.enabledMode,
+          isConstraint: item.isConstraint,
+          isDeferrable: item.isDeferrable,
+          isInitiallyDeferred: item.isInitiallyDeferred,
+          updateColumns: [...item.updateColumns],
+        },
+      ];
+    }),
+  };
+}
+
 /**
  * What of a project may leave the application in an export. The schema and the canvas are
  * restricted to what is visible, so hidden tables never leave it, and both are rebuilt from the
@@ -182,17 +303,23 @@ export function visibleProjection(
       exportedKeyId(entityKey(key.referencingTable), key.name),
     ),
   );
+  const code =
+    snapshot.programmability === undefined
+      ? undefined
+      : visibleProgrammability(snapshot, snapshot.programmability, visible);
   return {
     snapshot: {
+      ...(snapshot.provider === undefined ? {} : { provider: snapshot.provider }),
+      ...(snapshot.postgresql === undefined
+        ? {}
+        : { postgresql: visiblePostgresql(snapshot.postgresql, visible, exportedKeys, code) }),
       databaseName: snapshot.databaseName,
       serverVersion: null,
       extractedAt: snapshot.extractedAt,
       tables: snapshot.tables.filter((table) => visible.has(entityKey(table.name))),
       views: snapshot.views.filter((view) => visible.has(entityKey(view.name))),
       foreignKeys,
-      ...(snapshot.programmability === undefined
-        ? {}
-        : { programmability: visibleProgrammability(snapshot, snapshot.programmability, visible) }),
+      ...(code === undefined ? {} : { programmability: code }),
       ...(keysToInvisibleTables.length > 0
         ? { foreignKeysToInvisibleTables: keysToInvisibleTables }
         : {}),

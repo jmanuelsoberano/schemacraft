@@ -5,8 +5,9 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use super::{
-    AccessProfile, CarriedFact, ForeignKey, ForeignKeyToInvisibleTable, Programmability,
-    QualifiedName, Table, UnknownFields, View,
+    AccessProfile, CarriedFact, DatabaseProvider, DependencySnapshot, ForeignKey,
+    ForeignKeyToInvisibleTable, PostgresqlMetadata, Programmability, QualifiedName, Table,
+    UnknownFields, View,
 };
 
 /// Point-in-time picture of a database schema as extracted by an inspector.
@@ -17,6 +18,14 @@ use super::{
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "model/")]
 pub struct SchemaSnapshot {
+    /// Database engine; files written before multi-engine support contain SQL Server facts.
+    #[serde(default)]
+    #[ts(as = "Option<DatabaseProvider>", optional)]
+    pub provider: DatabaseProvider,
+    /// Native PostgreSQL semantics that must not be approximated as SQL Server metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub postgresql: Option<PostgresqlMetadata>,
     /// Database (catalog) name the snapshot was taken from.
     pub database_name: String,
     /// Server product and version string, when the inspector reports it.
@@ -49,6 +58,10 @@ pub struct SchemaSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub programmability: Option<Programmability>,
+    /// Independently observed catalog references; absent in captures made before this family.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub dependencies: Option<DependencySnapshot>,
     /// Keys written by a newer version, kept as they are.
     #[serde(flatten)]
     #[ts(skip)]

@@ -9,6 +9,8 @@ export function codeObjectName(object: CodeObjectRef): string {
     case "routine":
     case "view":
       return qualifiedNameLabel(object.name);
+    case "routineOverload":
+      return `${qualifiedNameLabel(object.name)}(${object.argumentTypes.map(qualifiedNameLabel).join(", ")})`;
     case "trigger":
       return `${qualifiedNameLabel(object.parent)} · ${object.name}`;
     case "unknown":
@@ -21,13 +23,17 @@ export function codeObjectKind(
   snapshot: SchemaSnapshot,
   previous?: SchemaSnapshot,
 ): CodeKind {
-  if (object.kind !== "routine") return object.kind;
+  if (object.kind !== "routine" && object.kind !== "routineOverload") return object.kind;
   const kind = [
     ...(snapshot.programmability?.routines ?? []),
     ...(previous?.programmability?.routines ?? []),
   ].find(
     (routine) =>
-      routine.name.schema === object.name.schema && routine.name.name === object.name.name,
+      routine.name.schema === object.name.schema &&
+      routine.name.name === object.name.name &&
+      (object.kind === "routine"
+        ? routine.identityArguments == null
+        : JSON.stringify(routine.identityArguments) === JSON.stringify(object.argumentTypes)),
   )?.kind;
   return kind === "procedure"
     ? "procedure"

@@ -29,6 +29,7 @@ export function ConnectionDialog() {
   const failure = useConnectionStore((state) => state.failure);
   const canRead = useConnectionStore(canReadSchema);
   const authenticationMode = useConnectionStore((state) => state.draft.authenticationMode);
+  const provider = useConnectionStore((state) => state.draft.provider);
   const closeDialog = useConnectionStore((state) => state.closeDialog);
   const testConnection = useConnectionStore((state) => state.testConnection);
   const inspect = useConnectionStore((state) => state.inspect);
@@ -126,7 +127,8 @@ export function ConnectionDialog() {
   const reviewFailure =
     isReviewing && failure !== null
       ? describeOperationError(failure.error, translator, {
-          usesIntegratedAuthentication: authenticationMode === "integrated",
+          usesIntegratedAuthentication:
+            provider === "sqlServer" && authenticationMode === "integrated",
         })
       : null;
 

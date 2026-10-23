@@ -35,6 +35,7 @@ export function triggerList(section: TriggersSectionView): HTMLElement {
           ),
         ),
         item.hint === null ? null : h("p", { class: "sc-hint" }, item.hint),
+        ...(item.nativeNotes ?? []).map((note) => h("p", { class: "sc-hint" }, note)),
       ),
     ),
   );

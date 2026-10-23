@@ -253,6 +253,43 @@ describe("updateChoices", () => {
 });
 
 describe("runExport", () => {
+  it("exports only opted-in notes from the active map, and resets review on each export", async () => {
+    openProject();
+    const store = useProjectStore.getState();
+    const perspectiveId = store.createPerspective("Sales");
+    if (perspectiveId === null) throw new Error("perspective expected");
+    store.setPerspectiveDescription(perspectiveId, "APPROVED_DESCRIPTION");
+    store.setObjectNote(
+      { kind: "table", table: { schema: "dbo", name: "Customers" } },
+      "APPROVED_NOTE <svg onload=evil()>",
+    );
+    store.setObjectNote(
+      { kind: "table", table: { schema: "sales", name: "Orders" } },
+      "HIDDEN_NOTE_SENTINEL",
+    );
+    store.updateCanvas((canvas) => ({
+      ...canvas,
+      nodes: canvas.nodes.map((node) => ({ ...node, isHidden: node.name.name === "Orders" })),
+    }));
+    const notes = useProjectStore.getState().project?.content.annotations?.notes ?? [];
+    useExportStore.getState().open({ format: "svg", embedFonts: false });
+    await useExportStore.getState().runExport({ ...labels, destination: "C:\\out\\plain.svg" });
+    expect(exportedRequest().document).not.toContain("APPROVED_NOTE");
+    useExportStore.getState().open({ format: "svg", embedFonts: false });
+    useExportStore.getState().reviewNotes(
+      true,
+      notes.map((note) => note.id),
+    );
+    await useExportStore.getState().runExport({ ...labels, destination: "C:\\out\\reviewed.svg" });
+    const reviewed = exportedRequest().document;
+    expect(reviewed).toContain("APPROVED_DESCRIPTION");
+    expect(reviewed).toContain("APPROVED_NOTE &lt;svg onload=evil()&gt;");
+    expect(reviewed).not.toContain("HIDDEN_NOTE_SENTINEL");
+    useExportStore.getState().open();
+    expect(useExportStore.getState().includeDescription).toBe(false);
+    expect(useExportStore.getState().selectedNoteIds).toEqual([]);
+  });
+
   it("writes to the given destination an SVG whose view card speaks the application's language", async () => {
     openProject();
     useExportStore.getState().open();

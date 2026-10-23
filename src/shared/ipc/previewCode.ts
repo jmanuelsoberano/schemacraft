@@ -336,6 +336,8 @@ export function previewProgrammability(
 }
 
 export function withCodeCoverage(access: AccessProfile, code: Programmability): AccessProfile {
+  // Native PostgreSQL evidence is produced by its own preview fixture, never SQL grant rules.
+  if (access.probe === undefined) return access;
   const definitions = moduleDefinitions(code);
   const hidden = definitions.filter((definition) => definition.status === "notVisible").length;
   const readable = definitions.filter((definition) => definition.status === "readable").length;
@@ -432,6 +434,12 @@ function vouches(snapshot: SchemaSnapshot, object: CodeObjectRef): boolean {
   if (object.kind === "unknown") return false;
   const access = snapshot.access;
   if (access === undefined) return true;
+  if (access.probe === undefined)
+    return (
+      access.postgresql?.programmabilityCatalogRead === true &&
+      access.scope.includeProgrammability === true &&
+      (access.scope.schemas.length === 0 || access.scope.schemas.includes(object.name.schema))
+    );
   const schema = access.probe.schemas.find((value) => value.name === object.name.schema);
   return (
     (access.scope.schemas.length === 0 || access.scope.schemas.includes(object.name.schema)) &&

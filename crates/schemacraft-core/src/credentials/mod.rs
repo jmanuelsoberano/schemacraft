@@ -31,6 +31,13 @@ pub struct CredentialKey {
 }
 
 impl CredentialKey {
+    /// PostgreSQL role on one server. Role case remains significant and the namespace cannot
+    /// collide with SQL Server credentials for the same host and login spelling.
+    pub fn postgresql_login(target: &str, username: &str) -> Self {
+        Self {
+            account: format!("postgresql://{}/{}", target.trim().to_lowercase(), username),
+        }
+    }
     /// Key of a SQL Server login. The server is case-folded because server names are; the
     /// login name is kept as typed because logins may be case-sensitive.
     pub fn sql_server_login(target: &str, username: &str) -> Self {

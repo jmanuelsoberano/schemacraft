@@ -10,6 +10,11 @@ import type {
   IndexKind,
   NotReadReason,
   PrimaryKey,
+  PostgresqlColumn,
+  PostgresqlConstraint,
+  PostgresqlIndex,
+  PostgresqlTrigger,
+  PostgresqlView,
   QualifiedName,
   ReferentialAction,
   SchemaSnapshot,
@@ -85,6 +90,7 @@ export type ListCompleteness =
   | { status: "inspectedSchemas" };
 
 export interface ColumnFacts {
+  native?: PostgresqlColumn;
   name: string;
   /** SQL declaration of the type, e.g. `nvarchar(120)`. */
   type: string;
@@ -99,6 +105,7 @@ export interface ColumnFacts {
 }
 
 export interface KeyFacts {
+  native?: PostgresqlConstraint;
   name: string;
   columns: readonly string[];
   isClustered: boolean;
@@ -107,6 +114,8 @@ export interface KeyFacts {
 }
 
 export interface IndexFacts {
+  native?: PostgresqlIndex;
+  nativeConstraint?: PostgresqlConstraint;
   name: string;
   columns: readonly string[];
   kind: IndexKind;
@@ -120,6 +129,7 @@ export interface IndexFacts {
 }
 
 export interface CheckFacts {
+  native?: PostgresqlConstraint;
   name: string;
   expression: FactText;
   /** `null` when the file did not record whether the constraint is enabled. */
@@ -154,6 +164,7 @@ export interface ColumnPairFacts {
 }
 
 export interface RelationFacts {
+  native?: PostgresqlConstraint;
   name: string;
   /** Column pairings in key order, from the referencing to the referenced table. */
   columns: readonly ColumnPairFacts[];
@@ -183,17 +194,21 @@ export type DetailSectionKind =
   | "primaryKey"
   | "indexes"
   | "checks"
+  | "nativeConstraints"
   | "triggers"
   | "references"
   | "referencedBy"
   | "viewDefinition";
 
 export interface TriggerFacts extends Omit<Trigger, "body"> {
+  provider?: "postgreSql";
+  native?: PostgresqlTrigger;
   ref: Extract<ModuleRef, { kind: "trigger" }>;
   notCheckedSince: string | null;
 }
 
 export interface ViewDefinitionFacts {
+  native?: PostgresqlView;
   included: boolean;
   hasCheckOption: boolean | null;
   isIndexed: boolean | null;
@@ -211,6 +226,7 @@ export type DetailSection =
   | SectionFacts<"primaryKey", KeyFacts>
   | SectionFacts<"indexes", IndexFacts>
   | SectionFacts<"checks", CheckFacts>
+  | SectionFacts<"nativeConstraints", PostgresqlConstraint>
   | (SectionFacts<"triggers", TriggerFacts> & {
       parentKind: EntityKind;
       /** The desktop has code dates; an export keeps only its parent's history. */
@@ -221,6 +237,7 @@ export type DetailSection =
   | { kind: "viewDefinition"; definition: ViewDefinitionFacts };
 
 export interface ObjectDetails {
+  nativeKind?: "materializedView" | "partition" | "partitioned";
   key: string;
   name: QualifiedName;
   kind: EntityKind;
@@ -342,7 +359,12 @@ function indexFacts(index: Index): IndexFacts {
  * A `CHECK` of `table`, whose texts `texts` dates, read against the table's columns. A text kept
  * from an earlier read is read as well; its date says how far it is vouched for.
  */
-function checkFacts(constraint: CheckConstraint, table: Table, texts: TextMoments): CheckFacts {
+function checkFacts(
+  constraint: CheckConstraint,
+  table: Table,
+  texts: TextMoments,
+  snapshot: SchemaSnapshot,
+): CheckFacts {
   return {
     name: constraint.name,
     expression: factText(
@@ -351,7 +373,10 @@ function checkFacts(constraint: CheckConstraint, table: Table, texts: TextMoment
     ),
     isEnabled: constraint.isEnabled,
     isTrusted: constraint.isTrusted ?? null,
-    reading: readCheckConstraint(constraint, table.columns, table.name),
+    reading: readCheckConstraint(constraint, table.columns, table.name, snapshot.provider),
+    ...(nativeConstraint(snapshot, table.name, constraint.name) === undefined
+      ? {}
+      : { native: nativeConstraint(snapshot, table.name, constraint.name) }),
   };
 }
 
@@ -391,6 +416,9 @@ function target(context: TableContext, name: QualifiedName): RelationTarget {
 
 function relation(context: TableContext, key: ForeignKey, other: QualifiedName): RelationFacts {
   return {
+    ...(nativeConstraint(context.snapshot, key.referencingTable, key.name) === undefined
+      ? {}
+      : { native: nativeConstraint(context.snapshot, key.referencingTable, key.name) }),
     name: key.name,
     columns: key.columnPairs.map((pair) => ({
       referencing: pair.referencingColumn,
@@ -456,6 +484,17 @@ function triggerSection(
     hasCodeHistory: scope.definitions === "included",
     completeness,
     items: triggersOf(snapshot, parent).map((trigger) => ({
+      ...(snapshot.provider === "postgreSql"
+        ? {
+            provider: "postgreSql" as const,
+            native: snapshot.postgresql?.triggers.find(
+              (item) =>
+                item.object.kind === "trigger" &&
+                item.object.name === trigger.name &&
+                entityKey(item.object.parent) === entityKey(parent),
+            ),
+          }
+        : {}),
       parent: trigger.parent,
       name: trigger.name,
       timing: trigger.timing,
@@ -531,6 +570,7 @@ function describeTable(snapshot: SchemaSnapshot, table: Table, scope: DetailsSco
   const texts: TextMoments = { ownerKey: key, moments, objectReadAt: context.objectReadAt };
 
   return {
+    ...nativeObjectKind(snapshot, table.name),
     key,
     name: table.name,
     kind: "table",
@@ -540,26 +580,57 @@ function describeTable(snapshot: SchemaSnapshot, table: Table, scope: DetailsSco
       {
         kind: "columns",
         items: table.columns.map((column) =>
-          columnFacts(column, texts, primaryKeyColumns, foreignKeyColumns),
+          withNativeColumn(
+            snapshot,
+            table.name,
+            columnFacts(column, texts, primaryKeyColumns, foreignKeyColumns),
+          ),
         ),
         completeness: ownCompleteness(context.objectReadAt),
       },
       {
         kind: "primaryKey",
-        items: table.primaryKey === null ? [] : [keyFacts(table.primaryKey)],
+        items:
+          table.primaryKey === null
+            ? []
+            : [
+                {
+                  ...keyFacts(table.primaryKey),
+                  ...(nativeConstraint(snapshot, table.name, table.primaryKey.name) === undefined
+                    ? {}
+                    : { native: nativeConstraint(snapshot, table.name, table.primaryKey.name) }),
+                },
+              ],
         completeness: ownCompleteness(context.objectReadAt),
       },
       {
         kind: "indexes",
-        items: table.indexes.map(indexFacts),
+        items: table.indexes.map((index) =>
+          withNativeIndex(snapshot, table.name, indexFacts(index)),
+        ),
         completeness: ownCompleteness(context.objectReadAt),
       },
       {
         kind: "checks",
-        items: table.checkConstraints.map((constraint) => checkFacts(constraint, table, texts)),
+        items: table.checkConstraints.map((constraint) =>
+          checkFacts(constraint, table, texts, snapshot),
+        ),
         completeness: ownCompleteness(context.objectReadAt),
       },
       triggerSection(snapshot, table.name, "table", scope),
+      ...(snapshot.provider === "postgreSql"
+        ? [
+            {
+              kind: "nativeConstraints" as const,
+              items:
+                snapshot.postgresql?.constraints.filter(
+                  (constraint) =>
+                    entityKey(constraint.table) === key && constraint.kind === "exclusion",
+                ) ?? [],
+              completeness: ownCompleteness(context.objectReadAt),
+            },
+          ]
+        : []),
       {
         kind: "references",
         items: [
@@ -587,7 +658,9 @@ function describeView(snapshot: SchemaSnapshot, view: View, scope: DetailsScope)
   const objectReadAt = moments.get(carriedFactId(key, { kind: "view" })) ?? null;
   const texts: TextMoments = { ownerKey: key, moments, objectReadAt };
   const module = snapshot.programmability?.views.find((item) => entityKey(item.view) === key);
+  const nativeView = snapshot.postgresql?.views.find((item) => entityKey(item.name) === key);
   return {
+    ...nativeObjectKind(snapshot, view.name),
     key,
     name: view.name,
     kind: "view",
@@ -596,13 +669,36 @@ function describeView(snapshot: SchemaSnapshot, view: View, scope: DetailsScope)
     sections: [
       {
         kind: "columns",
-        items: view.columns.map((column) => columnFacts(column, texts, new Set(), new Set())),
+        items: view.columns.map((column) =>
+          withNativeColumn(snapshot, view.name, columnFacts(column, texts, new Set(), new Set())),
+        ),
         completeness: ownCompleteness(objectReadAt),
       },
       triggerSection(snapshot, view.name, "view", scope),
+      ...(snapshot.provider === "postgreSql"
+        ? [
+            {
+              kind: "indexes" as const,
+              items: (
+                snapshot.postgresql?.indexes.filter((index) => entityKey(index.table) === key) ?? []
+              ).map((index): IndexFacts => ({
+                name: index.name.name,
+                columns: index.keyTerms,
+                kind: index.isUnique ? "uniqueIndex" : "nonUnique",
+                isClustered: false,
+                includedColumns: index.includedColumns,
+                isFiltered: index.predicate !== null,
+                isEnabled: null,
+                native: index,
+              })),
+              completeness: ownCompleteness(objectReadAt),
+            },
+          ]
+        : []),
       {
         kind: "viewDefinition",
         definition: {
+          ...(nativeView === undefined ? {} : { native: nativeView }),
           included: scope.definitions === "included",
           hasCheckOption: module?.hasCheckOption ?? null,
           isIndexed: module?.isIndexed ?? null,
@@ -610,6 +706,60 @@ function describeView(snapshot: SchemaSnapshot, view: View, scope: DetailsScope)
       },
     ],
   };
+}
+
+function nativeConstraint(
+  snapshot: SchemaSnapshot,
+  table: QualifiedName,
+  name: string,
+): PostgresqlConstraint | undefined {
+  return snapshot.postgresql?.constraints.find(
+    (item) => entityKey(item.table) === entityKey(table) && item.name === name,
+  );
+}
+
+function withNativeColumn(
+  snapshot: SchemaSnapshot,
+  object: QualifiedName,
+  facts: ColumnFacts,
+): ColumnFacts {
+  const native = snapshot.postgresql?.columns.find(
+    (item) => entityKey(item.object) === entityKey(object) && item.name === facts.name,
+  );
+  return native === undefined ? facts : { ...facts, native };
+}
+
+function withNativeIndex(
+  snapshot: SchemaSnapshot,
+  table: QualifiedName,
+  facts: IndexFacts,
+): IndexFacts {
+  const native = snapshot.postgresql?.indexes.find(
+    (item) => entityKey(item.table) === entityKey(table) && item.name.name === facts.name,
+  );
+  const constraint =
+    native?.constraint === null || native?.constraint === undefined
+      ? undefined
+      : nativeConstraint(snapshot, table, native.constraint);
+  return native === undefined
+    ? facts
+    : { ...facts, native, ...(constraint === undefined ? {} : { nativeConstraint: constraint }) };
+}
+
+function nativeObjectKind(
+  snapshot: SchemaSnapshot,
+  name: QualifiedName,
+): Pick<ObjectDetails, "nativeKind"> {
+  if (
+    snapshot.postgresql?.views.some(
+      (view) => entityKey(view.name) === entityKey(name) && view.isMaterialized,
+    )
+  )
+    return { nativeKind: "materializedView" };
+  const kind = snapshot.postgresql?.tables.find(
+    (table) => entityKey(table.name) === entityKey(name),
+  )?.kind;
+  return kind === "partition" || kind === "partitioned" ? { nativeKind: kind } : {};
 }
 
 /**

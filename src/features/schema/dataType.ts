@@ -4,6 +4,7 @@ import { definitionText, isUnknownDefinition } from "./definition";
 
 /** SQL declaration of a type, e.g. `nvarchar(120)`, `decimal(18,2)` or `varbinary(max)`. */
 export function formatDataType(type: SqlDataType): string {
+  if (type.nativeDeclaration != null) return type.nativeDeclaration;
   const name = type.userDefinedTypeName ?? type.name;
   if (type.length !== null) {
     return `${name}(${type.length.kind === "max" ? "max" : String(type.length.value)})`;

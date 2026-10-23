@@ -7,7 +7,7 @@ import type { ModuleKind, ModuleListItem, ModuleRef } from "./modules";
 
 export type RoutineListItem = Omit<ModuleListItem, "kind" | "ref"> & {
   kind: Exclude<ModuleKind, "trigger">;
-  ref: Extract<ModuleRef, { kind: "routine" }>;
+  ref: Extract<ModuleRef, { kind: "routine" | "routineOverload" }>;
 };
 
 /** Objects listed in the sidebar. Triggers belong to the details of their parent. */
@@ -40,7 +40,7 @@ export function isEntityItem(item: ObjectListItem): item is EntityListItem {
 export function listObjects(snapshot: SchemaSnapshot): ObjectListItem[] {
   const routines: RoutineListItem[] = [];
   for (const item of listModules(snapshot)) {
-    if (item.ref.kind === "routine" && item.kind !== "trigger") {
+    if (item.ref.kind !== "trigger" && item.kind !== "trigger") {
       routines.push({ ...item, ref: item.ref, kind: item.kind });
     }
   }

@@ -25,7 +25,9 @@ export type AccessCause =
   /** Some texts are not visible although every schema grants `VIEW DEFINITION`. */
   | { kind: "someDefinitions" }
   /** Some tables or views may exist that the login cannot see. */
-  | { kind: "someObjects" };
+  | { kind: "someObjects" }
+  /** Native or future evidence must not be interpreted as SQL Server grants/denials. */
+  | { kind: "nativeVisibility" };
 
 type AccessCauseKind = AccessCause["kind"];
 
@@ -47,16 +49,17 @@ const GRANTABLE_KINDS: ReadonlySet<AccessCauseKind> = new Set([
 function holdsAnyGrant(profile: AccessProfile): boolean {
   const { probe } = profile;
   return (
-    probe.canReadDefinitions ||
-    probe.canReadData ||
-    probe.schemas.some((schema) => schema.canReadDefinitions || schema.canReadData)
+    probe !== undefined &&
+    (probe.canReadDefinitions ||
+      probe.canReadData ||
+      probe.schemas.some((schema) => schema.canReadDefinitions || schema.canReadData))
   );
 }
 
 /** Schemas of the capture's scope that hold visible objects. */
 function visibleSchemasInScope(profile: AccessProfile): SchemaAccess[] {
   const { schemas } = profile.scope;
-  return profile.probe.schemas.filter(
+  return (profile.probe?.schemas ?? []).filter(
     (access) => access.hasVisibleObjects && (schemas.length === 0 || schemas.includes(access.name)),
   );
 }
@@ -66,6 +69,11 @@ function visibleSchemasInScope(profile: AccessProfile): SchemaAccess[] {
  * then explicit denials, then missing texts, then missing objects. A full capture has none.
  */
 export function accessCauses(profile: AccessProfile): AccessCause[] {
+  const { probe } = profile;
+  if (probe === undefined) {
+    if (profile.level === "full") return [];
+    return profile.level === "empty" ? [{ kind: "empty" }] : [{ kind: "nativeVisibility" }];
+  }
   switch (profile.level) {
     case "full":
       return [];
@@ -73,7 +81,7 @@ export function accessCauses(profile: AccessProfile): AccessCause[] {
       return [{ kind: "empty" }];
     case "nothingVisible":
       return [
-        holdsAnyGrant(profile) || profile.probe.explicitDenials !== 0
+        holdsAnyGrant(profile) || probe.explicitDenials !== 0
           ? { kind: "nothingVisible.hidden" }
           : { kind: "nothingVisible.noGrant" },
       ];
@@ -82,7 +90,7 @@ export function accessCauses(profile: AccessProfile): AccessCause[] {
   }
 
   const causes: AccessCause[] = [];
-  const { explicitDenials } = profile.probe;
+  const { explicitDenials } = probe;
   if (explicitDenials === null) {
     causes.push({ kind: "denialsUnknown" });
   } else if (explicitDenials > 0) {
@@ -139,6 +147,7 @@ export function partialReadOutcome(profile: AccessProfile): PartialReadOutcome {
  * help, and offering a script would send the user the wrong way.
  */
 export function grantHelps(profile: AccessProfile): boolean {
+  if (profile.probe === undefined) return false;
   const causes = accessCauses(profile);
   return (
     !causes.some((cause) => DENIAL_KINDS.has(cause.kind)) &&
@@ -150,6 +159,8 @@ export function grantHelps(profile: AccessProfile): boolean {
 export function describeAccessCause(cause: AccessCause, translator: Translator): string {
   const { t, tCount, locale } = translator;
   switch (cause.kind) {
+    case "nativeVisibility":
+      return t("access.postgresql.visibility");
     case "nothingVisible.noGrant":
       return t("access.cause.nothingVisible.noGrant");
     case "nothingVisible.hidden":
@@ -188,8 +199,9 @@ export function codeCaptureCause(
   const completeness =
     family === "objects" ? profile?.coverage.programmability : profile?.coverage.moduleDefinitions;
   if (completeness === undefined || completeness === "complete") return null;
+  if (profile?.probe === undefined) return t("access.postgresql.visibility");
   if (family === "definitions") return t("access.code.textsPartial");
-  if (profile?.probe.executeDenials === undefined) return t("access.code.executeUnknown");
+  if (profile.probe.executeDenials === undefined) return t("access.code.executeUnknown");
   if (profile.probe.executeDenials > 0) return t("access.code.executeDenied");
   return t("access.code.objectsPartial");
 }
@@ -199,7 +211,7 @@ export function codeGrantHelps(snapshot: SchemaSnapshot): boolean {
   const access = snapshot.access;
   const capture = snapshot.programmability?.capture;
   return (
-    access !== undefined &&
+    access?.probe !== undefined &&
     capture !== undefined &&
     access.probe.explicitDenials === 0 &&
     access.probe.executeDenials === 0 &&

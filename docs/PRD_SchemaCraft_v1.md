@@ -180,7 +180,7 @@ Lo que la versión 1.2 añade al alcance de las secciones 3.1 a 3.8, ya publicad
 
 ---
 
-### 3.10 Support workflow (unreleased)
+### 3.10 Support workflow (1.3.0)
 
 - **Report a problem** is available from About and the command palette, in English and Spanish
   and both themes, without requiring an open project or a SQL connection.
@@ -197,6 +197,98 @@ Lo que la versión 1.2 añade al alcance de las secciones 3.1 a 3.8, ya publicad
 - Closing the support dialog discards its in-memory preview and does not change the project,
   connection, preferences, credentials or release channel. This feature does not change the
   published 1.2.0 binaries or the current Store submission.
+
+### 3.11 Independent project comparison (1.3.0)
+
+- Compare two explicitly selected `.scraft` captures as Reference and Compared, including files
+  from different servers or databases of the same engine. Swapping sides reverses the comparison.
+  No database connection, DDL execution, active-project update or automatic rename matching occurs.
+- Compare tables, columns, keys, indexes, constraints, views, routines, triggers, recorded native
+  settings and dependencies by structured identity. PostgreSQL overloads include their input
+  type identities. Compare capture observations rather than file-save timestamps or diagram positions.
+- Distinguish confirmed differences and proved absence from excluded, invisible, unrecorded,
+  retained, failed and unknown facts. A confirmed property difference may coexist with limitations
+  elsewhere. Do not claim an addition, removal or complete equality without the necessary evidence.
+- Show exact source changes locally on demand, with original whitespace and line endings,
+  bounded pages, work limits and cancellation. Distinguish exact text equality from the legacy
+  normalization used by refresh; neither establishes semantic SQL equivalence.
+- Offer filters, per-side diagram context and an explicit offline HTML report preview. Save only
+  the reviewed filtered projection, including visible context diagrams, structural evidence and
+  limitations. Exclude module bodies, notes, paths, connection/user details, raw access probes,
+  unknown extensions and names outside the included scope. No report is uploaded automatically.
+
+### 3.12 Known catalog dependencies (1.3.0)
+
+- Capture known dependency references independently of module-source storage, with a separate
+  option enabled by default. Record the query outcome, selected scope, source coverage,
+  observation dates, retained state and discovery limitations. A missing family is unrecorded,
+  and an unsuccessful read is never a successfully observed empty list.
+- Show incoming and outgoing references for tables, views, routines and triggers. Distinguish
+  inspected targets from external, excluded, invisible, unsupported, unresolved, ambiguous and
+  caller-dependent references. Do not follow external connections or infer references by running
+  SQL, parsing stored bodies or assuming dynamic/application code is known.
+- Explore a separate directed map with direction and depth controls, bounded results, search,
+  node movement and explicit truncation. Preserve cycles and self-references. Dependency arrows
+  mean references and do not alter foreign-key relationships or the saved ERD layout.
+- Export the reviewed map as SVG, PNG, single-page PDF or offline interactive HTML. Include
+  only its closed projected nodes, edges, evidence dates and limitations; exclude raw external
+  server/database names, module source, credentials, notes and unknown data.
+- Refresh successful sources and preserve earlier reference evidence when a later read cannot
+  verify it. A deliberate capture exclusion is reported separately from lost visibility.
+
+### 3.13 Saved perspectives and shared notes (1.3.0)
+
+- Keep one General diagram and any number of named perspectives over the same captured snapshot.
+  Each perspective owns its layout, visibility, collapsed state, viewport, detail level and
+  optional description. Create, duplicate, rename and delete perspectives; General remains.
+- Switching perspective alone does not mark the project unsaved. The active choice may be stored
+  with the next ordinary save. Every perspective and note reopens offline from the same `.scraft`.
+- Notes are plain text on a base table or one of its columns, shared across perspectives.
+  Descriptions belong to individual perspectives. Neither is HTML or executable content.
+  Linked targets preserve schema/name/column components and table kind, including names with dots.
+- Refresh every perspective. New objects are shown in General and remain hidden in curated
+  perspectives until explicitly included. Observed deletion unlinks notes while retaining their
+  text and former target. Reuse of a name does not automatically relink a note; explicit
+  reassignment cannot overwrite another linked note. Logical names do not prove physical identity.
+- Map management and note edits support undo/redo, with one step per focused text-edit session.
+  Refresh clears history. Late layout, save or refresh operations cannot overwrite newer document,
+  snapshot, perspective or edit revisions.
+- Export only the active perspective. Description and note inclusion starts off on every export;
+  the user reviews and checks the individual visible linked notes to include. Hidden and unlinked
+  notes, other descriptions, note IDs and unknown properties are excluded. Comparison and
+  dependency reports do not include these notes implicitly.
+
+### 3.14 Native PostgreSQL inspection and format 4 (1.3.0)
+
+- Add PostgreSQL 15, 16, 17 and 18 behind the existing inspector strategy, without changing SQL
+  Server behavior. Explicitly select the engine; do not refresh one provider's project from another.
+- Accept TCP host/port and IPv6, explicit database and case-sensitive role names. Use strict TLS
+  certificate-chain and host validation by default, with an optional additional public PEM root;
+  reject private keys. Unverified TLS or plaintext requires an explicit literal-local connection
+  choice. Support password/SCRAM authentication and provider-qualified remembered credentials.
+- Read native metadata without application data or executable calls: tables/partitions,
+  ordinary/materialized views, native types, identity/generated columns, primary/foreign keys,
+  indexes and their native state, constraints, overloaded routines and DML trigger modes/functions.
+  Mark catalog-reconstructed definitions as reconstructed. Preserve native match, validation,
+  deferrability, enforcement and uniqueness meanings instead of inventing SQL Server equivalents.
+- For each PostgreSQL routine, distinguish native parsed-SQL-body reference tracking from
+  signature-only tracking of PL/string bodies, including while saving code is disabled. Show
+  recorded/unknown/unrecorded evidence in module details, routine/reference lists and dependency
+  maps/exports. Neither mode proves exhaustive dynamic SQL or runtime dependencies; do not save
+  a parse tree or module text as part of this evidence.
+- Explain visibility using native catalog observations and schema USAGE. No SQL Server GRANT,
+  DENY probe or replication/clustering fact is fabricated for PostgreSQL. Unknown and unsupported
+  forms remain literal or explicitly limited; every rendering surface uses the same native facts.
+- PostgreSQL supports ordinary capture, reviewed refresh, independent comparison, known
+  dependencies, perspectives, offline save/reopen and all diagram exports. Apply the same
+  default-off module and annotation privacy boundaries across providers.
+- Write `.scraft` format 4 with minimum reader 4 for the combined feature release. Migrate earlier
+  projects on save, default their provider to SQL Server, keep unknown extension fields, and
+  record missing evidence honestly. Published 1.2.0 and earlier readers must reject format-4 files
+  safely rather than misread native facts or damage perspective/note content.
+- The four features share one branch, one pull request and one final release after all acceptance
+  gates. Until that release, published 1.2.0 GitHub and Store packages remain unchanged. The
+  portable executable, installer and Store packaging stay independent under ADR-045.
 
 ## 4. Requisitos No Funcionales y Calidad de Código
 
@@ -244,6 +336,16 @@ Lo que la versión 1.2 añade al alcance de las secciones 3.1 a 3.8, ya publicad
 ---
 
 ## 6. Historial de Cambios
+
+- **2026-10-23**: Maintainer acceptance of the combined candidate passed, including Spanish
+  review and all four workflows. Version 1.3.0 is assigned to requirements 3.10–3.14 without
+  changing their scope or the format-4/minimum-reader-4 boundary. Final artifact and channel
+  verification remains separate from feature acceptance.
+
+- **2026-10-23**: Added approved unreleased requirements 3.11–3.14: independent capture comparison,
+  known catalog dependencies, shared-snapshot perspectives and plain-text notes, native PostgreSQL
+  15–18 inspection and the combined format-4 compatibility boundary. One branch, pull request and
+  final release cover all four features; published 1.2.0 artifacts are unchanged.
 
 - **2026-10-13**: Se añade el requisito no funcional 4 (Experiencia de Usuario) y su criterio de aceptación, acordados al cierre del Paso 1 de construcción.
 - **2026-10-13**: Se añaden el historial de conexiones recientes (3.1) y los proyectos recientes (3.6), acordados al planificar el Paso 3.

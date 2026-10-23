@@ -36,6 +36,8 @@ impl ClosedKind for AccessLevel {}
 /// Whether a capture read a family of code facts, as the log records it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodeCapture {
+    /// Permission to read this optional catalog was denied.
+    PermissionDenied,
     /// The family was read.
     Read,
     /// The inspection options left it out.
@@ -55,6 +57,7 @@ impl From<&CaptureState> for CodeCapture {
         match state {
             CaptureState::Read => Self::Read,
             CaptureState::NotRead { reason } => match reason {
+                NotReadReason::PermissionDenied => Self::PermissionDenied,
                 NotReadReason::OptionOff => Self::OptionOff,
                 NotReadReason::QueryFailed => Self::QueryFailed,
                 NotReadReason::TimedOut => Self::TimedOut,
@@ -231,6 +234,11 @@ pub fn catalog_query(query: &'static str, rows: usize, elapsed: Duration) {
         elapsed_ms = milliseconds(elapsed),
         "catalog query"
     );
+}
+
+/// Optional dependency outcome and counts only; identifiers and source cannot enter this event.
+pub fn dependencies_captured(capture: CodeCapture, sources: usize, references: usize) {
+    tracing::info!(target: TARGET, capture = ?capture, sources, references, "dependencies captured");
 }
 
 /// A family of code facts could not be read, by the summary of the error; the inspection went on

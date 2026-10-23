@@ -4,19 +4,14 @@
  * runtime.
  */
 import type { SavedConnection } from "@/shared/contracts";
+import { savedCredentialIdentity } from "@/shared/connections/savedConnectionIdentity";
 
 import type { CredentialsBackend } from "./credentialsBackend";
 
 const remembered = new Map<string, string>();
 
 function keyOf(connection: SavedConnection): string | null {
-  if (connection.authentication.mode !== "sqlLogin") {
-    return null;
-  }
-  const target = connection.instance
-    ? `${connection.host}\\${connection.instance}`
-    : `${connection.host},${connection.port ?? 1433}`;
-  return `${target.toLowerCase()}/${connection.authentication.username}`;
+  return savedCredentialIdentity(connection);
 }
 
 export const previewCredentialsBackend: CredentialsBackend = {

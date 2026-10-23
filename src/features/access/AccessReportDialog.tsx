@@ -24,6 +24,7 @@ import {
 import { useAccessReportStore } from "./accessReportStore";
 import { grantScript } from "./grantScript";
 import { describeSnapshotFact } from "./snapshotFacts";
+import { PostgreSqlAccessEvidence } from "./PostgreSqlAccessEvidence";
 
 const COMPLETENESS_ICON: Record<Completeness, LucideIcon> = {
   complete: ShieldCheck,
@@ -148,6 +149,9 @@ function AccessReport({ snapshot }: { snapshot: SchemaSnapshot }) {
       <InvisibleTableKeys snapshot={snapshot} />
       <CarriedFacts snapshot={snapshot} />
       <CarriedCodeFacts snapshot={snapshot} />
+      {snapshot.provider === "postgreSql" || access.postgresql !== undefined ? (
+        <PostgreSqlAccessEvidence access={access} />
+      ) : null}
       {access.level === "partial" || access.level === "nothingVisible" || hasCodePermissionGap ? (
         <>
           <SchemaPermissions access={access} />
@@ -332,6 +336,7 @@ function CarriedFacts({ snapshot }: { snapshot: SchemaSnapshot }) {
 function SchemaPermissions({ access }: { access: AccessProfile }) {
   const { t } = useI18n();
   const { probe } = access;
+  if (probe === undefined) return null;
   const flag = (value: boolean) => (value ? t("review.value.yes") : t("review.value.no"));
   const denials =
     probe.explicitDenials === null
@@ -389,6 +394,12 @@ function SchemaPermissions({ access }: { access: AccessProfile }) {
 
 function Fix({ snapshot, access }: { snapshot: SchemaSnapshot; access: AccessProfile }) {
   const { t, locale } = useI18n();
+  if (access.probe === undefined)
+    return (
+      <Section title={t("access.report.section.fix")}>
+        <p className={styles.note}>{t("access.postgresql.visibility")}</p>
+      </Section>
+    );
   if (!grantHelps(access) && !codeGrantHelps(snapshot)) {
     return (
       <Section title={t("access.report.section.fix")}>

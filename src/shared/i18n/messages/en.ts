@@ -1,4 +1,8 @@
 import { englishRuleMessages } from "./rules/en";
+import { englishExplorationMessages } from "./exploration/en";
+import { englishComparisonMessages } from "./exploration/comparison-en";
+import { englishPostgresqlMessages } from "./exploration/postgresql-en";
+import { englishNativeMessages } from "./native/en";
 
 /**
  * English catalogue. It is the reference: its keys define the `MessageKey` type, so a message
@@ -8,12 +12,16 @@ import { englishRuleMessages } from "./rules/en";
  * application says. The words of the readable rules live in `rules/en.ts` and are spread in.
  */
 export const englishMessages = {
+  ...englishExplorationMessages,
+  ...englishComparisonMessages,
+  ...englishPostgresqlMessages,
+  ...englishNativeMessages,
   "app.name": "SchemaCraft",
-  "app.tagline": "Reverse-engineer SQL Server schemas into living diagrams.",
+  "app.tagline": "Explore SQL Server and PostgreSQL schemas as living diagrams.",
 
   "project.untitled": "Untitled project",
 
-  "action.connect": "Connect to SQL Server",
+  "action.connect": "Connect to a database",
   "action.openProject": "Open project",
   "action.saveProject": "Save project",
   "action.refreshFromDatabase": "Refresh from database",
@@ -258,8 +266,8 @@ export const englishMessages = {
 
   "welcome.title": "Welcome to SchemaCraft",
   "welcome.description":
-    "Connect to Microsoft SQL Server, extract the schema and explore it as an interactive entity-relationship diagram.",
-  "welcome.connect": "Connect to SQL Server",
+    "Connect to SQL Server or PostgreSQL, read the schema and explore it as an interactive entity-relationship diagram.",
+  "welcome.connect": "Connect to a database",
   "welcome.openProject": "Open .scraft project",
 
   "canvas.node.collapse": "Collapse",
@@ -293,7 +301,7 @@ export const englishMessages = {
   "statusBar.versionUnavailable": "version unavailable",
   "statusBar.devBuild": "dev",
 
-  "connection.dialog.title": "Connect to SQL Server",
+  "connection.dialog.title": "Connect to a database",
   "connection.dialog.description":
     "Read-only access to the catalog. The password stays in memory and is never saved.",
   "connection.section.server": "Server",

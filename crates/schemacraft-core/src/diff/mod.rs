@@ -26,6 +26,9 @@
 mod code;
 mod entities;
 mod foreign_keys;
+mod metadata;
+#[cfg(test)]
+mod metadata_tests;
 mod pairing;
 mod visibility;
 
@@ -42,6 +45,9 @@ pub use entities::{
     TableChange, ViewChange,
 };
 pub use foreign_keys::{ForeignKeyChange, ForeignKeyProperty, ForeignKeyToInvisibleTableChange};
+pub use metadata::{
+    DependencyRefreshDiff, DependencySourceChange, NativeMetadataChange, RefreshMetadataDiff,
+};
 use visibility::Baseline;
 pub use visibility::{AvailableFact, CaptureChange};
 
@@ -53,6 +59,10 @@ use crate::model::{CarriedFact, SchemaSnapshot};
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "diff/")]
 pub struct SchemaDiff {
+    /// Independently captured dependency evidence and native engine properties.
+    #[serde(default)]
+    #[ts(as = "Option<RefreshMetadataDiff>", optional)]
+    pub metadata: RefreshMetadataDiff,
     /// Changes and visibility of procedures, functions, triggers and view code.
     pub code: CodeDiff,
     /// Tables that appeared, disappeared or changed, by name.
@@ -95,6 +105,7 @@ impl SchemaDiff {
     /// Compares `previous` (the saved snapshot) with `current` (the fresh one).
     pub fn between(previous: &SchemaSnapshot, current: &SchemaSnapshot) -> Self {
         let merged = current.clone().with_unchecked_facts_from(previous);
+        let metadata = metadata::between(previous, current, &merged);
         let baseline = Baseline::of(previous);
         let keys_with_visible_target = foreign_keys::keys_whose_target_became_visible(
             &previous.foreign_keys_to_invisible_tables,
@@ -143,6 +154,7 @@ impl SchemaDiff {
         let mut summary = summary;
         summary.code = ChangeCounts::of(code.changes.iter().map(CodeChange::kind));
         let mut diff = Self {
+            metadata,
             code,
             tables,
             views,
@@ -165,6 +177,7 @@ impl SchemaDiff {
             && diff.code.read_failures.is_empty()
             && !diff.access_changed
             && diff.capture_changes.is_empty();
+        diff.is_up_to_date = diff.is_up_to_date && !diff.metadata.has_review();
         diff
     }
 
@@ -175,6 +188,7 @@ impl SchemaDiff {
             && self.foreign_keys.is_empty()
             && self.foreign_keys_to_invisible_tables.is_empty()
             && self.code.is_empty()
+            && !self.metadata.has_object_changes()
     }
 
     /// Whether any object appeared, disappeared or changed: the opposite of [`Self::is_empty`],

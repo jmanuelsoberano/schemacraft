@@ -68,7 +68,7 @@ jobs:
         run: |
           cargo fmt --all --check
           cargo clippy --workspace --all-targets -- -D warnings
-          cargo test --workspace
+          cargo test --workspace -- --test-threads=1
 
       - name: Generated TypeScript contracts are up to date
         if: steps.changes.outputs.code == 'true'
@@ -101,18 +101,22 @@ jobs:
         run: node scripts/smoke-test-release.mjs target/ci/schemacraft.exe smoke-test
 
       - name: Validate an MSIX package without Store credentials
+        id: store-validation
         if: steps.changes.outputs.code == 'true'
         shell: pwsh
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          node distribution/microsoft-store/package.mjs --validation --executable target/ci/schemacraft.exe --version $version --output-dir target/store-validation
+          # Rust's target directory is cached; packaging must always receive a fresh output.
+          $validationDirectory = Join-Path $env:RUNNER_TEMP ("schemacraft-store-validation-{0}-{1}" -f $env:GITHUB_RUN_ID, $env:GITHUB_RUN_ATTEMPT)
+          "directory=$validationDirectory" >> $env:GITHUB_OUTPUT
+          node distribution/microsoft-store/package.mjs --validation --executable target/ci/schemacraft.exe --version $version --output-dir "$validationDirectory"
           if ($LASTEXITCODE -ne 0) { throw 'MSIX packaging validation failed.' }
 
       - uses: actions/upload-artifact@v4
         if: always() && steps.changes.outputs.code == 'true'
         with:
           name: microsoft-store-validation-evidence
-          path: target/store-validation/report.json
+          path: ${{ steps.store-validation.outputs.directory }}/report.json
           if-no-files-found: warn
 
       - uses: actions/upload-artifact@v4
@@ -194,7 +198,7 @@ jobs:
         env:
           SCHEMACRAFT_TEST_MSSQL_PORT: "1433"
           SCHEMACRAFT_TEST_MSSQL_MAJOR: "16"
-        run: cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions --test diagnostics_privacy --test sqlserver_code -- --nocapture
+        run: cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions --test diagnostics_privacy --test sqlserver_code -- --test-threads=1 --nocapture
 
       - name: Inspector integration tests on SQL Server 2019
         # Runs after a failure on 2022 as well, so one run reports both versions. It reuses the
@@ -203,4 +207,14 @@ jobs:
         env:
           SCHEMACRAFT_TEST_MSSQL_PORT: "1434"
           SCHEMACRAFT_TEST_MSSQL_MAJOR: "15"
-        run: cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions --test diagnostics_privacy --test sqlserver_code -- --nocapture
+        run: cargo test -p schemacraft-core --test sqlserver_integration --test sqlserver_permissions --test diagnostics_privacy --test sqlserver_code -- --test-threads=1 --nocapture
+
+      - name: Start dedicated PostgreSQL 15 to 18 fixtures with ephemeral TLS certificates
+        if: ${{ !cancelled() && steps.changes.outputs.core == 'true' }}
+        shell: pwsh
+        run: ./dev/postgresql/Start-Fixtures.ps1
+
+      - name: Inspector integration tests on PostgreSQL 15 to 18, including verified TLS
+        if: ${{ !cancelled() && steps.changes.outputs.core == 'true' }}
+        shell: pwsh
+        run: ./dev/postgresql/Test-Fixtures.ps1

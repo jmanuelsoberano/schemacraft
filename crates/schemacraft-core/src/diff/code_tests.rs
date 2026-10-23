@@ -4,6 +4,7 @@ use super::*;
 use crate::diff::{CaptureChange, SchemaDiff};
 use crate::model::test_fixtures::{code_reader_snapshot, code_snapshot, sample_snapshot};
 use crate::model::{NotReadReason, QualifiedName, SqlDataType, TriggerEvent};
+use std::borrow::Cow;
 
 #[test]
 fn unknown_trigger_events_never_assert_a_changed_event_or_its_order() {

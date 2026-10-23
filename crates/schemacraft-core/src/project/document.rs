@@ -4,19 +4,19 @@ use ts_rs::TS;
 
 use super::canvas::CanvasState;
 use super::connection::SavedConnection;
+use super::perspectives::{ProjectAnnotations, SavedPerspective};
 use crate::inspectors::InspectionOptions;
 use crate::model::{SchemaSnapshot, UnknownFields};
 
-/// Newest project format this build writes and reads. Format 3 adds the snapshot's
-/// `programmability` and optional state facts to indexes, keys, constraints and the access
-/// profile; every one is a key that format 2 readers keep or ignore (ADR-042).
-pub const FORMAT_VERSION: u32 = 3;
+/// Newest project format this build writes and reads. Format 4 coordinates engine-aware
+/// snapshots with independent perspectives and user-authored notes.
+pub const FORMAT_VERSION: u32 = 4;
 
 /// Oldest format a reader must understand to open the files this build writes. A reader whose
 /// format is older than a file's but at least the file's `minReaderVersion` opens it read-only;
-/// an older reader refuses it. Format 3 changes no meaning and no closed enum of format 2, so
-/// SchemaCraft 1.1 still opens these files, read-only.
-pub const MIN_READER_VERSION: u32 = 2;
+/// an older reader refuses it. Earlier builds cannot interpret the new engine semantics and
+/// must not refresh user-authored note references, so format 4 requires a format 4 reader.
+pub const MIN_READER_VERSION: u32 = 4;
 
 /// Keys of the file header. Content arriving from the frontend may still carry them among its
 /// unknown keys, and writing them twice would make the header ambiguous.
@@ -37,6 +37,16 @@ pub struct ProjectContent {
     /// The diagram.
     #[serde(default)]
     pub canvas: CanvasState,
+    /// Independent curated maps sharing the same snapshot; the canvas above remains General.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub perspectives: Vec<SavedPerspective>,
+    /// User-authored explanations, never replaced by a database capture.
+    #[serde(default, skip_serializing_if = "ProjectAnnotations::is_empty")]
+    pub annotations: ProjectAnnotations,
+    /// Last map recorded during an ordinary save. Switching maps alone is not an edit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub active_perspective_id: Option<String>,
     /// Keys written by a newer version, kept as they are.
     #[serde(flatten)]
     #[ts(skip)]
@@ -56,6 +66,15 @@ impl ProjectContent {
         let snapshot = snapshot.with_unchecked_facts_from(&self.snapshot);
         Self {
             canvas: self.canvas.retaining_entities_of(&snapshot),
+            perspectives: self
+                .perspectives
+                .into_iter()
+                .map(|perspective| SavedPerspective {
+                    canvas: perspective.canvas.retaining_entities_of(&snapshot),
+                    ..perspective
+                })
+                .collect(),
+            annotations: self.annotations.reconciled(&snapshot),
             snapshot,
             ..self
         }
@@ -66,8 +85,22 @@ impl ProjectContent {
     pub fn normalized(self) -> Self {
         Self {
             canvas: self.canvas.normalized(),
+            perspectives: self
+                .perspectives
+                .into_iter()
+                .map(|perspective| SavedPerspective {
+                    canvas: perspective.canvas.normalized(),
+                    ..perspective
+                })
+                .collect(),
+            annotations: self.annotations.normalized(),
             ..self
         }
+    }
+
+    /// Checks editable structures before an atomic write or after a read.
+    pub fn validate(&self) -> Result<(), &'static str> {
+        super::perspectives::validate(&self.perspectives, &self.annotations, &self.snapshot)
     }
 }
 
@@ -300,5 +333,46 @@ mod tests {
             }]
         );
         assert_eq!(refreshed.snapshot.foreign_keys_to_invisible_tables, []);
+    }
+
+    #[test]
+    fn refresh_reconciles_inactive_maps_and_preserves_unlinked_explanations() {
+        use crate::model::UnknownFields;
+        use crate::project::{NoteTarget, ProjectAnnotations, ProjectNote, SavedPerspective};
+        let mut content = sample_project_content();
+        let target = QualifiedName::new("sales", "Orders");
+        content.perspectives.push(SavedPerspective {
+            id: "sales-map".into(),
+            name: "Sales".into(),
+            description: Some("A map explanation".into()),
+            canvas: content.canvas.clone(),
+            unknown: UnknownFields::new(),
+        });
+        content.annotations = ProjectAnnotations {
+            notes: vec![ProjectNote {
+                id: "order-note".into(),
+                target: NoteTarget::Table {
+                    table: target.clone(),
+                },
+                text: "Do not erase this documentation".into(),
+                is_linked: true,
+                unknown: UnknownFields::new(),
+            }],
+            ..Default::default()
+        };
+        let mut snapshot = content.snapshot.clone();
+        snapshot.tables.retain(|table| table.name != target);
+        let refreshed = content.with_refreshed_snapshot(snapshot);
+        assert!(refreshed.perspectives[0].canvas.node(&target).is_none());
+        assert_eq!(
+            refreshed.perspectives[0].description.as_deref(),
+            Some("A map explanation")
+        );
+        assert!(!refreshed.annotations.notes[0].is_linked);
+        assert_eq!(
+            refreshed.annotations.notes[0].text,
+            "Do not erase this documentation"
+        );
+        assert!(refreshed.validate().is_ok());
     }
 }

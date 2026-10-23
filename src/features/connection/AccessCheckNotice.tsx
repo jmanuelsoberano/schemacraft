@@ -70,7 +70,11 @@ export function AccessCheckNotice({
           action={
             grantHelps(access) ? (
               <CopyScriptButton
-                script={grantScript({ database, principal: access.probe.databaseUser, locale })}
+                script={grantScript({
+                  database,
+                  principal: access.probe?.databaseUser ?? null,
+                  locale,
+                })}
               />
             ) : null
           }

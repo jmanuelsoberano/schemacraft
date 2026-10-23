@@ -67,7 +67,7 @@ export function AccessBar({ onShowDetails, onDismissed }: AccessBarProps) {
               <CopyScriptButton
                 script={grantScript({
                   database: snapshot.databaseName,
-                  principal: access.probe.databaseUser,
+                  principal: access.probe?.databaseUser ?? null,
                   locale,
                 })}
               />

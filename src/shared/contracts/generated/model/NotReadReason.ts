@@ -3,4 +3,4 @@
 /**
  * Why a capture did not read a family of facts.
  */
-export type NotReadReason = "optionOff" | "queryFailed" | "timedOut" | "unknown";
+export type NotReadReason = "permissionDenied" | "optionOff" | "queryFailed" | "timedOut" | "unknown";

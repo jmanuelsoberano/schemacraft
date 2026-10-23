@@ -31,9 +31,14 @@ pub struct SqlDataType {
     /// Declared length for character and binary types.
     pub length: Option<TypeLength>,
     /// Numeric precision, or fractional-seconds precision for date and time types.
-    pub precision: Option<u8>,
+    pub precision: Option<u16>,
     /// Numeric scale.
-    pub scale: Option<u8>,
+    pub scale: Option<i16>,
+    /// Native declaration, including arrays and schema-qualified custom types. When present,
+    /// it is authoritative for display and is never converted into SQL Server syntax.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub native_declaration: Option<String>,
     /// Name of the user-defined alias type the column was declared with, e.g. `dbo.Money2`,
     /// when it is not a system type. `name` always holds the underlying system type.
     #[serde(default)]
@@ -48,6 +53,7 @@ impl SqlDataType {
             length: None,
             precision: None,
             scale: None,
+            native_declaration: None,
             user_defined_type_name: None,
         }
     }
@@ -63,7 +69,7 @@ impl SqlDataType {
     /// A type with precision only, e.g. `datetime2(7)` or `float(53)`.
     pub fn with_precision(name: impl Into<String>, precision: u8) -> Self {
         Self {
-            precision: Some(precision),
+            precision: Some(u16::from(precision)),
             ..Self::plain(name)
         }
     }
@@ -71,14 +77,17 @@ impl SqlDataType {
     /// A numeric type with precision and scale, e.g. `decimal(18, 2)`.
     pub fn with_precision_and_scale(name: impl Into<String>, precision: u8, scale: u8) -> Self {
         Self {
-            precision: Some(precision),
-            scale: Some(scale),
+            precision: Some(u16::from(precision)),
+            scale: Some(i16::from(scale)),
             ..Self::plain(name)
         }
     }
 
     /// Canonical declaration as it would appear in DDL, e.g. `DECIMAL(18,2)` or `VARCHAR(MAX)`.
     pub fn declaration(&self) -> String {
+        if let Some(native) = &self.native_declaration {
+            return native.clone();
+        }
         let base = self.name.to_uppercase();
         match (self.length, self.precision, self.scale) {
             (Some(TypeLength::Max), _, _) => format!("{base}(MAX)"),

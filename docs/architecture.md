@@ -17,9 +17,10 @@ structure as an interactive map: layers, components, data stores, flows and how 
 schemacraft/
 ├── crates/schemacraft-core/   Rust library, free of Tauri: everything the app knows and does
 │   ├── src/model/             pure schema types (tables, columns, keys, snapshot, code objects), access profile, carry-over
-│   ├── src/inspectors/        DatabaseInspector strategy, errors, progress, SQL Server implementation and access probe
+│   ├── src/inspectors/        DatabaseInspector strategy, errors, progress, native SQL Server and PostgreSQL inspectors
 │   ├── src/project/           .scraft documents and their migrations, saved connections, canvas state
 │   ├── src/diff/              comparison of two snapshots behind "refresh from database"
+│   ├── src/comparison/        immutable comparison of independent captures, evidence and bounded source-line pages
 │   ├── src/preferences/       connection history and recent projects (per-user JSON file)
 │   ├── src/credentials/       CredentialStore strategy: Windows Credential Manager, memory
 │   ├── src/export/            SVG to PNG and PDF rendering with bundled fonts
@@ -40,9 +41,12 @@ schemacraft/
 │   │   ├── access/            partial-access chip and bar, access report, GRANT script
 │   │   ├── canvas/            diagram canvas, entities panel, nodes, edges and markers, layouts and their worker, geometry, focus between canvas and Inspector
 │   │   ├── connection/        connection dialog, history, flow store, progress, change review
+│   │   ├── comparison/        independent project comparison, scoped offline report and local source details
+│   │   ├── dependencies/      catalog-reference Inspector section, bounded directed map and closed exports
 │   │   ├── export/            export dialog and store, SVG renderer, standalone HTML packaging with the viewer's catalogue subset
 │   │   ├── inspector/         Inspector panel: the selected entity's details beside the canvas, its rules in words with their SQL
 │   │   ├── preferences/       mirror of the preferences file: history and recent projects
+│   │   ├── perspectives/      named maps over one snapshot, shared notes and reviewed annotation projection
 │   │   ├── project/           open project store, open/save flows, unsaved-changes guard, undo
 │   │   └── schema/            entity identity and kinds, entity lists, data types, expression texts, coverage, object details view-model
 │   │       └── rules/         readable rules: the CHECK tokenizer, parser and reader, the foreign key reader, sentences as data
@@ -779,8 +783,9 @@ window, and one rule for every command is easier to review than a judgement per 
 On a pull request, each CI job first runs `scripts/ci-changes.sh`, which classifies the changed
 files. A change limited to `docs/` and Markdown files runs only the frontend gates and the
 architecture page check; any other change adds the Rust gates, the build and the smoke test; the
-SQL Server integration job runs its tests only when the core, the Cargo manifests, the toolchain
-or the CI definition change. The executable for the smoke test is built with the `ci` Cargo
+integration job runs its tests when the core, Cargo manifests, toolchain, CI definition,
+`dev/postgresql/**`, `scripts/ci-changes*` or `scripts/dev-sqlserver.ps1` change. Fixture Markdown
+under `dev/postgresql/` also requires the native matrix. The executable for the smoke test is built with the `ci` Cargo
 profile (release without link-time optimisation), which halves the build time; release.yml keeps
 the full release profile. Pushes to `main` run everything, which also keeps the build cache warm
 for the next pull request. The classification runs inside each required job instead of in a
@@ -800,8 +805,19 @@ names each matrix job after its values and the branch ruleset requires this chec
 services in the one job keep the required check without a change to the ruleset. The job also sets
 `SCHEMACRAFT_TEST_REQUIRE_SERVER=1`, under which a missing server variable fails every SQL Server
 test instead of skipping it, so the job can no longer pass without having reached a server. The
-classification is unchanged: what both runs read lives under `crates/`, and the CI definition
-counts as core.
+four SQL Server binaries are `sqlserver_integration`, `sqlserver_permissions`,
+`diagnostics_privacy` and `sqlserver_code`; the last also verifies the independently captured
+dependency family.
+
+The unreleased native PostgreSQL increment extends that same Linux job with dedicated
+PostgreSQL 15, 16, 17 and 18 fixtures, ephemeral TLS certificates and sequential
+`postgresql_integration` runs. `dev/postgresql/Test-Fixtures.ps1` requires a real server, verified
+TLS and the expected major for each run, and refuses another active Cargo process. Optional
+catalog stages, restricted roles, refresh retention, native facts and transport/privacy cases
+belong to this matrix. The required check names remain `Lint, test and build (Windows)` and
+`SQL Server integration tests (Linux)`; the latter now covers both providers. Classification
+tests exercise frontend-only, documentation-only, fixture, classifier and core changes without
+accessing Git. Changing native fixtures therefore cannot silently skip the integration gate.
 
 ### ADR-034: Honest access: one access probe, and unknown is not none
 
@@ -1959,6 +1975,198 @@ is not evidence of a working public form.
 Why: useful bug evidence should be easy to prepare without silently collecting project data
 or turning a local desktop tool into an upload client. Plain text makes the bounded report
 reviewable and keeps diagnostics independent of a support account or distribution channel.
+
+### ADR-047: Independent project comparison preserves each capture's evidence
+
+The comparison workflow is unreleased. It compares two explicitly chosen `.scraft` files as
+Reference and Compared, without connecting, refreshing, merging observations or modifying the
+open project. `core/comparison` owns the comparison of immutable snapshots; `core/diff` retains
+its separate refresh contract. A comparison rejects different providers, since two engines give
+different meanings to types, permissions and constraint states. Identities remain structured:
+schema, name, kind, parent for a trigger or foreign key, and native input types for an overloaded
+PostgreSQL routine. Names containing dots are never split and renames are not inferred.
+
+Every property carries its own observation: observed, proved absent, excluded, not visible,
+not recorded, retained, failed or unknown, with its actual read date when available. A missing
+row is an addition or removal only when the other capture's scope and coverage establish
+absence; otherwise the result is not comparable. Confirmed differences can coexist with
+limitations on other properties. Unknown extensions prevent a whole-project equality claim.
+Capture time is not save time, and a retained value is not freshly observed evidence.
+
+The normal result contains no module body. Exact source changes are reported independently of
+the legacy whitespace normalization used by refresh. Opening source details calls the separate
+bounded line comparator, preserving whitespace and original line endings, without executing SQL
+or claiming semantic equivalence. Work and page limits, cancellation and revision checks prevent
+a large source or late job from replacing a newer selection. The thin host exposes
+`compare_project_snapshots`, `compare_project_source` and `cancel_project_comparison`; blocking
+comparison work uses `run_blocking`, and source text never becomes diagnostic content.
+
+`features/comparison` owns transient inputs, filters, selected item, per-side diagram context and
+an explicit offline HTML report preview. It has no project, preference or connection-store write
+dependency. Report building reconstructs approved fields and the filtered result set; no input
+path, server, user, password, raw probe, annotation, module body or unknown extension is embedded.
+Schema names outside the included results are counted without being named. Local source review
+does not authorize source export. Text and identifiers are escaped before HTML insertion.
+
+Tests distinguish comparable absence from every evidence gap, equal and different values,
+provider mismatch, dotted identities, overloaded routines, exact source endings, cancellation and
+budget exhaustion. Report sentinels reject private fields, hidden results and executable markup;
+store tests ensure stale results cannot change the active project or selection.
+
+Why: a refresh answers how to update one project; independent comparison answers what two
+captures can establish. Sharing pure schema facts while keeping those contracts separate avoids
+turning uncertainty into database changes or copying private source into a shareable report.
+
+### ADR-048: Catalog dependencies are an independent captured family and directed map
+
+The dependency workflow is unreleased. `snapshot.dependencies` records an optional catalog read,
+its scope, completion time, source-level coverage, directed edges and limitations. Missing means
+not recorded; a failed or disabled read is not an empty graph. Every retained source and edge
+keeps its original observation date. Refresh preserves references it cannot verify, replaces a
+successfully observed source's list, and treats deliberate option exclusions separately.
+`includeDependencies` is independent of saving module source and defaults on for new reads.
+
+`DependencyObjectRef` distinguishes tables, views, routines with optional overload identity and
+triggers qualified by their parent. Targets are either captured objects or explicitly classified
+references: external, out of scope, not visible, unsupported, unresolved, ambiguous,
+caller-dependent or unknown. SQL Server reads catalog expression dependencies; PostgreSQL reads
+its native dependency catalog and trigger-function references. Neither inspector parses bodies,
+executes routines, follows external servers or databases, or claims discovery of dynamic SQL,
+application references or every string routine body. Completeness describes the observed
+catalog list, never all runtime use.
+
+The Inspector shows incoming and outgoing references from these stored facts.
+`features/dependencies` builds a separate directed exploration map, with incoming/outgoing/both
+direction, bounded traversal and explicit omissions when limits are reached. A dependency arrow
+means source references target; it is never an ERD foreign key or a crow's-foot relationship.
+Its transient positions and filters do not rewrite the ERD or stored perspectives. Cycles,
+self-references, partial evidence and unresolved nodes remain visible as such.
+
+The map and SVG, PNG, PDF and offline HTML exports consume a closed `DependencyGraph`
+projection, never a raw snapshot. Only chosen objects and their permitted local labels, closed
+statuses, read dates and known references travel. Raw external server/database fields, module
+bodies, connection settings, credentials, notes and unknown extension keys remain absent.
+Bounds include every projected node and wrapped limitation caption, independently of viewport.
+Escaping and safe JSON embedding keep hostile names literal.
+
+Tests cover direction, cycles, duplicate and dotted identities, scope/option/failure retention,
+read dates, bounded traversal, external-reference sentinels and offline export escaping. Native
+integration fixtures establish what each catalog actually reports. No test may establish
+semantic dependency completeness by assuming a query returned all possible runtime references.
+
+Why: catalog references are valuable evidence with a different meaning and completeness model
+from foreign keys. An independent family and map expose that evidence without weakening the
+ERD's relational semantics or source-code privacy boundary.
+
+### ADR-049: Saved perspectives share a snapshot; annotations have explicit identity and export consent
+
+Saved perspectives and notes are unreleased. `ProjectContent.canvas` remains General. Optional
+`perspectives` add stable IDs, names, descriptions and independent `CanvasState` values over the
+same snapshot. General cannot be deleted. `activePerspectiveId` is a convenience saved on the
+next ordinary write: switching maps alone creates neither an unsaved-change warning nor an undo
+entry. Create, duplicate, rename, delete, layout, visibility, viewport and detail changes route
+through the active-map helper; they do not copy or alter the shared snapshot.
+
+`annotations.notes` contains shared table and column notes, with stable note IDs, plain text,
+structured targets and an explicit linked flag. Both targets refer to base tables; a homonymous
+view cannot inherit a table's or column's note. Names are logical bindings, not a claim of
+physical database continuity. Observed removal archives a note with its previous target and
+text; a later reuse of the name never relinks it automatically. Reassignment is explicit and
+cannot overwrite an existing linked note. Unknown note and perspective properties survive save.
+Descriptions belong to one perspective; object notes are shared by every perspective.
+
+Refresh reconciles every map, including inactive maps. General places new objects visibly;
+curated maps retain their selection and add missing node states hidden. Removed objects leave
+the maps, and notes are unlinked only when the effective refreshed snapshot no longer contains
+their target; incomplete observations retained by refresh do not imply deletion. A new capture
+does not duplicate the old document's maps or notes.
+
+Undo mementos contain the editable workspace: General, perspectives, notes and active map.
+They exclude snapshots, connections and credentials. Focus-bounded text edits coalesce into one
+undo step. Refresh clears history. Document identity, snapshot and map-state identity guard
+asynchronous layouts; save completion preserves edits made while writing, and delayed refresh
+application cannot discard a newer workspace revision. Read-only forward files may be explored
+but cannot persist or refresh these values.
+
+Normal diagram exports contain only the active map. Descriptions and notes default off on each
+export. `projectExportAnnotations` rebuilds only explicitly reviewed description text and checked,
+linked notes whose targets are visible on that map; archived, hidden and inactive-map material,
+stored IDs and extensions never travel accidentally. SVG text, raster/PDF rendering and offline
+HTML share the reviewed literal lines. Notes are neither HTML nor Markdown and are never
+evaluated. Comparison and dependency reports do not inherit them.
+
+This change ships together with native-provider semantics as **format 4, minimum reader 4**.
+The migration from format 3 changes headers; serde defaults supply new optional content and the
+legacy SQL Server provider. Earlier projects remain readable and convert on save, without
+inventing evidence. Existing readers must refuse new files rather than silently interpreting
+PostgreSQL as SQL Server or discarding map/note semantics. The historic format-3/reader-2
+guarantee in ADR-042 applies to published 1.2.0 files, not to format 4.
+
+Tests cover independent maps, non-dirty switching, offline round trips, inactive-map refresh,
+orphan retention and reassignment, table/view class separation, punctuation identities, unknown
+keys, coalesced undo, stale layout/save/review completion and default-off export sentinels.
+
+Why: perspectives are different explanations of one captured model. Sharing facts and notes
+while isolating their layouts prevents divergent copies; explicit identity and export choices
+prevent silent note reassignment and accidental disclosure.
+
+### ADR-050: PostgreSQL has a native inspector and native semantics behind the same boundary
+
+PostgreSQL support is unreleased and targets versions 15 through 18. `DatabaseInspector` and
+`create_inspector` remain the provider boundary. The new `inspectors/postgresql` owns catalog
+queries, typed rows, assembly, native access evidence, session policy and connection settings;
+the Tauri connection commands remain provider-agnostic adapters. `snapshot.provider` defaults to
+SQL Server only for legacy files. `snapshot.postgresql` carries facts with no truthful shared
+SQL Server equivalent, rather than inventing SQL Server flags or type declarations.
+
+TCP endpoints accept host, host:port and IPv6, with 5432 as the default. PostgreSQL role and
+database names retain their exact case; overload identity uses input type identities in order.
+The default transport is `verifyFull`: TLS with chain and host-name validation, using system
+roots and an optional additional public PEM root. Private keys are rejected. Explicit
+unverified TLS (`require`) and plaintext (`disable`) are restricted to literal loopback or
+localhost for local development, with no fallback from failed strict validation. Password
+authentication supports the driver's SCRAM path. Saved connections, history and credential keys
+are provider-qualified, and only the operating-system credential store retains opted-in secrets.
+
+Each operation owns its session, aborts its connection task on drop, applies read-only session
+policy, fixes the catalog search path and bounds statement/lock waiting. Reads use typed,
+parameterized native catalog queries. Optional module or dependency failures do not poison
+successful structure reads. No application table rows, routines or trigger functions execute.
+Catalog-created view/routine definitions are labeled as reconstructed, never original bytes.
+
+Routine-body dependency evidence is captured independently of storing definitions.
+`PostgresqlRoutine.routineBodyTracking` and the matching `DependencySource` carry
+`parsedSqlBody`, `signatureOnly` or `unknown`; an absent field on a PostgreSQL routine means
+not recorded, while tables and SQL Server omit it as not applicable. `parsedSqlBody` records
+that the native catalog holds a parsed SQL body (`prosqlbody IS NOT NULL`), so catalog references
+can include body dependencies. `signatureOnly` records that a PL or string body is not tracked
+that way. Neither value claims exhaustive runtime or dynamic-SQL discovery. Module details,
+routine/reference lists, dependency maps and their explicit export projection show the same
+translated evidence and limitation; no parse tree or module text enters this metadata.
+
+Tables and partitions, ordinary/materialized views, formatted types, identity/generated
+columns, native index methods/expressions/predicates/validity, constraints and referential
+actions, overloaded routines and trigger modes retain native meaning. Native access evidence
+records catalog outcomes and schema USAGE; no SQL Server permission probe, GRANT script, DENY
+count, clustered-index assertion or replication property is fabricated. Rule readers fall back
+to literal SQL where the stored dialect facts cannot justify a sentence. ERD cardinality honors
+native uniqueness, match and enforcement facts on every rendering surface.
+
+Refresh, independent comparison, dependency references, offline projects and explicit export
+projections consume those provider facts. Exports retain approved native structural metadata
+but omit routines and module bodies, raw native access evidence, sensitive trigger-function
+references and unknown extensions. The shared schema view-model remains a leaf, importing only
+itself and `shared/`; its consumers supply context rather than depending on a product store.
+
+The acceptance matrix includes PostgreSQL 15, 16, 17 and 18, full and restricted roles,
+native index/constraint/routine/trigger fixtures, scope and option switches, failure/timeout
+retention, strict certificate success, bad-root and host mismatch failures, local-only transport
+exceptions, SCRAM and privacy sentinels. SQL Server 2019/2022 and historical project readers keep
+their own regression gates. Passing synthetic browser fixtures is not native-inspector evidence.
+
+Why: the existing inspector strategy permits another engine, but honest portability requires
+preserving semantic differences. Native facts, strict connection policy and explicit projections
+add PostgreSQL without coupling the domain to a Store account, frontend screen or Tauri runtime.
 
 ## Milestones
 

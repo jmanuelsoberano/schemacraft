@@ -6,7 +6,9 @@ describe("draftToSettings", () => {
   it("builds integrated authentication settings with a named instance", () => {
     const result = draftToSettings({ ...emptyConnectionDraft, server: "localhost\\SQLEXPRESS" });
     expect(result.ok).toBe(true);
-    if (result.ok) {
+    if (!result.ok || result.settings.provider !== "sqlServer")
+      throw new Error("SQL Server settings expected");
+    {
       expect(result.target).toBe("localhost\\SQLEXPRESS");
       expect(result.settings).toMatchObject({
         provider: "sqlServer",
@@ -33,7 +35,9 @@ describe("draftToSettings", () => {
       "Northwind",
     );
     expect(result.ok).toBe(true);
-    if (result.ok) {
+    if (!result.ok || result.settings.provider !== "sqlServer")
+      throw new Error("SQL Server settings expected");
+    {
       expect(result.settings.database).toBe("Northwind");
       expect(result.settings.authentication).toEqual({
         mode: "sqlLogin",
@@ -60,7 +64,9 @@ describe("draftToSettings", () => {
       passwordIsStored: true,
     });
     expect(result.ok).toBe(true);
-    if (result.ok) {
+    if (!result.ok || result.settings.provider !== "sqlServer")
+      throw new Error("SQL Server settings expected");
+    {
       expect(result.settings.authentication).toEqual({
         mode: "sqlLogin",
         username: "sa",
@@ -93,6 +99,7 @@ describe("draftToInspectionOptions", () => {
       includeViews: false,
       includeProgrammability: true,
       includeModuleDefinitions: true,
+      includeDependencies: true,
     });
   });
 

@@ -108,7 +108,7 @@ export function renderManifest({ identity, version, validation = false }) {
   <Resources><Resource Language="en-US" /><Resource Language="es-ES" /></Resources>
   <Applications>
     <Application Id="SchemaCraft" Executable="schemacraft.exe" uap10:RuntimeBehavior="packagedClassicApp" uap10:TrustLevel="mediumIL">
-      <uap:VisualElements DisplayName="${xml(displayName)}" Description="SQL Server schema visualization"
+      <uap:VisualElements DisplayName="${xml(displayName)}" Description="SQL Server and PostgreSQL schema exploration"
         BackgroundColor="transparent" Square44x44Logo="Assets\\Square44x44Logo.png" Square150x150Logo="Assets\\Square150x150Logo.png" />
     </Application>
   </Applications>

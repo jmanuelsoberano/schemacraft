@@ -73,6 +73,8 @@ export interface ChildCardinalityReading {
 }
 
 export interface ForeignKeyExplanation {
+  /** Native PostgreSQL facts use catalog DDL rather than SQL Server enforcement prose. */
+  native?: true;
   optionality: ForeignKeyOptionality;
   /** `null` for a key to a table the login cannot see, whose referenced side is unknown. */
   childCardinality: ChildCardinality | null;
@@ -126,6 +128,7 @@ export function snapshotExplanationScope(snapshot: SchemaSnapshot): ExplanationS
 }
 
 const ACTION_SQL: Readonly<Record<ReferentialAction, string>> = {
+  restrict: "RESTRICT",
   noAction: "NO ACTION",
   cascade: "CASCADE",
   setNull: "SET NULL",
@@ -355,13 +358,17 @@ function setDefaultSentence(sides: Sides, on: "delete" | "update"): RuleNode {
  */
 function deleteSentence(sides: Sides, action: ReferentialAction): RuleNode {
   const keys: Readonly<Record<Exclude<ReferentialAction, "setDefault">, RuleMessageKey>> = {
+    restrict: "rule.fk.native.delete",
     noAction: sides.isSelf ? "rule.fk.self.delete.noAction" : "rule.fk.delete.noAction",
     cascade: "rule.fk.delete.cascade",
     setNull: "rule.fk.delete.setNull",
   };
   return action === "setDefault"
     ? setDefaultSentence(sides, "delete")
-    : sentence(keys[action], args(sides));
+    : sentence(
+        keys[action],
+        args(sides, { action: { kind: "keyword", text: ACTION_SQL[action] } }),
+      );
 }
 
 /**
@@ -382,6 +389,12 @@ function updateSentences(sides: Sides, action: ReferentialAction): RuleNode[] {
         ];
   }
   switch (action) {
+    case "restrict":
+      return [
+        sentence("rule.fk.native.update", {
+          action: { kind: "keyword", text: ACTION_SQL[action] },
+        }),
+      ];
     case "noAction":
       return [
         countedSentence(
@@ -494,6 +507,7 @@ export function explainForeignKey(
   snapshot: SchemaSnapshot,
   scope: ExplanationScope = snapshotExplanationScope(snapshot),
 ): ForeignKeyExplanation {
+  if (snapshot.provider === "postgreSql") return explainPostgreSqlForeignKey(key, snapshot);
   const childEntity = entityKey(key.referencingTable);
   const parentEntity = entityKey(key.referencedTable);
   const childTable = findTable(snapshot, key.referencingTable);
@@ -547,6 +561,73 @@ export function explainForeignKey(
     deleteRule: sentenceText(onDelete),
     columns,
     sql: foreignKeyDefinitionSql(key),
+  };
+}
+
+/** Native MATCH rules and usable unique indexes; no SQL Server state is inferred. */
+function explainPostgreSqlForeignKey(
+  key: ForeignKey,
+  snapshot: SchemaSnapshot,
+): ForeignKeyExplanation {
+  const child = entityKey(key.referencingTable);
+  const parent = entityKey(key.referencedTable);
+  const names = key.columnPairs.map((pair) => pair.referencingColumn);
+  const columns = findTable(snapshot, key.referencingTable)?.columns ?? [];
+  const known = names.map((name) => columns.find((column) => column.name === name));
+  const native = snapshot.postgresql?.constraints.find(
+    (constraint) =>
+      entityKey(constraint.table) === child &&
+      constraint.name === key.name &&
+      constraint.kind === "foreignKey",
+  );
+  const optionality: ForeignKeyOptionality =
+    known.some((column) => column === undefined) || native === undefined
+      ? "unknown"
+      : native.matchType === "full"
+        ? known.every((column) => column?.isNullable === true)
+          ? "optional"
+          : "required"
+        : native.matchType === "simple"
+          ? known.some((column) => column?.isNullable === true)
+            ? "optional"
+            : "required"
+          : "unknown";
+  const indexes =
+    snapshot.postgresql?.indexes.filter((index) => entityKey(index.table) === child) ?? [];
+  const cardinality: ChildCardinality =
+    snapshot.postgresql === undefined
+      ? "unknown"
+      : indexes.some(
+            (index) =>
+              index.isUnique &&
+              index.isValid &&
+              index.isReady &&
+              index.isLive &&
+              index.predicate === null &&
+              index.keyColumns.length > 0 &&
+              index.keyColumns.every((column) => column !== null && names.includes(column)),
+          )
+        ? "atMostOne"
+        : "many";
+  const targets = new Map<string, readonly string[]>([[child, names]]);
+  const referenced = key.columnPairs.map((pair) => pair.referencedColumn);
+  targets.set(parent, child === parent ? [...new Set([...names, ...referenced])] : referenced);
+  const deletion = sentence("rule.fk.native.delete", {
+    action: { kind: "keyword", text: ACTION_SQL[key.onDelete] },
+  });
+  return {
+    native: true,
+    optionality,
+    childCardinality: cardinality,
+    rules: [
+      deletion,
+      sentence("rule.fk.native.update", {
+        action: { kind: "keyword", text: ACTION_SQL[key.onUpdate] },
+      }),
+    ],
+    deleteRule: sentenceText(deletion),
+    columns: targets,
+    sql: native === undefined ? null : definitionText(native.definition),
   };
 }
 

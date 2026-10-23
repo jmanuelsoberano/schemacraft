@@ -15,6 +15,11 @@ export type Routine = {
  */
 name: QualifiedName, 
 /**
+ * PostgreSQL input argument type identities; `Some([])` is a zero-argument overload.
+ * Absent for SQL Server, whose routine name already identifies the object.
+ */
+identityArguments?: Array<QualifiedName>, 
+/**
  * Procedure or kind of function.
  */
 kind: RoutineKind, 

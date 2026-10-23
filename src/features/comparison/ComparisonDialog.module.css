@@ -1,0 +1,202 @@
+.content,
+.input,
+.details,
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.content {
+  gap: var(--space-3);
+}
+.inputs,
+.originals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.input {
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.input small,
+.hint,
+.item small {
+  color: var(--color-text-secondary);
+}
+.name {
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+}
+.captureFacts {
+  margin: var(--space-2) 0;
+  font-size: var(--text-xs);
+}
+.captureFacts > div {
+  margin-block: var(--space-2);
+}
+.captureFacts dt {
+  color: var(--color-text-secondary);
+}
+.captureFacts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.filters {
+  display: grid;
+  grid-template-columns: 2fr repeat(3, 1fr);
+  gap: var(--space-2);
+  align-items: end;
+}
+.filters label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+.search {
+  min-width: 0;
+  height: var(--control-height);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+.review {
+  display: grid;
+  grid-template-columns: minmax(200px, 28%) minmax(0, 1fr);
+  gap: var(--space-3);
+}
+.results {
+  max-height: 68vh;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-2);
+  text-align: left;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  background: var(--color-surface);
+  cursor: pointer;
+}
+.item[aria-pressed="true"] {
+  background: var(--color-accent-subtle);
+}
+.item:focus-visible,
+.search:focus-visible,
+.original:focus-visible,
+.lines:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+.details h3,
+.details h4,
+.hint {
+  margin: 0;
+}
+.properties {
+  border-collapse: collapse;
+  width: 100%;
+  table-layout: fixed;
+  font-size: var(--text-xs);
+}
+.properties th,
+.properties td {
+  border: 1px solid var(--color-border);
+  padding: var(--space-2);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.properties pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  font: inherit;
+}
+.properties small {
+  color: var(--color-text-secondary);
+}
+.context,
+.preview iframe {
+  width: 100%;
+  height: 300px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-canvas);
+}
+.originals section {
+  min-width: 0;
+}
+.originals label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.original {
+  box-sizing: border-box;
+  width: 100%;
+  height: 120px;
+  resize: vertical;
+  white-space: pre;
+  font: var(--text-xs) var(--font-mono);
+  color: var(--color-text);
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border);
+}
+.lines {
+  max-height: 400px;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  font: var(--text-xs) var(--font-mono);
+}
+.line {
+  display: flex;
+  gap: var(--space-2);
+  width: max-content;
+  min-width: 100%;
+  white-space: pre;
+}
+.line > span {
+  min-width: 3ch;
+  text-align: right;
+  color: var(--color-text-secondary);
+}
+.line[data-kind="added"] {
+  background: var(--color-success-subtle);
+}
+.line[data-kind="removed"] {
+  background: var(--color-danger-subtle);
+}
+.line small {
+  color: var(--color-text-secondary);
+}
+@media (max-width: 800px) {
+  .filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .review {
+    grid-template-columns: 1fr;
+  }
+  .results {
+    max-height: 220px;
+  }
+}

@@ -47,6 +47,8 @@ const CHANGES: &str = include_str!("fixtures/sqlserver/code_changes.sql");
 /// Owned only by the dotted-identifier regression, never shared with count-based fixtures.
 const DOTTED_DATABASE: &str = "SchemaCraftDottedNames";
 const DOTTED_SCRIPT: &str = include_str!("fixtures/sqlserver/dotted_names.sql");
+const DEPENDENCY_DATABASE: &str = "SchemaCraftDependencies";
+const DEPENDENCY_SCRIPT: &str = include_str!("fixtures/sqlserver/dependencies.sql");
 
 static PASSWORD: LazyLock<String> = LazyLock::new(|| {
     let random = || RandomState::new().hash_one(std::process::id());
@@ -117,6 +119,189 @@ fn readable_count(code: &Programmability) -> usize {
 async fn connects_to_the_expected_major_version() {
     let Some(server) = test_server() else { return };
     check_expected_major_version(&server).await;
+}
+
+#[tokio::test]
+async fn reads_scoped_known_dependencies_without_module_bodies_and_retains_failed_observations() {
+    use schemacraft_core::model::{
+        DependencyObjectRef as Object, DependencyReferenceStatus as ReferenceStatus,
+        DependencyTarget,
+    };
+    let Some(server) = test_server() else { return };
+    seed(&server).await;
+    ensure_seeded(&server, DEPENDENCY_DATABASE, DEPENDENCY_SCRIPT).await;
+    let options = InspectionOptions {
+        include_module_definitions: false,
+        ..InspectionOptions::default()
+    };
+    let snapshot = inspect(&server, DEPENDENCY_DATABASE, &options).await;
+    let family = snapshot.dependencies.as_ref().unwrap();
+    assert_eq!(family.capture, CaptureState::Read);
+    assert!(
+        snapshot
+            .programmability
+            .as_ref()
+            .unwrap()
+            .module_definitions()
+            .all(|definition| definition.text().is_none())
+    );
+    let order_view = Object::View {
+        name: QualifiedName::new("app", "OrderSummary"),
+    };
+    let orders = Object::Table {
+        name: QualifiedName::new("app", "Orders"),
+    };
+    assert!(family.edges.iter().any(|edge| edge.source == order_view
+        && edge.target
+            == DependencyTarget::Object {
+                object: orders.clone()
+            }));
+    let constraint_table = Object::Table {
+        name: QualifiedName::new("app", "DependencyConstraints"),
+    };
+    let constraint_function = DependencyTarget::Object {
+        object: Object::Routine {
+            name: QualifiedName::new("app", "fn_CustomerCount"),
+            identity_arguments: None,
+        },
+    };
+    assert_eq!(
+        family
+            .edges
+            .iter()
+            .filter(|edge| edge.source == constraint_table && edge.target == constraint_function)
+            .count(),
+        1,
+        "CHECK and DEFAULT references must resolve to one parent-table dependency"
+    );
+    // FK edges stay in the ERD; they are not fabricated catalog expression references.
+    assert!(!family.edges.iter().any(|edge| edge.source == orders
+        && edge.target
+            == DependencyTarget::Object {
+                object: Object::Table {
+                    name: QualifiedName::new("app", "Customers")
+                }
+            }));
+    assert!(family.edges.iter().any(|edge| matches!(
+        &edge.target,
+        DependencyTarget::Reference {
+            status: ReferenceStatus::Unsupported,
+            ..
+        }
+    )));
+    assert!(family.edges.iter().any(|edge| matches!(
+        &edge.target,
+        DependencyTarget::Reference {
+            status: ReferenceStatus::Unresolved,
+            ..
+        }
+    )));
+    assert!(family.edges.iter().any(|edge| matches!(
+        &edge.target,
+        DependencyTarget::Reference {
+            status: ReferenceStatus::CallerDependent,
+            ..
+        }
+    )));
+    assert!(family.edges.iter().any(|edge| edge.source
+        == Object::View {
+            name: QualifiedName::new("odd.schema", "Overview")
+        }
+        && edge.target
+            == DependencyTarget::Object {
+                object: Object::Table {
+                    name: QualifiedName::new("odd.schema", "Orders")
+                }
+            }));
+    let scoped = inspect(
+        &server,
+        DEPENDENCY_DATABASE,
+        &InspectionOptions {
+            schemas: vec!["odd.schema".into()],
+            ..options.clone()
+        },
+    )
+    .await;
+    assert!(
+        scoped
+            .dependencies
+            .as_ref()
+            .unwrap()
+            .edges
+            .iter()
+            .all(|edge| edge.source.schema() == "odd.schema")
+    );
+    let structure = inspect(
+        &server,
+        DEPENDENCY_DATABASE,
+        &InspectionOptions {
+            include_programmability: false,
+            ..options.clone()
+        },
+    )
+    .await;
+    assert!(
+        structure
+            .dependencies
+            .as_ref()
+            .unwrap()
+            .sources
+            .iter()
+            .all(|source| matches!(source.object, Object::Table { .. } | Object::View { .. }))
+    );
+    let limited = inspect(
+        &as_login(&server, READER, &PASSWORD),
+        DEPENDENCY_DATABASE,
+        &options,
+    )
+    .await;
+    assert!(
+        !limited.tables.is_empty(),
+        "optional catalog denial must not fail structural capture"
+    );
+    assert_eq!(
+        limited.dependencies.as_ref().unwrap().capture,
+        CaptureState::NotRead {
+            reason: NotReadReason::PermissionDenied
+        }
+    );
+    let retained = limited.with_unchecked_facts_from(&snapshot);
+    assert!(
+        retained
+            .dependencies
+            .as_ref()
+            .unwrap()
+            .edges
+            .iter()
+            .all(|edge| edge.retained && edge.read_at == snapshot.extracted_at)
+    );
+    assert_eq!(
+        retained.dependencies.as_ref().unwrap().edges.len(),
+        family.edges.len()
+    );
+    let disabled = inspect(
+        &server,
+        DEPENDENCY_DATABASE,
+        &InspectionOptions {
+            include_dependencies: false,
+            ..options
+        },
+    )
+    .await
+    .with_unchecked_facts_from(&snapshot);
+    assert_eq!(
+        disabled.dependencies.as_ref().unwrap().capture,
+        CaptureState::NotRead {
+            reason: NotReadReason::OptionOff
+        }
+    );
+    assert_eq!(disabled.dependencies.as_ref().unwrap().edges, []);
+    assert!(
+        SchemaDiff::between(&snapshot, &disabled)
+            .metadata
+            .dependencies
+            .excluded
+    );
 }
 
 #[tokio::test]
@@ -722,6 +907,9 @@ async fn turning_texts_off_preserves_hidden_objects_and_turning_objects_off_repo
 
 fn project_with(snapshot: SchemaSnapshot) -> ProjectContent {
     ProjectContent {
+        perspectives: Vec::new(),
+        annotations: schemacraft_core::project::ProjectAnnotations::default(),
+        active_perspective_id: None,
         connection: SavedConnection::SqlServer(SavedSqlServerConnection {
             host: "localhost".to_string(),
             instance: None,

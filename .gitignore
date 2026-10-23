@@ -25,3 +25,6 @@ smoke-test/
 # Capability probe results (they describe someone else's database)
 crates/schemacraft-core/probes/*.csv
 probe.csv
+
+# Ephemeral synthetic PostgreSQL fixture certificates and keys.
+dev/postgresql/.generated/

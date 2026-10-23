@@ -150,6 +150,8 @@ impl CaptureState {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "model/")]
 pub enum NotReadReason {
+    /// The database denied an optional catalog read.
+    PermissionDenied,
     /// The inspection options left it out.
     OptionOff,
     /// The query that reads it failed.
@@ -184,6 +186,11 @@ pub struct ViewModule {
 pub struct Routine {
     /// Stable identity of the routine.
     pub name: QualifiedName,
+    /// PostgreSQL input argument type identities; `Some([])` is a zero-argument overload.
+    /// Absent for SQL Server, whose routine name already identifies the object.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub identity_arguments: Option<Vec<QualifiedName>>,
     /// Procedure or kind of function.
     pub kind: RoutineKind,
     /// Its code, or the fact that it is a CLR module.
@@ -270,6 +277,8 @@ pub struct Trigger {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "model/")]
 pub enum TriggerTiming {
+    /// Before the row or statement, as PostgreSQL supports.
+    Before,
     /// After the statement, within its transaction.
     After,
     /// In place of the statement.
@@ -296,6 +305,8 @@ pub struct TriggerEvent {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "model/")]
 pub enum DmlEvent {
+    /// PostgreSQL statement-level TRUNCATE event.
+    Truncate,
     /// `INSERT`.
     Insert,
     /// `UPDATE`.
@@ -328,6 +339,13 @@ pub enum FiringOrder {
 #[serde(tag = "language", rename_all = "camelCase")]
 #[ts(export, export_to = "model/")]
 pub enum ModuleBody {
+    /// A PostgreSQL module, including its native implementation language and reconstructed DDL.
+    PostgreSql {
+        /// Native language, e.g. sql or plpgsql.
+        name: String,
+        /// Reconstructed CREATE statement or the reason it is unavailable.
+        definition: Definition,
+    },
     /// A T-SQL module.
     Sql {
         /// Its text as stored by the database, or why the text is missing.
@@ -344,7 +362,7 @@ impl ModuleBody {
     /// The editable definition slot of a SQL module.
     pub fn definition_mut(&mut self) -> Option<&mut Definition> {
         match self {
-            Self::Sql { definition } => Some(definition),
+            Self::Sql { definition } | Self::PostgreSql { definition, .. } => Some(definition),
             Self::Clr | Self::Unknown => None,
         }
     }
@@ -352,7 +370,7 @@ impl ModuleBody {
     /// The text of a T-SQL module; `None` for a CLR module, which has none.
     pub fn definition(&self) -> Option<&Definition> {
         match self {
-            Self::Sql { definition } => Some(definition),
+            Self::Sql { definition } | Self::PostgreSql { definition, .. } => Some(definition),
             Self::Clr | Self::Unknown => None,
         }
     }
@@ -363,6 +381,14 @@ impl ModuleBody {
 #[serde(tag = "kind", rename_all = "camelCase")]
 #[ts(export, export_to = "model/")]
 pub enum CodeObjectRef {
+    /// A PostgreSQL routine identified by its input argument types, not a capture-local OID.
+    RoutineOverload {
+        /// Schema and routine name.
+        name: QualifiedName,
+        /// Qualified input argument type identities.
+        #[serde(rename = "argumentTypes")]
+        argument_types: Vec<QualifiedName>,
+    },
     /// The code of a view.
     View {
         /// The view.
@@ -397,9 +423,15 @@ impl ViewModule {
 impl Routine {
     /// Identity shared by refresh and comparison.
     pub fn object_ref(&self) -> CodeObjectRef {
-        CodeObjectRef::Routine {
-            name: self.name.clone(),
-        }
+        self.identity_arguments.as_ref().map_or_else(
+            || CodeObjectRef::Routine {
+                name: self.name.clone(),
+            },
+            |argument_types| CodeObjectRef::RoutineOverload {
+                name: self.name.clone(),
+                argument_types: argument_types.clone(),
+            },
+        )
     }
 }
 
@@ -572,7 +604,7 @@ mod tests {
             RoutineKind::Unknown
         );
         assert_eq!(
-            read::<TriggerTiming>(json!("before")),
+            read::<TriggerTiming>(json!("afterCommit")),
             TriggerTiming::Unknown
         );
         assert_eq!(read::<DmlEvent>(json!("merge")), DmlEvent::Unknown);

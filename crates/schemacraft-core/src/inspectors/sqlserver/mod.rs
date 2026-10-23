@@ -10,6 +10,7 @@ mod bound_defaults;
 mod catalog;
 mod code_assembly;
 mod data_types;
+mod dependencies;
 mod errors;
 mod pool;
 mod programmability;
@@ -101,7 +102,7 @@ impl SqlServerInspector {
             connect_timeout: self.settings.connect_timeout(),
         };
         // Code is an optional capture: its failure must leave a successful table catalog usable.
-        let (catalog_result, code) = tokio::join!(
+        let (catalog_result, code, dependencies) = tokio::join!(
             async {
                 tokio::try_join!(
                     access::fetch_access_stage(&session, progress),
@@ -109,13 +110,21 @@ impl SqlServerInspector {
                 )
             },
             programmability::fetch_code_stage(&session, progress, options),
+            dependencies::fetch_dependencies(&session, options),
         );
         let (probe, rows) = catalog_result?;
         let reading_code = code.elapsed;
         let read = started.elapsed();
 
+        if options.include_dependencies {
+            progress.report(dependencies.row_count().map_or_else(
+                || InspectionProgress::stage(InspectionStage::ReadingDependencies),
+                |count| InspectionProgress::counted(InspectionStage::ReadingDependencies, count),
+            ));
+        }
+
         progress.report(InspectionProgress::stage(InspectionStage::Assembling));
-        let snapshot = assembly::assemble_snapshot(
+        let mut snapshot = assembly::assemble_snapshot(
             &rows,
             probe,
             options,
@@ -126,6 +135,14 @@ impl SqlServerInspector {
             },
             code,
         );
+        snapshot.dependencies = Some(dependencies.assemble(&snapshot, options));
+        if let Some(family) = &snapshot.dependencies {
+            diagnostics::dependencies_captured(
+                CodeCapture::from(&family.capture),
+                family.sources.len(),
+                family.edges.len(),
+            );
+        }
 
         let total = started.elapsed();
         let code = CodeSummary::of(snapshot.programmability.as_ref());

@@ -16,6 +16,19 @@ pub(super) fn upgrade(document: &mut Value, from: u32) {
     if from < 3 {
         format_2_to_3(document);
     }
+    if from < 4 {
+        format_3_to_4(document);
+    }
+}
+
+/// Format 4 coordinates engine-aware facts with independent maps and user notes.
+/// Legacy canvas coordinates and unknown keys remain untouched; missing optional map/note
+/// families deserialize empty. A format-3 reader must refuse the new provider semantics.
+fn format_3_to_4(document: &mut Value) {
+    if let Some(root) = document.as_object_mut() {
+        root.insert("formatVersion".to_string(), json!(4));
+        root.insert("minReaderVersion".to_string(), json!(4));
+    }
 }
 
 /// Format 2 tells an unreadable `CHECK` or `DEFAULT` text apart from a missing one.
@@ -224,10 +237,10 @@ mod tests {
     }
 
     #[test]
-    fn a_format_one_document_moves_to_format_three_without_an_access_profile() {
+    fn a_format_one_document_moves_to_format_four_without_an_access_profile() {
         let document = upgraded(&[]);
-        assert_eq!(document["formatVersion"], 3);
-        assert_eq!(document["minReaderVersion"], 2);
+        assert_eq!(document["formatVersion"], 4);
+        assert_eq!(document["minReaderVersion"], 4);
         assert!(document["snapshot"].get("access").is_none());
         assert!(document["snapshot"].get("programmability").is_none());
     }
@@ -238,10 +251,11 @@ mod tests {
         let mut document = original.clone();
         upgrade(&mut document, 2);
 
-        assert_eq!(document["formatVersion"], 3);
-        assert_eq!(document["minReaderVersion"], 2);
+        assert_eq!(document["formatVersion"], 4);
+        assert_eq!(document["minReaderVersion"], 4);
         let mut header_restored = document;
         header_restored["formatVersion"] = json!(2);
+        header_restored["minReaderVersion"] = json!(2);
         assert_eq!(header_restored, original);
     }
 
@@ -258,11 +272,11 @@ mod tests {
 
     #[test]
     fn current_documents_are_not_touched() {
-        let mut document = json!({ "formatVersion": 3, "minReaderVersion": 2, "snapshot": { "tables": [
+        let mut document = json!({ "formatVersion": 4, "minReaderVersion": 4, "snapshot": { "tables": [
             { "name": { "schema": "dbo", "name": "T" }, "checkConstraints": [ { "name": "CK", "expression": "" } ] }
         ] } });
         let original = document.clone();
-        upgrade(&mut document, 3);
+        upgrade(&mut document, 4);
         assert_eq!(document, original);
     }
 
@@ -272,8 +286,8 @@ mod tests {
         upgrade(&mut document, 1);
         let project: Project = serde_json::from_value(document).unwrap();
 
-        assert_eq!(project.format_version, 3);
-        assert_eq!(project.min_reader_version, 2);
+        assert_eq!(project.format_version, 4);
+        assert_eq!(project.min_reader_version, 4);
         let snapshot = &project.content.snapshot;
         assert_eq!(snapshot.access, None);
         // 1.0 never read code or index state: neither is presented as captured.

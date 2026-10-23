@@ -129,6 +129,9 @@ pub(super) fn assemble_snapshot(
     let read_objects = programmability.capture.objects == CaptureState::Read;
     let read_texts = read_objects && programmability.capture.definitions == CaptureState::Read;
     let mut snapshot = SchemaSnapshot {
+        provider: crate::model::DatabaseProvider::SqlServer,
+        postgresql: None,
+        dependencies: None,
         database_name: identity.database_name,
         server_version: identity.server_version,
         extracted_at: identity.extracted_at,
@@ -1011,7 +1014,14 @@ mod tests {
         assert_eq!(code.capture.definitions, off);
         assert!(code.routines.is_empty() && code.triggers.is_empty() && code.views.is_empty());
         let access = snapshot.access.as_ref().unwrap();
-        assert_eq!(access.probe.execute_denials, None);
+        assert_eq!(
+            access
+                .probe
+                .as_ref()
+                .expect("SQL Server probe")
+                .execute_denials,
+            None
+        );
         assert_eq!(access.coverage.programmability, None);
         assert_eq!(access.coverage.module_definitions, None);
         assert!(!access.scope.include_programmability);
@@ -1044,7 +1054,7 @@ mod tests {
         assert_eq!(access.level, AccessLevel::Partial);
         assert_eq!(access.coverage.objects, Completeness::Partial);
         assert_eq!(access.coverage.definitions, Completeness::NotAvailable);
-        assert_eq!(access.probe, probe(false));
+        assert_eq!(access.probe, Some(probe(false)));
     }
 
     #[test]

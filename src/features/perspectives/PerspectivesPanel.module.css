@@ -1,0 +1,94 @@
+.panel {
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  min-width: 0;
+}
+
+.switcher {
+  display: flex;
+  align-items: end;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.switcher > :first-child {
+  min-width: 180px;
+  max-width: 360px;
+}
+
+.heading {
+  font-size: var(--text-md);
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.textarea {
+  width: 100%;
+  min-height: 78px;
+  resize: vertical;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  line-height: var(--leading-normal);
+}
+
+.textarea:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.hint {
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  margin: 0;
+}
+
+.error {
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+}
+
+.note {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  font-size: var(--text-sm);
+  user-select: text;
+}
+
+.details > summary {
+  cursor: pointer;
+  font-size: var(--text-sm);
+  padding-block: var(--space-2);
+}

@@ -52,8 +52,8 @@ import { codeCaptureChanges, codeDiff } from "./previewCode";
 import type { ProjectBackend } from "./projectBackend";
 
 /** Format the preview writes, as `FORMAT_VERSION` and `MIN_READER_VERSION` on the Rust side. */
-const FORMAT_VERSION = 3;
-const MIN_READER_VERSION = 2;
+const FORMAT_VERSION = 4;
+const MIN_READER_VERSION = 4;
 const GENERATOR = "SchemaCraft (preview)";
 
 const SAMPLE_PATH = "C:\\Projects\\northwind.scraft";
@@ -185,8 +185,8 @@ function upgradedFormatOneSnapshot(): SchemaSnapshot {
 }
 
 /**
- * A file written by a newer version that still lets this one read it: format 4 with
- * `minReaderVersion` 2. It carries fields this version does not know at the root, in the
+ * A file written by a newer version that still lets this one read it: format 5 with
+ * `minReaderVersion` 4. It carries fields this version does not know at the root, in the
  * snapshot, in the canvas and in every node, which must survive untouched.
  */
 function newerFormatProject(): Project {
@@ -201,7 +201,7 @@ function newerFormatProject(): Project {
   });
   return {
     ...project,
-    formatVersion: 4,
+    formatVersion: 5,
     savedWith: "SchemaCraft 1.3.0",
     canvas: {
       ...project.canvas,
@@ -215,7 +215,9 @@ function newerFormatProject(): Project {
       })),
     },
     ...{
-      annotations: [{ entity: { schema: "sales", name: "Orders" }, text: "Monthly partitions" }],
+      futureAnnotations: [
+        { entity: { schema: "sales", name: "Orders" }, text: "Monthly partitions" },
+      ],
     },
   };
 }
@@ -621,18 +623,51 @@ export const previewProjectBackend: ProjectBackend = {
   refreshProjectContent(content, snapshot): Promise<ProjectContent> {
     const merged = withUncheckedFacts(snapshot, content.snapshot);
     const entities = [...merged.tables, ...merged.views];
+    const retainedCanvas = (canvas: ProjectContent["canvas"]) => ({
+      ...canvas,
+      nodes: canvas.nodes.filter((node) =>
+        entities.some(
+          (entity) =>
+            entity.name.schema === node.name.schema && entity.name.name === node.name.name,
+        ),
+      ),
+    });
+    const annotations =
+      content.annotations === undefined
+        ? {}
+        : {
+            annotations: {
+              ...content.annotations,
+              notes: content.annotations.notes.map((note) => {
+                const table = merged.tables.find(
+                  (table) =>
+                    table.name.schema === note.target.table.schema &&
+                    table.name.name === note.target.table.name,
+                );
+                const linked =
+                  table !== undefined &&
+                  (note.target.kind === "table" ||
+                    table.columns.some(
+                      (column) =>
+                        note.target.kind === "column" && column.name === note.target.column,
+                    ));
+                return note.isLinked && !linked ? { ...note, isLinked: false } : note;
+              }),
+            },
+          };
     return Promise.resolve({
       ...content,
       snapshot: merged,
-      canvas: {
-        ...content.canvas,
-        nodes: content.canvas.nodes.filter((node) =>
-          entities.some(
-            (entity) =>
-              entity.name.schema === node.name.schema && entity.name.name === node.name.name,
-          ),
-        ),
-      },
+      canvas: retainedCanvas(content.canvas),
+      ...(content.perspectives === undefined
+        ? {}
+        : {
+            perspectives: content.perspectives.map((perspective) => ({
+              ...perspective,
+              canvas: retainedCanvas(perspective.canvas),
+            })),
+          }),
+      ...annotations,
     });
   },
 };

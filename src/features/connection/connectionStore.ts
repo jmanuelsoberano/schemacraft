@@ -21,7 +21,11 @@ import { inspectorErrorKind, toOperationError } from "@/shared/ipc/operationErro
 import type { OperationError } from "@/shared/ipc/operationError";
 import { getProjectBackend } from "@/shared/ipc/projectBackend";
 
-import { savedConnectionToDraft, savedConnectionToSettings } from "./fromSavedConnection";
+import {
+  savedConnectionKey,
+  savedConnectionToDraft,
+  savedConnectionToSettings,
+} from "./fromSavedConnection";
 import { draftToInspectionOptions, draftToSettings, emptyConnectionDraft } from "./connectionDraft";
 import type { ConnectionDraft, DraftValidationError } from "./connectionDraft";
 
@@ -70,6 +74,8 @@ export interface PendingReview {
   snapshot: SchemaSnapshot;
   settings: ConnectionSettings;
   options: InspectionOptions;
+  sourceDocumentToken?: number;
+  sourceSnapshot?: SchemaSnapshot;
 }
 
 /** Whether the dialog starts a project or refreshes the open one. */
@@ -133,6 +139,7 @@ const FIELDS_KEPT_AFTER_TEST: ReadonlySet<keyof ConnectionDraft> = new Set([
   "includeViews",
   "includeProgrammability",
   "includeModuleDefinitions",
+  "includeDependencies",
   "rememberPassword",
 ]);
 
@@ -152,42 +159,102 @@ export function mergePersistedConnection<State extends { draft: ConnectionDraft 
   if (typeof stored !== "object" || stored === null) {
     return current;
   }
-  return { ...current, draft: { ...current.draft, ...stored } };
+  const values = stored as Record<string, unknown>;
+  const draft = { ...current.draft, password: "" };
+  for (const field of ["server", "username", "rootCertificate"] as const) {
+    const value = values[field];
+    if (typeof value === "string") draft[field] = value;
+  }
+  for (const field of [
+    "rememberPassword",
+    "passwordIsStored",
+    "includeViews",
+    "includeProgrammability",
+    "includeModuleDefinitions",
+    "includeDependencies",
+    "trustServerCertificate",
+  ] as const) {
+    const value = values[field];
+    if (typeof value === "boolean") draft[field] = value;
+  }
+  if (values.database === null || typeof values.database === "string")
+    draft.database = values.database;
+  if (
+    Array.isArray(values.schemas) &&
+    values.schemas.every((value: unknown): value is string => typeof value === "string")
+  )
+    draft.schemas = values.schemas;
+  if (values.provider === "sqlServer" || values.provider === "postgreSql")
+    draft.provider = values.provider;
+  if (values.authenticationMode === "integrated" || values.authenticationMode === "sqlLogin")
+    draft.authenticationMode = values.authenticationMode;
+  if (
+    values.encryption === "mandatory" ||
+    values.encryption === "optional" ||
+    values.encryption === "strict"
+  )
+    draft.encryption = values.encryption;
+  if (
+    values.postgreSqlEncryption === "verifyFull" ||
+    values.postgreSqlEncryption === "require" ||
+    values.postgreSqlEncryption === "disable"
+  )
+    draft.postgreSqlEncryption = values.postgreSqlEncryption;
+  if (draft.rootCertificate.includes("PRIVATE KEY")) draft.rootCertificate = "";
+  return { ...current, draft };
 }
 
 export const useConnectionStore = create<ConnectionState>()(
   persist(
     (set, get) => {
+      let attempt = 0;
       const markStoredPassword = async (connection: SavedConnection): Promise<void> => {
+        const key = savedConnectionKey(connection);
         try {
           const backend = await getCredentialsBackend();
           const stored = await backend.hasStoredPassword(connection);
-          set((state) => ({
-            draft: { ...state.draft, passwordIsStored: stored, rememberPassword: stored },
-          }));
-        } catch (caught: unknown) {
-          console.warn("Could not check for a remembered password", caught);
+          set((state) => {
+            const current = draftToSettings(state.draft);
+            if (!current.ok || savedConnectionKey(toSavedConnection(current.settings)) !== key)
+              return {};
+            return {
+              draft: { ...state.draft, passwordIsStored: stored, rememberPassword: stored },
+            };
+          });
+        } catch {
+          console.warn("Could not check for a remembered password");
         }
       };
 
       // Honours the "remember password" choice once the connection proved to work.
-      const syncRememberedPassword = async (settings: ConnectionSettings): Promise<void> => {
-        const { draft } = get();
-        if (settings.authentication.mode !== "sqlLogin") {
+      const syncRememberedPassword = async (
+        settings: ConnectionSettings,
+        draft: ConnectionDraft,
+      ): Promise<void> => {
+        if (settings.provider === "sqlServer" && settings.authentication.mode !== "sqlLogin") {
           return;
         }
         const connection = toSavedConnection(settings);
+        const key = savedConnectionKey(connection);
+        const setStoredFlag = (stored: boolean): void => {
+          set((state) => {
+            const current = draftToSettings(state.draft);
+            if (!current.ok || savedConnectionKey(toSavedConnection(current.settings)) !== key)
+              return {};
+            return { draft: { ...state.draft, passwordIsStored: stored } };
+          });
+        };
         try {
           const backend = await getCredentialsBackend();
           if (draft.rememberPassword && draft.password !== "") {
             await backend.rememberPassword(connection, draft.password);
-            set((state) => ({ draft: { ...state.draft, passwordIsStored: true } }));
+            setStoredFlag(true);
           } else if (!draft.rememberPassword && draft.passwordIsStored) {
             await backend.forgetPassword(connection);
-            set((state) => ({ draft: { ...state.draft, passwordIsStored: false } }));
+            setStoredFlag(false);
           }
-        } catch (caught: unknown) {
-          console.warn("Could not update the remembered password", caught);
+        } catch {
+          console.warn("Could not update the remembered password");
         }
       };
 
@@ -197,6 +264,10 @@ export const useConnectionStore = create<ConnectionState>()(
         database: string,
         rememberFromForm: boolean,
       ): Promise<void> => {
+        const originalDraft = get().draft;
+        const origin = useProjectStore.getState().project;
+        const mode = get().mode;
+        const request = ++attempt;
         set({
           phase: "inspecting",
           failure: null,
@@ -211,6 +282,7 @@ export const useConnectionStore = create<ConnectionState>()(
         });
 
         const handleEvent = (event: InspectionEvent) => {
+          if (request !== attempt) return;
           set((state) => {
             if (state.inspection === null) {
               return {};
@@ -230,9 +302,11 @@ export const useConnectionStore = create<ConnectionState>()(
         try {
           const backend = await getConnectionBackend();
           const snapshot = await backend.inspectDatabase(settings, options, handleEvent);
+          if (request !== attempt) return;
           if (rememberFromForm) {
-            await syncRememberedPassword(settings);
+            await syncRememberedPassword(settings, originalDraft);
           }
+          if (request !== attempt) return;
           // An empty diagram, or a review that removes everything, would state a falsehood:
           // the login simply sees nothing. Stop here and say so.
           if (snapshot.access?.level === "nothingVisible") {
@@ -245,22 +319,45 @@ export const useConnectionStore = create<ConnectionState>()(
           }
           const project = useProjectStore.getState().project;
 
-          if (get().mode === "refresh" && project !== null) {
+          if (mode === "refresh" && project !== null) {
+            if (
+              project.documentToken !== origin?.documentToken ||
+              project.content.snapshot !== origin?.content.snapshot
+            ) {
+              set({ phase: "idle", inspection: null });
+              return;
+            }
             const diff = await (
               await getProjectBackend()
             ).computeSchemaDiff(project.content.snapshot, snapshot);
+            if (request !== attempt) return;
             set({
               phase: "reviewing",
               inspection: null,
-              review: { diff, snapshot, settings, options },
+              review: {
+                diff,
+                snapshot,
+                settings,
+                options,
+                sourceDocumentToken: project.documentToken,
+                sourceSnapshot: project.content.snapshot,
+              },
             });
             return;
           }
 
+          if (
+            project?.documentToken !== origin?.documentToken ||
+            project?.content.snapshot !== origin?.content.snapshot
+          ) {
+            set({ phase: "idle", inspection: null });
+            return;
+          }
           useProjectStore.getState().loadFromInspection(snapshot, settings, options);
           void usePreferencesStore.getState().rememberConnection(toSavedConnection(settings));
           set({ phase: "idle", inspection: null, isDialogOpen: false, mode: "connect" });
         } catch (caught: unknown) {
+          if (request !== attempt) return;
           const error = toOperationError(caught);
           const wasCancelled = inspectorErrorKind(error) === "cancelled";
           set({
@@ -302,46 +399,91 @@ export const useConnectionStore = create<ConnectionState>()(
             get().discardReview();
             return;
           }
+          ++attempt;
           set({
             isDialogOpen: false,
             mode: "connect",
             failure: null,
             validation: null,
             blockedInspection: null,
+            phase: "idle",
           });
         },
 
         updateDraft: (patch) => {
-          const invalidatesTest = Object.keys(patch).some(
-            (field) => !FIELDS_KEPT_AFTER_TEST.has(field as keyof ConnectionDraft),
-          );
+          if (patch.provider !== undefined && patch.provider !== get().draft.provider) {
+            if (get().mode === "refresh") return;
+            ++attempt;
+            set({
+              draft: {
+                ...emptyConnectionDraft,
+                ...patch,
+                provider: patch.provider,
+                authenticationMode:
+                  patch.provider === "postgreSql"
+                    ? "sqlLogin"
+                    : (patch.authenticationMode ?? "integrated"),
+                password: patch.password ?? "",
+                passwordIsStored: false,
+                rememberPassword: patch.rememberPassword ?? false,
+              },
+              tested: null,
+              failure: null,
+              validation: null,
+              blockedInspection: null,
+              phase: "idle",
+              inspection: null,
+            });
+            return;
+          }
+          const invalidatesTest =
+            (get().draft.provider === "postgreSql" && "database" in patch) ||
+            Object.keys(patch).some(
+              (field) => !FIELDS_KEPT_AFTER_TEST.has(field as keyof ConnectionDraft),
+            );
           // The verdict covers the whole database: other schemas, the views option or remembering
           // the password would read the same nothing, so only another connection or database
           // lifts it.
           const unblocks = invalidatesTest || "database" in patch;
+          if (invalidatesTest) ++attempt;
           set((state) => ({
-            draft: { ...state.draft, ...patch },
+            draft: {
+              ...state.draft,
+              ...patch,
+              ...("server" in patch || "username" in patch || "authenticationMode" in patch
+                ? { passwordIsStored: false, rememberPassword: patch.rememberPassword ?? false }
+                : {}),
+            },
             tested: invalidatesTest ? null : state.tested,
             failure: null,
             validation: null,
             blockedInspection: unblocks ? null : state.blockedInspection,
+            ...(invalidatesTest && (state.phase === "testing" || state.phase === "loadingSchemas")
+              ? { phase: "idle" as const }
+              : {}),
           }));
         },
 
         applyRecentConnection: (connection) => {
+          ++attempt;
           set({
             draft: savedConnectionToDraft(connection),
             tested: null,
             failure: null,
             validation: null,
             blockedInspection: null,
+            phase: "idle",
           });
           void markStoredPassword(connection);
         },
 
         testConnection: async () => {
+          const request = ++attempt;
           const { draft } = get();
-          const built = draftToSettings(draft, null);
+          const built = draftToSettings(
+            draft,
+            draft.provider === "postgreSql" ? draft.database : null,
+          );
           if (!built.ok) {
             set({ validation: built.error });
             return;
@@ -357,7 +499,9 @@ export const useConnectionStore = create<ConnectionState>()(
           try {
             const backend = await getConnectionBackend();
             const server = await backend.testConnection(built.settings);
+            if (request !== attempt) return;
             const databases = await backend.listDatabases(built.settings);
+            if (request !== attempt) return;
             set({ phase: "idle", tested: { server, databases, schemas: [], access: null } });
 
             const preferred =
@@ -372,11 +516,13 @@ export const useConnectionStore = create<ConnectionState>()(
               set((state) => ({ draft: { ...state.draft, database: null, schemas: [] } }));
             }
           } catch (caught: unknown) {
+            if (request !== attempt) return;
             set({ phase: "idle", failure: { error: toOperationError(caught), retry: "test" } });
           }
         },
 
         selectDatabase: async (database) => {
+          const request = ++attempt;
           const { draft, tested } = get();
           set({
             draft: {
@@ -406,6 +552,7 @@ export const useConnectionStore = create<ConnectionState>()(
             const { schemas, programmabilityOnlySchemas, access } = await backend.describeDatabase(
               built.settings,
             );
+            if (request !== attempt) return;
             set((state) => ({
               phase: "idle",
               tested:
@@ -414,6 +561,7 @@ export const useConnectionStore = create<ConnectionState>()(
                   : { ...state.tested, schemas, programmabilityOnlySchemas, access },
             }));
           } catch (caught: unknown) {
+            if (request !== attempt) return;
             set({ phase: "idle", failure: { error: toOperationError(caught), retry: "test" } });
           }
         },
@@ -471,7 +619,12 @@ export const useConnectionStore = create<ConnectionState>()(
             draft: savedConnectionToDraft(connection, inspection),
           });
           await markStoredPassword(connection);
-          if (connection.authentication.mode === "integrated" || get().draft.passwordIsStored) {
+          if (useProjectStore.getState().project?.documentToken !== project.documentToken) return;
+          if (
+            (connection.provider === "sqlServer" &&
+              connection.authentication.mode === "integrated") ||
+            get().draft.passwordIsStored
+          ) {
             await runInspection(
               savedConnectionToSettings(connection, { source: "stored" }),
               inspection,
@@ -496,6 +649,7 @@ export const useConnectionStore = create<ConnectionState>()(
         },
 
         trustCertificateAndRetry: async () => {
+          if (get().draft.provider !== "sqlServer") return;
           const retry = get().failure?.retry ?? "test";
           get().updateDraft({ trustServerCertificate: true });
           await get().testConnection();
@@ -510,6 +664,16 @@ export const useConnectionStore = create<ConnectionState>()(
           if (review === null || project === null || get().phase !== "reviewing") {
             return;
           }
+          if (
+            (review.sourceDocumentToken !== undefined &&
+              review.sourceDocumentToken !== project.documentToken) ||
+            (review.sourceSnapshot !== undefined &&
+              review.sourceSnapshot !== project.content.snapshot)
+          ) {
+            set({ phase: "idle", review: null });
+            return;
+          }
+          const request = ++attempt;
           set({ phase: "applying", failure: null });
           try {
             const backend = await getProjectBackend();
@@ -521,12 +685,24 @@ export const useConnectionStore = create<ConnectionState>()(
               },
               review.snapshot,
             );
+            if (request !== attempt) return;
+            const current = useProjectStore.getState().project;
+            if (
+              current === null ||
+              current.documentToken !== project.documentToken ||
+              current.content.snapshot !== project.content.snapshot ||
+              current.editRevision !== project.editRevision
+            ) {
+              set({ phase: "idle", review: null });
+              return;
+            }
             useProjectStore.getState().applyRefreshedContent(content, review.settings);
             void usePreferencesStore
               .getState()
               .rememberConnection(toSavedConnection(review.settings));
             set({ phase: "idle", review: null, isDialogOpen: false, mode: "connect" });
           } catch (caught: unknown) {
+            if (request !== attempt) return;
             set({
               phase: "reviewing",
               failure: { error: toOperationError(caught), retry: "inspect" },
@@ -535,6 +711,7 @@ export const useConnectionStore = create<ConnectionState>()(
         },
 
         discardReview: () => {
+          ++attempt;
           set({ phase: "idle", review: null, isDialogOpen: false, mode: "connect", failure: null });
         },
 
@@ -546,7 +723,15 @@ export const useConnectionStore = create<ConnectionState>()(
     {
       name: CONNECTION_STORAGE_KEY,
       version: 1,
-      partialize: (state) => ({ draft: { ...state.draft, password: "" } }),
+      partialize: (state) => ({
+        draft: {
+          ...state.draft,
+          password: "",
+          rootCertificate: state.draft.rootCertificate.includes("PRIVATE KEY")
+            ? ""
+            : state.draft.rootCertificate,
+        },
+      }),
       merge: mergePersistedConnection,
     },
   ),

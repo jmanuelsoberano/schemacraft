@@ -50,10 +50,10 @@ impl SchemaSnapshot {
         let routine_names: BTreeSet<_> = fresh
             .routines
             .iter()
-            .map(|routine| routine.name.clone())
+            .map(super::Routine::object_ref)
             .collect();
         for routine in &saved.routines {
-            if !routine_names.contains(&routine.name)
+            if !routine_names.contains(&routine.object_ref())
                 && in_scope(&routine.name)
                 && (failed || may_hide(&routine.name))
             {
@@ -97,9 +97,7 @@ impl SchemaSnapshot {
         fresh
             .views
             .sort_by(|left, right| left.view.cmp(&right.view));
-        fresh
-            .routines
-            .sort_by(|left, right| left.name.cmp(&right.name));
+        fresh.routines.sort_by_key(super::Routine::object_ref);
         fresh
             .triggers
             .sort_by(|left, right| (&left.parent, &left.name).cmp(&(&right.parent, &right.name)));

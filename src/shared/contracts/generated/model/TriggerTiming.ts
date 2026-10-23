@@ -3,4 +3,4 @@
 /**
  * When a DML trigger runs.
  */
-export type TriggerTiming = "after" | "insteadOf" | "unknown";
+export type TriggerTiming = "before" | "after" | "insteadOf" | "unknown";

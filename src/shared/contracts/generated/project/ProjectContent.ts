@@ -2,7 +2,9 @@
 import type { InspectionOptions } from "../inspectors/InspectionOptions";
 import type { SchemaSnapshot } from "../model/SchemaSnapshot";
 import type { CanvasState } from "./CanvasState";
+import type { ProjectAnnotations } from "./ProjectAnnotations";
 import type { SavedConnection } from "./SavedConnection";
+import type { SavedPerspective } from "./SavedPerspective";
 
 /**
  * Everything the application holds about an open project.
@@ -23,4 +25,16 @@ snapshot: SchemaSnapshot,
 /**
  * The diagram.
  */
-canvas: CanvasState, };
+canvas: CanvasState, 
+/**
+ * Independent curated maps sharing the same snapshot; the canvas above remains General.
+ */
+perspectives?: Array<SavedPerspective>, 
+/**
+ * User-authored explanations, never replaced by a database capture.
+ */
+annotations?: ProjectAnnotations, 
+/**
+ * Last map recorded during an ordinary save. Switching maps alone is not an edit.
+ */
+activePerspectiveId?: string, };

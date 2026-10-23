@@ -4,7 +4,8 @@
 //! only depend inwards:
 //!
 //! * [`model`]: pure data structures describing a relational schema.
-//! * [`inspectors`]: the `DatabaseInspector` strategy and its SQL Server implementation.
+//! * [`inspectors`]: the `DatabaseInspector` strategy and its SQL Server and PostgreSQL readers.
+//! * [`comparison`]: independent project comparison and literal, paged source differences.
 //! * [`project`]: persistence of `.scraft` project files, including the diagram state.
 //! * [`diff`]: comparison of two schema snapshots, driving "refresh from database".
 //! * [`preferences`]: connection history and recent projects, stored per user.
@@ -19,6 +20,7 @@
 //!
 //! A module is added to the crate only once it carries real behaviour.
 
+pub mod comparison;
 pub mod credentials;
 pub mod diagnostics;
 pub mod diff;
@@ -28,3 +30,4 @@ pub mod inspectors;
 pub mod model;
 pub mod preferences;
 pub mod project;
+mod source_text;

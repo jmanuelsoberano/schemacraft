@@ -11,6 +11,11 @@ import { AccessBar } from "@/features/access/AccessBar";
 import { AccessReportDialog } from "@/features/access/AccessReportDialog";
 import { CanvasContextMenu } from "@/features/canvas/CanvasContextMenu";
 import { DiagramCanvas } from "@/features/canvas/DiagramCanvas";
+import { ComparisonDialog } from "@/features/comparison/ComparisonDialog";
+import { DependencyDialog } from "@/features/dependencies/DependencyDialog";
+import { PerspectivesPanel } from "@/features/perspectives/PerspectivesPanel";
+import { PerspectiveSwitcher } from "@/features/perspectives/PerspectiveSwitcher";
+import { usePerspectiveUiStore } from "@/features/perspectives/perspectiveUiStore";
 import { EntitiesSidebar } from "@/features/canvas/EntitiesSidebar";
 import { INSPECTOR_LANDMARK_ID } from "@/features/canvas/canvasFocus";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
@@ -29,6 +34,7 @@ import {
   useSettingsStore,
 } from "@/shared/settings/settingsStore";
 import { PanelResizer } from "@/shared/ui/PanelResizer";
+import { Dialog } from "@/shared/ui/Dialog";
 import { classNames } from "@/shared/ui/classNames";
 
 import styles from "./AppShell.module.css";
@@ -56,6 +62,8 @@ export function AppShell() {
   const inspectorWidth = useSettingsStore((state) => state.inspectorWidth);
   const setInspectorWidth = useSettingsStore((state) => state.setInspectorWidth);
   const isInspectorOpen = useCanvasUiStore((state) => state.isInspectorOpen);
+  const perspectivesOpen = usePerspectiveUiStore((state) => state.isOpen);
+  const closePerspectives = usePerspectiveUiStore((state) => state.close);
   const windowWidth = useWindowWidth();
   useKeyboardShortcuts(actions.list);
   useDesktopShellGuards();
@@ -110,6 +118,9 @@ export function AppShell() {
         />
       </aside>
       <main className={styles.canvas}>
+        <div className={styles.mapSwitcher}>
+          <PerspectiveSwitcher onManage={actions.byId["view.perspectives"].run} />
+        </div>
         <DiagramCanvas
           emptyState={<WelcomeOverlay actions={actions.byId} />}
           onFlowInit={exposeFlowInstance}
@@ -153,6 +164,19 @@ export function AppShell() {
       <SupportDialog />
       <AccessReportDialog />
       <ExportDialog />
+      <ComparisonDialog />
+      <DependencyDialog />
+      <Dialog
+        open={perspectivesOpen}
+        onOpenChange={(open) => {
+          if (!open) closePerspectives();
+        }}
+        title={t("perspectives.title")}
+        closeLabel={t("perspectives.close")}
+        width={720}
+      >
+        <PerspectivesPanel />
+      </Dialog>
       <CommandPalette actions={actions} />
       <CanvasContextMenu
         showAll={{

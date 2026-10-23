@@ -5,6 +5,10 @@
  */
 export type InspectionOptions = { 
 /**
+ * Read catalog dependency references independently of storing module definitions.
+ */
+includeDependencies?: boolean, 
+/**
  * Schemas to include; empty means every user schema.
  */
 schemas: Array<string>, 

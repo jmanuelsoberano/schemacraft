@@ -6,6 +6,8 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
+import { importViolation, invokedCommands, moduleReferences } from "./architecture-boundaries.mjs";
+
 const root = process.cwd();
 const failures = [];
 const read = (path) => readFileSync(join(root, path), "utf8");
@@ -20,6 +22,8 @@ function compare(label, documented, actual) {
   const stale = [...have].filter((item) => !want.has(item)).sort();
   if (missing.length > 0) failures.push(`${label}: add to the manifest ${missing.join(", ")}`);
   if (stale.length > 0) failures.push(`${label}: remove from the manifest ${stale.join(", ")}`);
+  if (Array.isArray(documented) && have.size !== documented.length)
+    failures.push(`${label}: duplicate manifest entries`);
 }
 
 // Tauri commands registered in generate_handler!.
@@ -52,6 +56,52 @@ const backends = readdirSync(join(root, "src/shared/ipc")).filter(
   (name) => name.endsWith("Backend.ts") && !name.startsWith("preview"),
 );
 compare("ipcBackends", manifest.ipcBackends, backends);
+
+function sourceFiles(directory) {
+  return readdirSync(join(root, directory), { withFileTypes: true }).flatMap((entry) => {
+    const path = `${directory}/${entry.name}`;
+    return entry.isDirectory()
+      ? sourceFiles(path)
+      : /\.(?:ts|tsx)$/u.test(entry.name) && !path.includes("/contracts/generated/")
+        ? [path]
+        : [];
+  });
+}
+
+// Parse source syntax so relative paths, re-exports and dynamic imports obey the same boundary.
+const ipcCallers = {};
+for (const path of sourceFiles("src")) {
+  const source = read(path);
+  for (const reference of moduleReferences(path, source)) {
+    const violation = importViolation(path, reference);
+    if (violation !== null) failures.push(`${path} -> ${reference}: ${violation}`);
+  }
+  if (path.startsWith("src/shared/ipc/") && !path.endsWith(".test.ts")) {
+    const called = invokedCommands(path, source);
+    if (called.length > 0) ipcCallers[path.slice("src/shared/ipc/".length)] = called;
+  }
+}
+compare("ipcCallers", Object.keys(manifest.ipcCallers ?? {}), Object.keys(ipcCallers));
+for (const [caller, called] of Object.entries(ipcCallers)) {
+  compare(`ipcCallers.${caller}`, manifest.ipcCallers?.[caller], called);
+  for (const command of called) {
+    if (!commands.includes(command))
+      failures.push(`${caller}: unregistered IPC command ${command}`);
+  }
+}
+const called = new Set(Object.values(ipcCallers).flat());
+for (const command of commands) {
+  if (!called.has(command))
+    failures.push(`registered command ${command}: no documented IPC caller`);
+}
+
+if (
+  /^\s*(?:tauri(?:-[\w-]+)?\s*=|\[.*dependencies\.tauri)/mu.test(
+    read("crates/schemacraft-core/Cargo.toml"),
+  ) ||
+  /package\s*=\s*"tauri(?:-[\w-]+)?"/u.test(read("crates/schemacraft-core/Cargo.toml"))
+)
+  failures.push("schemacraft-core must remain free of Tauri dependencies");
 
 // Decision records.
 const adrCount = (read("docs/architecture.md").match(/^### ADR-\d+/gmu) ?? []).length;
@@ -107,6 +157,36 @@ for (const key of Object.keys(english)) {
 
 // Edges point at known components.
 const known = new Set(english.components);
+const components = (model.en?.layers ?? []).flatMap((layer) => layer.components ?? []);
+function componentMapping(label, mappings, names, pathFor) {
+  compare(label, Object.keys(mappings ?? {}), names);
+  for (const name of names) {
+    const component = components.find((item) => item.id === mappings?.[name]);
+    const expected = pathFor(name);
+    if (
+      component === undefined ||
+      !String(component.path)
+        .split(/,\s*/u)
+        .some(
+          (path) =>
+            path === expected || path === `${expected}.rs` || path.startsWith(`${expected}/`),
+        )
+    )
+      failures.push(`${label}.${name}: map to a component at ${expected}`);
+  }
+}
+componentMapping(
+  "featureComponents",
+  manifest.featureComponents,
+  features,
+  (name) => `src/features/${name}`,
+);
+componentMapping(
+  "coreComponents",
+  manifest.coreComponents,
+  modules,
+  (name) => `crates/schemacraft-core/src/${name}`,
+);
 for (const edge of model.en?.edges ?? []) {
   if (!known.has(edge.from) || !known.has(edge.to)) {
     failures.push(`edge ${edge.from} -> ${edge.to}: unknown component`);

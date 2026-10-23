@@ -7,6 +7,7 @@ import { formatShortcut, isApplePlatform } from "@/app/actions/shortcut";
 import { Logo } from "@/shared/brand/Logo";
 import { projectDisplayName } from "@/features/project/projectPaths";
 import { useProjectStore } from "@/features/project/projectStore";
+import { activeCanvas } from "@/features/perspectives/perspectiveState";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import type { DetailLevel } from "@/shared/contracts";
 import { SUPPORTED_LOCALES } from "@/shared/i18n/locales";
@@ -21,6 +22,7 @@ import { SegmentedControl } from "@/shared/ui/SegmentedControl";
 import type { SegmentedOption } from "@/shared/ui/SegmentedControl";
 
 import { LayoutMenu } from "./LayoutMenu";
+import { ExplorationMenu } from "./ExplorationMenu";
 import styles from "./TopBar.module.css";
 
 /*
@@ -53,8 +55,8 @@ export function TopBar({ actions }: TopBarProps) {
   const { t } = useI18n();
   const projectPath = useProjectStore((state) => state.project?.path ?? null);
   const isDirty = useProjectStore((state) => state.project?.isDirty ?? false);
-  const detailLevel = useProjectStore(
-    (state) => state.project?.content.canvas.detailLevel ?? "keys",
+  const detailLevel = useProjectStore((state) =>
+    state.project === null ? "keys" : activeCanvas(state.project.content).detailLevel,
   );
   const themePreference = useSettingsStore((state) => state.themePreference);
   const locale = useSettingsStore((state) => state.locale);
@@ -137,6 +139,7 @@ export function TopBar({ actions }: TopBarProps) {
         <ActionIconButton action={actions["edit.redo"]} />
         <span className={styles.separator} aria-hidden="true" />
         <LayoutMenu actions={actions} />
+        <ExplorationMenu actions={actions} />
         <ActionIconButton action={actions["diagram.export"]} />
         <span className={styles.separator} aria-hidden="true" />
         <RadioMenu

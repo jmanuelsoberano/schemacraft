@@ -3,4 +3,4 @@
 /**
  * A data modification statement.
  */
-export type DmlEvent = "insert" | "update" | "delete" | "unknown";
+export type DmlEvent = "truncate" | "insert" | "update" | "delete" | "unknown";

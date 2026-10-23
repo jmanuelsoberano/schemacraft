@@ -42,6 +42,8 @@ import { classNames } from "@/shared/ui/classNames";
 import styles from "./ReviewChangesPanel.module.css";
 import { hasObjectChanges, isUpToDate } from "./reviewChanges";
 import { CaptureChangeItem, CodeChangeItem, CodeFactsSection } from "./CodeReview";
+import { ReviewMetadataChanges } from "./ReviewMetadataChanges";
+import { hasMetadataReview } from "./reviewMetadata";
 
 interface ReviewChangesPanelProps {
   diff: SchemaDiff;
@@ -655,9 +657,14 @@ export function ReviewChangesPanel({ diff, capture }: ReviewChangesPanelProps) {
           variant={codeFailed ? "info" : "success"}
           title={isPartialCapture ? t("review.empty.partial.title") : t("review.noChanges.title")}
         >
-          {codeFailed ? t("review.code.failed") : noChangeDescription(diff, t)}
+          {codeFailed
+            ? t("review.code.failed")
+            : hasMetadataReview(diff.metadata)
+              ? t("review.metadata.updated")
+              : noChangeDescription(diff, t)}
         </Alert>
       )}
+      <ReviewMetadataChanges metadata={diff.metadata} />
       {diff.tables.length > 0 ? (
         <Section title={t("review.section.tables")}>
           {diff.tables.map((change) => (

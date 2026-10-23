@@ -16,6 +16,8 @@ import type { PluralBase } from "../../translator";
  * group. A disabled index limits nothing, and a filtered one only the rows its filter selects.
  */
 export const englishRuleMessages = {
+  "rule.fk.native.delete": "ON DELETE {action}",
+  "rule.fk.native.update": "ON UPDATE {action}",
   "rule.check.eq": "{column} must be equal to {value}",
   "rule.check.ne": "{column} must be different from {value}",
   "rule.check.gt": "{column} must be greater than {value}",

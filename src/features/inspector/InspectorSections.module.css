@@ -86,6 +86,44 @@
   white-space: nowrap;
 }
 
+/* Keep name and type readable even when a native badge needs several lines. */
+.columnsTable {
+  table-layout: fixed;
+}
+
+.columnsTable th,
+.columnsTable th:last-child {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.columnsTable th:nth-child(1),
+.columnsTable th:nth-child(2) {
+  width: 40%;
+}
+
+.columnsTable th:last-child {
+  width: 20%;
+}
+
+.columnBadges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-1);
+  margin-top: 2px;
+}
+
+.columnBadges .badge {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+  min-height: 15px;
+  margin-left: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 /*
  * A column of the rule pointed at: the tint, bar and accent name of its row on the canvas card.
  * Shadows carry the tint and the bar past the row's ends, so nothing in the table moves.

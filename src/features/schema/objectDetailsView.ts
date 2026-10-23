@@ -1,8 +1,10 @@
 import { formatDate } from "@/shared/i18n/formatDate";
+import type { PostgresqlConstraint } from "@/shared/contracts";
 import type { MessageKey } from "@/shared/i18n/messages/en";
 import type { CatalogTranslator } from "@/shared/i18n/translator";
 
 import type { EntityKind } from "./entities";
+import { definitionText } from "./definition";
 import { qualifiedNameLabel } from "./entities";
 import type {
   CheckFacts,
@@ -19,7 +21,12 @@ import type {
   TriggerFacts,
 } from "./objectDetails";
 import type { ModuleRef } from "./modules";
-import { presentTriggerBadges, presentTriggerEvents, triggerListNotes } from "./triggerDetailsView";
+import {
+  presentTriggerBadges,
+  presentTriggerEvents,
+  triggerListNotes,
+  triggerRunNotes,
+} from "./triggerDetailsView";
 import type { TriggerEventView } from "./triggerDetailsView";
 import type { RuleNote } from "./rules/checkReader";
 import { formatRuleText } from "./rules/ruleText";
@@ -128,6 +135,7 @@ export interface RuleView {
 }
 
 export interface ColumnItemView {
+  nativeNotes?: readonly string[];
   name: string;
   /** SQL declaration of the type, e.g. `nvarchar(120)`. */
   type: string;
@@ -141,6 +149,7 @@ export interface ColumnItemView {
 
 /** A primary key, an index or a `CHECK` constraint. */
 export interface ConstraintItemView {
+  nativeNotes?: readonly string[];
   name: string;
   /** Key columns in key order; empty for a `CHECK`. */
   columns: readonly string[];
@@ -179,6 +188,7 @@ export interface RelationTargetView {
 }
 
 export interface RelationItemView {
+  nativeNotes?: readonly string[];
   name: string;
   /** "Child → Parent" column pairs in key order; the child column alone when the parent side is unknown. */
   columns: readonly string[];
@@ -213,7 +223,7 @@ export interface ColumnsSectionView extends SectionViewBase<"columns"> {
   items: readonly ColumnItemView[];
 }
 
-export type ConstraintSectionKind = "primaryKey" | "indexes" | "checks";
+export type ConstraintSectionKind = "primaryKey" | "indexes" | "checks" | "nativeConstraints";
 
 export interface ConstraintSectionView<
   Kind extends ConstraintSectionKind = ConstraintSectionKind,
@@ -230,6 +240,7 @@ export interface RelationSectionView<
 }
 
 export interface TriggerItemView {
+  nativeNotes?: readonly string[];
   name: string;
   ref: Extract<ModuleRef, { kind: "trigger" }>;
   events: readonly TriggerEventView[];
@@ -256,6 +267,7 @@ export type SectionView =
   | ConstraintSectionView<"primaryKey">
   | ConstraintSectionView<"indexes">
   | ConstraintSectionView<"checks">
+  | ConstraintSectionView<"nativeConstraints">
   | TriggersSectionView
   | RelationSectionView<"references">
   | RelationSectionView<"referencedBy">
@@ -310,6 +322,7 @@ function ruleNodes(nodes: readonly RuleNode[], translator: DetailsTranslator): R
  * nothing is.
  */
 function checkRule(constraint: CheckFacts, entity: string, words: Words): RuleView | null {
+  if (constraint.native !== undefined) return nativeRule(constraint.native.definition, words);
   const { reading } = constraint;
   if (reading.status === "notAvailable" || reading.status === "notRecorded") {
     // The expression says the text is missing; what is still known in words is said above it.
@@ -342,9 +355,12 @@ function relationRule(relation: RelationFacts, words: Words): RuleView {
   const { explanation } = relation;
   return {
     sentences: ruleNodes(explanation.rules, words.translator),
-    unread: null,
+    unread: explanation.native === true ? words.t("details.native.ruleFallback") : null,
     sql: explanation.sql,
-    sqlNote: explanation.sql === null ? null : words.t("rule.fk.sqlNote"),
+    sqlNote:
+      explanation.sql === null
+        ? null
+        : words.t(explanation.native === true ? "details.native.reconstructed" : "rule.fk.sqlNote"),
     targets: { columns: explanation.columns, relation: relation.relation },
   };
 }
@@ -391,7 +407,7 @@ function sectionNotes(section: DetailSection, { t }: Words): string[] {
     }
   } else if (
     (section.kind === "references" || section.kind === "referencedBy") &&
-    section.items.length > 0
+    section.items.some((item) => item.explanation.native !== true)
   ) {
     needed.add(derivedNote(section.items.map((item) => item.isTrusted)));
   }
@@ -464,12 +480,45 @@ function columnItem(column: ColumnFacts, words: Words): ColumnItemView {
     badges.push(badge("foreignKey", t("details.badge.foreignKey")));
   }
   if (column.isIdentity) {
-    badges.push(badge("identity", t("details.badge.identity")));
+    badges.push(
+      badge(
+        "identity",
+        column.native?.identityGeneration === "always" ||
+          column.native?.identityGeneration === "byDefault"
+          ? t(`details.native.identity.${column.native.identityGeneration}`)
+          : t("details.badge.identity"),
+      ),
+    );
   }
   if (column.isComputed) {
-    badges.push(badge("computed", t("details.badge.computed")));
+    badges.push(
+      badge(
+        "computed",
+        column.native?.generation === "stored" || column.native?.generation === "virtual"
+          ? t(`details.native.generation.${column.native.generation}`)
+          : t("details.badge.computed"),
+      ),
+    );
   }
   return {
+    ...(column.native === undefined
+      ? {}
+      : {
+          nativeNotes: [
+            t("details.native.type", {
+              kind: column.native.typeKind,
+              name: qualifiedNameLabel(column.native.typeName),
+            }),
+            ...(column.native.generationExpression === null ||
+            definitionText(column.native.generationExpression) === null
+              ? []
+              : [
+                  t("details.native.generation", {
+                    expression: definitionText(column.native.generationExpression) ?? "",
+                  }),
+                ]),
+          ],
+        }),
     name: column.name,
     type: column.type,
     isNullable: column.isNullable,
@@ -479,7 +528,8 @@ function columnItem(column: ColumnFacts, words: Words): ColumnItemView {
   };
 }
 
-function keyItem(key: KeyFacts, { t }: Words): ConstraintItemView {
+function keyItem(key: KeyFacts, words: Words): ConstraintItemView {
+  const { t } = words;
   const badges: BadgeView[] = [];
   if (key.isClustered) {
     badges.push(badge("clustered", t("indexKind.clustered")));
@@ -493,11 +543,13 @@ function keyItem(key: KeyFacts, { t }: Words): ConstraintItemView {
     badges,
     include: null,
     expression: null,
-    rule: null,
+    rule: key.native === undefined ? null : nativeRule(key.native.definition, words),
+    ...(key.native === undefined ? {} : { nativeNotes: constraintNotes(key.native, words) }),
   };
 }
 
-function indexItem(index: IndexFacts, { t }: Words): ConstraintItemView {
+function indexItem(index: IndexFacts, words: Words): ConstraintItemView {
+  const { t } = words;
   const badges: BadgeView[] = [];
   if (index.kind !== "nonUnique") {
     badges.push(badge("unique", t(`indexKind.${index.kind}`)));
@@ -525,11 +577,31 @@ function indexItem(index: IndexFacts, { t }: Words): ConstraintItemView {
   const included = index.includedColumns ?? [];
   return {
     name: index.name,
-    columns: index.columns,
+    columns: index.native?.keyTerms ?? index.columns,
     badges,
     include: included.length === 0 ? null : t("details.include", { columns: included.join(", ") }),
     expression: null,
-    rule: null,
+    rule: index.native === undefined ? null : nativeRule(index.native.definition, words),
+    ...(index.native === undefined
+      ? {}
+      : {
+          nativeNotes: [
+            t("details.native.method", { method: index.native.method }),
+            t("details.native.indexState", {
+              valid: yesNo(index.native.isValid, words),
+              ready: yesNo(index.native.isReady, words),
+              live: yesNo(index.native.isLive, words),
+            }),
+            ...(index.native.nullsNotDistinct ? [t("details.native.nullsNotDistinct")] : []),
+            ...(index.native.wasClustered ? [t("details.native.clusterHistory")] : []),
+            ...(index.native.predicate === null || definitionText(index.native.predicate) === null
+              ? []
+              : [`WHERE ${definitionText(index.native.predicate) ?? ""}`]),
+            ...(index.nativeConstraint === undefined
+              ? []
+              : constraintNotes(index.nativeConstraint, words)),
+          ],
+        }),
   };
 }
 
@@ -556,6 +628,9 @@ function checkItem(constraint: CheckFacts, entity: string, words: Words): Constr
     include: null,
     expression: expressionView(constraint.expression, words),
     rule: checkRule(constraint, entity, words),
+    ...(constraint.native === undefined
+      ? {}
+      : { nativeNotes: constraintNotes(constraint.native, words) }),
   };
 }
 
@@ -622,6 +697,9 @@ function relationItem(relation: RelationFacts, words: Words): RelationItemView {
         ? null
         : t("details.hint.notChecked", { date: date(relation.notCheckedSince) }),
     rule: relationRule(relation, words),
+    ...(relation.native === undefined
+      ? {}
+      : { nativeNotes: constraintNotes(relation.native, words) }),
   };
 }
 
@@ -680,7 +758,7 @@ function triggerListNotice(
 function sectionView(section: DetailSection, entity: string, words: Words): SectionView {
   const { t } = words;
   if (section.kind === "viewDefinition") {
-    const { included, hasCheckOption, isIndexed } = section.definition;
+    const { included, hasCheckOption, isIndexed, native } = section.definition;
     return {
       kind: "viewDefinition",
       title: t("details.section.viewDefinition"),
@@ -691,9 +769,27 @@ function sectionView(section: DetailSection, entity: string, words: Words): Sect
       notes: [],
       included,
       stateLabel: included ? null : t("details.viewDefinition.notIncluded"),
-      explanation: null,
+      explanation: native === undefined ? null : t("details.native.reconstructed"),
       badges: [
-        ...(hasCheckOption === true
+        ...(native?.isMaterialized === true
+          ? [
+              {
+                label: t("details.native.materializedView"),
+                hint: t("details.native.populated", {
+                  value: yesNo(native.isPopulated === true, words),
+                }),
+              },
+            ]
+          : []),
+        ...(native !== undefined && native.checkOption !== "none"
+          ? [
+              {
+                label: t("details.native.checkOption", { mode: native.checkOption.toUpperCase() }),
+                hint: t("details.viewDefinition.checkOption"),
+              },
+            ]
+          : []),
+        ...(native === undefined && hasCheckOption === true
           ? [{ label: "WITH CHECK OPTION", hint: t("details.viewDefinition.checkOption") }]
           : []),
         ...(isIndexed === true
@@ -746,12 +842,29 @@ function sectionView(section: DetailSection, entity: string, words: Words): Sect
         kind: "checks",
         items: section.items.map((constraint) => checkItem(constraint, entity, words)),
       };
+    case "nativeConstraints":
+      return {
+        ...base,
+        kind: "nativeConstraints",
+        items: section.items.map((constraint) => ({
+          name: constraint.name,
+          columns: [],
+          badges: [],
+          include: null,
+          expression: null,
+          rule: nativeRule(constraint.definition, words),
+          nativeNotes: constraintNotes(constraint, words),
+        })),
+      };
     case "triggers":
       return {
         ...base,
         kind: "triggers",
         emptyText: section.items.length === 0 ? triggerListNotice(section, words) : null,
         items: section.items.map((trigger: TriggerFacts) => ({
+          ...(trigger.provider === "postgreSql"
+            ? { nativeNotes: triggerRunNotes(trigger, section.parentKind, words.translator) }
+            : {}),
           name: trigger.name,
           ref: trigger.ref,
           events: presentTriggerEvents(trigger, words.translator),
@@ -799,7 +912,10 @@ export function presentObjectDetails(
   return {
     key: details.key,
     kind: details.kind,
-    kindLabel: t(details.kind === "view" ? "entity.view" : "entity.table"),
+    kindLabel:
+      details.nativeKind === undefined
+        ? t(details.kind === "view" ? "entity.view" : "entity.table")
+        : t(`details.native.${details.nativeKind}`),
     schema: details.name.schema,
     name: details.name.name,
     summary: translator.tCount("entity.columns", details.columnCount),
@@ -809,4 +925,40 @@ export function presentObjectDetails(
         : t("details.notice.notChecked", { date: words.date(details.notCheckedSince) }),
     sections: details.sections.map((section) => sectionView(section, details.key, words)),
   };
+}
+
+function yesNo(value: boolean, { t }: Words): string {
+  return t(value ? "details.value.yes" : "details.value.no");
+}
+
+function nativeRule(definition: Parameters<typeof definitionText>[0], { t }: Words): RuleView {
+  return {
+    sentences: [],
+    unread: t("details.native.ruleFallback"),
+    sql: definitionText(definition),
+    sqlNote: t("details.native.reconstructed"),
+    targets: { columns: new Map(), relation: null },
+  };
+}
+
+function constraintNotes(constraint: PostgresqlConstraint, words: Words): string[] {
+  const { t } = words;
+  return [
+    t("details.native.validated", { value: yesNo(constraint.isValidated, words) }),
+    ...(constraint.isEnforced === null
+      ? [t("details.native.enforcementUnavailable")]
+      : [t("details.native.enforced", { value: yesNo(constraint.isEnforced, words) })]),
+    t("details.native.deferrable", {
+      value: yesNo(constraint.isDeferrable, words),
+      deferred: yesNo(constraint.isInitiallyDeferred, words),
+    }),
+    ...(constraint.matchType === null
+      ? []
+      : [t("details.native.match", { mode: constraint.matchType.toUpperCase() })]),
+    ...(constraint.deleteSetColumns.length === 0
+      ? []
+      : [
+          t("details.native.deleteSetColumns", { columns: constraint.deleteSetColumns.join(", ") }),
+        ]),
+  ];
 }

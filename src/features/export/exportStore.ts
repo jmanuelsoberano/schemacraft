@@ -3,6 +3,11 @@ import { create } from "zustand";
 import { spreadForDetailLevel, withPositions } from "@/features/canvas/canvasState";
 import { triggerBadgeLabel } from "@/features/canvas/triggerBadgeText";
 import { useProjectStore } from "@/features/project/projectStore";
+import {
+  activeCanvas,
+  noteTargetLabel,
+  projectExportAnnotations,
+} from "@/features/perspectives/perspectiveState";
 import { accessSummary } from "@/features/schema/coverage";
 import type {
   DetailLevel,
@@ -65,6 +70,9 @@ interface ExportState {
   progress: ExportProgress | null;
   outcome: ExportOutcome | null;
   failure: OperationError | null;
+  includeDescription: boolean;
+  selectedNoteIds: string[];
+  reviewNotes: (includeDescription: boolean, selectedNoteIds: string[]) => void;
   /** Opens the dialog with the canvas's level and theme, overridden by `choices`. */
   open: (choices?: Partial<ExportChoices>) => void;
   close: () => void;
@@ -79,7 +87,27 @@ function currentDiagram(): DiagramInput | null {
   const { project } = useProjectStore.getState();
   return project === null
     ? null
-    : { snapshot: project.content.snapshot, canvas: project.content.canvas };
+    : { snapshot: project.content.snapshot, canvas: activeCanvas(project.content) };
+}
+
+/** Freeze precisely the text reviewed in this map, before any asynchronous destination dialog. */
+function reviewedLines(
+  diagram: DiagramInput,
+  includeDescription: boolean,
+  selectedNoteIds: string[],
+): string[] {
+  const { project } = useProjectStore.getState();
+  if (project?.content.snapshot !== diagram.snapshot) return [];
+  const annotations = projectExportAnnotations(
+    project.content,
+    diagram.canvas,
+    includeDescription,
+    new Set(selectedNoteIds),
+  );
+  return [
+    ...(annotations.description === null ? [] : [annotations.description]),
+    ...annotations.notes.flatMap((note) => [noteTargetLabel(note.target), note.text]),
+  ];
 }
 
 /**
@@ -116,10 +144,15 @@ function triggerNotes() {
 }
 
 /** The size of the drawn document, the footnote included, for the summary and the limits. */
-function measure(diagram: DiagramInput, detailLevel: DetailLevel): DiagramExtent {
+function measure(
+  diagram: DiagramInput,
+  detailLevel: DetailLevel,
+  noteLines: string[] = [],
+): DiagramExtent {
   return measureDiagram(diagramForLevel(diagram, detailLevel), detailLevel, {
     footnote: accessFootnote(diagram.snapshot),
     triggerNotes: triggerNotes(),
+    noteLines,
   });
 }
 
@@ -151,6 +184,7 @@ async function buildDocument(
   diagram: DiagramInput,
   labels: ExportLabels,
   exportedAt: string,
+  noteLines: string[],
 ): Promise<string> {
   await ensureMeasurementFonts();
   const measureText = createCanvasMeasurer() ?? undefined;
@@ -170,6 +204,7 @@ async function buildDocument(
         detailLevel,
         messages: viewerMessages(locale),
         ...visibleProjection(diagram.snapshot, diagram.canvas),
+        ...(noteLines.length === 0 ? {} : { noteLines }),
       },
       viewerScript,
       viewerStyles,
@@ -194,6 +229,7 @@ async function buildDocument(
     description: `Exported ${exportedAt} with ${labels.generator}`,
     footnote: accessFootnote(diagram.snapshot),
     triggerNotes: triggerNotes(),
+    noteLines,
   }).svg;
 }
 
@@ -206,6 +242,25 @@ export const useExportStore = create<ExportState>()((set, get) => ({
   progress: null,
   outcome: null,
   failure: null,
+  includeDescription: false,
+  selectedNoteIds: [],
+
+  reviewNotes: (includeDescription, selectedNoteIds) => {
+    if (get().phase !== "idle") return;
+    const diagram = currentDiagram();
+    set({
+      includeDescription,
+      selectedNoteIds,
+      extent:
+        diagram === null
+          ? null
+          : measure(
+              diagram,
+              get().choices.detailLevel,
+              reviewedLines(diagram, includeDescription, selectedNoteIds),
+            ),
+    });
+  },
 
   open: (preselected = {}) => {
     const diagram = currentDiagram();
@@ -226,6 +281,8 @@ export const useExportStore = create<ExportState>()((set, get) => ({
       progress: null,
       outcome: null,
       failure: null,
+      includeDescription: false,
+      selectedNoteIds: [],
     });
   },
 
@@ -243,7 +300,11 @@ export const useExportStore = create<ExportState>()((set, get) => ({
       choices,
       extent:
         patch.detailLevel !== undefined && diagram !== null
-          ? measure(diagram, choices.detailLevel)
+          ? measure(
+              diagram,
+              choices.detailLevel,
+              reviewedLines(diagram, get().includeDescription, get().selectedNoteIds),
+            )
           : get().extent,
       failure: null,
     });
@@ -255,6 +316,7 @@ export const useExportStore = create<ExportState>()((set, get) => ({
       return;
     }
     const { choices } = get();
+    const noteLines = reviewedLines(diagram, get().includeDescription, get().selectedNoteIds);
     try {
       const backend = await getExportBackend();
       const destination =
@@ -279,7 +341,7 @@ export const useExportStore = create<ExportState>()((set, get) => ({
       const request: ExportRequest = {
         format: specification.format,
         destination: specification.destination,
-        document: await buildDocument(specification, diagram, labels, exportedAt),
+        document: await buildDocument(specification, diagram, labels, exportedAt, noteLines),
         scale: specification.scale,
       };
       const handleEvent = (event: ExportEvent) => {

@@ -62,8 +62,13 @@ if (entry === "") {
 }
 
 // One line per paragraph, for the same reason the entry's lines are joined.
+const [major, minor] = version.split(".").map(Number);
+const overview =
+  major > 1 || (major === 1 && minor >= 3)
+    ? `SchemaCraft explores Microsoft SQL Server and PostgreSQL schemas through interactive diagrams, known dependencies, project comparison and saved perspectives, with SVG, HTML, PDF and PNG export.`
+    : `SchemaCraft reads the schema of a Microsoft SQL Server database and shows it as an interactive entity-relationship diagram, with SVG, HTML, PDF and PNG export.`;
 const paragraphs = [
-  `SchemaCraft reads the schema of a Microsoft SQL Server database and shows it as an interactive entity-relationship diagram, with SVG, HTML, PDF and PNG export. The [README](${REPOSITORY}#features) lists every feature.`,
+  `${overview} The [README](${REPOSITORY}#features) lists every feature.`,
   `Portable executable (\`schemacraft-${tag}-windows-x64.exe\`) and per-user installer (\`schemacraft-${tag}-windows-x64-setup.exe\`) for Windows 10/11 x64; verify the downloads with \`SHA256SUMS.txt\`. Both need the Microsoft Edge WebView2 runtime, which Windows 11 and updated Windows 10 include.`,
   `[Code signing policy](${REPOSITORY}#code-signing-policy): free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org). The application to SignPath Foundation is under review; until it is approved, release files are not signed and SmartScreen warns on the first launch.`,
   `## What's new in ${version}`,

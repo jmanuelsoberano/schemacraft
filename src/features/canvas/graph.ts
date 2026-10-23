@@ -147,7 +147,7 @@ export function buildRelationEdges(
         foreignKey,
         sourceRows,
         targetRows,
-        ends: relationEnds(tables.get(source), foreignKey),
+        ends: relationEnds(tables.get(source), foreignKey, snapshot),
         explanation: foreignKeyExplanation(snapshot, foreignKey),
       },
     });
@@ -169,7 +169,15 @@ export function tablesByKey(snapshot: SchemaSnapshot): Map<string, Table> {
 export function relationEnds(
   referencingTable: Table | undefined,
   foreignKey: ForeignKey,
+  snapshot?: SchemaSnapshot,
 ): RelationEnds {
+  if (snapshot?.provider === "postgreSql") {
+    const explanation = foreignKeyExplanation(snapshot, foreignKey);
+    return {
+      start: startMarkerKind(explanation.childCardinality ?? "unknown"),
+      end: endMarkerKind(explanation.optionality),
+    };
+  }
   return {
     start: startMarkerKind(foreignKeyChildCardinality(referencingTable, foreignKey)),
     end: endMarkerKind(foreignKeyOptionality(referencingTable?.columns ?? [], foreignKey)),

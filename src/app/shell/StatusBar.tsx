@@ -7,6 +7,7 @@ import { useAboutStore } from "@/features/about/aboutStore";
 import { AccessChip } from "@/features/access/AccessChip";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { useProjectStore } from "@/features/project/projectStore";
+import { activeCanvas } from "@/features/perspectives/perspectiveState";
 import { describeSavedConnection } from "@/features/connection/fromSavedConnection";
 import { listsEveryObject } from "@/features/schema/coverage";
 import { entityKey } from "@/features/schema/entities";
@@ -37,16 +38,18 @@ export function StatusBar({ actions }: StatusBarProps) {
     state.project === null ? true : listsEveryObject(state.project.content.snapshot),
   );
   const viewCount = useProjectStore((state) => state.project?.content.snapshot.views.length ?? 0);
-  const hiddenCount = useProjectStore(
-    (state) => state.project?.content.canvas.nodes.filter((node) => node.isHidden).length ?? 0,
+  const hiddenCount = useProjectStore((state) =>
+    state.project === null
+      ? 0
+      : activeCanvas(state.project.content).nodes.filter((node) => node.isHidden).length,
   );
   const visibleRelationCount = useProjectStore((state) => {
     if (state.project === null) {
       return 0;
     }
     const hidden = new Set(
-      state.project.content.canvas.nodes
-        .filter((node) => node.isHidden)
+      activeCanvas(state.project.content)
+        .nodes.filter((node) => node.isHidden)
         .map((node) => entityKey(node.name)),
     );
     return state.project.content.snapshot.foreignKeys.filter(

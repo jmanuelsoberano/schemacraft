@@ -30,6 +30,8 @@ pub enum InspectionStage {
     /// them. Its count is the texts the login can read; it comes without one when they could not
     /// be read, which does not stop the inspection.
     ReadingModuleDefinitions,
+    /// Reading catalog references independently of module text; failure does not fail tables.
+    ReadingDependencies,
     /// Building the snapshot from the catalog rows.
     Assembling,
     /// The snapshot is ready.

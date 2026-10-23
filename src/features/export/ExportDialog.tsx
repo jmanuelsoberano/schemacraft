@@ -4,6 +4,8 @@ import { useRef } from "react";
 
 import { describeOperationError } from "@/shared/errors/describeOperationError";
 import { useProjectStore } from "@/features/project/projectStore";
+import { activeCanvas } from "@/features/perspectives/perspectiveState";
+import { ExportNotesReview } from "./ExportNotesReview";
 import type { DetailLevel, ExportFormat } from "@/shared/contracts";
 import { useI18n } from "@/shared/i18n/useI18n";
 import { useAppInfo } from "@/shared/ipc/useAppInfo";
@@ -56,7 +58,9 @@ export function ExportDialog() {
   const reveal = useExportStore((state) => state.reveal);
   const exportAnother = useExportStore((state) => state.exportAnother);
   const appInfo = useAppInfo();
-  const canvasLevel = useProjectStore((state) => state.project?.content.canvas.detailLevel ?? null);
+  const canvasLevel = useProjectStore((state) =>
+    state.project === null ? null : activeCanvas(state.project.content).detailLevel,
+  );
   const primaryRef = useRef<HTMLButtonElement>(null);
 
   const isExporting = phase === "exporting";
@@ -259,6 +263,7 @@ export function ExportDialog() {
               })}
             />
           ) : null}
+          <ExportNotesReview />
           {summary !== null && extent !== null ? (
             <div className={styles.summary} aria-live="polite">
               <span className={styles.summaryStrong}>{summary}</span>

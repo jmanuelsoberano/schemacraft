@@ -8,6 +8,8 @@ use super::QualifiedName;
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "model/")]
 pub enum ReferentialAction {
+    /// PostgreSQL RESTRICT, whose check cannot be deferred like NO ACTION.
+    Restrict,
     /// Reject the change while referencing rows exist.
     NoAction,
     /// Propagate the delete or update to referencing rows.

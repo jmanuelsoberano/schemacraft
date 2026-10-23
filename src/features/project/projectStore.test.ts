@@ -16,6 +16,7 @@ import {
 } from "@/features/canvas/canvasState";
 import { OperationError } from "@/shared/ipc/operationError";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
+import { activeCanvas, linkedNote } from "@/features/perspectives/perspectiveState";
 
 const projectBackend = vi.hoisted(() => ({
   pickProjectToOpen: vi.fn<(labels: FileDialogLabels) => Promise<string | null>>(),
@@ -145,6 +146,16 @@ function writtenAs(content: ProjectContent): Promise<Project> {
   });
 }
 
+function deferred<Value>() {
+  let resolve: (value: Value) => void = () => {
+    throw new Error("deferred promise is not initialized");
+  };
+  const promise = new Promise<Value>((finish) => {
+    resolve = finish;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   useCanvasUiStore.getState().clearSelection();
@@ -167,9 +178,8 @@ describe("loadFromInspection", () => {
     expect(project?.path).toBeNull();
     expect(project?.isDirty).toBe(false);
     expect(project?.liveSettings).toBe(settings);
-    expect(project?.content.connection.authentication).toEqual({
-      mode: "sqlLogin",
-      username: "sa",
+    expect(project?.content.connection).toMatchObject({
+      authentication: { mode: "sqlLogin", username: "sa" },
     });
     expect(JSON.stringify(project?.content)).not.toContain("secret");
     expect(project?.content.canvas.detailLevel).toBe("keys");
@@ -184,6 +194,104 @@ describe("loadFromInspection", () => {
 });
 
 describe("saving", () => {
+  it.each([false, true])(
+    "preserves a new viewport during save without inventing dirty changes (initially dirty: %s)",
+    async (initiallyDirty) => {
+      await open(openedFile(), "C:\\work\\a.scraft");
+      const store = useProjectStore.getState();
+      if (initiallyDirty) store.setDetailLevel("compact");
+      expect(useProjectStore.getState().project?.isDirty).toBe(initiallyDirty);
+      const write = deferred<Project>();
+      projectBackend.writeProject.mockReturnValue(write.promise);
+      const saving = store.saveProject();
+      await vi.waitFor(() => {
+        expect(projectBackend.writeProject).toHaveBeenCalledOnce();
+      });
+      const written = projectBackend.writeProject.mock.calls[0]?.[1];
+      if (written === undefined) throw new Error("written project expected");
+      const revision = useProjectStore.getState().project?.editRevision ?? 0;
+      const viewport = { x: 125, y: -36, zoom: 0.75 };
+      store.updateCanvas((canvas) => ({ ...canvas, viewport }), { dirty: false, undoable: false });
+      expect(useProjectStore.getState().project?.editRevision).toBe(revision + 1);
+      write.resolve(await writtenAs(written));
+      await saving;
+      expect(useProjectStore.getState().project?.isDirty).toBe(false);
+      expect(useProjectStore.getState().project?.content.canvas.viewport).toEqual(viewport);
+      expect(useProjectStore.getState().project?.content.canvas.detailLevel).toBe(
+        initiallyDirty ? "compact" : "full",
+      );
+    },
+  );
+
+  it("preserves a non-dirty map switch while an ordinary save finishes", async () => {
+    const file = savedFile();
+    await open(
+      {
+        project: {
+          ...file,
+          perspectives: [{ id: "sales", name: "Sales", description: null, canvas: file.canvas }],
+          activePerspectiveId: "sales",
+        },
+        isReadOnly: false,
+      },
+      "C:\\work\\maps.scraft",
+    );
+    const write = deferred<Project>();
+    projectBackend.writeProject.mockReturnValue(write.promise);
+    const store = useProjectStore.getState();
+    const saving = store.saveProject();
+    await vi.waitFor(() => {
+      expect(projectBackend.writeProject).toHaveBeenCalledOnce();
+    });
+    const written = projectBackend.writeProject.mock.calls[0]?.[1];
+    if (written === undefined) throw new Error("written project expected");
+    store.selectPerspective(null);
+    write.resolve(await writtenAs(written));
+    await saving;
+    expect(useProjectStore.getState().project?.isDirty).toBe(false);
+    expect(useProjectStore.getState().project?.content.activePerspectiveId).toBeUndefined();
+    expect(useProjectStore.getState().project?.content.perspectives?.[0]?.id).toBe("sales");
+  });
+
+  it("keeps a real note edit unsaved when it occurs during an older write", async () => {
+    await open(openedFile(), "C:\\work\\a.scraft");
+    const write = deferred<Project>();
+    projectBackend.writeProject.mockReturnValue(write.promise);
+    const store = useProjectStore.getState();
+    const saving = store.saveProject();
+    await vi.waitFor(() => {
+      expect(projectBackend.writeProject).toHaveBeenCalledOnce();
+    });
+    const written = projectBackend.writeProject.mock.calls[0]?.[1];
+    if (written === undefined) throw new Error("written project expected");
+    const target = { kind: "table" as const, table: { schema: "dbo", name: "Customers" } };
+    store.setObjectNote(target, "New explanation");
+    write.resolve(await writtenAs(written));
+    await saving;
+    const project = useProjectStore.getState().project;
+    expect(project?.isDirty).toBe(true);
+    if (project === null) throw new Error("project expected");
+    expect(linkedNote(project.content, target)?.text).toBe("New explanation");
+  });
+
+  it("does not apply an old Save-as picker to a newly loaded document", async () => {
+    useProjectStore.getState().loadFromInspection(snapshot, settings, inspection);
+    const picker = deferred<string | null>();
+    projectBackend.pickProjectToSave.mockReturnValue(picker.promise);
+    const saving = useProjectStore.getState().saveProjectAs();
+    await vi.waitFor(() => {
+      expect(projectBackend.pickProjectToSave).toHaveBeenCalledOnce();
+    });
+    useProjectStore
+      .getState()
+      .loadFromInspection({ ...snapshot, databaseName: "Another" }, settings, inspection);
+    picker.resolve("C:\\work\\old-document.scraft");
+    await saving;
+    expect(projectBackend.writeProject).not.toHaveBeenCalled();
+    expect(useProjectStore.getState().project?.content.snapshot.databaseName).toBe("Another");
+    expect(useProjectStore.getState().project?.path).toBeNull();
+  });
+
   it("asks for a path the first time and records the saved file", async () => {
     useProjectStore.getState().loadFromInspection(snapshot, settings, inspection);
     useProjectStore.getState().setDetailLevel("compact");
@@ -354,7 +462,7 @@ describe("changes", () => {
     const { project } = useProjectStore.getState();
     expect(project?.isDirty).toBe(true);
     expect(project?.content.snapshot.tables).toEqual([]);
-    expect(project?.liveSettings?.trustServerCertificate).toBe(false);
+    expect(project?.liveSettings).toMatchObject({ trustServerCertificate: false });
   });
 });
 
@@ -419,7 +527,7 @@ describe("keys this version does not know", () => {
       {
         project: {
           ...file,
-          ...{ annotations: [{ entity: customers, text: "Monthly partitions" }] },
+          ...{ futureAnnotations: [{ entity: customers, text: "Monthly partitions" }] },
           snapshot: {
             ...file.snapshot,
             ...{ routines: [{ name: "usp_PlaceOrder" }] },
@@ -466,7 +574,7 @@ describe("keys this version does not know", () => {
 
     const written = projectBackend.writeProject.mock.calls[0]?.[1];
     const expected = {
-      annotations: [{ entity: customers, text: "Monthly partitions" }],
+      futureAnnotations: [{ entity: customers, text: "Monthly partitions" }],
       snapshot: {
         routines: [{ name: "usp_PlaceOrder" }],
         programmability: { synonyms: [{ name: { schema: "dbo", name: "Clients" } }] },
@@ -484,5 +592,88 @@ describe("keys this version does not know", () => {
     // The saved document keeps them too, for the next save.
     expect(useProjectStore.getState().project?.content).toMatchObject(expected);
     expect(useProjectStore.getState().project?.content).not.toHaveProperty("savedWith");
+  });
+});
+
+describe("independent maps and shared explanations", () => {
+  it("edits only the selected map and switching alone leaves a saved project clean", () => {
+    const store = useProjectStore.getState();
+    store.loadFromInspection(snapshot, settings, inspection);
+    const sales = store.createPerspective("Sales");
+    expect(sales).not.toBeNull();
+    store.updateCanvas((canvas) => withHidden(canvas, ["dbo.Customers"], true));
+    store.selectPerspective(null);
+    const inventory = store.createPerspective("Inventory");
+    const project = useProjectStore.getState().project;
+    expect(project?.content.canvas.nodes[0]?.isHidden).toBe(false);
+    expect(
+      project?.content.perspectives?.find((item) => item.id === sales)?.canvas.nodes[0]?.isHidden,
+    ).toBe(true);
+    expect(
+      project?.content.perspectives?.find((item) => item.id === inventory)?.canvas.nodes[0]
+        ?.isHidden,
+    ).toBe(false);
+    useProjectStore.setState((state) => ({
+      project: state.project === null ? null : { ...state.project, isDirty: false },
+    }));
+    const history = useProjectStore.getState().history;
+    store.selectPerspective(sales);
+    expect(useProjectStore.getState().project?.isDirty).toBe(false);
+    expect(useProjectStore.getState().history).toBe(history);
+  });
+
+  it("coalesces live note typing, shares the note, and undoes deletion of an entire map", () => {
+    const store = useProjectStore.getState();
+    store.loadFromInspection(snapshot, settings, inspection);
+    const id = store.createPerspective("Sales");
+    const target = { kind: "table" as const, table: { schema: "dbo", name: "Customers" } };
+    const before = useProjectStore.getState().history.past.length;
+    store.setObjectNote(target, "A");
+    store.setObjectNote(target, "A shared explanation");
+    store.finishNoteEdit();
+    expect(useProjectStore.getState().history.past).toHaveLength(before + 1);
+    store.selectPerspective(null);
+    const content = useProjectStore.getState().project?.content;
+    if (content === undefined || id === null) throw new Error("project expected");
+    expect(linkedNote(content, target)?.text).toBe("A shared explanation");
+    store.deletePerspective(id);
+    expect(useProjectStore.getState().project?.content.perspectives).toHaveLength(0);
+    store.undo();
+    expect(useProjectStore.getState().project?.content.perspectives?.[0]?.id).toBe(id);
+    store.undo();
+    expect(useProjectStore.getState().project?.content.annotations?.notes ?? []).toHaveLength(0);
+  });
+
+  it("refreshes every map, archives removed notes, and prevents undo into another snapshot", () => {
+    const store = useProjectStore.getState();
+    store.loadFromInspection(snapshot, settings, inspection);
+    store.createPerspective("Sales");
+    store.selectPerspective(null);
+    store.createPerspective("Inventory");
+    const target = { kind: "table" as const, table: { schema: "dbo", name: "Customers" } };
+    store.setObjectNote(target, "Keep this explanation");
+    const content = useProjectStore.getState().project?.content;
+    if (content === undefined) throw new Error("project expected");
+    const sourceTable = snapshot.tables[0];
+    if (sourceTable === undefined) throw new Error("fixture table expected");
+    const fresh = {
+      ...snapshot,
+      tables: [{ ...sourceTable, name: { schema: "dbo", name: "NewTable" } }],
+    };
+    store.applyRefreshedContent({ ...content, snapshot: fresh }, settings);
+    const refreshed = useProjectStore.getState().project;
+    expect(refreshed?.content.canvas.nodes[0]?.isHidden).toBe(false);
+    expect(
+      refreshed?.content.perspectives?.every((item) => item.canvas.nodes[0]?.isHidden === true),
+    ).toBe(true);
+    expect(refreshed?.content.annotations?.notes[0]).toMatchObject({
+      text: "Keep this explanation",
+      isLinked: false,
+    });
+    expect(useProjectStore.getState().history.past).toHaveLength(0);
+    store.undo();
+    expect(useProjectStore.getState().project).toBe(refreshed);
+    if (refreshed === null) throw new Error("project expected");
+    expect(activeCanvas(refreshed.content).nodes[0]?.isHidden).toBe(true);
   });
 });

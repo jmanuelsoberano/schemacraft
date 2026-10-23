@@ -2,6 +2,9 @@ import { useAccessReportStore } from "@/features/access/accessReportStore";
 import * as canvasActions from "@/features/canvas/canvasActions";
 import { useCanvasUiStore } from "@/features/canvas/canvasUiStore";
 import { useConnectionStore } from "@/features/connection/connectionStore";
+import { useComparisonStore } from "@/features/comparison/comparisonStore";
+import { useDependencyStore } from "@/features/dependencies/dependencyStore";
+import { usePerspectiveUiStore } from "@/features/perspectives/perspectiveUiStore";
 import { useExportStore } from "@/features/export/exportStore";
 import { usePaletteStore } from "@/app/palette/paletteStore";
 import { usePreferencesStore } from "@/features/preferences/preferencesStore";
@@ -19,6 +22,9 @@ export interface DevelopmentHooks {
   palette: typeof usePaletteStore;
   exportStore: typeof useExportStore;
   accessReport: typeof useAccessReportStore;
+  comparison: typeof useComparisonStore;
+  dependencies: typeof useDependencyStore;
+  perspectives: typeof usePerspectiveUiStore;
   /** The React Flow instance once the canvas initialised, for scripted checks. */
   flow: unknown;
 }
@@ -49,6 +55,9 @@ export function installDevelopmentHooks(): void {
     palette: usePaletteStore,
     exportStore: useExportStore,
     accessReport: useAccessReportStore,
+    comparison: useComparisonStore,
+    dependencies: useDependencyStore,
+    perspectives: usePerspectiveUiStore,
   };
 }
 

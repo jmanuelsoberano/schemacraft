@@ -3,6 +3,7 @@
  * for the lifetime of the page. Loaded only in development builds outside the desktop runtime.
  */
 import type { Preferences, SavedConnection } from "@/shared/contracts";
+import { savedConnectionIdentity } from "@/shared/connections/savedConnectionIdentity";
 
 import type { PreferencesBackend } from "./preferencesBackend";
 
@@ -55,19 +56,7 @@ let preferences: Preferences = {
 };
 
 function sameEndpoint(left: SavedConnection, right: SavedConnection): boolean {
-  const key = (connection: SavedConnection) =>
-    [
-      connection.host,
-      connection.instance ?? "",
-      connection.port ?? "",
-      connection.database ?? "",
-      connection.authentication.mode === "sqlLogin"
-        ? connection.authentication.username
-        : "<windows>",
-    ]
-      .join("|")
-      .toLowerCase();
-  return key(left) === key(right);
+  return savedConnectionIdentity(left) === savedConnectionIdentity(right);
 }
 
 function snapshot(): Promise<Preferences> {

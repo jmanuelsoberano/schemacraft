@@ -97,6 +97,8 @@ impl SchemaSnapshot {
         }
         self.carried_over = ledger.into_facts();
         self.keep_unchecked_code(previous);
+        self.keep_unchecked_dependencies(previous);
+        self.keep_unchecked_postgresql(previous);
         self
     }
 

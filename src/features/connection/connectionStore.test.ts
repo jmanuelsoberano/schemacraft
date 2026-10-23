@@ -221,6 +221,7 @@ describe("selecting a database", () => {
       includeViews: true,
       includeProgrammability: true,
       includeModuleDefinitions: false,
+      includeDependencies: true,
     });
     finish(snapshot(personas.owner));
     await running;
@@ -448,7 +449,12 @@ describe("the applied refresh source", () => {
     );
     await useConnectionStore.getState().inspect();
     await useConnectionStore.getState().applyReview();
-    const options = { schemas: ["dbo"], includeViews: false, ...codeOptions };
+    const options = {
+      schemas: ["dbo"],
+      includeViews: false,
+      includeDependencies: true,
+      ...codeOptions,
+    };
     const content = useProjectStore.getState().project?.content;
     expect(content?.inspection).toEqual(options);
     expect(content?.connection).toMatchObject({
@@ -549,6 +555,116 @@ describe("the persisted draft", () => {
     expect(written).toContain('"username":"reporting"');
     expect(written).not.toContain("secret");
     expect(useConnectionStore.getState().draft.password).toBe("secret");
+  });
+});
+
+describe("PostgreSQL connection ownership and secrets", () => {
+  it("clears inherited credentials when the engine changes and ignores the previous test response", async () => {
+    let complete: (value: ServerInformation) => void = () => undefined;
+    connectionBackend.testConnection.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    useConnectionStore.getState().updateDraft({
+      server: "db",
+      authenticationMode: "sqlLogin",
+      username: "sql_user",
+      password: "OLD_ENGINE_SECRET",
+      rememberPassword: true,
+    });
+    const pending = useConnectionStore.getState().testConnection();
+    await vi.waitFor(() => {
+      expect(connectionBackend.testConnection).toHaveBeenCalledOnce();
+    });
+    useConnectionStore.getState().updateDraft({ provider: "postgreSql" });
+    complete(server);
+    await pending;
+    expect(useConnectionStore.getState().draft).toMatchObject({
+      provider: "postgreSql",
+      username: "",
+      password: "",
+      passwordIsStored: false,
+      rememberPassword: false,
+      postgreSqlEncryption: "verifyFull",
+    });
+    expect(useConnectionStore.getState().tested).toBeNull();
+    expect(useConnectionStore.getState().phase).toBe("idle");
+    expect(connectionBackend.listDatabases).not.toHaveBeenCalled();
+  });
+
+  it("uses the explicitly chosen application database for PostgreSQL discovery", async () => {
+    connectionBackend.testConnection.mockResolvedValue({
+      ...server,
+      product: "PostgreSQL",
+      databaseName: "CaseDatabase",
+    });
+    connectionBackend.listDatabases.mockResolvedValue(["CaseDatabase"]);
+    connectionBackend.describeDatabase.mockResolvedValue({
+      schemas: ["public"],
+      programmabilityOnlySchemas: [],
+      access: {
+        level: "full",
+        coverage: { objects: "complete", definitions: "complete" },
+        counts: { definitions: 0, definitionsNotVisible: 0, foreignKeysToInvisibleTables: 0 },
+        scope: { schemas: [], includeViews: true },
+        postgresql: {
+          objectCatalogRead: true,
+          programmabilityCatalogRead: true,
+          definitions: { status: "read" },
+          schemas: [
+            {
+              name: "public",
+              hasUsage: true,
+              hasVisibleObjects: true,
+              hasVisibleProgrammability: false,
+            },
+          ],
+        },
+      },
+    });
+    useConnectionStore.getState().updateDraft({
+      provider: "postgreSql",
+      server: "localhost:15432",
+      username: "CaseRole",
+      database: "CaseDatabase",
+      password: "NATIVE_SECRET",
+    });
+    await useConnectionStore.getState().testConnection();
+    expect(connectionBackend.testConnection.mock.calls[0]?.[0]).toMatchObject({
+      provider: "postgreSql",
+      username: "CaseRole",
+      database: "CaseDatabase",
+      encryption: "verifyFull",
+      password: { source: "provided", value: "NATIVE_SECRET" },
+    });
+    expect(useConnectionStore.getState().tested?.schemas).toEqual(["public"]);
+    const serialized = storage.items.get("schemacraft.connection") ?? "";
+    expect(serialized).toContain("CaseRole");
+    expect(serialized).not.toContain("NATIVE_SECRET");
+    useConnectionStore
+      .getState()
+      .updateDraft({ rootCertificate: "-----BEGIN PRIVATE KEY-----\nPRIVATE_KEY_SENTINEL" });
+    expect(storage.items.get("schemacraft.connection")).not.toContain("PRIVATE_KEY_SENTINEL");
+  });
+
+  it("cannot persist a password or private key recovered from a malformed legacy draft", () => {
+    const restored = mergePersistedConnection(
+      {
+        draft: {
+          provider: "postgreSql",
+          server: "localhost:5432",
+          username: "CaseRole",
+          password: "LEGACY_SECRET",
+          rootCertificate: "-----BEGIN PRIVATE KEY-----\nLEGACY_KEY",
+        },
+      },
+      { draft: emptyConnectionDraft },
+    );
+    expect(restored.draft.password).toBe("");
+    expect(restored.draft.rootCertificate).toBe("");
+    expect(restored.draft.provider).toBe("postgreSql");
   });
 });
 

@@ -1,6 +1,6 @@
 .shell {
   display: grid;
-  grid-template-rows: var(--topbar-height) minmax(0, 1fr) var(--statusbar-height);
+  grid-template-rows: auto minmax(0, 1fr) var(--statusbar-height);
   grid-template-columns: auto minmax(0, 1fr) auto;
   height: 100%;
   background: var(--color-canvas);
@@ -29,6 +29,14 @@
   position: relative;
   grid-row: 2;
   grid-column: 2;
+}
+
+.mapSwitcher {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 5;
+  max-width: min(320px, calc(100% - 24px));
 }
 
 .inspector {
