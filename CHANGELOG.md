@@ -6,6 +6,12 @@ All notable changes to SchemaCraft are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Standalone HTML Inspector column names, native types, badges and nullable headings wrap within
+  the panel without pushing the last column out of view. The floating panel also fits narrower
+  browser windows; captured values and export privacy rules remain unchanged.
+
 ## [1.3.0] - 2026-10-23
 
 Compare captured projects, explore known dependencies, save perspectives with shared notes

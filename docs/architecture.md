@@ -1094,6 +1094,12 @@ known, as in an exported file. That is where the two differ: the file knows only
 (ADR-025), so it leaves out keys to tables that are not on it, an empty relation list reads
 "None on the diagram", and it offers no "Why?" link.
 
+Column layout belongs to each presentation, not to the shared view-model. The desktop and
+standalone renderers wrap names, types, native badges and column headings within their panels,
+preserving complete values. The standalone page constrains its grid to the viewport and its
+floating panel to the available width; a wide toolbar must not push the panel off screen.
+These layout rules do not introduce React or application stores into the standalone viewer.
+
 Every applicable section appears, in a fixed order, and an empty one prints one line whose
 wording follows the completeness of the list: "None" only when the list is known to be
 complete, otherwise "None visible to this login", "None recorded", "Not checked since", "None

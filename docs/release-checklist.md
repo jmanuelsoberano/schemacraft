@@ -97,6 +97,19 @@ replace or retag the published 1.2.0 executable, GitHub assets or Store package.
       activation/uninstallation and channel-specific checks before publication. Record any
       explicitly accepted outstanding check as pending; do not inherit the 1.2.0 exception.
 
+### 1.3 standalone HTML follow-up
+
+The original 1.3.0 tag and draft predate a standalone Inspector layout correction. Its local
+follow-up passed the [dated verification](schema-exploration-verification.md#standalone-html-inspector-correction---2026-10-23),
+including 48 real-browser geometry scenarios with complete column values at 320/360 px.
+Keep the original draft retained until the correction is integrated and the resulting
+distribution artifacts are verified. Normal NSIS lifecycle, clean Windows/fresh standard
+account, missing WebView2, Windows Authentication and HTML on another computer remain
+unperformed checklist items. On 2026-10-24 the maintainer stopped the VM/ISO preparation to
+focus on this correction and the Store update. VM provisioning is not part of the layout fix
+or a prerequisite imposed by the Store packaging workflow. Record any accepted deferral
+explicitly; previous-version results are historical evidence, not passes for the new artifacts.
+
 ## Release 1.2 preparation
 
 The feature checks and dated local release verification below are complete. On 2026-10-19 the
