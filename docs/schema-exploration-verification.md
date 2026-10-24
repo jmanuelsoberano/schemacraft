@@ -370,17 +370,24 @@ previously retained the draft pending these checks, then stopped VM/ISO preparat
 those checks passed or authorize publication. Store acceptance is separate, and the published
 1.2.0 remains unchanged.
 
+On 2026-10-24 the maintainer subsequently authorized integration, rebuilt-artifact verification
+and publication preparation for 1.3.0, explicitly proceeding with the additional Windows checks
+documented as pending. This supersedes the earlier hold; it does not mark those checks passed.
+The [release decision](release-checklist.md#130-publication-decision---2026-10-24) records the
+scope. The corrected executable must be rebuilt from the integrated source and verified after
+download; the current local candidate is not a substitute for those final distribution files.
+
 ### Publication gates
 
 - Green required checks on the final pull-request commit before merge.
 - Build and verify the final versioned portable and installer, checksums and downloaded assets;
-  repeat installation, activation, state/credential behavior and uninstallation on the actual
-  distribution artifacts.
+  repeat the actual portable-app and corrected-HTML checks. NSIS lifecycle acceptance is deferred
+  by the dated 1.3.0 decision, not silently treated as performed.
 - Channel-specific Microsoft Store update acceptance with the same package family, including
   existing data and credentials. Validation-only MSIX packing does not prove installation or
   updates and must never be uploaded as the product package.
 - Clean Windows/standard-account, missing-WebView2, Windows Authentication and cross-machine
-  offline HTML checks remain explicit gates. The previous 1.2.0 publication exception does not
-  waive them for this release; any deferral needs a new conscious release decision.
+  offline HTML checks remain unperformed under the explicit 1.3.0 deferral above. The decision
+  is new for this release; it does not inherit a pass or exception from 1.2.0.
 
 No new release or Store submission is created by this implementation record.

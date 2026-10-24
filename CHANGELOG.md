@@ -6,13 +6,7 @@ All notable changes to SchemaCraft are documented here. The format follows
 
 ## [Unreleased]
 
-### Fixed
-
-- Standalone HTML Inspector column names, native types, badges and nullable headings wrap within
-  the panel without pushing the last column out of view. The floating panel also fits narrower
-  browser windows; captured values and export privacy rules remain unchanged.
-
-## [1.3.0] - 2026-10-23
+## [1.3.0] - 2026-10-24
 
 Compare captured projects, explore known dependencies, save perspectives with shared notes
 and inspect PostgreSQL alongside SQL Server. Projects save in format 4; keep original copies
@@ -50,6 +44,9 @@ when they must remain editable with SchemaCraft 1.2.0 or earlier.
 - Toolbar actions remain visible on narrower windows by flowing into an additional row.
 - Inspector dependency details align with neighboring sections. Column headers and long native
   badges wrap inside narrow panels without hiding names, types, defaults or nullability.
+- Standalone HTML Inspector column names, native types, badges and nullable headings wrap within
+  the panel without pushing the last column out of view. The floating panel also fits narrower
+  browser windows; captured values and export privacy rules remain unchanged.
 
 ## [1.2.0] - 2026-10-19
 

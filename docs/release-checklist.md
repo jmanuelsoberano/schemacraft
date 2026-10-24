@@ -110,6 +110,21 @@ focus on this correction and the Store update. VM provisioning is not part of th
 or a prerequisite imposed by the Store packaging workflow. Record any accepted deferral
 explicitly; previous-version results are historical evidence, not passes for the new artifacts.
 
+### 1.3.0 publication decision - 2026-10-24
+
+The maintainer authorized proceeding after the standalone HTML correction, with the remaining
+Windows environment checks documented as pending. This supersedes the earlier decision to
+retain the draft until those checks complete. Normal NSIS installation/open/uninstall, clean
+Windows/fresh standard-account execution, Windows Authentication, the full missing-WebView2
+path and exported HTML on another computer remain **not performed for 1.3.0**. The 1.2 results
+are historical evidence only. No VM or ISO is required by this release decision.
+
+Verify the newly generated, downloaded artifacts and checksums, including the actual portable
+application and corrected HTML, before publishing the GitHub release. Prepare the independent
+Store package from that published portable, retain the existing product/package identity and
+submit the update with the localized listing and screenshots. Store certification and real
+1.2-to-1.3 update/data/credential acceptance remain separate; no result is inferred here.
+
 ## Release 1.2 preparation
 
 The feature checks and dated local release verification below are complete. On 2026-10-19 the
