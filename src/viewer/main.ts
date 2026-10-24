@@ -660,7 +660,11 @@ class Viewer {
 
   private columnsTable(section: ColumnsSectionView): HTMLElement {
     const rows = section.items.map((column) => {
-      const details = h("td", {}, h("span", { class: "sc-mono" }, column.type));
+      const details = h(
+        "td",
+        { class: "sc-column-type" },
+        h("span", { class: "sc-mono" }, column.type),
+      );
       for (const note of column.nativeNotes ?? [])
         details.append(h("div", { class: "sc-value" }, note));
       if (column.defaultValue !== null) {
@@ -670,23 +674,30 @@ class Viewer {
       return h(
         "tr",
         { "data-column": column.name },
-        h("td", { class: "sc-mono" }, column.name, ...column.badges.map(badgeElement)),
+        h(
+          "td",
+          { class: "sc-column-name" },
+          h("span", { class: "sc-mono" }, column.name),
+          column.badges.length === 0
+            ? null
+            : h("div", { class: "sc-column-badges" }, ...column.badges.map(badgeElement)),
+        ),
         details,
         h("td", { class: "sc-muted" }, column.nullable),
       );
     });
     return h(
       "table",
-      { class: "sc-table" },
+      { class: "sc-table sc-columns-table" },
       h(
         "thead",
         {},
         h(
           "tr",
           {},
-          h("th", {}, section.headers.name),
-          h("th", {}, section.headers.type),
-          h("th", {}, section.headers.nullable),
+          h("th", { scope: "col" }, section.headers.name),
+          h("th", { scope: "col" }, section.headers.type),
+          h("th", { scope: "col" }, section.headers.nullable),
         ),
       ),
       h("tbody", {}, ...rows),

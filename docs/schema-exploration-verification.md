@@ -324,15 +324,70 @@ sentinels; none appeared. Opaque original backups were not inspected.
 
 ## Remaining acceptance before one release
 
+### Standalone HTML Inspector correction - 2026-10-23
+
+Downloaded-draft review found that native types and badges could expand the standalone
+Inspector's column table beyond its panel. The follow-up uses a column-specific fixed layout,
+wrapping headings/names/types and grouped badges, with column-header scopes. The existing
+shared view-model, text escaping, export projections and rule-highlight hooks remain unchanged.
+The standalone page also constrains its grid track to the viewport: toolbar intrinsic width
+must not move the floating panel beyond a narrow browser window. No domain rule or new
+framework dependency was added (ADR-025/038).
+
+The unchanged draft reproduced the failure in all eight PostgreSQL HTML examples. The final
+local candidate exported twelve fresh HTML files through the real native application. Browser
+verification covered sixteen object/consent cases across SQL Server and PostgreSQL, English
+and Spanish, both themes, and 1440/1024/344 px viewports: 48 scenarios and 560 assertions passed.
+The narrow viewport creates a real 320 px panel; wider viewports exercise 360 px. Headers,
+glyph fragments, cells and badges fit their bounds, and complete names, type declarations
+(including SQL Server aliases), readable DEFAULTs and nullable values match the projected
+capture. Inputs were hash-checked against the native files. Search and selection ran offline,
+without replacing DOM text, CSS or data. This certifies the narrow Inspector, not a mobile
+toolbar or the desktop application's minimum window size.
+
+Before the final viewport-only refinement, the broader production matrix passed 973 assertions:
+six native provider workflows, all four exploration flows in both languages/themes and 56
+native exports, including four additional SQL Server HTML files. Twelve single-page PDFs,
+twelve exported PNGs and sixteen UI captures were visually reviewed. The final refinement
+then passed 192 application assertions with twelve fresh HTML exports and the 48 browser
+scenarios above. Production smoke passed 21 checks with About 1.3.0 and no development hooks.
+Historical format-1/2/3 migration/save/reopen and published 1.2.0 reader refusal passed; original
+files were unchanged. Local frontend/architecture/distribution checks, sequential native
+format/Clippy/two workspace runs, both SQL Server versions, PostgreSQL 15–18, generated contracts
+and the complete portable/NSIS build passed. Preferences and WebView profiles were restored
+after confirmed process exit, with preference hashes checked.
+
+The nine closed test sessions' diagnostic logs passed the synthetic credential, SQL, object,
+note, project and path sentinel scan. Lexical collisions were verified exclusively as fixed
+query labels in the logger; none were captured user values. Opaque original backups were not
+read for that audit.
+
+These are local follow-up candidates, not replacements for the existing tagged draft assets.
+Normal installer lifecycle, clean Windows/standard-account, missing-WebView2, Windows
+Authentication and another-machine HTML acceptance remain unperformed. The maintainer
+previously retained the draft pending these checks, then stopped VM/ISO preparation on
+2026-10-24 to focus on the HTML correction and the Store update. This record does not mark
+those checks passed or authorize publication. Store acceptance is separate, and the published
+1.2.0 remains unchanged.
+
+On 2026-10-24 the maintainer subsequently authorized integration, rebuilt-artifact verification
+and publication preparation for 1.3.0, explicitly proceeding with the additional Windows checks
+documented as pending. This supersedes the earlier hold; it does not mark those checks passed.
+The [release decision](release-checklist.md#130-publication-decision---2026-10-24) records the
+scope. The corrected executable must be rebuilt from the integrated source and verified after
+download; the current local candidate is not a substitute for those final distribution files.
+
+### Publication gates
+
 - Green required checks on the final pull-request commit before merge.
 - Build and verify the final versioned portable and installer, checksums and downloaded assets;
-  repeat installation, activation, state/credential behavior and uninstallation on the actual
-  distribution artifacts.
+  repeat the actual portable-app and corrected-HTML checks. NSIS lifecycle acceptance is deferred
+  by the dated 1.3.0 decision, not silently treated as performed.
 - Channel-specific Microsoft Store update acceptance with the same package family, including
   existing data and credentials. Validation-only MSIX packing does not prove installation or
   updates and must never be uploaded as the product package.
 - Clean Windows/standard-account, missing-WebView2, Windows Authentication and cross-machine
-  offline HTML checks remain explicit gates. The previous 1.2.0 publication exception does not
-  waive them for this release; any deferral needs a new conscious release decision.
+  offline HTML checks remain unperformed under the explicit 1.3.0 deferral above. The decision
+  is new for this release; it does not inherit a pass or exception from 1.2.0.
 
 No new release or Store submission is created by this implementation record.
